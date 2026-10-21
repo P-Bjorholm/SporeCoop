@@ -286,6 +286,24 @@ void tick(double now)
         guest_tick(now);
 }
 
+void on_world_change()
+{
+    for (auto& [id, px] : g_proxies) {
+        if (px.c)
+            game::puppet_unregister(px.c);
+        px.c = nullptr;
+        px.killed = false;
+        px.drv = drive::State{};
+    }
+    g_proxy_of.clear();
+    g_herds.clear();
+    g_kill.clear();
+    g_host_npcs.clear();
+    g_host_by_id.clear();
+    for (auto& [g, ks] : g_known)
+        ks.clear(); // host re-sends spawns
+}
+
 void on_session_end()
 {
     std::vector<uint16_t> ids;

@@ -17,5 +17,7 @@ void tick(net::Session& s);
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
+void set_auto_load(bool on);
+bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err);
 
 } // namespace world

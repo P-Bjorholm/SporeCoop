@@ -428,6 +428,34 @@ static int c_hang(void*, int, const char* const*, SkOut* o)
     return 0;
 }
 
+static int c_probe(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "probe <addr|sym> - record calls (this, args, callers)");
+    uintptr_t a;
+    if (!parse_addr(argv[1], a)) { outf(o, "bad address"); return 1; }
+    outf(o, "%s", probe_add(a).c_str());
+    return 0;
+}
+
+static int c_probe_list(void*, int argc, const char* const* argv, SkOut* o)
+{
+    outf(o, "%s", probe_report(argc > 1 && !strcmp(argv[1], "clear")).c_str());
+    return 0;
+}
+
+static int c_ftrace(void*, int argc, const char* const* argv, SkOut* o)
+{
+    outf(o, "%s", ftrace_set(argc > 1 ? argv[1] : "").c_str());
+    return 0;
+}
+
+static int c_probe_clear(void*, int, const char* const*, SkOut* o)
+{
+    probe_clear_all();
+    outf(o, "probes removed");
+    return 0;
+}
+
 static int c_quit(void*, int, const char* const*, SkOut* o)
 {
     outf(o, "bye");
@@ -468,6 +496,11 @@ void register_builtin_commands()
     command_add(k, "quit", "terminate the game", c_quit, nullptr, A);
     command_add(k, "exc", "exc [clear] - faults caught by the exception logger", c_exc, nullptr, A);
     command_add(k, "hangdump", "write the main thread stack (with DLL names) to the log", c_hang, nullptr, A);
+    command_add(k, "probe", "probe <addr|sym> - trace calls without knowing the signature", c_probe, nullptr, M);
+    command_add(k, "probe.list", "probe.list [clear] - recorded calls", c_probe_list, nullptr, A);
+    command_add(k, "ftrace", "ftrace [substring] - log file opens (with callers) whose path contains it", c_ftrace,
+                nullptr, M);
+    command_add(k, "probe.clear", "remove all probes", c_probe_clear, nullptr, M);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
 }
 

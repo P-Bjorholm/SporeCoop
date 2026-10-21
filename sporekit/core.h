@@ -139,6 +139,12 @@ bool png_write_rgb(const std::wstring& path, int w, int h, const uint8_t* rgb);
 // instance.cpp
 void instance_install();
 
+// probe.cpp
+std::string probe_add(uintptr_t addr);
+std::string probe_report(bool clear);
+void probe_clear_all();
+std::string ftrace_set(const std::string& substr);
+
 // watchdog.cpp
 void watchdog_start();
 void watchdog_mark(const char* stage);

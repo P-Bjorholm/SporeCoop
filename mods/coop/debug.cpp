@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "game.h"
 #include "sporekit.h"
@@ -133,6 +134,40 @@ bool SK_THISCALL h_LoadGame(void* self, const void* params)
     return o_LoadGame(self, params);
 }
 
+int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc < 3) {
+        SAY("usage: coop.loadworld <windows slot dir ending with \\> <Planet.spo>");
+        return 1;
+    }
+    auto w = [](const char* s) { std::u16string r; for (; *s; s++) r += (char16_t)(unsigned char)*s; return r; };
+    std::u16string dir = w(argv[1]), name = w(argv[2]);
+    void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
+    if (!db) { SAY("no save DB"); return 1; }
+    const char16_t* old = skg::vcall<const char16_t*>(db, 0x28 / 4);
+    std::string olds; for (const char16_t* p = old; p && *p; p++) olds += (char)*p;
+    int acc = skg::vcall<int>(db, 0x20 / 4);              // GetAccessFlags
+    bool closed = skg::vcall<bool>(db, 0x1C / 4);         // Close
+    bool ok = skg::vcall<bool>(db, 0x2C / 4, dir.c_str()); // SetLocation
+    bool opened = skg::vcall<bool>(db, 0x18 / 4, acc, 0, 0); // Open(access, createDisposition, autoOpen)
+    SAY("access=%d close=%d open=%d\n", acc, closed, opened);
+    void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
+    skg::thiscall<void>(H->sym("Simulator::cGamePersistenceManager::LoadGameByName"), mgr, name.c_str());
+    SAY("save DB %s -> %s (SetLocation %d), loading %s", olds.c_str(), argv[1], ok, argv[2]);
+    return 0;
+}
+
+int c_savedb(void*, int, const char* const*, SkOut* out)
+{
+    void* db = skg::cdecl_call<void*>(H->sym("Resource::GetDatabaseByID"), 0x4729A47u);
+    if (!db) { SAY("no save DB"); return 1; }
+    const char16_t* loc = skg::vcall<const char16_t*>(db, 0x28 / 4);
+    std::string l; for (const char16_t* p = loc; p && *p; p++) l += (char)*p;
+    SAY("save DB %p location=%s access=%d refs=%d", db, l.c_str(), skg::vcall<int>(db, 0x20 / 4),
+        skg::vcall<int>(db, 0x10 / 4));
+    return 0;
+}
+
 int c_loadhook(void*, int, const char* const*, SkOut* out)
 {
     if (!o_LoadGame)
@@ -145,6 +180,10 @@ int c_loadhook(void*, int, const char* const*, SkOut* out)
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
     g_self = self;
+    host->command_add(self, "coop.loadworld", "debug: point the save DB to a slot dir and load a planet", c_loadworld,
+                      nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.savedb", "debug: current save folder database", c_savedb, nullptr,
+                      SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.loadhook", "debug: log cGamePersistenceManager::LoadGame parameters", c_loadhook,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);

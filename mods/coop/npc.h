@@ -26,6 +26,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now);                        // every frame (also when offline)
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();                        // destroy proxies, restore local NPCs
+void on_world_change();                       // world unloaded: forget (not destroy) proxies
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool damage_filter(void* creature, float damage, int type, void* attacker);

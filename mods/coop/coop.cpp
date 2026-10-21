@@ -187,8 +187,10 @@ void on_frame(void*, int, void*)
 
     void* av = game::avatar();
     if (av != g_last_avatar) {
-        if (g_last_avatar)
+        if (g_last_avatar) {
             forget_puppets();
+            npc::on_world_change();
+        }
         g_last_avatar = av;
     }
 
@@ -622,6 +624,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_name = nm;
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     world::init(H, M, feed);
+    world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
     game::set_dna_listener(on_dna);
     npc::Ctx ctx;

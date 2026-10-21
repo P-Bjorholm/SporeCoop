@@ -11,6 +11,8 @@
 #include <deque>
 #include <map>
 
+#include "sporekit_game.hpp"
+
 namespace world {
 
 static const SkHost* H;
@@ -40,6 +42,7 @@ struct In {
 };
 
 static std::deque<Out> g_out;
+static bool g_auto_load = true;
 static In g_in;
 
 static std::wstring games_dir()
@@ -272,7 +275,7 @@ static std::wstring pick_slot(uint32_t world_id, const std::string& planet_spo)
                 return p; // a previous co-op world: update it
         }
     }
-    if (!planet_spo.empty()) {
+    if (!planet_spo.empty() && !g_auto_load) { // menu loading needs the disc of this planet free
         for (int k = 0; k < 64; k++) {
             std::wstring p = dir + L"\\Game" + std::to_wstring(k);
             if (dir_has(p, widen(planet_spo))) {
@@ -297,6 +300,48 @@ static std::wstring pick_slot(uint32_t world_id, const std::string& planet_spo)
             return p;
     }
     return {};
+}
+
+
+// Point the save-folder database (resource DB 0x4729A47) to `slot` and load `planet_file`
+// the way the galaxy menu's Play button does (see docs/05-re-notes.md).
+void set_auto_load(bool on) { g_auto_load = on; }
+
+bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err)
+{
+    uintptr_t getdb = H->sym("Resource::GetDatabaseByID");
+    uintptr_t getmgr = H->sym("Simulator::cGamePersistenceManager::Get");
+    uintptr_t loadby = H->sym("Simulator::cGamePersistenceManager::LoadGameByName");
+    if (!getdb || !getmgr || !loadby) {
+        err = "load symbols missing";
+        return false;
+    }
+    void* db = skg::cdecl_call<void*>(getdb, 0x4729A47u);
+    void* mgr = skg::cdecl_call<void*>(getmgr);
+    if (!db || !mgr) {
+        err = "save database not available";
+        return false;
+    }
+    std::u16string dir;
+    for (wchar_t c : slot)
+        dir += (char16_t)(c == L'\\' ? L'/' : c);
+    if (dir.empty() || dir.back() != u'/')
+        dir += u'/';
+    std::u16string name;
+    for (char c : planet_file)
+        name += (char16_t)(unsigned char)c;
+    skg::vcall<bool>(db, 0x1C / 4); // Close
+    if (!skg::vcall<bool>(db, 0x2C / 4, dir.c_str())) { // SetLocation
+        err = "SetLocation failed";
+        return false;
+    }
+    if (!skg::vcall<bool>(db, 0x18 / 4, 3, 6, 0)) { // Open(ReadWrite, CD::Default, autoOpen=false)
+        err = "Open failed";
+        return false;
+    }
+    skg::thiscall<void>(loadby, mgr, name.c_str());
+    H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
+    return true;
 }
 
 static void finish(const std::string& host_name)
@@ -343,8 +388,18 @@ static void finish(const std::string& host_name)
     }
     std::string slot_name = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
     H->log(M, SK_INFO, "world: received %u bytes into %s", g_in.received, narrow(slot).c_str());
-    g_feed("world of " + host_name + " saved as " + slot_name + ": load it from the main menu");
+    std::string planet;
+    for (auto& r : rels)
+        if (r.size() > 4 && r.compare(r.size() - 4, 4, ".spo") == 0 && r.find('/') == std::string::npos)
+            planet = r;
     g_in = In{};
+    std::string err;
+    if (g_auto_load && !planet.empty() && load_slot(slot, planet, err)) {
+        g_feed("loading the world of " + host_name + "...");
+        return;
+    }
+    g_feed("world of " + host_name + " saved as " + slot_name + ": load it from the main menu" +
+           (err.empty() ? "" : " (" + err + ")"));
 }
 
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
