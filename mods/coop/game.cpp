@@ -242,7 +242,7 @@ void destroy_creature(void* c)
 {
     if (!g_ready || !c)
         return;
-    puppet_unregister(c);
+    puppet_unregister(c); // also used for UFOs and other cGameData puppets
     void* nm = cdecl_call<void*>(a_NounGet);
     if (nm)
         thiscall<void>(a_DestroyInstance, nm, c);

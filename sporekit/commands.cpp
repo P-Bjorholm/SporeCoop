@@ -346,6 +346,14 @@ static int c_move(void*, int argc, const char* const* argv, SkOut* o)
     return ok ? 0 : 1;
 }
 
+static int c_wheel(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(4, "wheel <x> <y> <notches>");
+    bool ok = input_wheel(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]));
+    outf(o, ok ? "wheel" : "failed");
+    return ok ? 0 : 1;
+}
+
 static int c_mods(void*, int, const char* const*, SkOut* o)
 {
     for (auto* m : mods_list())
@@ -486,6 +494,7 @@ void register_builtin_commands()
     command_add(k, "text", "text <string> - WM_CHAR input", c_text, nullptr, A);
     command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
     command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
+    command_add(k, "wheel", "wheel <x> <y> <notches> - mouse wheel (+ zooms in)", c_wheel, nullptr, A);
     command_add(k, "mods", "list mods", c_mods, nullptr, M);
     command_add(k, "mod.reload", "mod.reload <name> - hot reload", c_mod_op, (void*)0, M);
     command_add(k, "mod.load", "mod.load <name>", c_mod_op, (void*)1, M);

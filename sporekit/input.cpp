@@ -110,6 +110,23 @@ bool input_move(int x, int y)
     return true;
 }
 
+bool input_wheel(int x, int y, int notches)
+{
+    HWND w = (HWND)game_window();
+    if (!w)
+        return false;
+    input_move(x, y);
+    POINT pt{x, y};
+    ClientToScreen(w, &pt);
+    int n = notches < 0 ? -notches : notches;
+    short delta = notches < 0 ? -WHEEL_DELTA : WHEEL_DELTA;
+    for (int i = 0; i < n && i < 100; i++)
+        run_after_frames(2 + i * 2, [w, delta, pt] {
+            PostMessageW(w, WM_MOUSEWHEEL, MAKEWPARAM(0, delta), MAKELPARAM(pt.x, pt.y));
+        });
+    return true;
+}
+
 bool input_click(int x, int y, int button)
 {
     HWND w = (HWND)game_window();

@@ -114,6 +114,13 @@ GAME_RE='^[A-Z]:\\.*SporeApp\.exe'
 cmd_kill() {
     pkill -f "$GAME_RE" || true
     sleep 1
+    # a deadlocked Wine process can stay half-dead (zombie leader + live threads) and keep its
+    # UDP/TCP sockets bound: SIGKILL the whole thread group
+    pkill -9 -f "$GAME_RE" || true
+    for z in $(ps -eo pid=,stat=,comm= | awk '$2 ~ /Z/ && $3 ~ /SporeApp/ {print $1}'); do
+        kill -9 "$z" 2>/dev/null || true
+    done
+    pkill -f "[b]wrap --args [0-9]* -- bottles-cli run -b $BOTTLE -e $BIN/SporeApp.exe" || true
     # leftover launch wrappers (the [x] trick keeps pkill from matching this shell)
     pkill -f "[b]ottles-cli run -b $BOTTLE -e $BIN/SporeApp.exe" || true
     pkill -f "[s]tart.exe /exec start /wait /unix $BIN/SporeApp.exe" || true

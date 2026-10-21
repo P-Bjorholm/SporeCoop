@@ -10,8 +10,11 @@
 namespace world {
 
 void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)> feed);
-// host: queue the current save folder for a guest
-bool share_with(uint8_t peer, std::string& err);
+// host: queue the current save folder for a guest (optionally save the game first)
+bool share_with(uint8_t peer, std::string& err, bool save_first = false);
+bool share_now(uint8_t peer, std::string& err);
+// the game's own save (pause menu "Save"); also works on planets in space
+bool save_game(std::string& err);
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 // guest: handle MSG_WORLD_* messages
@@ -19,5 +22,7 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
 void set_auto_load(bool on);
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err);
+// load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
+bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
 
 } // namespace world

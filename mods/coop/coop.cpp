@@ -106,6 +106,7 @@ void forget_puppets() // world changed: puppets were destroyed with it
 }
 
 uint32_t g_mode = 0, g_world = 0;
+bool g_save_on_share = true; // host saves before sending the world, so guests get the current state
 const modes::Adapter* g_adapter = nullptr;
 void* g_local = nullptr; // entity the local player controls (adapter specific)
 
@@ -179,8 +180,8 @@ void on_frame(void*, int, void*)
     }
 
     g_mode = game::mode_id();
-    g_world = modes::current_world();
     g_adapter = modes::for_mode(g_mode);
+    g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     void* av = game::avatar();
     if (g_local != g_last_avatar) {
@@ -241,9 +242,9 @@ void on_overlay(void*, int, void*)
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     // name tags above remote players
-    void* av = game::avatar();
+    void* av = g_local;
     if (g_tag_self && av) {
-        net::Vec3 p = game::position(av);
+        net::Vec3 p = modes::entity_pos(g_adapter, av);
         float sc[2] = {0, 0}, w[3] = {p.x, p.y, p.z};
         int ok = H->world_to_screen(w, sc);
         g_dbg_sc[0] = sc[0]; g_dbg_sc[1] = sc[1]; g_dbg_sc[2] = (float)ok;
@@ -253,9 +254,10 @@ void on_overlay(void*, int, void*)
     for (auto& [id, r] : g_remotes) {
         if (!r.puppet || !av)
             continue;
-        net::Vec3 p = game::position(r.puppet);
+        auto* ad = r.puppet_adapter;
+        net::Vec3 p = modes::entity_pos(ad, r.puppet);
         float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        float h = game::bounding_radius(r.puppet) * 1.3f + 0.3f;
+        float h = ad->tag_height ? ad->tag_height(r.puppet) : 3.f;
         float up = len > 1 ? h / len : 0; // above the head, along the planet normal
         float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
         if (H->world_to_screen(w, sc)) {
@@ -352,9 +354,11 @@ void setup_callbacks()
         r.id = p.id;
         r.name = p.name;
         feed(p.name + " joined the pack");
-        if (g_sess.role() == net::Role::Host && g_share_world) {
+        bool own_worlds = g_adapter && g_adapter->own_worlds;
+        if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
             std::string err;
-            if (!world::share_with(p.id, err))
+            bool save = g_save_on_share && g_adapter; // only while playing, not from menus
+            if (!world::share_with(p.id, err, save))
                 feed("cannot share the world: " + err);
             else
                 feed("sending the world to " + p.name);
@@ -469,8 +473,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
     SAY("%s", npc::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
-    void* av = game::avatar();
-    SAY("mode=0x%08X avatar=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
+    void* av = g_local;
+    SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     double now = H->time_seconds();
     for (auto& [id, r] : g_remotes) {
         net::PlayerState s;
@@ -478,7 +482,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("remote %u '%s' puppet=%p state=%s age=%.2fs pos=(%.1f %.1f %.1f)\n", id, r.name.c_str(),
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
         if (r.puppet) {
-            net::Vec3 p = game::position(r.puppet);
+            net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
             SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f\n", p.x, p.y, p.z, net::dist(p, s.pos));
         }
     }
@@ -511,15 +515,17 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_avatar(void*, int, const char* const*, SkOut* out)
 {
-    void* av = game::avatar();
+    void* av = g_local;
     if (!av) {
-        SAY("no avatar (mode 0x%08X)", game::mode_id());
+        SAY("nothing controlled (mode 0x%08X %s, adapter %s)", game::mode_id(), modes::mode_name(game::mode_id()),
+            g_adapter ? g_adapter->name : "none");
         return 1;
     }
     auto st = local_state();
-    SAY("avatar=%p species=%p key=0x%08X\npos=(%.2f %.2f %.2f) |r|=%.1f\nrot=(%.3f %.3f %.3f %.3f)\n"
+    SAY("%s: local=%p place=0x%08X world '%s'\n", g_adapter->name, av, g_world, modes::current_world_name().c_str());
+    SAY("species=%p key=0x%08X\npos=(%.2f %.2f %.2f) |r|=%.1f\nrot=(%.3f %.3f %.3f %.3f)\n"
         "vel=(%.2f %.2f %.2f)\nhp=%.1f/%.1f flags=0x%02X",
-        av, game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
+        g_adapter->mode == modes::kSpace ? nullptr : game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
         std::sqrt(st.pos.x * st.pos.x + st.pos.y * st.pos.y + st.pos.z * st.pos.z), st.rot.x, st.rot.y,
         st.rot.z, st.rot.w, st.vel.x, st.vel.y, st.vel.z, st.health, st.max_health, st.flags);
     return 0;
@@ -629,6 +635,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
     g_name = nm;
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
+    g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

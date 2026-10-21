@@ -5,6 +5,7 @@
 #include <string>
 
 #include "game.h"
+#include "world.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
@@ -12,6 +13,32 @@ static const SkHost* H;
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
 namespace {
+int c_save(void*, int, const char* const*, SkOut* out)
+{
+    std::string err;
+    if (!world::save_game(err)) {
+        SAY("%s", err.c_str());
+        return 1;
+    }
+    SAY("saved (mode 0x%08X)", game::mode_id());
+    return 0;
+}
+
+int c_load(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc < 3) {
+        SAY("usage: coop.load <GameN> <Planet[.spo]>");
+        return 1;
+    }
+    std::string err;
+    if (!world::load_local(argv[1], argv[2], err)) {
+        SAY("%s", err.c_str());
+        return 1;
+    }
+    SAY("loading %s/%s", argv[1], argv[2]);
+    return 0;
+}
+
 int c_cam(void*, int argc, const char* const* argv, SkOut* out)
 {
     using namespace skg;
@@ -188,6 +215,10 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.loadhook", "debug: log cGamePersistenceManager::LoadGame parameters", c_loadhook,
                       nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.load", "coop.load <GameN> <Planet> - load a local save (also from the menu)",
+                      c_load, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
+                      SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,
                       SK_CMD_MAIN_THREAD);

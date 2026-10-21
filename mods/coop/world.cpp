@@ -13,6 +13,7 @@
 
 #include "game.h"
 #include "sporekit_game.hpp"
+#include "modes.h"
 
 namespace world {
 
@@ -146,9 +147,85 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     g_feed = std::move(feed);
 }
 
-bool share_with(uint8_t peer, std::string& err)
+// slot holding the planet file the game is playing now (newest copy), else the newest slot
+static std::wstring current_slot(std::string& planet)
 {
-    std::wstring slot = newest_slot();
+    planet = modes::current_world_name(); // "Name.spo"
+    std::wstring dir = games_dir(), best;
+    if (!planet.empty()) {
+        FILETIME bt{};
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((dir + L"\\Game*").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                    continue;
+                std::wstring p = dir + L"\\" + fd.cFileName;
+                WIN32_FILE_ATTRIBUTE_DATA a;
+                if (!GetFileAttributesExW((p + L"\\" + widen(planet)).c_str(), GetFileExInfoStandard, &a))
+                    continue;
+                if (best.empty() || CompareFileTime(&a.ftLastWriteTime, &bt) > 0) {
+                    best = p;
+                    bt = a.ftLastWriteTime;
+                }
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+    }
+    if (best.empty()) {
+        planet.clear();
+        best = newest_slot();
+    }
+    return best;
+}
+
+bool save_game(std::string& err)
+{
+    using namespace skg;
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? cdecl_call<void*>(get) : nullptr;
+    if (!mm) {
+        err = "no message manager";
+        return false;
+    }
+    // space: the game saves only outside planets (a save made on a planet loads into a broken
+    // state - verified: the space UI faults every frame), so wait until the player leaves it
+    if (game::mode_id() == 0x1654C05) {
+        uintptr_t ctx = H->sym("Simulator::GetCurrentContext");
+        if (ctx && skg::cdecl_call<int>(ctx) == 0) {
+            err = "leave the planet to save (space stage saves only in a solar system or the galaxy)";
+            return false;
+        }
+    }
+    // MessagePost like the pause menu button (4 arguments, as pushed at 0xE03149): the save then runs
+    // in the game's own message processing. A synchronous MessageSend from our frame hook (inside
+    // Present) deadlocked DXVK threads.
+    vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
+    return true;
+}
+
+struct PendingShare {
+    uint8_t peer;
+    uint64_t at;   // share at this tick count (files are written asynchronously after a save)
+    bool need_save;
+    uint64_t next_try = 0;
+    bool told = false;
+};
+static std::vector<PendingShare> g_pending;
+
+bool share_with(uint8_t peer, std::string& err, bool save_first)
+{
+    if (save_first) {
+        g_pending.push_back({peer, 0, true});
+        return true;
+    }
+    return share_now(peer, err);
+}
+
+bool share_now(uint8_t peer, std::string& err)
+{
+    std::string cur_planet;
+    std::wstring slot = current_slot(cur_planet);
     if (slot.empty()) {
         err = "no saved game found (save the game before hosting)";
         return false;
@@ -171,6 +248,8 @@ bool share_with(uint8_t peer, std::string& err)
     for (auto& f : o.files) // planet name = <name>.spo in the slot root
         if (f.rel.size() > 4 && f.rel.compare(f.rel.size() - 4, 4, ".spo") == 0 && f.rel.find('/') == std::string::npos)
             o.planet = f.rel.substr(0, f.rel.size() - 4);
+    if (cur_planet.size() > 4) // a slot can hold several planets: prefer the one being played
+        o.planet = cur_planet.substr(0, cur_planet.size() - 4);
     net::WorldOffer off;
     off.world_id = crc;
     off.total_size = total;
@@ -187,6 +266,34 @@ bool share_with(uint8_t peer, std::string& err)
 
 void tick(net::Session& s)
 {
+    for (size_t i = 0; i < g_pending.size();) {
+        auto& p = g_pending[i];
+        uint64_t now = GetTickCount64();
+        if (p.need_save) {
+            if (now >= p.next_try) {
+                std::string why;
+                if (save_game(why)) {
+                    p.need_save = false;
+                    p.at = now + 2500;
+                } else {
+                    p.next_try = now + 2000;
+                    if (!p.told)
+                        g_feed("a player is waiting for the world: " + why);
+                    p.told = true;
+                }
+            }
+            i++;
+            continue;
+        }
+        if (now < p.at) {
+            i++;
+            continue;
+        }
+        std::string err;
+        if (!share_now(g_pending[i].peer, err))
+            g_feed("cannot share the world: " + err);
+        g_pending.erase(g_pending.begin() + i); // p is invalid from here
+    }
     for (auto& o : g_out) {
         if (o.done)
             continue;
@@ -398,6 +505,10 @@ static void finish(const std::string& host_name)
     for (auto& r : rels)
         if (r.size() > 4 && r.compare(r.size() - 4, 4, ".spo") == 0 && r.find('/') == std::string::npos)
             planet = r;
+    // a slot can hold several planets: the host names the one it plays
+    for (auto& r : rels)
+        if (!g_in.offer.planet.empty() && r == g_in.offer.planet + ".spo")
+            planet = r;
     g_in = In{};
     std::string err;
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err)) {
@@ -459,6 +570,17 @@ std::string status()
         s += b;
     }
     return s;
+}
+
+bool load_local(const std::string& slot_name, const std::string& planet, std::string& err)
+{
+    std::string file = planet.size() > 4 && planet.compare(planet.size() - 4, 4, ".spo") == 0 ? planet : planet + ".spo";
+    std::wstring slot = games_dir() + L"\\" + widen(slot_name);
+    if (GetFileAttributesW((slot + L"\\" + widen(file)).c_str()) == INVALID_FILE_ATTRIBUTES) {
+        err = "no " + file + " in " + narrow(slot);
+        return false;
+    }
+    return load_slot(slot, file, err);
 }
 
 } // namespace world
