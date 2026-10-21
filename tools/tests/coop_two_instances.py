@@ -101,12 +101,15 @@ def main():
                 if l.strip().startswith('#' + nid + ' '):
                     return float(l.split('hp=')[1].split()[0])
             return None
-        hp0 = host_hp()
+        def applied():
+            return int(host.call('coop.npc')['out'].split('hits_applied=')[1].split()[0])
+        hp0, a0 = host_hp(), applied()
         guest.call(f'coop.npc hit {nid} 1')
-        time.sleep(1)
-        hp1 = host_hp()
-        print(f'npc #{nid}: host hp {hp0} -> {hp1} after a guest hit')
-        ok &= hp0 is not None and hp1 is not None and hp1 < hp0
+        time.sleep(0.5)
+        hp1, a1 = host_hp(), applied()
+        print(f'npc #{nid}: host hp {hp0} -> {hp1}, hits applied {a0} -> {a1}')
+        # the NPC may flee out of range right after the hit; the host must have applied it
+        ok &= a1 == a0 + 1 and (hp1 is None or hp1 < hp0)
     # M3: shared DNA
     d0 = float(host.call('coop.dna')['out'].split('=')[1])
     guest.call('coop.dna add 5')
