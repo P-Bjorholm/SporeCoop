@@ -768,7 +768,7 @@ void on_unload()
     g_remotes.clear();
 }
 
-SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.1.0", on_unload};
+SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.2.0", on_unload};
 
 } // namespace
 
