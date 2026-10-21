@@ -29,7 +29,8 @@ void on_session_end();                        // destroy proxies, restore local 
 void on_world_change();                       // world unloaded: forget (not destroy) proxies
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
-bool damage_filter(void* creature, float damage, int type, void* attacker);
+bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
+bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
 std::string list();                                  // debug: mirrored NPCs
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`

@@ -1,0 +1,364 @@
+# Space stage RE: squadron co-op (GOG 2016 build, sha256 922af7c7…)
+
+Static analysis only (llvm-objdump of `SporebinEP1/SporeApp.exe`, image base 0x400000, no runtime
+checks). All conventions are MSVC x86: `thiscall` = `this` in ECX, callee pops `ret N` bytes.
+Confidence: **V** = verified in this build's disassembly (prologue/ret/field use seen),
+**P** = ported from ModAPI and consistent with code but not traced end to end,
+**U** = unverified/hypothesis. Space code at 0x0102xxxx–0x0107xxxx has the *same* addresses as
+ModAPI March2017 (port delta 0), 0x00Bxxxxx–0x00Cxxxxx is shifted by −0x10…−0x30.
+
+Note: `overrides_922af7c7.sym` names `0x01020F30` "TimeOfDay_Unavailable" and `0x01021110`
+"TimeOfDay_GetObject"; they are really `Simulator::GetCurrentContext()` (`mov eax,[0x16DEA6C];
+mov eax,[eax+0x10]`) and `Simulator::GetActivePlanet()` (ModAPI names, same addresses).
+
+## 0. Object layout recap (`cGameDataUFO`, size 0x818)
+
+Vtables written by the ctor 0xC3C9B0 and the dtor 0xC3BAE0 (V):
+
+| subobject | offset | vtable |
+|---|---|---|
+| cGameData (main) | +0x000 | 0x0146C7E0 (Cast +0x0C = 0xC36FC0, GetNounID +0x20 = 0xC37160 → 0x18EBADC, GetCastID +0x38 → 0xB033B403, SetPoliticalID +0x48 = 0x804880, GetPoliticalID +0x4C = 0x5AADB0 `mov eax,[ecx+0x30]`) |
+| DefaultRefCounted | +0x004 | 0x0146C7CC |
+| cLocomotiveObject | +0x034 | 0x0146C6D0 (SetPosition +0x38 = 0xC37B70, SetOrientation +0x3C = 0xC88850, Teleport +0x44 = 0xC888C0, GetModelKey +0x98) |
+| ? (+0x108) | +0x108 | 0x0146C6C8 |
+| cCombatant | +0x508 | 0x0146C660 (GetPoliticalID +0x10 = 0xC69020, GetWeapon +0x14 = 0xC37870 → [ufo+0x790], TakeDamage +0x18 = 0xC3CEA0, GetMaxHitPoints +0x58) |
+| cBehaviorList | +0x5D0 | 0x0146C640 |
+| IUnmanagedMessageListener | +0x5E8 | 0x0146C638 (HandleMessage = 0xC3B6A0, ret 8) |
+
+Fields (V unless noted): cGameData `mbIsDestroyed` +0x21 (IsDestroyed 0xB182E0), `mID` +0x24
+(= `++[0x167CE08]` in `cGameNounManager::CreateInstance` 0xB20B80 — per-process counter, unique
+while the session lives), `mPoliticalID` +0x30; loco pos +0x38, rot +0x44, vel +0x1FC,
+movement controller `loco+0x4CC` = ufo+0x500; combatant max HP +0x534, HP +0x540,
+`mbInvincible` +0x588, `mpTarget` +0x550 (P); `mUFOType` +0x714 (0 = player, see UfoType below),
+`mNextPosition` +0x718, `mNextVelocity` +0x724, `mNextOrientation` +0x730, `mOffsetFromPosition`
++0x740, `mbAtDestination` +0x74C, `mDestination` +0x750, `mZoomAltitude` +0x768 (planet: radius
+of the flight sphere), `mDesiredModelKey` +0x780 (ResourceKey, printed by the debug dump 0xC3E150),
+NPC weapons +0x790 (`mpNPCWeapon`), +0x794 ground, +0x798 near-air, +0x79C medium-air, +0x7A0
+far-air, +0x7A4 abduct, current target refs +0x7A8 / +0x7AC (getters 0xC38C40 / 0xC38CC0),
+`mEnergy` +0x7F4, `mMaxEnergy` +0x7F8.
+
+UfoType (ModAPI SimulatorEnums): 0 Player, 1 UberTurret, 2 Raider, 3 ?, 4 Bomber, 5 Abductor,
+6 Defender, 7 ?, 8 AmbushPirate, 9/10 ?, 11 SecurityDrone.
+
+## 1. Enumerating UFOs in the current scene
+
+| what | address | signature | conf |
+|---|---|---|---|
+| `GetData<cGameDataUFO>` helper | **0x00AD48B0** | `eastl::vector<cGameDataUFO*>* __thiscall(cGameNounManager*)` — pushes the 5 args below, calls GetData, returns `container+4` (the vector `{begin,end,cap}`), plain `ret` | V |
+| `cGameNounManager::GetData` | 0x00B21260 | `tGameDataVectorT* __thiscall(mgr, create, clear, add, filter, nounID)`, `ret 0x14`; rebuilds the cached vector from the noun list (+0x78) only when the container's dirty byte is set | V |
+| callbacks for UFOs | create 0xCD7E80, clear 0xD3D3D0, add 0xAD47B0 (casts to 0xB033B403, AddRef, push_back), filter 0xB1E410 (`obj->GetNounID()==noun`), noun 0x18EBADC | | V |
+| `cGameNounManager::Get` | 0x00B3D3D0 | cdecl () | V (existing) |
+| `cSimulatorSpaceGame::Get` | 0x01002A70 | cdecl (); `mNPC_UFOs` vector at +0x78 (offset from the attribute table 0x139D420) | P |
+| `cStarManager::Get` / `GetEmpire(pol)` | 0x00B3D370 / 0x00BA94A0 | `cEmpire* __thiscall(starMgr, uint32 politicalID)` (used exactly so by SpawnUFO) | V |
+
+Evidence: ~40 call sites use the exact sequence
+`push 0x18EBADC; push 0xB1E410; push 0xAD47B0; push 0xD3D3D0; push 0xCD7E80; mov ecx,nounMgr;
+call 0xB21260` and iterate `[ret+4]..[ret+8]` (e.g. 0x1000C60 kills all type-3 UFOs of the
+player empire: `cmp [esi+0x714],3`, `GetPoliticalID`, then `TakeDamage`).
+
+The list contains **every** live UFO noun: the player UFO (type 0, also
+`cSimulatorPlayerUFO::Get()+0x40`; the singleton pointer is `[0x016DC9F4]`), our puppets, NPC
+UFOs on the planet or in the system. Skip `mbIsDestroyed` (+0x21) and HP ≤ 0.
+
+Per-UFO data to replicate:
+
+| field | read |
+|---|---|
+| net identity | host keeps `map<cGameDataUFO*, net_id>`; `mID` +0x24 is a convenient stable key on the host only (counter differs per process) |
+| owner | `mPoliticalID` +0x30 (or vtable +0x4C). Empire = `cStarManager::GetEmpire(pol)`; player = `GetPlayerEmpireID()` 0x1020F40 |
+| type | `mUFOType` +0x714 |
+| model | `mDesiredModelKey` +0x780 (12-byte ResourceKey) — pass to SpawnUFO on the mirror |
+| pose | loco +0x38 / +0x44 / +0x1FC, plus `mDestination` +0x750, `mZoomAltitude` +0x768 |
+| HP | +0x540 / +0x534; invincible +0x588 |
+| place | same as players: `SpacePlayerData` context (planet id / star id) |
+
+Recipe (host → guests, 10 Hz like NPC_STATE in the creature stage):
+1. Each frame (or 10 Hz) in space: `vec = thiscall(0xAD48B0, cGameNounManager::Get())`; for each
+   `u` with `u->mUFOType != 0` and not one of our puppets: assign/lookup net id, send
+   `{net_id, type, pol, modelKey, pos, rot, vel, hp, maxhp, place}`; UFOs missing from the list
+   → `UFO_DESPAWN`.
+2. Guest: on first sight `SpawnUFO(type, &pol, &modelKey)` (0x102ACC0, cdecl, `ret`; model ptr may
+   be null → default model; on a planet it calls `0xC3AB80` to put the UFO on the flight sphere),
+   then drive it like a puppet (§4). Despawn with `cGameNounManager::DestroyInstance` 0xB224F0.
+3. Guest must not have its own NPC UFOs: hook `SpawnUFO` 0x102ACC0 and `CreateUFO` 0x102AC60
+   (cdecl `(UfoType, cEmpire*)`, calls `Initialize`) and return null for non-mod calls while a
+   co-op guest is in space (keep a thread-local "mod is spawning" flag), and destroy any
+   non-mirror UFO with type ≠ 0 found in the GetData list (callers of SpawnUFO such as raid
+   code must tolerate null — **U**, check each caller before enabling; alternative is
+   spawn-then-destroy next frame). SpawnUFO callers (functions): 0xC5D2C0, 0xD4C150, 0xFF8980,
+   0xFF96B0, 0xFFA630, 0x1025200, 0x102B500, 0x102B790; CreateUFO callers at 0xFDAEDA,
+   0x1008B3A, 0x1008FF2, 0x100923F, 0x10095C4, 0x100B004, 0x102B204, 0x10387F8, 0x1038B01.
+
+## 2. Player weapons → damage
+
+Every space weapon ends in the target combatant's virtual `TakeDamage` (combatant vtable +0x18).
+For UFOs that is **0x00C3CEA0** — the single hook point for both directions.
+
+### 2.1 `cGameDataUFO::TakeDamage` 0x00C3CEA0 (V)
+`int __thiscall(cCombatant* this /*ufo+0x508*/, float dmg, uint32 attackerPol, int type,
+const Vector3* dir, cCombatant* attacker)`, `ret 0x14`. **`dir` is a unit knock-back direction
+(explosion → target), not a world position** (stored at combatant+0x74). Order:
+1. `type==10` (heal) → base directly.
+2. Return if invincible (combatant+0x80 = ufo+0x588, via 0xBFC5A0) or `0x1041D20()` (global flag
+   0x23BA1FC, probably god-mode cheat — U); if dead (combatant+0x34 = ufo+0x53C == 2); if
+   `ufo+0x76C==3 && type!=5`.
+3. Player only (type 0): return if on a planet and `cSimulatorPlayerUFO::Get()+0x24 > 0`
+   (invulnerability lock counter, incremented by 0xFFBF50).
+4. Destroyed attacker → null. Attacker UFO of type 3 (posse/ally) → `attackerPol = player
+   empire`. `attackerPol == own political id` → return (no friendly fire; turrets too).
+5. `AddHostileUnit(attacker)` (vt+0x1C = 0xC37AE0, sets ufo+0x710, null-safe).
+6. NPC-vs-NPC multiplier (target type ∉ {0,3} and attacker is a turret or a UFO of type ∉ {0,3}):
+   `dmg *= 0x102A5F0(0x15B8510)` (tuning prop 0x679F157, default 1.0).
+7. Knock-back on planets (not type 8): ufo+0x60C / +0x618, clears `mbAtDestination`.
+8. Base **`cCombatant::TakeDamage` 0x00BFCEF0** (same args, `ret 0x14`): sets mpLastAttacker
+   (+0x28), space damage-boost tool multiplier, stores mLastAttacker (+0x3C) and dir (+0x74);
+   type 10 heals (clamped to vt+0x58), type 11 no-op, else `HP -= dmg`; if HP < 1.53e-5:
+   HP = 0, state +0x34 = 2, posts **kMsgCombatantKilled 0x1622184** (combatant, attacker) via
+   MessageManager 0x67DC80 vt+0x14, then `0xF249B0(gameData, type)`.
+9. Target is the player: interrupts the active tool (+0x13C) and sets ufo+0x76C = 1;
+   auto-retaliation through 0x102AF90 / 0xFFD5B0.
+10. HP ≤ 0: player → death (§3); NPC → loot 0x102BA40, relationship hit 0x591F833 (both pols
+    ≠ −1), event log, explosion effect, then **DestroyUFO 0x0102C350** (cdecl `(ufo, bool)`:
+    removes from lists, stops its tool, `DestroyInstance`). Message 0x2A7C313D if the player
+    was the killer.
+
+### 2.2 Fire path (V unless noted)
+* `cToolManager` player fire entry 0x01050BC0 (`thiscall(toolMgr, tool, ?, bool)`, `ret 0xC`,
+  arg 2 U) → **FireTool 0x01050080**: `thiscall(cToolManager*, cSpaceToolData* tool,
+  cSpatialObject* owner, const Vector3* aim, int targetDamagePointId, int arg5, Object* target,
+  bool showErrors)`, `ret 0x1C`. Writes owner → tool+0x114, damage point → +0x11C, target →
+  +0x118, calls strategy `WhileAiming` (vt+0x24) then `WhileFiring` (vt+0x34). Costs/UI only
+  when owner is the player UFO (+0x34). Autofire variant 0x010504B0 (`ret 0x10`).
+* `cDefaultProjectileWeapon` vtable 0x149C128: **WhileFiring 0x01056F10** (`thiscall(strategy,
+  tool, const Vector3* aim, int)`, `ret 0xC`) creates noun 0x24270C5 (cDefaultToolProjectile) and
+  calls `LaunchDefaultToolProjectile` 0x01054390 (cdecl `(tool, proj, &ownerPos, aim)`), which
+  configures (vt+0x54 = 0xCB4EB0) min = `(int)(tool+0x1B4 * tool+0x144)`, max =
+  `(int)(tool+0x1B8 * tool+0x144)`, radius tool+0x1AC → proj+0x52C/0x530/0x534/0x538.
+* Projectile Update 0xCC2920 (cProjectile sub-object at +0x504), phase byte +0x544:
+  phase 0 `0xCBB970` — on collision sets strike type/target (+0x5D0/+0x5D4) and calls strategy
+  **OnHit** (vt+0x30; `cDefaultProjectileWeapon::OnHit` 0x0105B310 → `cToolStrategy::OnHit`
+  0x010593B0, `ret 0x10`, only special tools/terraform/relationship effects, posts
+  kMsgToolOnHit 0x56690BB — **no combatant damage here**); phase 1 **0x00CBBEF0** (`thiscall(proj)`,
+  `ret`) = explosion: radius grows, damage tick every 250 ms, spatial query, each combatant hit
+  once (+0x570); same political id skipped unless `kFlagDamagesFriendlies` (tool+0x174 bit 9);
+  call `target->TakeDamage(min + rand(max-min), attackerPol, proj+0x538, &dir, attacker)` with
+  attacker = owner (tool+0x114) cast to cCombatant, attackerPol = attacker vt+0x10 (or −1).
+* Beams: AoE helper 0xCBA690 (usercall eax = centre) → 0xCB5B20 (usercall esi = target) →
+  TakeDamage. Artillery-like 0xCB9940 calls TakeDamage with attacker = 0.
+* Symbol fix: ported `cSpaceToolData::GetStrategy = 0x1050030` is wrong (it returns
+  `strategy->ProcessCost(mUseCost)`); real GetStrategy = **0x0104F940** (`thiscall(tool)`,
+  reads tool+0x178, default 0xB0DA49D9).
+
+## 3. Enemy damage to the player, NPC fire, death/respawn
+
+* NPC fire: **`cCombatSimulator::Update` 0x00AE7330** (vtable 0x145C838) iterates all
+  cCombatants (GetData, cast 0x13F94D4); weapon = vt+0x14 (UFO: ufo+0x790), target =
+  combatant+0x44 (pending +0x48); if `IsInWeaponRange` (vt+0x40) → FireTool 0x1050080
+  `(weapon, self vt+8, &targetPos, aimIdx, delta, target vt+8, 1)` (autofire → 0x10504B0), then
+  `target->AddHostileUnit(self)`. Hits reach the player through the same projectile →
+  0xCBBEF0 → 0xC3CEA0 path with mUFOType 0.
+* Player death (inside 0xC3CEA0, HP ≤ 0, type 0; P): `cSimulatorSpaceGame::Get()->0x1005020(10)`,
+  sound, **0xC3C660(ufo)** (`thiscall`, `ret`): cinematic `SPG_PlayerDestroyed_PrePosse_Galaxy /
+  _PrePosse_NotGalaxy / _PostPosse`, handle → ufo+0x7F0, hides ship (+0x77C=0, +0x77D=1),
+  deactivates tool, event log 0x949ACE8, `(*0x16DD778)->0x100E580(attacker)`.
+* Respawn (P): UFO message handler 0xC3B6A0 (msgs 0x44F1189 / 0x67B2A95, probably cinematic end)
+  with ufo+0x7F0 set → **0xC38420** (`thiscall(ufo)`, `ret`): travel to nearest owned star,
+  clear +0x7F0, state +0x53C = 0, HP = max, energy = max (+0x7F4 = +0x7F8), message 0x6174B67.
+* Sync state: `ufo+0x53C == 2` dead, `ufo+0x7F0 != 0` death cinematic running.
+
+### Recipe for §2/§3 (hook 0xC3CEA0, thiscall 5 args, `ret 0x14`; flag `g_netApply` for replays)
+Guest:
+1. `this-0x508` is a mirror: if the shot is ours (`attacker == localUFO+0x508`, or
+   `attackerPol == GetPlayerEmpireID()` and `type != 10`) send `HIT{npc_id, dmg, type, dir}`;
+   in every case return without calling the original (host is authoritative).
+2. `this` is the local UFO and the attacker is a mirror / NPC empire and `!g_netApply` → drop.
+3. On `DAMAGE{dmg, type, dir, npc_id}`: `g_netApply=1; orig(localUFO+0x508, dmg, npcPol, type,
+   &dir, mirror ? mirror+0x508 : nullptr); g_netApply=0` — local death/respawn then run natively.
+4. On `NPC_DEATH`: clear mirror+0x588 and call orig with `(mirror+0x508, 1e6, 0xFFFFFFFF, 0,
+   &dir, nullptr)` (explosion + 0x102C350; pol −1 skips relationship/event log) or call
+   `0x102C350(mirror, 0)` directly.
+5. Mirrors never fire: FireTool hook (§4).
+Host:
+1. `this-0x508` is a guest puppet (mod Defender UFO): send `DAMAGE` to that guest, then call the
+   original (puppet stays invincible via +0x588; NPC aggression/AddHostileUnit keep working).
+2. On `HIT` from a guest: if `npc+0x53C != 2`: `g_netApply=1; orig(npc+0x508, dmg,
+   GetPlayerEmpireID(), type, &dir, puppet+0x508)`. With the puppet as attacker the NPC
+   retaliates against the puppet, but the NPC-vs-NPC multiplier applies (default 1.0);
+   `nullptr` avoids it but loses retaliation.
+3. NPC deaths: kMsgCombatantKilled 0x1622184 or `+0x53C == 2` after the call → `NPC_DEATH`.
+Open (U): whether host NPC AI targets Defender puppets at all (runtime check); meaning of
+`0x1041D20`; arg 2 of 0x1050BC0.
+
+## 4. NPC UFO per-frame update and direct pose control
+
+Movement is done by a per-UFO *locomotion controller* object stored at `loco+0x4CC`
+(= ufo+0x500), set by `cLocomotiveObject::SetController` **0x00C422F0** (`thiscall(loco, ctrl)`,
+`ret 4`, AddRef new / Release old). Two UFO controllers exist:
+
+| controller | vtable | ctor | Update (vtbl +0x0C) | installed by |
+|---|---|---|---|---|
+| default UFO controller | 0x0149CB20 | 0x105D1B0 | **0x01062CF0** `thiscall(ctrl, ctx*)`, `ret 4` | `cGameDataUFO` ctor **0x00C3C9B0** (every UFO) and Read 0xC37BD0 |
+| "follow next pose" controller | 0x0149CB10 | 0x105D150 | 0x0105EBA0 `thiscall(ctrl, ctx*)`, `ret 4` — steers straight to mNextPosition/mNextOrientation | 0xC373B0 `thiscall(ufo)` (callers 0x1001807, 0x102C16B, 0x102C2D9, 0xDBEFE2) |
+
+`ctx`: +0x00 Vector3 output velocity, +0x10 float dt (s; ×1000 → ms), +0x14 `cLocomotiveObject*`
+(UFO = ptr − 0x34). 0x1062CF0 calls **0x1060E00** (`thiscall(ctrl, ctx, int dtMs)`, `ret 8`) when
+`GetCurrentContext()==0` (planet) and **0x105F2E0** (same signature, `ret 8`) otherwise
+(solar system), then integrates toward `mNextPosition + mOffsetFromPosition`.
+0x1060E00 returns immediately if `byte [ufo+0x691] != 0` (flag set/cleared by AI behaviours,
+meaning unknown — **U**, do not rely on it).
+
+Decision AI ("attack", "patrol", "flee"…) is data-driven utility AI: a registry of 16-byte
+entries `{hash, fnA, fnB, fnC}` at 0x0159E640… (e.g. hash 0x5872576 → 0xDC32C0/0xDC0AF0/0xDBFFD0;
+functions get `cGameDataUFO*` and return float scores or fill a goal). They drive the UFO only
+through `cGameDataUFO` commands: **MoveTo(dir)** 0x00C3BFB0 (`thiscall(ufo, const Vector3*)`,
+`ret 4`: `mDestination = normalize(v)*mZoomAltitude`, `mbAtDestination = 0`, loco+0xDC request),
+**SetZoomAltitude(f)** 0x00C3DBE0 (`ret 4`, then MoveTo(mDestination)), **MoveToPosition(pos)**
+0x00C3DC20 (`ret 4`; planet → MoveTo + altitude = |pos|, system → 0xC3C120) and weapon use
+(see §2). The dispatcher that iterates this registry was not found (**U**).
+
+Direct pose control (V):
+* `cGameDataUFO::SnapToDestination()` **0x00C37FA0** (`thiscall(ufo)`, plain `ret`):
+  `mNextVelocity = 0; mNextPosition = mDestination; mZoomAltitude = |mNextPosition|;
+  loco->SetPosition(mNextPosition + mOffsetFromPosition); loco->SetOrientation(mNextOrientation);
+  mbAtDestination = 1`. So: write `mDestination` (+0x750) and `mNextOrientation` (+0x730), call
+  0xC37FA0 — the controller then has nothing to do.
+* Or the current puppet path: loco vtable SetPosition +0x38 (0xC37B70, also moves the abduct
+  beam) / SetOrientation +0x3C / Teleport +0x44, and pin +0x718/+0x724/+0x730/+0x750/+0x74C.
+
+Recipe for mirrors (guest):
+1. Spawn with SpawnUFO (§1). Mark the pointer in a `mirrors` set.
+2. Movement: hook **0x01062CF0** (controller Update; it also runs for the player UFO and for
+   puppets, so filter strictly on the mirror set). If `ctx->loco − 0x34` is a mirror:
+   write the received pose (`mDestination`, `mNextOrientation`, `mNextVelocity`) and call
+   0xC37FA0, zero `ctx+0..8`, return without calling the original. Otherwise call original.
+   (Cheaper alternative without a hook: keep doing what `space_drive` does for puppets.)
+3. Firing / damage: mirrors must not shoot — hook FireTool **0x01050080** and return `al=0`
+   when `owner == mirror+0x34` (NPC fire comes from `cCombatSimulator::Update` 0xAE7330, §3).
+   Drop all local damage to mirrors in the TakeDamage hook (§2); real HP comes from the host
+   and is written to +0x540.
+4. Host side: nothing is suppressed; guest hits arrive as damage requests (§2).
+
+## 5. Colonies
+
+### 5.1 Placing a colony (V)
+1. **`cPlaceColonyToolStrategy::OnHit` 0x0105B930** (`thiscall(strategy, tool, Vector3* pos,
+   hitType, int)`, `ret 0x10`): calls `cDefaultProjectileWeapon::OnHit` 0x105B310, clears ground
+   objects `0xFDC330(pos, radius)` (cdecl), then queues a delayed drop on a sequencer singleton
+   (`*0x167B5EC`, lazy getter 0xB268A0 cdecl): `seq->0xAE4920(cb = 0x1058C60,
+   GetPlayerEmpireID(), &pos, 0, 0xFD701F6F, 0, quat* or null, 0)` (`thiscall`, `ret 0x20`;
+   null quat → `cPlanetModel::GetOrientation(pos)` 0xB7F320; node+0x04 pos, node+0x20 quat).
+2. **Colony callback 0x01058C60** (cdecl `(node*)`): `activeStar->SetOwner(playerEmpire->mPoliticalID)`
+   (`cStar` 0xC8B740, `ret 4` → starRec SetTechLevel(5) 0xBB9C10 + SetEmpireID 0xA16980 (+0x54));
+   active planet's cGameData (planet+0xD4) vt+0x48 SetPoliticalID; then
+   `cSimulatorSpaceGame::Get()+0x54` (mpHighLODPlanetSim) → **CreateColony**; city+0x2E8 =
+   node+0x38 (U meaning); UI/badges.
+3. **`cSimPlanetHighLOD::CreateColony` 0x00FF8FB0** (`thiscall(sim, Vector3* pos, Quaternion* rot)`
+   → `cCity*`, `ret 8`, not in ModAPI): city via 0xBD9EA0(pos, 0); player cCivilization (0xB25F20,
+   or new noun 0x18C816A); setup 0xBE87B0; city SetPoliticalID; star citizen species 0xBB9CD0
+   (+0x74); `cPlanet::SetTechLevel(5)` 0xC70F60 → cdecl 0xC70850(record, level) (+0x194); finds
+   the `cCivData` with `+0x14 == playerPol` → new cCityData (0xC4, ctor 0xFF2260) +
+   `cCivData::AddCityData` 0xFF2B20, else new cCivData (0x50, ctor 0xFF3210) +
+   `cPlanet::AddCivData` 0xC71230; `playerEmpire->AddPlanet(record)` 0xC34FB0; messages 0x4446533
+   (first city) and 0x43F2583 (colony placed); 0xC70120(planet). Uses `GetActivePlanet()`
+   internally → only for the planet the player is on.
+
+### 5.2 Ownership / spice storage
+There is no owner field in `cPlanetRecord`. Ownership = record tech level **+0x194 == 5**
+(empire colony) + `mCivData` vector **+0x15C** of `cCivData` (`mPoliticalID` +0x14, `mCities`
++0x3C); star record `mEmpireID` **+0x54**, flags +0x5C (0x10 owned), tech level; `cPlanet`
+cGameData base at +0xD4 (political id at planet+0x104), record ptr +0x13C; `cEmpire::mStars`
++0x88; player only: `SpacePlayerData` +0x20 `mPlayerColonies` (vector<cPlanet*>).
+
+| function | address | conv | notes |
+|---|---|---|---|
+| `cEmpire::AddPlanet(cPlanetRecord*)` | 0xC34FB0 | thiscall `ret 4` | player → `SpacePlayerData::AddColony` 0x1022040 (thiscall on `*0x16DEA6C`, `ret 4`, via RecordToPlanet 0xBB5B20); then AddStarOwnership; ally → msg 0x43F2585 |
+| `cEmpire::AddStarOwnership(cStarRecord*)` | 0xC342E0 | thiscall `ret 4` | mStars +0x88, mFlags +0x50 \|= 0x10, species key; each tech-5 planet → 0xC73920; msg 0x55BD8F7 |
+| ConvertPlanetOwner(rec, pol) | 0xC73920 | cdecl | star SetEmpireID, rewrites every cCivData pol (0x97D0D0), recolour, live civ nouns if active |
+| SetTechLevel(rec, level) | 0xC70850 | cdecl | +0x194 (getter 0xB8DB90), then star tech 0xC8B760(starRec) |
+| FillPlanetDataForTechLevel(rec, level) | **0xB97040** | cdecl | (ported 0xB970A0 is wrong) level 5 → 0xB96E40(rec): cCivData with pol = star mEmpireID + a cCityData; then `rec->0xB8DA00(1)` (flag 0x40 in +0x2C) |
+| cStarRecord SetEmpireID / SetTechLevel / SetFlag(mask,bool) | 0xA16980 / 0xBB9C10 / 0xBB9C40 | thiscall | +0x54 `ret 4`; tech level; +0x5C `ret 8` |
+| `cPlanet::GetEmpire` | 0xC71FB0 | thiscall | empire only if record tech == 5; pol from planet cGameData |
+| `cEmpire::IsAllyOf(pol)` | 0xC31D30 | thiscall `ret 4` | mAllies +0x70 vs ally +0x84 |
+
+Spice: per city `cCityData` +0x1C `mSpiceProduction` (stored spice; Get 0xFD9420, Add (≥0)
+0xFF0200, Set 0xFF0220, thiscall); `CalculateSpiceProduction(rec, remove)` 0xC70740 (cdecl) sums
+cities and removes; spice type = record +0x198 `mSpiceGen` (getter 0xB8DBB0, setter 0xB8DBC0,
+`cSpaceTrading::AssignPlanetSpice` 0x103CA50 `ret 8`).
+
+Record-level colony sequence used by the game (0xFE9AF3–0xFE9B43 inside 0xFE9410, purpose U):
+`empire->AddStarOwnership(star); star->SetEmpireID(id); star->SetTechLevel(5);
+star->SetFlag(0x100,1); SetTechLevel(rec,5); FillPlanetDataForTechLevel(rec,5); rec->0xB8DA00(1)`.
+
+### 5.3 Recipe: shared colonies
+* Capture (any player): hook `CreateColony` 0xFF8FB0 (or callback 0x1058C60), send
+  `{PlanetID (record+0x184), pos, quat}`; re-entrancy flag so replays are not re-sent.
+* Apply, receiver on the same planet: `0xB268A0()->0xAE4920(0x1058C60, GetPlayerEmpireID(),
+  &pos, 0, 0xFD701F6F, 0, &quat, 0)` — drop animation + full original path. Direct alternative:
+  `cStar 0xC8B740(activeStar, pol)` then `GetPlanetHighLOD()->CreateColony(&pos, &quat)`.
+* Apply, receiver elsewhere: `rec = cStarManager::GetPlanetRecord(planetID)` (0xBA6EF0), run the
+  record-level sequence above, then `playerEmpire->AddPlanet(rec)` 0xC34FB0. Layout is then
+  procedurally generated, not the host's. U: regeneration on later visit; idempotence of
+  AddPlanet (it skips already-owned stars).
+* Shared spice/money: one empire → treat host as authority for `cEmpire::mEmpireMoney` (+0xD0)
+  and per-city `mSpiceProduction`, push periodic snapshots per PlanetID.
+
+## 6. Raids
+
+**ModAPI ids are swapped for this build**: `cRaidEvent` Cast compares **0x3960C0A**
+(0xC5B340), GetNounID returns **0x3960C0E**. Plunder event: Cast 0x397BFF2, noun 0x397BFF3.
+
+`cRaidEvent` (V): main vtable 0x1470350 (+4: 0x1470340, +0x34: 0x1470330), ctor 0xC5BEB0
+(fields 0x1F0–0x238 match ModAPI), Cast 0xC5B340; vt +0x78 Initialize 0xC5B7B0, **+0x7C Update
+0xC5E3E0** (`thiscall(raid, int dtMs)` → new state, `ret 4`), +0x80 Load 0xC5B430, +0x88
+OnMissionAccept 0xC5C5E0, +0x94 OnMissionCompleted 0xC5BB70, +0x98 OnMissionFailed 0xC5BC60.
+cMission fields confirmed: mMissionID +0x78, mElapsedTimeMS +0x7C, mState +0x84, owner empire
+id/ptr +0x8C/+0x90, target empire id +0x94, source planet +0x9C, prop list +0x180,
+mpTargetPlanet +0x1E8 (getter 0x970A90); base Update 0xC479F0.
+`cMission::SetState(int)` 0xC47E00 (`ret 4`, writes +0x84, posts message); wrappers Accept(2)
+0xC486F0, Complete(5) 0xC48720, Fail(6) 0xC48730, Abort(7) 0xC48710, Reject(8) 0xC48700.
+
+Start: `cSimulatorUniverse` (singleton `*0x16DD778`, ctor 0x1015390) has an event-routine table
+(0x14961A8; raid descriptor at +0x50). **Raid start 0x010125D0** (`ret 8`, `(cPlanetRecord*
+colony, vector<cMission*>* out)`): `cMissionManager::Get()` 0xFEB880 →
+**`CreateMission` 0xFEC420** (`thiscall(mgr, missionID, cPlanetRecord* src, cEmpire* owner,
+cMission* parent)`, `ret 0x10`; class from prop 0x874B25B6, 0xA4B0A2DF → raid factory 0xFEBF70)
+`(0xA4B0A2DF, colonyRec, empireOwningStar, 0)` → `SetAttackerEmpire(0)` 0xC5B520 (+0x230; 0
+keeps −1 = pirates? U) → `SetTargetPlanet(rec)` 0xC472C0 → `SetNumBombers(rand)` 0xC5B540
+(+0x1F8) → Accept. Variants: 0x100E620 (`ret 0xC`, `(0, rec, numBombers)`, used by the `raid`
+cheat parser 0x1025200: `raid -start N | -stop | -plunder | -repair` — handy for tests);
+plunder starter 0x10143E0 (class 0xC4956AA7, factory 0xFEBF90).
+
+Update 0xC5E3E0 ("player present" = target planet is active and context 0):
+* while `mWaitingForRaid` (+0x215): when arrival time passed or player present, ship list via
+  0xC5C480; if present → **spawn 0xC5D2C0** (cdecl, 9 dwords: `(raid, &bgList +0x238,
+  attackerPol, &pendingUFOKey +0x200, Vector3 spawnLoc +0x224 by value, bool summoned +0x234,
+  bool leaveOnArrival +0x21C)`; per 0x20-byte entry (UFO type at +4) `SpawnUFO(type, &pol,
+  &key)` + `ufo->SetOwnerMission(raid)` 0xC37810 (`ret 4`, ufo+0x800; getter 0xC37850)), clear +0x215.
+* "still active" 0xC5DB90 (cdecl `(raid, &list)`): present → any UFO with +0x800 == raid, not
+  dying (0xC373F0)/destroyed, HP +0x540 above threshold; else bgList non-empty.
+* active: colony still tech 5, not owned by attacker (0xC8BAA0), owned by +0x94 → before timeout
+  (prop 0x2B9E524) off-screen sim **0xC5C9E0** (cdecl 10 args `(list, planet, attackerID,
+  &numBombers, &numFighters, propList, &dmgRem +0x20C, &dmgRemUFO +0x210, &destroy +0x214, dt)`)
+  → return 3; else `0x102C0D0(planet)` → 6 (Failed).
+* no ships left → 5 (Completed); event log 0x25594EA8.
+* Completed/Failed handlers both call `0x102C0D0(planet)` (cdecl: raid UFOs leave) and
+  `ApplyRelationship` 0xD06280.
+
+### Recipe: shared raid defence
+* Guests: no own universe events — hook 0x10125D0, 0x10143E0, 0x100E620 → return 0
+  (alternative: the cSimulatorUniverse update, slot U: vtable 0x1496280 [4] = 0x1014CD0?).
+* Host start: hook CreateMission (or end of 0x10125D0); if `Cast(0x3960C0A)` succeeds send
+  `{missionID, PlanetID, attacker +0x230, bombers +0x1F8, fighters +0x1FC}`.
+* Raid ships: UFOs with `+0x800 == raid` (or hook 0xC5D2C0) are ordinary hostile NPC UFOs →
+  mirrored by §1/§4, guest hits go to the host by §2.
+* Host end: hook Update 0xC5E3E0 post-call; return 5/6 → send result (+ city destruction /
+  capture; `cSimPlanetHighLOD::DestroyCity` 0xFFA7B0 is ported, not checked).
+* Optional guest UI: create a mirror raid with the 0x10125D0 steps, hook 0xC5D2C0 and 0xC5C9E0 to
+  no-op, make Update return 3 until the host result, then 5/6 so the native handlers run.
+* U: whether the manager applies Update's return through SetState; meaning of node+0x38.
+
+## Open questions (all items)
+* Dispatcher of the UFO utility-AI registry (0x159E640) — not needed if mirrors are pinned and
+  FireTool is blocked.
+* Runtime checks needed: SpawnUFO/CreateUFO null-tolerance of callers on guests; host NPC AI
+  targeting Defender puppets; `+0x691` semantics; record-level colony replay on later visits.

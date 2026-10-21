@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "teamplay.h"
 
 #include <algorithm>
 #include <map>
@@ -381,7 +382,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (it == g_host_by_id.end() || !g_seen_now.count(it->second))
             return;
         void* attacker = C.puppet_of(from);
-        game::apply_damage(it->second, q.damage, q.type, attacker);
+        game::apply_damage(it->second, teamplay::on_player_hit(it->second, from, q.damage), q.type, attacker);
         g_hits_applied++;
         break;
     }
@@ -396,14 +397,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_proxies.find(d.attacker);
         if (it != g_proxies.end())
             attacker = it->second.c;
-        game::apply_damage(av, d.damage, d.type, attacker);
+        game::apply_damage(av, teamplay::on_own_damage(av, d.damage), d.type, attacker);
         g_damage_in++;
         break;
     }
     }
 }
 
-bool damage_filter(void* c, float damage, int type, void* attacker)
+bool damage_filter(void* c, float& damage, int type, void* attacker)
 {
     if (!g_enabled || !C.sess || !C.sess->connected())
         return true;
@@ -425,11 +426,20 @@ bool damage_filter(void* c, float damage, int type, void* attacker)
         }
         if (game::is_puppet(c))
             return false; // no friendly fire on other players
+        if (c == av)
+            damage = teamplay::on_own_damage(av, damage);
         return true;
     }
     if (is_host()) {
-        if (!game::is_puppet(c))
+        if (c == av) {
+            damage = teamplay::on_own_damage(av, damage);
             return true;
+        }
+        if (!game::is_puppet(c)) {
+            if (attacker == av)
+                damage = teamplay::on_player_hit(c, 0, damage);
+            return true;
+        }
         // a guest's puppet was hit: forward real NPC hits to that guest
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
@@ -511,6 +521,15 @@ bool debug_hit(uint16_t id, float damage)
 } // namespace npc
 
 namespace npc {
+bool debug_host_hit(uint16_t id, float damage)
+{
+    auto it = g_host_by_id.find(id);
+    if (it == g_host_by_id.end() || !g_seen_now.count(it->second) || !game::avatar())
+        return false;
+    game::hit(it->second, damage, 0, game::avatar()); // through the damage filter
+    return true;
+}
+
 bool debug_hurt(uint8_t player, uint16_t id, float damage)
 {
     auto it = g_host_by_id.find(id);

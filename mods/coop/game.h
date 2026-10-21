@@ -76,7 +76,8 @@ uint32_t political_id(void* c);
 
 // ---- combat ----
 // filter for cCreatureAnimal::TakeDamage: return true to let the game apply it
-using DamageFilter = bool (*)(void* creature, float damage, int type, void* attacker_creature);
+// return false to drop the hit; the filter may change the damage
+using DamageFilter = bool (*)(void* creature, float& damage, int type, void* attacker_creature);
 void set_damage_filter(DamageFilter fn);
 void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
 void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
@@ -91,6 +92,17 @@ float dna();
 void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
 using DnaListener = bool (*)(float delta);  // return false to swallow a gain
 void set_dna_listener(DnaListener fn);
+
+// ---- any game object (cGameData) ----
+// cGameNounManager::mNouns (+0x78) lists every cGameData (list node at object+0xC)
+void* noun_manager();
+void for_each_object(bool (*fn)(void* obj, uint32_t noun, void* user), void* user);
+uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNounID (vt 0x20)
+void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
+bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
+bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set
+// nearest object of `noun` within max_dist of pos (nullptr if none)
+void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures
 void puppet_register(void* c);

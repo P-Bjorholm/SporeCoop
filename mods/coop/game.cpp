@@ -82,6 +82,70 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
 
 void set_health(void* c, float hp) { field<float>(c, kHpOff) = hp; }
 
+// ---------------- any game object ----------------
+void* noun_manager() { return a_NounGet ? cdecl_call<void*>(a_NounGet) : nullptr; }
+
+static bool in_exe(const void* p)
+{
+    uintptr_t v = (uintptr_t)p, b = H->image_base();
+    return v > b && v < b + 0x2000000;
+}
+
+void for_each_object(bool (*fn)(void* obj, uint32_t noun, void* user), void* user)
+{
+    uint8_t* nm = (uint8_t*)noun_manager();
+    if (!nm)
+        return;
+    uint8_t* anchor = nm + 0x78;
+    uint8_t* n = *(uint8_t**)anchor;
+    for (int i = 0; n && n != anchor && i < 200000; i++) {
+        uint8_t* next = *(uint8_t**)n;
+        void* obj = n - 0xC;
+        if (!IsBadReadPtr(obj, 0x30) && in_exe(*(void**)obj) && !fn(obj, noun_id(obj), user))
+            return;
+        n = next;
+    }
+}
+
+uint32_t noun_id(void* obj) { return obj ? vcall<uint32_t>(obj, 0x20 / 4) : 0; }
+void* cast(void* obj, uint32_t type) { return obj ? vcall<void*>(obj, 0x0C / 4, type) : nullptr; }
+bool object_alive(void* obj) { return obj && !field<bool>(obj, 0x21); }
+
+bool object_position(void* obj, net::Vec3& out)
+{
+    void* sp = cast(obj, 0x1186577);
+    if (!sp)
+        return false;
+    auto& v = field<Vector3>(sp, 4);
+    out = {v.x, v.y, v.z};
+    return true;
+}
+
+void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist)
+{
+    struct Q {
+        uint32_t noun;
+        net::Vec3 pos;
+        float best;
+        void* obj;
+    } q{noun, pos, max_dist * max_dist, nullptr};
+    for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            auto* q = (Q*)u;
+            net::Vec3 p;
+            if (n == q->noun && object_alive(o) && object_position(o, p)) {
+                float dx = p.x - q->pos.x, dy = p.y - q->pos.y, dz = p.z - q->pos.z, d = dx * dx + dy * dy + dz * dz;
+                if (d < q->best) {
+                    q->best = d;
+                    q->obj = o;
+                }
+            }
+            return true;
+        },
+        &q);
+    return q.obj;
+}
+
 void hit(void* c, float dmg, int type, void* attacker)
 {
     Vector3 pos = field<Vector3>(c, kPosOff);
@@ -215,7 +279,12 @@ net::Vec3 velocity(void* c)
 }
 
 float health(void* c) { return field<float>(c, kHpOff); }
-float max_health(void* c) { return field<float>(c, kMaxHpOff); }
+// cCombatant::GetMaxHitPoints (vtable 0x58); the +0x2C field holds 1.0 for avatars in this build
+float max_health(void* c)
+{
+    float m = c ? skg::vcall<float>((uint8_t*)c + kCombatOff, 0x58 / 4) : 0.f;
+    return m > 0 ? m : field<float>(c, kMaxHpOff);
+}
 bool is_dead(void* c) { return field<uint8_t>(c, kDeadOff) != 0; }
 uint32_t species_instance(void* c) { return field<uint32_t>(c, kSpeciesKeyOff); }
 void* species_profile(void* c) { return field<void*>(c, kSpeciesOff); }
