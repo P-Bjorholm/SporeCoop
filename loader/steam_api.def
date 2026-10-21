@@ -1,0 +1,19 @@
+LIBRARY steam_api.dll
+EXPORTS
+    SteamAPI_Init = steam_api_orig.SteamAPI_Init
+    SteamAPI_RegisterCallResult = steam_api_orig.SteamAPI_RegisterCallResult
+    SteamAPI_RegisterCallback = steam_api_orig.SteamAPI_RegisterCallback
+    SteamAPI_RestartAppIfNecessary = steam_api_orig.SteamAPI_RestartAppIfNecessary
+    SteamAPI_RunCallbacks = steam_api_orig.SteamAPI_RunCallbacks
+    SteamAPI_Shutdown = steam_api_orig.SteamAPI_Shutdown
+    SteamAPI_UnregisterCallResult = steam_api_orig.SteamAPI_UnregisterCallResult
+    SteamAPI_UnregisterCallback = steam_api_orig.SteamAPI_UnregisterCallback
+    SteamApps = steam_api_orig.SteamApps
+    SteamClient = steam_api_orig.SteamClient
+    SteamFriends = steam_api_orig.SteamFriends
+    SteamMatchmaking = steam_api_orig.SteamMatchmaking
+    SteamNetworking = steam_api_orig.SteamNetworking
+    SteamRemoteStorage = steam_api_orig.SteamRemoteStorage
+    SteamUser = steam_api_orig.SteamUser
+    SteamUserStats = steam_api_orig.SteamUserStats
+    SteamUtils = steam_api_orig.SteamUtils

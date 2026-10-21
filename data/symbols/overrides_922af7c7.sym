@@ -1,0 +1,12 @@
+# SporeKit symbol overrides: addresses verified by hand (REA/Ghidra + runtime) for this build.
+# exe_sha256=922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e
+# format: name=0xVA ; verified <evidence>
+ArgScript::PrintF=0x00841050 ; verified REA decompile: vsnprintf(0x400) + stream write (ev_54af29ce)
+Simulator::cCreatureAnimal::Create=0x00C09B00 ; verified REA asm: cdecl(pos,species,age,herd,isAvatar,bool) (ev_f56a4628)
+Simulator::cCreatureAnimal::NPCTickAI=0x00C09530 ; verified REA callers: only from Update when !(flags&0x200) (ev_185fcbc0)
+Simulator::cCreatureAnimal::Update=0x00C0ADF0 ; verified REA decompile: vtable+0x60, dispatches NPC/Avatar AI (ev_4472395f)
+Simulator::cCreatureAnimal::GetHerd=0x00C046B0 ; verified runtime fault: returns mHerd, callers assume non-null
+Simulator::cGameNounManager::Get=0x00B3D3D0 ; verified REA (called from Create) + runtime
+Simulator::cGameNounManager::CreateInstance=0x00B20B80 ; verified REA (Create calls it with noun 0x18EB45E)
+Simulator::cGameNounManager::DestroyInstance=0x00B224F0 ; verified REA (Create failure path)
+Simulator::cGameNounManager::SetAvatar=0x00B1FC70 ; verified REA (Create isAvatar path)

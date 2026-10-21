@@ -1,0 +1,170 @@
+// SporeKit internal declarations (not part of the mod ABI).
+#pragma once
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "../sdk/include/sporekit.h"
+
+#define SK_VERSION "0.1.0"
+
+// ---- SkMod (opaque for mods) ----
+struct SkMod {
+    std::string name;       // file stem, e.g. "coop"
+    std::wstring src_path;  // mods\coop.dll
+    std::wstring live_path; // shadow copy actually loaded
+    HMODULE module = nullptr;
+    const SkModInfo* info = nullptr;
+    bool builtin = false; // sporekit itself
+    int generation = 0;
+};
+
+namespace sk {
+
+// log.cpp
+void log_init(const std::wstring& path);
+void logf(SkMod* mod, int level, const char* fmt, ...);
+void logv(SkMod* mod, int level, const char* fmt, va_list ap);
+std::vector<std::string> log_tail(size_t n);
+extern int g_log_level;
+
+// util
+std::string narrow(const std::wstring& w);
+std::wstring widen(const std::string& s);
+std::wstring to_windows_path(const std::string& p); // "/home/x" -> "Z:\home\x"
+std::string json_escape(const std::string& s);
+double now_seconds();
+
+// paths/config (main.cpp)
+extern SkMod g_kit_mod;
+const std::wstring& game_dir();  // ...\SporebinEP1 (no trailing slash)
+const std::wstring& mods_dirw(); // ...\SporebinEP1\mods
+int instance_id();
+int ini_int(const std::wstring& file, const char* section, const char* key, int def);
+std::string ini_str(const std::wstring& file, const char* section, const char* key,
+                    const char* def);
+
+// sha256.cpp
+std::string sha256_file_hex(const std::wstring& path);
+
+// symbols.cpp
+bool symbols_load(); // picks file by exe hash
+uintptr_t sym(const char* name);
+uintptr_t image_base();
+uintptr_t rebase(uintptr_t va);
+std::string exe_sha256();
+const char* symbols_file_name();
+size_t symbols_count();
+std::vector<std::pair<std::string, uintptr_t>> symbols_find(const std::string& needle,
+                                                            size_t limit);
+std::string symbols_reverse(uintptr_t addr); // "Name+0x10" or ""
+
+// hooks.cpp
+bool hooks_init();
+int hook_create(SkMod* mod, void* target, void* detour, void** original);
+int hook_enable(SkMod* mod, void* target, int enable);
+int hook_remove(SkMod* mod, void* target);
+void hooks_remove_all(SkMod* mod);
+std::vector<std::string> hooks_describe();
+
+// events.cpp
+int subscribe(SkMod* mod, int event, SkEventFn fn, void* user);
+void unsubscribe(SkMod* mod, int event, SkEventFn fn, void* user);
+void unsubscribe_all(SkMod* mod);
+void fire(int event, void* arg);
+
+// tasks / main thread (console.cpp)
+void run_on_main(std::function<void()> fn);
+void pump_main_tasks(); // called on main thread every frame
+void run_after_frames(int frames, std::function<void()> fn);
+DWORD main_thread_id();
+void set_main_thread();
+
+// console.cpp
+struct Out {
+    std::string text;
+};
+bool console_start(int port);
+int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
+                int flags);
+void commands_remove_all(SkMod* mod);
+int command_exec_line(const std::string& line, std::string& out, bool from_main);
+std::vector<std::string> split_args(const std::string& line);
+std::vector<std::pair<std::string, std::string>> commands_list();
+
+// commands.cpp
+void register_builtin_commands();
+
+// d3d9hook.cpp
+bool d3d9_install();
+void* d3d_device();
+void* game_window();
+uint64_t frame_index();
+double fps();
+void request_screenshot(const std::wstring& path, std::function<void(bool, std::string)> done);
+void overlay_text(int x, int y, uint32_t argb, const char* utf8);
+int world_to_screen(const float* w, float* out);
+void screen_size(int* w, int* h);
+
+// gamehooks.cpp
+bool gamehooks_install();
+uint32_t game_mode_id();
+const char* game_mode_name(uint32_t id);
+bool cheat_exec(const char* line);
+
+// mods.cpp
+void mods_load_all();
+bool mod_reload(const std::string& name, std::string& err);
+bool mod_unload(const std::string& name, std::string& err);
+bool mod_load(const std::string& name, std::string& err);
+std::vector<SkMod*> mods_list();
+void mods_shutdown();
+extern SkHost g_host;
+
+// input.cpp
+bool input_key(int vk, const char* mode);
+bool input_text(const std::string& utf8);
+bool input_click(int x, int y, int button);
+bool input_move(int x, int y);
+
+// png.cpp
+bool png_write_rgb(const std::wstring& path, int w, int h, const uint8_t* rgb);
+
+// instance.cpp
+void instance_install();
+
+// watchdog.cpp
+void watchdog_start();
+void watchdog_mark(const char* stage);
+std::string watchdog_dump_now();
+
+// cheats.cpp
+int cheat_register(const char* keyword, const char* devkit_prefix, const char* desc);
+void cheats_flush_pending();
+void cheats_register_builtin();
+
+// exceptions.cpp
+void exceptions_install();
+std::string exceptions_report();
+void exceptions_clear();
+
+// window message used to run main-thread tasks when no frames are presented
+#define WM_SK_PUMP (WM_APP + 0x5C0)
+
+// focus.cpp
+void focus_install_hooks();
+void focus_attach_window(void* hwnd);
+bool background_mode();
+void set_background_mode(bool on);
+void vcursor_set(int x, int y); // client coords, activates the virtual cursor
+void vcursor_tick();            // auto-release after inactivity
+
+} // namespace sk
+
+#define SKLOG(level, ...) ::sk::logf(&::sk::g_kit_mod, level, __VA_ARGS__)

@@ -1,0 +1,465 @@
+// Built-in devkit console commands.
+#include "core.h"
+
+#include <cstdio>
+
+#include "../sdk/include/sporekit_game.hpp"
+
+namespace sk {
+
+static void outf(SkOut* o, const char* fmt, ...)
+{
+    char buf[8192];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (n > 0)
+        reinterpret_cast<Out*>(o)->text.append(buf, n < (int)sizeof buf ? n : (int)sizeof buf - 1);
+}
+
+// "0x1234", "1234" (hex), "Sym::Name", "Sym::Name+0x10"
+static bool parse_addr(const char* s, uintptr_t& out)
+{
+    std::string str = s;
+    uintptr_t add = 0;
+    size_t plus = str.find('+');
+    if (plus != std::string::npos && plus > 0) {
+        add = strtoul(str.c_str() + plus + 1, nullptr, 0);
+        str = str.substr(0, plus);
+    }
+    if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+        out = strtoul(str.c_str(), nullptr, 16) + add;
+        return true;
+    }
+    bool hex = !str.empty();
+    for (char c : str)
+        if (!isxdigit((unsigned char)c))
+            hex = false;
+    if (hex) {
+        out = strtoul(str.c_str(), nullptr, 16) + add;
+        return true;
+    }
+    uintptr_t a = sym(str.c_str());
+    if (!a)
+        return false;
+    out = a + add;
+    return true;
+}
+
+#define NEED(n, usage)                                   \
+    if (argc < (n)) {                                    \
+        outf(o, "usage: %s", usage);                     \
+        return 1;                                        \
+    }
+
+static int c_help(void*, int argc, const char* const* argv, SkOut* o)
+{
+    for (auto& [n, h] : commands_list())
+        if (argc < 2 || n.find(argv[1]) != std::string::npos)
+            outf(o, "%-18s %s\n", n.c_str(), h.c_str());
+    return 0;
+}
+
+static int c_ping(void*, int, const char* const*, SkOut* o)
+{
+    outf(o, "pong");
+    return 0;
+}
+
+static int c_info(void*, int, const char* const*, SkOut* o)
+{
+    uint32_t mode = game_mode_id();
+    outf(o, "sporekit %s instance=%d pid=%lu\n", SK_VERSION, instance_id(), GetCurrentProcessId());
+    outf(o, "exe sha256=%s base=0x%08X\n", exe_sha256().c_str(), (unsigned)image_base());
+    outf(o, "symbols=%u files=%s\n", (unsigned)symbols_count(), symbols_file_name());
+    outf(o, "frame=%llu fps=%.1f device=%p hwnd=%p\n", (unsigned long long)frame_index(), fps(),
+         d3d_device(), game_window());
+    outf(o, "mode=0x%08X (%s)\n", mode, game_mode_name(mode));
+    outf(o, "mods:");
+    for (auto* m : mods_list())
+        outf(o, " %s%s", m->name.c_str(), m->module ? "" : "(unloaded)");
+    return 0;
+}
+
+static int c_frame(void*, int, const char* const*, SkOut* o)
+{
+    outf(o, "frame=%llu fps=%.1f", (unsigned long long)frame_index(), fps());
+    return 0;
+}
+
+static int c_wait_frames(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int n = argc > 1 ? atoi(argv[1]) : 1;
+    int timeout_ms = argc > 2 ? atoi(argv[2]) : 30000;
+    uint64_t target = frame_index() + n;
+    DWORD t0 = GetTickCount();
+    while (frame_index() < target) {
+        if (GetTickCount() - t0 > (DWORD)timeout_ms) {
+            outf(o, "timeout at frame %llu", (unsigned long long)frame_index());
+            return 1;
+        }
+        Sleep(5);
+    }
+    outf(o, "frame=%llu", (unsigned long long)frame_index());
+    return 0;
+}
+
+static int c_log(void*, int argc, const char* const* argv, SkOut* o)
+{
+    size_t n = argc > 1 ? (size_t)atoi(argv[1]) : 40;
+    for (auto& l : log_tail(n))
+        outf(o, "%s\n", l.c_str());
+    return 0;
+}
+
+static int c_sym(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "sym <name|addr>");
+    uintptr_t a;
+    if (parse_addr(argv[1], a)) {
+        std::string r = symbols_reverse(a);
+        outf(o, "0x%08X %s", (unsigned)a, r.c_str());
+        return 0;
+    }
+    outf(o, "not found");
+    return 1;
+}
+
+static int c_sym_find(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "sym.find <substring> [limit]");
+    size_t lim = argc > 2 ? atoi(argv[2]) : 50;
+    for (auto& [n, a] : symbols_find(argv[1], lim))
+        outf(o, "0x%08X %s\n", (unsigned)a, n.c_str());
+    return 0;
+}
+
+static int c_mem_read(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "mem.read <addr> [len=64]");
+    uintptr_t a;
+    if (!parse_addr(argv[1], a)) { outf(o, "bad address"); return 1; }
+    size_t len = argc > 2 ? strtoul(argv[2], nullptr, 0) : 64;
+    if (len > 65536) len = 65536;
+    if (!skg::readable((void*)a, len)) { outf(o, "unreadable 0x%08X", (unsigned)a); return 1; }
+    const uint8_t* p = (const uint8_t*)a;
+    for (size_t i = 0; i < len; i += 16) {
+        outf(o, "%08X ", (unsigned)(a + i));
+        for (size_t j = 0; j < 16 && i + j < len; j++)
+            outf(o, " %02X", p[i + j]);
+        outf(o, "\n");
+    }
+    return 0;
+}
+
+static int c_mem_write(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(3, "mem.write <addr> <hexbytes>");
+    uintptr_t a;
+    if (!parse_addr(argv[1], a)) { outf(o, "bad address"); return 1; }
+    std::string hx;
+    for (int i = 2; i < argc; i++) hx += argv[i];
+    std::vector<uint8_t> b;
+    for (size_t i = 0; i + 1 < hx.size(); i += 2)
+        b.push_back((uint8_t)strtoul(hx.substr(i, 2).c_str(), nullptr, 16));
+    DWORD old;
+    if (!VirtualProtect((void*)a, b.size(), PAGE_EXECUTE_READWRITE, &old)) { outf(o, "VirtualProtect failed"); return 1; }
+    memcpy((void*)a, b.data(), b.size());
+    VirtualProtect((void*)a, b.size(), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)a, b.size());
+    outf(o, "wrote %u bytes", (unsigned)b.size());
+    return 0;
+}
+
+static int c_mem_ptr(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "mem.ptr <addr> [off...]   (prints each dereference)");
+    uintptr_t a;
+    if (!parse_addr(argv[1], a)) { outf(o, "bad address"); return 1; }
+    outf(o, "0x%08X\n", (unsigned)a);
+    for (int i = 2; i < argc; i++) {
+        if (!skg::readable((void*)a, 4)) { outf(o, "unreadable 0x%08X", (unsigned)a); return 1; }
+        a = *(uintptr_t*)a + strtol(argv[i], nullptr, 0);
+        outf(o, "-> 0x%08X %s\n", (unsigned)a, symbols_reverse(a).c_str());
+    }
+    return 0;
+}
+
+// call <addr> <cdecl|stdcall|thiscall> [args]  args: 123, 0x10, f:1.5, s:text, @addr(sym)
+static int c_call(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(3, "call <addr|sym> <cdecl|stdcall|thiscall> [args: 12 0x1 f:1.5 s:text @Sym]");
+    uintptr_t a;
+    if (!parse_addr(argv[1], a)) { outf(o, "bad address"); return 1; }
+    std::string conv = argv[2];
+    uint32_t v[8] = {0};
+    std::vector<std::string> strs;
+    strs.reserve(8);
+    int n = 0;
+    for (int i = 3; i < argc && n < 8; i++, n++) {
+        const char* s = argv[i];
+        if (!strncmp(s, "f:", 2)) {
+            float f = (float)atof(s + 2);
+            memcpy(&v[n], &f, 4);
+        } else if (!strncmp(s, "s:", 2)) {
+            strs.push_back(s + 2);
+            v[n] = (uint32_t)(uintptr_t)strs.back().c_str();
+        } else if (s[0] == '@') {
+            uintptr_t x;
+            if (!parse_addr(s + 1, x)) { outf(o, "bad arg %s", s); return 1; }
+            v[n] = (uint32_t)x;
+        } else
+            v[n] = (uint32_t)strtoul(s, nullptr, 0);
+    }
+    uint32_t r;
+    using namespace skg;
+    if (conv == "thiscall") {
+        if (n < 1) { outf(o, "thiscall needs this as first arg"); return 1; }
+        void* t = (void*)(uintptr_t)v[0];
+        switch (n - 1) {
+        case 0: r = thiscall<uint32_t>(a, t); break;
+        case 1: r = thiscall<uint32_t>(a, t, v[1]); break;
+        case 2: r = thiscall<uint32_t>(a, t, v[1], v[2]); break;
+        case 3: r = thiscall<uint32_t>(a, t, v[1], v[2], v[3]); break;
+        case 4: r = thiscall<uint32_t>(a, t, v[1], v[2], v[3], v[4]); break;
+        case 5: r = thiscall<uint32_t>(a, t, v[1], v[2], v[3], v[4], v[5]); break;
+        case 6: r = thiscall<uint32_t>(a, t, v[1], v[2], v[3], v[4], v[5], v[6]); break;
+        default: r = thiscall<uint32_t>(a, t, v[1], v[2], v[3], v[4], v[5], v[6], v[7]); break;
+        }
+    } else if (conv == "stdcall") {
+        switch (n) {
+        case 0: r = stdcall_call<uint32_t>(a); break;
+        case 1: r = stdcall_call<uint32_t>(a, v[0]); break;
+        case 2: r = stdcall_call<uint32_t>(a, v[0], v[1]); break;
+        case 3: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2]); break;
+        case 4: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2], v[3]); break;
+        case 5: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2], v[3], v[4]); break;
+        case 6: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2], v[3], v[4], v[5]); break;
+        case 7: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2], v[3], v[4], v[5], v[6]); break;
+        default: r = stdcall_call<uint32_t>(a, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]); break;
+        }
+    } else {
+        // cdecl: caller cleans, extra zero args are harmless
+        r = cdecl_call<uint32_t>(a, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+    }
+    outf(o, "eax=0x%08X (%d) %s", r, (int)r, symbols_reverse(r).c_str());
+    return 0;
+}
+
+static int c_cheat(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "cheat <text>");
+    std::string line;
+    for (int i = 1; i < argc; i++) {
+        if (i > 1) line += ' ';
+        line += argv[i];
+    }
+    bool ok = cheat_exec(line.c_str());
+    outf(o, "cheat '%s' -> %s", line.c_str(), ok ? "true" : "false");
+    return ok ? 0 : 1;
+}
+
+static int c_shot(void*, int argc, const char* const* argv, SkOut* o)
+{
+    std::wstring path;
+    if (argc > 1)
+        path = to_windows_path(argv[1]);
+    else {
+        CreateDirectoryW((mods_dirw() + L"\\shots").c_str(), nullptr);
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        wchar_t b[64];
+        swprintf(b, 64, L"\\shots\\shot-%02d%02d%02d-%03d.png", st.wHour, st.wMinute, st.wSecond,
+                 st.wMilliseconds);
+        path = mods_dirw() + b;
+    }
+    if (!d3d_device()) { outf(o, "no D3D device yet"); return 1; }
+    HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    auto res = std::make_shared<std::pair<bool, std::string>>(false, "");
+    request_screenshot(path, [ev, res](bool ok, std::string msg) {
+        res->first = ok;
+        res->second = msg;
+        SetEvent(ev);
+    });
+    if (WaitForSingleObject(ev, 15000) != WAIT_OBJECT_0) {
+        outf(o, "timeout (no frames?)");
+        return 1;
+    }
+    CloseHandle(ev);
+    outf(o, "%s", res->second.c_str());
+    return res->first ? 0 : 1;
+}
+
+static int c_key(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "key <vk|name> [tap|down|up]");
+    std::string k = argv[1];
+    int vk = 0;
+    struct { const char* n; int vk; } names[] = {
+        {"esc", VK_ESCAPE}, {"enter", VK_RETURN}, {"space", VK_SPACE}, {"tab", VK_TAB},
+        {"shift", VK_SHIFT}, {"ctrl", VK_CONTROL}, {"alt", VK_MENU}, {"left", VK_LEFT},
+        {"right", VK_RIGHT}, {"up", VK_UP}, {"down", VK_DOWN}, {"back", VK_BACK},
+        {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5},
+        {"f12", VK_F12}, {"del", VK_DELETE}};
+    for (auto& nm : names)
+        if (k == nm.n) vk = nm.vk;
+    if (!vk && k.size() == 1)
+        vk = toupper((unsigned char)k[0]);
+    if (!vk)
+        vk = (int)strtoul(k.c_str(), nullptr, 0);
+    bool ok = input_key(vk, argc > 2 ? argv[2] : "tap");
+    outf(o, "key 0x%02X %s", vk, ok ? "sent" : "failed (no window?)");
+    return ok ? 0 : 1;
+}
+
+static int c_text(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "text <string>");
+    bool ok = input_text(argv[1]);
+    outf(o, ok ? "sent" : "failed");
+    return ok ? 0 : 1;
+}
+
+static int c_click(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(3, "click <x> <y> [left|right|middle]");
+    int b = argc > 3 ? (!strcmp(argv[3], "right") ? 1 : (!strcmp(argv[3], "middle") ? 2 : 0)) : 0;
+    bool ok = input_click(atoi(argv[1]), atoi(argv[2]), b);
+    outf(o, ok ? "clicked" : "failed");
+    return ok ? 0 : 1;
+}
+
+static int c_move(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(3, "move <x> <y>");
+    bool ok = input_move(atoi(argv[1]), atoi(argv[2]));
+    outf(o, ok ? "moved" : "failed");
+    return ok ? 0 : 1;
+}
+
+static int c_mods(void*, int, const char* const*, SkOut* o)
+{
+    for (auto* m : mods_list())
+        outf(o, "%-12s %-8s gen=%d %s\n", m->name.c_str(), m->module ? "loaded" : "unloaded",
+             m->generation, m->info ? m->info->version : "");
+    return 0;
+}
+
+static int c_mod_op(void* user, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(2, "mod.<reload|load|unload> <name>");
+    std::string err;
+    int op = (int)(intptr_t)user;
+    bool ok = op == 0 ? mod_reload(argv[1], err) : op == 1 ? mod_load(argv[1], err) : mod_unload(argv[1], err);
+    outf(o, ok ? "ok" : "error: %s", err.c_str());
+    return ok ? 0 : 1;
+}
+
+static int c_hooks(void*, int, const char* const*, SkOut* o)
+{
+    for (auto& h : hooks_describe())
+        outf(o, "%s\n", h.c_str());
+    return 0;
+}
+
+static int c_mode(void*, int, const char* const*, SkOut* o)
+{
+    uint32_t m = game_mode_id();
+    outf(o, "0x%08X %s", m, game_mode_name(m));
+    return 0;
+}
+
+static int c_stack(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int depth = argc > 1 ? atoi(argv[1]) : 24;
+    HANDLE t = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, main_thread_id());
+    if (!t) { outf(o, "OpenThread failed"); return 1; }
+    SuspendThread(t);
+    CONTEXT c{};
+    c.ContextFlags = CONTEXT_FULL;
+    GetThreadContext(t, &c);
+    outf(o, "eip=0x%08lX %s\nesp=0x%08lX ebp=0x%08lX\n", c.Eip, symbols_reverse(c.Eip).c_str(), c.Esp, c.Ebp);
+    // heuristic: scan stack for return addresses into the exe image
+    uintptr_t lo = image_base(), hi = image_base() + 0x1000000;
+    uint32_t* sp = (uint32_t*)c.Esp;
+    int found = 0;
+    for (int i = 0; i < 4096 && found < depth; i++) {
+        if (!skg::readable(sp + i, 4)) break;
+        uint32_t v = sp[i];
+        if (v > lo && v < hi) {
+            std::string r = symbols_reverse(v);
+            outf(o, "  [esp+0x%04X] 0x%08X %s\n", i * 4, v, r.c_str());
+            found++;
+        }
+    }
+    ResumeThread(t);
+    CloseHandle(t);
+    return 0;
+}
+
+static int c_bg(void*, int argc, const char* const* argv, SkOut* o)
+{
+    if (argc > 1)
+        set_background_mode(strcmp(argv[1], "off") != 0);
+    outf(o, "background mode %s", background_mode() ? "on" : "off");
+    return 0;
+}
+
+static int c_exc(void*, int argc, const char* const* argv, SkOut* o)
+{
+    outf(o, "%s", exceptions_report().c_str());
+    if (argc > 1 && !strcmp(argv[1], "clear"))
+        exceptions_clear();
+    return 0;
+}
+
+static int c_hang(void*, int, const char* const*, SkOut* o)
+{
+    outf(o, "%s", watchdog_dump_now().c_str());
+    return 0;
+}
+
+static int c_quit(void*, int, const char* const*, SkOut* o)
+{
+    outf(o, "bye");
+    run_on_main([] { TerminateProcess(GetCurrentProcess(), 0); });
+    return 0;
+}
+
+void register_builtin_commands()
+{
+    SkMod* k = &g_kit_mod;
+    const int A = SK_CMD_ANY_THREAD, M = SK_CMD_MAIN_THREAD;
+    command_add(k, "help", "list commands [filter]", c_help, nullptr, A);
+    command_add(k, "ping", "liveness check (any thread)", c_ping, nullptr, A);
+    command_add(k, "info", "versions, exe hash, frame, mode, mods", c_info, nullptr, M);
+    command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
+    command_add(k, "wait.frames", "wait.frames <n> [timeout_ms]", c_wait_frames, nullptr, A);
+    command_add(k, "log", "log [n] - last log lines", c_log, nullptr, A);
+    command_add(k, "sym", "sym <name|addr> - resolve", c_sym, nullptr, A);
+    command_add(k, "sym.find", "sym.find <substring> [limit]", c_sym_find, nullptr, A);
+    command_add(k, "mem.read", "mem.read <addr> [len]", c_mem_read, nullptr, A);
+    command_add(k, "mem.write", "mem.write <addr> <hex>", c_mem_write, nullptr, M);
+    command_add(k, "mem.ptr", "mem.ptr <addr> [off...] - follow pointers", c_mem_ptr, nullptr, A);
+    command_add(k, "call", "call <addr> <conv> [args] - call game function", c_call, nullptr, M);
+    command_add(k, "cheat", "cheat <text> - run a Spore cheat", c_cheat, nullptr, M);
+    command_add(k, "shot", "shot [linux path] - PNG screenshot", c_shot, nullptr, A);
+    command_add(k, "key", "key <vk|name> [tap|down|up]", c_key, nullptr, A);
+    command_add(k, "text", "text <string> - WM_CHAR input", c_text, nullptr, A);
+    command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
+    command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
+    command_add(k, "mods", "list mods", c_mods, nullptr, M);
+    command_add(k, "mod.reload", "mod.reload <name> - hot reload", c_mod_op, (void*)0, M);
+    command_add(k, "mod.load", "mod.load <name>", c_mod_op, (void*)1, M);
+    command_add(k, "mod.unload", "mod.unload <name>", c_mod_op, (void*)2, M);
+    command_add(k, "hooks", "list installed hooks", c_hooks, nullptr, A);
+    command_add(k, "game.mode", "active game mode", c_mode, nullptr, M);
+    command_add(k, "stack", "stack [depth] - main thread stack (works when hung)", c_stack, nullptr, A);
+    command_add(k, "quit", "terminate the game", c_quit, nullptr, A);
+    command_add(k, "exc", "exc [clear] - faults caught by the exception logger", c_exc, nullptr, A);
+    command_add(k, "hangdump", "write the main thread stack (with DLL names) to the log", c_hang, nullptr, A);
+    command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
+}
+
+} // namespace sk
