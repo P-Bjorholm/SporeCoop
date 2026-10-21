@@ -1,6 +1,7 @@
 // Debug/RE helper commands for the coop mod (hot-reloadable experiments).
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 #include "game.h"
 #include "sporekit.h"
@@ -92,8 +93,21 @@ int c_w2s(void*, int, const char* const*, SkOut* out)
 }
 } // namespace
 
+namespace {
+int c_dna(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 2 && !strcmp(argv[1], "add")) {
+        // simulate a gain as the game would report it (goes through the coop hook)
+        skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
+    }
+    SAY("dna=%.1f", game::dna());
+    return 0;
+}
+} // namespace
+
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
+    host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,
                       SK_CMD_MAIN_THREAD);
 }

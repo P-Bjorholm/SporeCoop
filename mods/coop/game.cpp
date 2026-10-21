@@ -16,6 +16,17 @@ static bool g_ready;
 static uintptr_t a_NounGet, a_DestroyInstance, a_CreatureCreate, a_NPCTickAI, a_ModeMgrGet;
 static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd;
 
+typedef void(SK_CDECL* AddEvo_t)(float);
+static AddEvo_t o_AddEvo;
+static DnaListener g_dna_listener;
+
+static void SK_CDECL h_AddEvo(float delta)
+{
+    if (g_dna_listener && !g_dna_listener(delta))
+        return;
+    o_AddEvo(delta);
+}
+
 static std::vector<void*> g_puppets;
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
@@ -145,6 +156,8 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a, (void*)h_Update, (void**)&o_Update);
     if (uintptr_t a = H->sym("Simulator::cCreatureAnimal::TakeDamage"))
         H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
+    if (uintptr_t a = H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"))
+        H->hook_create(M, (void*)a, (void*)h_AddEvo, (void**)&o_AddEvo);
     a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
     a_GetSpecies = H->sym("Editors::cSpeciesManager::GetSpeciesProfile");
     a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
@@ -290,6 +303,20 @@ void* create_herd(const net::Vec3& pos, void* species)
 void* herd_of(void* c) { return field<void*>(c, kHerdOff); }
 
 uint32_t political_id(void* c) { return vcall<uint32_t>(c, 0x4C / 4); } // cGameData::GetPoliticalID
+
+float dna()
+{
+    uintptr_t get = H->sym("Simulator::cCreatureGameData::GetEvolutionPoints");
+    return get ? cdecl_call<float>(get) : 0.f;
+}
+
+void dna_add_raw(float delta)
+{
+    if (o_AddEvo)
+        o_AddEvo(delta);
+}
+
+void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
 
 static void* tod_object()
 {

@@ -86,6 +86,12 @@ void set_health(void* c, float hp);
 bool time_of_day(net::Quat& q);
 void set_time_of_day(const net::Quat& q);
 
+// ---- DNA (cCreatureGameData evolution points, a global) ----
+float dna();
+void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
+using DnaListener = bool (*)(float delta);  // return false to swallow a gain
+void set_dna_listener(DnaListener fn);
+
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures
 void puppet_register(void* c);
 void puppet_unregister(void* c);

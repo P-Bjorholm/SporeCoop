@@ -46,6 +46,21 @@ bool g_overlay = true;
 bool g_share_world = true; // host sends its save to joining guests
 bool g_anim_log = false;
 double g_last_time_sync = 0;
+float g_dna_sent = -1;      // host: last broadcast total
+uint32_t g_dna_rx = 0, g_dna_fwd = 0;
+
+// DNA earned locally: the host's total is authoritative
+bool on_dna(float delta)
+{
+    if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0) {
+        net::Writer w;
+        w.f32(delta);
+        g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+        g_dna_fwd++;
+        return false; // applied when the host's total comes back
+    }
+    return true;
+}
 bool g_tag_self = false; // debug: draw a tag over our own avatar to check the projection
 float g_dbg_sc[3];
 float g_puppet_scale = 1.15f;
@@ -114,7 +129,8 @@ void drive_puppet(Remote& r, void* av, double now)
     net::PlayerState s;
     if (!r.buf.sample(now, s))
         return;
-    bool in_world = (s.flags & net::PF_IN_WORLD) && r.buf.age(now) < 5.0;
+    // dead players are hidden until they respawn at the nest
+    bool in_world = (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && r.buf.age(now) < 5.0;
     if (!in_world) {
         despawn(r);
         return;
@@ -146,6 +162,17 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     npc::tick(now);
+    if (g_sess.role() == net::Role::Host && game::avatar()) {
+        float total = game::dna();
+        if (total != g_dna_sent) {
+            g_dna_sent = total;
+            net::Writer w;
+            w.f32(total);
+            for (auto& p : g_sess.players())
+                if (p.id != 0)
+                    g_sess.send_reliable_to(p.id, net::MSG_DNA, w);
+        }
+    }
     if (g_sess.role() == net::Role::Host && now - g_last_time_sync > 1.0) {
         g_last_time_sync = now;
         net::Quat q;
@@ -313,6 +340,7 @@ void setup_callbacks()
         g_remotes.clear();
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
+        g_dna_sent = -1; // resend the DNA total to the newcomer
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
@@ -330,6 +358,24 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
+            float total = r.f32();
+            if (r.ok() && game::avatar()) {
+                float d = total - game::dna();
+                if (d != 0)
+                    game::dna_add_raw(d); // through the game so the UI/progress updates
+                g_dna_rx++;
+            }
+            return;
+        }
+        if (type == net::MSG_DNA_ADD && g_sess.role() == net::Role::Host) {
+            float d = r.f32();
+            if (r.ok() && d > 0 && d < 10000 && game::avatar()) {
+                game::dna_add_raw(d);
+                feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
+            }
             return;
         }
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
@@ -415,6 +461,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
     SAY("%s", npc::status().c_str());
+    SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
     void* av = game::avatar();
     SAY("mode=0x%08X avatar=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     double now = H->time_seconds();
@@ -576,6 +623,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     world::init(H, M, feed);
     game::set_anim_listener(on_anim);
+    game::set_dna_listener(on_dna);
     npc::Ctx ctx;
     ctx.sess = &g_sess;
     ctx.puppet_of = [](uint8_t id) -> void* {

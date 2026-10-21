@@ -39,6 +39,8 @@ enum MsgType : uint8_t {
     MSG_NPC_DESPAWN = 20, // host -> guest: stop mirroring an NPC
     MSG_DAMAGE_REQ = 21,  // guest -> host: my attack hit NPC net_id
     MSG_WORLD_TIME = 22,  // host -> guests: time of day (sky orientation quaternion)
+    MSG_DNA = 23,         // host -> guests: shared DNA total (f32)
+    MSG_DNA_ADD = 24,     // guest -> host: DNA the guest earned (f32 delta)
 };
 
 enum RejectReason : uint8_t {
