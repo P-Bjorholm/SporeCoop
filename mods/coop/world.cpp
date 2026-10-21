@@ -289,6 +289,11 @@ void tick(net::Session& s)
             i++;
             continue;
         }
+        // our save opened the "game saved" box, which pauses the game: confirm it with Enter
+        if (HWND w = (HWND)H->game_window()) {
+            PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
+            PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
+        }
         std::string err;
         if (!share_now(g_pending[i].peer, err))
             g_feed("cannot share the world: " + err);
@@ -368,15 +373,43 @@ static bool dir_has(const std::wstring& dir, const std::wstring& file)
 // Spore shows a save as a disc at its star in the galaxy menu, so two slots of the
 // same planet overlap. Reuse, in order: the slot that already holds this host world,
 // a slot of the same planet (backed up first), else the first free GameN.
+// folder the save database points to now (the slot being played), lower case, no trailing '\'
+static std::wstring current_db_dir()
+{
+    uintptr_t getdb = H->sym("Resource::GetDatabaseByID");
+    void* db = getdb ? skg::cdecl_call<void*>(getdb, 0x4729A47u) : nullptr;
+    const char16_t* loc = db ? skg::vcall<const char16_t*>(db, 0x28 / 4) : nullptr;
+    std::wstring w;
+    for (const char16_t* c = loc; c && *c && w.size() < 520; c++)
+        w += (wchar_t)(*c == u'/' ? u'\\' : *c);
+    while (!w.empty() && w.back() == L'\\')
+        w.pop_back();
+    for (auto& ch : w)
+        ch = towlower(ch);
+    return w;
+}
+
+static bool same_dir(std::wstring a, const std::wstring& lower_b)
+{
+    for (auto& ch : a)
+        ch = towlower(ch);
+    return a == lower_b;
+}
+
 static std::wstring pick_slot(uint32_t world_id, const std::string& planet_spo)
 {
     std::wstring dir = games_dir();
     CreateDirectoryW(dir.c_str(), nullptr);
     char want[16];
     snprintf(want, sizeof want, "%08X", world_id);
+    // never overwrite the slot the game is playing now (a guest gets the next phase in-game):
+    // co-op worlds then alternate between two slots
+    std::wstring busy = current_db_dir();
     for (int k = 0; k < 64; k++) {
         std::wstring p = dir + L"\\Game" + std::to_wstring(k);
         std::vector<uint8_t> marker;
+        if (!busy.empty() && same_dir(p, busy))
+            continue;
         if (read_file(p + L"\\sporecoop.txt", marker)) {
             std::string m(marker.begin(), marker.end());
             if (m.find("host_slot") != std::string::npos)

@@ -39,6 +39,8 @@ struct Remote {
     drive::State drv;
     const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
     bool echo = false; // local loopback test remote
+    uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
+    double other_mode_since = -1; // host: since when the guest plays another mode
 };
 
 net::Session g_sess;
@@ -155,6 +157,42 @@ void drive_puppet(Remote& r, double now)
     g_adapter->drive(r.puppet, s, r.drv, now);
 }
 
+bool stage_mode(uint32_t m)
+{
+    return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv ||
+           m == modes::kSpace;
+}
+
+// The host decides when a phase ends: when the host plays a stage and a guest stays in another
+// stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
+void follow_phase(double now)
+{
+    if (g_sess.role() != net::Role::Host || !g_share_world || !g_adapter || g_adapter->own_worlds ||
+        !stage_mode(g_mode))
+        return;
+    uint64_t key = ((uint64_t)g_mode << 32) | modes::current_world();
+    for (auto& [id, r] : g_remotes) {
+        if (r.echo || r.buf.empty())
+            continue;
+        const auto& ls = r.buf.latest();
+        bool behind = ls.mode != g_mode && (stage_mode(ls.mode) || ls.mode == modes::kEdit || ls.mode == modes::kEditor);
+        if (!behind) {
+            r.other_mode_since = -1;
+            continue;
+        }
+        if (r.other_mode_since < 0)
+            r.other_mode_since = now;
+        if (now - r.other_mode_since < 5.0 || r.world_sent == key)
+            continue;
+        r.world_sent = key;
+        std::string err;
+        if (world::share_with(id, err, g_save_on_share))
+            feed("next phase: sending the world to " + r.name);
+        else
+            feed("cannot share the world: " + err);
+    }
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
@@ -198,6 +236,8 @@ void on_frame(void*, int, void*)
         }
         g_last_avatar = g_local;
     }
+
+    follow_phase(now);
 
     if (now - g_last_send >= 0.05) {
         g_last_send = now;
@@ -407,6 +447,7 @@ void setup_callbacks()
         if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
             std::string err;
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
+            r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
             if (!world::share_with(p.id, err, save))
                 feed("cannot share the world: " + err);
             else
