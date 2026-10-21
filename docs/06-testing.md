@@ -31,6 +31,14 @@ tools/spore.sh fixture save <имя> test
 tools/sporectl.py coop.load Game0 Планета   # загрузить сохранение профиля прямо из меню
 ```
 
+Тестовые запуски не мешают за компьютером:
+* **без звука** — `prepare_profile` ставит в тестовых профилях `AudioMuteAll true` и
+  `AudioMasterVolume 0` (настройки звука игрока и PipeWire не трогаются: PipeWire запомнил
+  бы приглушение по имени приложения и для обычной игры);
+* **на втором мониторе** — SporeKit в тестовых запусках переносит окно игры на неосновной
+  монитор (экземпляр 1 к левому краю, остальные к правому), не забирая фокус.
+  `[sporekit] test_monitor = auto|primary|off` в `mods/sporekit.ini`; команда `window [x y|test]`.
+
 ## 6.3 Цикл разработки
 
 ```bash

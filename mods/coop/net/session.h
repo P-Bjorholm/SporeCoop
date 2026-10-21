@@ -35,7 +35,7 @@ public:
 
     uint32_t build = 0;      // exe build id; mismatch = reject
     uint32_t world = 0;      // host world id (save hash), sent in WELCOME
-    uint32_t timeout_ms = 15000;
+    uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network
 
     bool host(uint16_t port, const std::string& name, std::string& err);
