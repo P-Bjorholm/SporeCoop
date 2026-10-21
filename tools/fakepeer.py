@@ -16,7 +16,7 @@ import sys
 import time
 
 MAGIC = 0x4F435053
-PROTO = 1
+PROTO = 2
 HELLO, WELCOME, REJECT, JOIN, LEAVE, STATE, CHAT, PING, PONG, BYE = range(1, 11)
 PF_IN_WORLD, PF_MOVING, PF_RUNNING = 1, 2, 4
 
@@ -126,13 +126,14 @@ class Conn:
                 self.rel_in.setdefault(rid, (typ, p))
 
 
-def pack_state(pid, t_ms, pos, rot, vel, flags, hp, mhp, species):
-    return struct.pack('<BI3f4f3fBBffI', pid, t_ms & 0xFFFFFFFF, *pos, *rot, *vel, flags, 0, hp, mhp, species)
+def pack_state(pid, t_ms, pos, rot, vel, flags, hp, mhp, species, mode=0, world=0):
+    return struct.pack('<BI3f4f3fBBffIII', pid, t_ms & 0xFFFFFFFF, *pos, *rot, *vel, flags, 0, hp, mhp, species,
+                       mode, world)
 
 
 def unpack_state(p):
-    v = struct.unpack_from('<BI3f4f3fBBffI', p)
-    return {'id': v[0], 'pos': v[2:5], 'rot': v[5:9], 'vel': v[9:12], 'flags': v[12]}
+    v = struct.unpack_from('<BI3f4f3fBBffIII', p)
+    return {'id': v[0], 'pos': v[2:5], 'rot': v[5:9], 'vel': v[9:12], 'flags': v[12], 'mode': v[17], 'world': v[18]}
 
 
 def norm(v):
@@ -221,7 +222,7 @@ def main():
             speed = math.sqrt(sum(v * v for v in vel))
             flags = PF_IN_WORLD | (PF_MOVING if speed > 0.3 else 0)
             c.send_unreliable(STATE, pack_state(st['my_id'], int(now * 1000), p, st['host']['rot'], vel,
-                                                flags, 10.0, 10.0, 0))
+                                                flags, 10.0, 10.0, 0, st['host']['mode'], st['host']['world']))
             if not st['said'] and now - t0 > 2:
                 txt = a.say.encode()
                 c.send_reliable(CHAT, struct.pack('<BH', st['my_id'], len(txt)) + txt)

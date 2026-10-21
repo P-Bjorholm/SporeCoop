@@ -185,7 +185,10 @@ bool in_creature_stage() { return mode_id() == 0x1654C01; }
 
 void* avatar()
 {
-    if (!g_ready || !in_creature_stage())
+    if (!g_ready)
+        return nullptr;
+    uint32_t m = mode_id();
+    if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
         return nullptr;
     void* nm = cdecl_call<void*>(a_NounGet);
     if (!nm)
@@ -219,7 +222,7 @@ void* species_profile(void* c) { return field<void*>(c, kSpeciesOff); }
 
 void* avatar_herd()
 {
-    if (!g_ready || !in_creature_stage())
+    if (!g_ready || !avatar())
         return nullptr;
     void* nm = cdecl_call<void*>(a_NounGet);
     return nm ? field<void*>(nm, kNounAvatarHerdOff) : nullptr;

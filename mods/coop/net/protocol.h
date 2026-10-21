@@ -11,7 +11,7 @@
 namespace net {
 
 constexpr uint32_t kMagic = 0x4F435053; // 'SPCO'
-constexpr uint16_t kProtoVersion = 1;
+constexpr uint16_t kProtoVersion = 2;
 constexpr uint16_t kDefaultPort = 47810;
 constexpr int kMaxPlayers = 4; // host + 3 guests (Spore pack size)
 constexpr size_t kMaxPacket = 1200;
@@ -134,6 +134,8 @@ struct PlayerState {
     uint8_t anim = 0;
     float health = 0, max_health = 0;
     uint32_t species = 0; // instance id of species key (appearance hint)
+    uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
+    uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
 
     void write(Writer& w) const
     {
@@ -144,6 +146,7 @@ struct PlayerState {
         w.u8(flags); w.u8(anim);
         w.f32(health); w.f32(max_health);
         w.u32(species);
+        w.u32(mode); w.u32(world);
     }
     bool read(Reader& r)
     {
@@ -154,6 +157,7 @@ struct PlayerState {
         flags = r.u8(); anim = r.u8();
         health = r.f32(); max_health = r.f32();
         species = r.u32();
+        mode = r.u32(); world = r.u32();
         return r.ok();
     }
 };

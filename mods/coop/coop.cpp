@@ -11,6 +11,7 @@
 
 #include "driver.h"
 #include "game.h"
+#include "modes.h"
 #include "npc.h"
 #include "world.h"
 #include "net/interp.h"
@@ -19,6 +20,7 @@
 
 static const SkHost* H;
 static SkMod* M;
+extern const SkHost* g_host_for_modes; // modes.cpp
 
 void coop_register_debug_commands(const SkHost* host, SkMod* self); // debug.cpp
 
@@ -33,6 +35,7 @@ struct Remote {
     net::SnapshotBuffer buf;
     void* puppet = nullptr;
     drive::State drv;
+    const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
     bool echo = false; // local loopback test remote
 };
 
@@ -63,7 +66,6 @@ bool on_dna(float delta)
 }
 bool g_tag_self = false; // debug: draw a tag over our own avatar to check the projection
 float g_dbg_sc[3];
-float g_puppet_scale = 1.15f;
 
 // echo test: mirrors our own avatar as a fake remote player
 bool g_echo = false;
@@ -87,10 +89,10 @@ uint32_t build_id()
 
 void despawn(Remote& r)
 {
-    if (r.puppet) {
-        game::destroy_creature(r.puppet);
-        r.puppet = nullptr;
-    }
+    if (r.puppet && r.puppet_adapter)
+        r.puppet_adapter->despawn(r.puppet);
+    r.puppet = nullptr;
+    r.puppet_adapter = nullptr;
 }
 
 void forget_puppets() // world changed: puppets were destroyed with it
@@ -99,60 +101,51 @@ void forget_puppets() // world changed: puppets were destroyed with it
         if (r.puppet)
             game::puppet_unregister(r.puppet);
         r.puppet = nullptr;
+        r.puppet_adapter = nullptr;
     }
 }
 
-net::PlayerState local_state(void* av)
+uint32_t g_mode = 0, g_world = 0;
+const modes::Adapter* g_adapter = nullptr;
+void* g_local = nullptr; // entity the local player controls (adapter specific)
+
+net::PlayerState local_state()
 {
     net::PlayerState st;
-    if (!av)
-        return st;
-    st.flags = net::PF_IN_WORLD;
-    st.pos = game::position(av);
-    st.rot = game::orientation(av);
-    st.vel = game::velocity(av);
-    float sp = std::sqrt(st.vel.x * st.vel.x + st.vel.y * st.vel.y + st.vel.z * st.vel.z);
-    if (sp > 0.3f)
-        st.flags |= net::PF_MOVING;
-    if (sp > 6.f)
-        st.flags |= net::PF_RUNNING;
-    if (game::is_dead(av))
-        st.flags |= net::PF_DEAD;
-    st.health = game::health(av);
-    st.max_health = game::max_health(av);
-    st.species = game::species_instance(av);
+    st.mode = g_mode;
+    st.world = g_world;
+    if (g_adapter && g_local)
+        g_adapter->fill(g_local, st);
     return st;
 }
 
-void drive_puppet(Remote& r, void* av, double now)
+// remote `s` is visible here only when both play the same mode in the same world
+bool same_place(const net::PlayerState& s) { return s.mode == g_mode && s.world == g_world && g_world != 0; }
+
+void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
     if (!r.buf.sample(now, s))
         return;
-    // dead players are hidden until they respawn at the nest
-    bool in_world = (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && r.buf.age(now) < 5.0;
-    if (!in_world) {
+    // dead players are hidden until they respawn
+    bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
+                   r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+    if (!visible || (r.puppet && r.puppet_adapter != g_adapter)) {
         despawn(r);
-        return;
+        if (!visible)
+            return;
     }
     if (!r.puppet) {
-        r.puppet = game::spawn_creature(s.pos, game::species_profile(av), game::avatar_herd());
+        r.puppet = g_adapter->spawn(s, g_local);
         if (!r.puppet) {
-            feed("failed to spawn creature for " + r.name);
+            feed("failed to show " + r.name);
             return;
         }
-        game::puppet_register(r.puppet);
-        game::teleport(r.puppet, s.pos, s.rot);
-        game::set_scale(r.puppet, game::scale(r.puppet) * g_puppet_scale);
+        r.puppet_adapter = g_adapter;
         r.drv = drive::State{};
         feed(r.name + " appeared in the world");
     }
-    void* p = r.puppet;
-    drive::step(p, s.pos, s.rot, s.vel, r.drv, now);
-    // M1: puppets are invulnerable mirrors of the remote health
-    float mh = game::max_health(p);
-    if (mh > 0)
-        *(float*)((uint8_t*)p + game::kHpOff) = mh;
+    g_adapter->drive(r.puppet, s, r.drv, now);
 }
 
 void on_frame(void*, int, void*)
@@ -185,24 +178,30 @@ void on_frame(void*, int, void*)
         }
     }
 
+    g_mode = game::mode_id();
+    g_world = modes::current_world();
+    g_adapter = modes::for_mode(g_mode);
+    g_local = g_adapter ? g_adapter->local() : nullptr;
     void* av = game::avatar();
-    if (av != g_last_avatar) {
+    if (g_local != g_last_avatar) {
         if (g_last_avatar) {
             forget_puppets();
             npc::on_world_change();
         }
-        g_last_avatar = av;
+        g_last_avatar = g_local;
     }
 
     if (now - g_last_send >= 0.05) {
         g_last_send = now;
-        net::PlayerState st = local_state(av);
+        net::PlayerState st = local_state();
         if (g_sess.connected())
             g_sess.send_state(st);
-        if (g_echo && av) {
+        if (g_echo && g_local) {
             // fake remote: our own state, shifted sideways, delayed
             st.id = 200;
             st.time_ms = (uint32_t)(now * 1000.0);
+            st.mode = g_mode;
+            st.world = g_world;
             net::Quat q = st.rot;
             // local "right" vector from the orientation quaternion (x axis)
             float rx = 1 - 2 * (q.y * q.y + q.z * q.z), ry = 2 * (q.x * q.y + q.w * q.z),
@@ -222,13 +221,14 @@ void on_frame(void*, int, void*)
         g_echo_q.pop_front();
     }
 
+    (void)av;
     for (auto& [id, r] : g_remotes) {
-        if (!av) {
+        if (!g_local) {
             if (r.puppet)
                 forget_puppets();
             continue;
         }
-        drive_puppet(r, av, now);
+        drive_puppet(r, now);
     }
 }
 
@@ -278,6 +278,11 @@ void on_overlay(void*, int, void*)
     y += 22;
     for (auto& p : g_sess.players()) {
         std::string line = (p.id == g_sess.my_id() ? "> " : "  ") + p.name;
+        auto it = g_remotes.find(p.id);
+        if (p.id != g_sess.my_id() && it != g_remotes.end() && !it->second.buf.empty()) {
+            const auto& ls = it->second.buf.latest();
+            line += std::string("  [") + modes::mode_name(ls.mode) + (same_place(ls) || ls.mode != g_mode ? "" : ", other world") + "]";
+        }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
         y += 20;
     }
@@ -511,7 +516,7 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
         SAY("no avatar (mode 0x%08X)", game::mode_id());
         return 1;
     }
-    auto st = local_state(av);
+    auto st = local_state();
     SAY("avatar=%p species=%p key=0x%08X\npos=(%.2f %.2f %.2f) |r|=%.1f\nrot=(%.3f %.3f %.3f %.3f)\n"
         "vel=(%.2f %.2f %.2f)\nhp=%.1f/%.1f flags=0x%02X",
         av, game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
@@ -615,6 +620,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
 {
     H = host;
     M = self;
+    g_host_for_modes = host;
     if (!game::init(H, M)) {
         H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
         return nullptr;
