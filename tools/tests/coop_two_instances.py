@@ -87,6 +87,34 @@ def main():
             line = [l for l in st.splitlines() if 'puppet pos' in l]
             print(f'{name}: {line[0].strip() if line else "NO PUPPET"}')
             ok &= bool(line)
+    # M2: NPC proxies + host-authoritative damage
+    time.sleep(6)
+    glist = guest.call('coop.npc list')['out'].splitlines()
+    spawned = [l for l in glist if l.strip().startswith('#') and 'spawned' in l and 'DEAD' not in l]
+    print('guest:', glist[0] if glist else '?')
+    ok &= len(spawned) > 0
+    if spawned:
+        nid = spawned[0].split()[0].lstrip('#')
+
+        def host_hp():
+            for l in host.call('coop.npc list')['out'].splitlines():
+                if l.strip().startswith('#' + nid + ' '):
+                    return float(l.split('hp=')[1].split()[0])
+            return None
+        hp0 = host_hp()
+        guest.call(f'coop.npc hit {nid} 1')
+        time.sleep(1)
+        hp1 = host_hp()
+        print(f'npc #{nid}: host hp {hp0} -> {hp1} after a guest hit')
+        ok &= hp0 is not None and hp1 is not None and hp1 < hp0
+    # M3: shared DNA
+    d0 = float(host.call('coop.dna')['out'].split('=')[1])
+    guest.call('coop.dna add 5')
+    time.sleep(1.5)
+    d1 = float(host.call('coop.dna')['out'].split('=')[1])
+    d2 = float(guest.call('coop.dna')['out'].split('=')[1])
+    print(f'dna host {d0} -> {d1}, guest {d2}')
+    ok &= abs(d1 - d0 - 5) < 0.01 and abs(d2 - d1) < 0.01
     print('screens:', shot(host, 'two_host.png'), shot(guest, 'two_guest.png'))
     print('host faults:', host.call('exc')['out'].splitlines()[0])
     print('guest faults:', guest.call('exc')['out'].splitlines()[0])
