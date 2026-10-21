@@ -21,6 +21,16 @@ tools/spore.sh fixture restore creature inst2   # положить в друго
 python3 tools/tests/load_game.py -i 2           # загрузить её через меню
 ```
 
+Фикстуры других режимов (`out/fixtures/*.tgz`) делаются так:
+
+```bash
+python3 tools/tests/new_stage_game.py <cell|creature|tribe|civ|space>  # новая игра через выбор этапа
+python3 tools/tests/space_setup.py      # космос: новая игра, пропуск обучения, выход с планеты, сохранение
+tools/sporectl.py coop.save             # сохранить (как кнопка меню)
+tools/spore.sh fixture save <имя> test
+tools/sporectl.py coop.load Game0 Планета   # загрузить сохранение профиля прямо из меню
+```
+
 ## 6.3 Цикл разработки
 
 ```bash
@@ -42,6 +52,7 @@ tools/spore.sh logs                              # хвост sporekit.log
 | Loopback в игре | марионетка повторяет собственного аватара | `sporectl coop.echo on 6 0.3` |
 | Протокол | хост в игре + фейковый гость на Python | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
 | Интеграция | две копии игры на одной машине, host/join, передача мира | `python3 tools/tests/coop_two_instances.py` |
+| Режимы | любой режим по фикстуре: гость из меню получает и грузит мир, обе марионетки, движение | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Планета`, `coop_mode.py --adventure` |
 | Ручной | реальная игра по сети | два ПК / VPN, пакет `tools/package.sh` |
 
 ## 6.5 Известные особенности Wine
@@ -50,3 +61,7 @@ tools/spore.sh logs                              # хвост sporekit.log
 * Во втором процессе одного wineserver блокирующие сокеты/`select()` и старт новых потоков
   иногда зависают — консоль работает на неблокирующих сокетах в одном потоке.
 * Без фокуса Spore перестаёт рисовать; в тестовых запусках включён «фоновый режим» SporeKit.
+* **Выход одного экземпляра убивает все экземпляры бутылки** (так ведёт себя запуск через
+  bottles-cli). Поэтому тесты перезапускают обе копии вместе: сначала гостя, потом хоста.
+* Зависший процесс Wine может остаться наполовину мёртвым (зомби-лидер с живыми потоками)
+  и держать UDP-порт 47810. `spore.sh kill` добивает такие процессы `SIGKILL`.
