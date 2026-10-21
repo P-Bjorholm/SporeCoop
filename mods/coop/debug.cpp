@@ -105,8 +105,48 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 }
 } // namespace
 
+namespace {
+typedef bool(SK_THISCALL* LoadGame_t)(void*, const void*);
+LoadGame_t o_LoadGame;
+SkMod* g_self;
+
+std::string str16(const void* s)
+{
+    const char16_t* b = skg::field<const char16_t*>((void*)s, 0);
+    const char16_t* e = skg::field<const char16_t*>((void*)s, 4);
+    std::string out;
+    if (!b || e < b || e - b > 260 || !skg::readable(b, (e - b) * 2 + 2))
+        return "<?>";
+    for (; b < e; b++)
+        out += (*b < 128) ? (char)*b : '?';
+    return out;
+}
+
+bool SK_THISCALL h_LoadGame(void* self, const void* params)
+{
+    H->log(g_self, SK_INFO, "LoadGame name='%s' star='%s' f20='%s'", str16(params).c_str(),
+           str16((const uint8_t*)params + 0x10).c_str(), str16((const uint8_t*)params + 0x20).c_str());
+    const uint32_t* p = (const uint32_t*)params;
+    for (int i = 0; i < 0xB4 / 4; i += 8)
+        H->log(g_self, SK_INFO, "  +%02X: %08X %08X %08X %08X %08X %08X %08X %08X", i * 4, p[i], p[i + 1], p[i + 2],
+               p[i + 3], p[i + 4], p[i + 5], p[i + 6], p[i + 7]);
+    return o_LoadGame(self, params);
+}
+
+int c_loadhook(void*, int, const char* const*, SkOut* out)
+{
+    if (!o_LoadGame)
+        H->hook_create(g_self, (void*)H->rebase(0x00B271A0), (void*)h_LoadGame, (void**)&o_LoadGame);
+    SAY("LoadGame logging hook installed");
+    return 0;
+}
+} // namespace
+
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
 {
+    g_self = self;
+    host->command_add(self, "coop.loadhook", "debug: log cGamePersistenceManager::LoadGame parameters", c_loadhook,
+                      nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,
                       SK_CMD_MAIN_THREAD);
