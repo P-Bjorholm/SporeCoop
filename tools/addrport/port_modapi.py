@@ -49,6 +49,33 @@ def load_additional(path):
     return out
 
 
+def load_define_address(sdk):
+    """Parse ModAPI SourceCode/DLL/Addresses*.cpp: DefineAddress(Name, SelectAddress(disk, m17))."""
+    out = {}
+    d = os.path.join(sdk, 'Spore ModAPI', 'SourceCode', 'DLL')
+    tok = re.compile(r'namespace\s+Addresses\((\w+)\)\s*\{|namespace\s+(\w+)\s*\{|\{|\}|'
+                     r'DefineAddress\(\s*(\w+)\s*,\s*SelectAddress\(\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)')
+    for fn in sorted(os.listdir(d)):
+        if not (fn.startswith('Addresses') and fn.endswith('.cpp')):
+            continue
+        txt = open(os.path.join(d, fn), encoding='utf-8', errors='replace').read()
+        txt = re.sub(r'//[^\n]*', '', txt)
+        stack = []
+        for m in tok.finditer(txt):
+            g = m.group(0)
+            if m.group(1) or m.group(2):
+                stack.append(m.group(1) or m.group(2))
+            elif g == '{':
+                stack.append(None)
+            elif g == '}':
+                if stack:
+                    stack.pop()
+            elif m.group(3):
+                name = '::'.join([x for x in stack if x] + [m.group(3)])
+                out.setdefault(int(m.group(5), 16), name)
+    return out
+
+
 def port(pe, src_funcs):
     starts, _, _ = find_function_starts(pe)
     addrs = sorted(a for a in src_funcs if pe.in_text(a))
@@ -104,6 +131,12 @@ def main():
     funcs = load_modapi_functions(os.path.join(g, 'SporeGhidra_march2017.xml'))
     for a, n in load_additional(os.path.join(g, 'additional_march2017.txt')).items():
         funcs.setdefault(a, n)
+    extra = 0
+    for a, n in load_define_address(args.modapi_sdk).items():
+        if a not in funcs:
+            funcs[a] = n
+            extra += 1
+    print('DefineAddress entries added:', extra)
     res = port(pe, funcs)
     stats = {}
     with open(args.out, 'w') as f:
