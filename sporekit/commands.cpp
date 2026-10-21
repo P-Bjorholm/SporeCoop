@@ -309,7 +309,8 @@ static int c_key(void*, int argc, const char* const* argv, SkOut* o)
         {"shift", VK_SHIFT}, {"ctrl", VK_CONTROL}, {"alt", VK_MENU}, {"left", VK_LEFT},
         {"right", VK_RIGHT}, {"up", VK_UP}, {"down", VK_DOWN}, {"back", VK_BACK},
         {"f1", VK_F1}, {"f2", VK_F2}, {"f3", VK_F3}, {"f4", VK_F4}, {"f5", VK_F5},
-        {"f12", VK_F12}, {"del", VK_DELETE}};
+        {"f6", VK_F6}, {"f7", VK_F7}, {"f8", VK_F8}, {"f9", VK_F9}, {"f10", VK_F10}, {"f11", VK_F11},
+        {"f12", VK_F12}, {"del", VK_DELETE}, {"home", VK_HOME}, {"end", VK_END}, {"backspace", VK_BACK}};
     for (auto& nm : names)
         if (k == nm.n) vk = nm.vk;
     if (!vk && k.size() == 1)
@@ -319,6 +320,23 @@ static int c_key(void*, int argc, const char* const* argv, SkOut* o)
     bool ok = input_key(vk, argc > 2 ? argv[2] : "tap");
     outf(o, "key 0x%02X %s", vk, ok ? "sent" : "failed (no window?)");
     return ok ? 0 : 1;
+}
+
+static int c_window(void*, int argc, const char* const* argv, SkOut* o)
+{
+    HWND w = (HWND)game_window();
+    if (!w) {
+        outf(o, "no window");
+        return 1;
+    }
+    if (argc > 1 && !strcmp(argv[1], "test"))
+        place_test_window();
+    else if (argc > 2)
+        SetWindowPos(w, nullptr, atoi(argv[1]), atoi(argv[2]), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    RECT r;
+    GetWindowRect(w, &r);
+    outf(o, "window %ld %ld %ld %ld", r.left, r.top, r.right, r.bottom);
+    return 0;
 }
 
 static int c_text(void*, int argc, const char* const* argv, SkOut* o)
@@ -492,6 +510,8 @@ void register_builtin_commands()
     command_add(k, "shot", "shot [linux path] - PNG screenshot", c_shot, nullptr, A);
     command_add(k, "key", "key <vk|name> [tap|down|up]", c_key, nullptr, A);
     command_add(k, "text", "text <string> - WM_CHAR input", c_text, nullptr, A);
+    command_add(k, "window", "window [x y | test] - game window position (move it)", c_window, nullptr,
+                SK_CMD_OUTSIDE_FRAME);
     command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
     command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
     command_add(k, "wheel", "wheel <x> <y> <notches> - mouse wheel (+ zooms in)", c_wheel, nullptr, A);

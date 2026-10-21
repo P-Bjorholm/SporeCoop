@@ -20,6 +20,8 @@ void tick(net::Session& s);
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
+// guest: a world transfer in progress (bytes so far / total)
+bool progress(uint32_t& got, uint32_t& total);
 void set_auto_load(bool on);
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err);
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)

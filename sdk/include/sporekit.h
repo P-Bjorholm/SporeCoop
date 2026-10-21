@@ -46,9 +46,15 @@ typedef int (*SkCommandFn)(void* user, int argc, const char* const* argv, SkOut*
 enum SkCommandFlags {
     SK_CMD_MAIN_THREAD = 0, /* default: executed between frames on the main thread */
     SK_CMD_ANY_THREAD = 1,  /* executed on the console thread (must be thread safe) */
+    SK_CMD_OUTSIDE_FRAME = 2, /* main thread, but outside IDirect3DDevice9::Present: for code that
+                                 creates D3D resources (Spore UI windows, fonts, textures) */
 };
 
 typedef void (*SkTaskFn)(void* user);
+
+/* Spore UI message handler: window = UTFWin::IWindow*, msg = const UTFWin::Message*.
+ * Return non-zero when the message was handled. */
+typedef int (*SkUiMsgFn)(void* user, void* window, const void* msg);
 
 typedef struct SkHost {
     uint32_t abi_version;
@@ -114,6 +120,17 @@ typedef struct SkHost {
 
     /* back buffer size in pixels (overlay coordinates) */
     void (*screen_size)(int* w, int* h);
+
+    /* ---- since 0.3.0 (check size) ---- */
+    /* run on the main thread outside Present (see SK_CMD_OUTSIDE_FRAME); callable anywhere */
+    void (*run_outside_frame)(SkTaskFn fn, void* user);
+    /* write mods/<modname>.ini (UTF-8 value) */
+    int (*config_set_str)(SkMod* mod, const char* section, const char* key, const char* value);
+    /* a UTFWin::IWinProc (reference count 1, owned by the caller) that calls fn; pass it to
+     * IWindow::AddWinProc. event_flags 0 = basic input | advanced (button clicks).
+     * The handler lives in sporekit: when the mod unloads it stays valid and does nothing. */
+    void* (*ui_winproc)(SkMod* mod, SkUiMsgFn fn, void* user, int event_flags);
+    void (*ui_winproc_disable)(void* proc);
 } SkHost;
 
 typedef struct SkModInfo {

@@ -57,6 +57,7 @@ static bool load_into(SkMod* m, std::string& err)
         hooks_remove_all(m);
         unsubscribe_all(m);
         commands_remove_all(m);
+        ui_winprocs_disable_mod(m);
         FreeLibrary(m->module);
         m->module = nullptr;
         return false;
@@ -74,6 +75,7 @@ static void unload_from(SkMod* m)
     hooks_remove_all(m);
     unsubscribe_all(m);
     commands_remove_all(m);
+    ui_winprocs_disable_mod(m);
     FreeLibrary(m->module);
     m->module = nullptr;
     m->info = nullptr;

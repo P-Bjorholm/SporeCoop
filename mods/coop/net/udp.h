@@ -29,6 +29,7 @@ public:
     // returns bytes received, 0 if nothing pending, -1 on error
     int recv_from(Endpoint& from, void* buf, size_t cap);
     uint16_t local_port() const;
+    bool enable_broadcast(); // allow sending to 255.255.255.255 / subnet broadcast
 
 private:
     intptr_t fd_ = -1;

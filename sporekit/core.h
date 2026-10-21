@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.2.0"
+#define SK_VERSION "0.3.0"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -83,6 +83,9 @@ void fire(int event, void* arg);
 void run_on_main(std::function<void()> fn);
 void pump_main_tasks(); // called on main thread every frame
 void run_after_frames(int frames, std::function<void()> fn);
+void run_outside_frame(std::function<void()> fn); // main thread, from the window procedure
+void pump_outside_tasks();
+bool in_frame(); // inside the Present hook
 DWORD main_thread_id();
 void set_main_thread();
 
@@ -134,6 +137,11 @@ bool input_click(int x, int y, int button);
 bool input_move(int x, int y);
 bool input_wheel(int x, int y, int notches); // notches > 0: away from the user (zoom in)
 
+// uiproc.cpp
+void* ui_winproc_new(SkMod* mod, SkUiMsgFn fn, void* user, int event_flags);
+void ui_winproc_disable(void* proc);
+void ui_winprocs_disable_mod(SkMod* mod);
+
 // png.cpp
 bool png_write_rgb(const std::wstring& path, int w, int h, const uint8_t* rgb);
 
@@ -163,6 +171,7 @@ void exceptions_clear();
 
 // window message used to run main-thread tasks when no frames are presented
 #define WM_SK_PUMP (WM_APP + 0x5C0)
+#define WM_SK_PUMP_OUT (WM_APP + 0x5C1)
 
 // focus.cpp
 void focus_install_hooks();
@@ -171,6 +180,7 @@ bool background_mode();
 void set_background_mode(bool on);
 void vcursor_set(int x, int y); // client coords, activates the virtual cursor
 void vcursor_tick();            // auto-release after inactivity
+void place_test_window();       // test runs: move the game window to a secondary monitor
 
 } // namespace sk
 

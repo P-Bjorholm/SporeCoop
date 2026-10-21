@@ -29,3 +29,6 @@ Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; most used global in cell code (112
 Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; m17 0x16B3C08
 Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; m17 0x16B3C0C
 App::cScenarioMode::ptr=0x016C8A84 ; runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4
+UTFWin::SporeStdDrawable::SporeStdDrawable=0x008309B0 ; verified asm: writes vtables 0141B2D0/0141B2B8/0141B278, size 0x160
+UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x00830870 ; verified asm: called for SporeStdDrawable::mCurrentInfo (+0x7C)
+UTFWin::UILayout::UILayout=0x00810050 ; verified asm: vtable 01418CA8, zeroes +4..+0x14

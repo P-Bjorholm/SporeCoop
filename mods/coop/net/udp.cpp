@@ -150,6 +150,14 @@ int UdpSocket::recv_from(Endpoint& from, void* buf, size_t cap)
     return r;
 }
 
+bool UdpSocket::enable_broadcast()
+{
+    if (fd_ == -1)
+        return false;
+    int on = 1;
+    return setsockopt((decltype(socket(0, 0, 0)))fd_, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof on) == 0;
+}
+
 uint16_t UdpSocket::local_port() const
 {
     if (fd_ == -1)

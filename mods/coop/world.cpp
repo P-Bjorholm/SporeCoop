@@ -544,6 +544,11 @@ static void finish(const std::string& host_name)
             planet = r;
     g_in = In{};
     std::string err;
+    // "snapshot.spo" is the game's temporary file of an unsaved game: loading it crashes
+    if (planet == "snapshot.spo") {
+        planet.clear();
+        err = "the host has not saved its game yet";
+    }
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err)) {
         g_feed("loading the world of " + host_name + "...");
         return;
@@ -588,6 +593,13 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
             finish(host_name);
         break;
     }
+}
+
+bool progress(uint32_t& got, uint32_t& total)
+{
+    got = g_in.received;
+    total = g_in.offer.total_size;
+    return g_in.active;
 }
 
 std::string status()

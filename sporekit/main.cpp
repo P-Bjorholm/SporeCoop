@@ -92,6 +92,15 @@ static void h_config_str(SkMod* m, const char* s, const char* k, const char* d, 
         buf[sz - 1] = 0;
     }
 }
+static int h_config_set_str(SkMod* m, const char* s, const char* k, const char* v)
+{
+    return WritePrivateProfileStringW(widen(s).c_str(), widen(k).c_str(), v ? widen(v).c_str() : nullptr,
+                                      mod_ini(m).c_str()) ? 0 : 1;
+}
+static void h_run_outside_frame(SkTaskFn fn, void* u)
+{
+    run_outside_frame([fn, u] { fn(u); });
+}
 static void* h_d3d_device() { return d3d_device(); }
 static void* h_game_window() { return game_window(); }
 static uint64_t h_frame_index() { return frame_index(); }
@@ -120,6 +129,10 @@ SkHost g_host = {
     h_exe_sha256,
     cheat_register,
     screen_size,
+    h_run_outside_frame,
+    h_config_set_str,
+    ui_winproc_new,
+    ui_winproc_disable,
 };
 
 } // namespace sk

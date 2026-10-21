@@ -11,7 +11,7 @@
 namespace net {
 
 constexpr uint32_t kMagic = 0x4F435053; // 'SPCO'
-constexpr uint16_t kProtoVersion = 3; // 3: shared resources, ping marks
+constexpr uint16_t kProtoVersion = 4; // 3: shared resources, ping marks; 4: lobby, LAN discovery
 constexpr uint16_t kDefaultPort = 47810;
 constexpr int kMaxPlayers = 4; // host + 3 guests (Spore pack size)
 constexpr size_t kMaxPacket = 1200;
@@ -44,6 +44,31 @@ enum MsgType : uint8_t {
     MSG_RES = 25,         // host -> guests: shared resource total (u8 id, f64)
     MSG_RES_ADD = 26,     // guest -> host: local change of a shared resource (u8 id, f64 delta)
     MSG_PING_MARK = 27,   // any: "look here" marker (vec3), relayed by the host
+    MSG_READY = 28,       // guest -> host: u8 ready
+    MSG_LOBBY = 29,       // host -> guests: u8 count, {u8 id, u8 ready, u16 rtt_ms}
+};
+
+// LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
+constexpr uint32_t kDiscoverQuery = 0x51435053; // 'SPCQ'
+constexpr uint32_t kDiscoverReply = 0x52435053; // 'SPCR'
+constexpr uint16_t kDiscoverPorts = 4;          // kDefaultPort .. kDefaultPort + 3
+
+struct DiscoverReply {
+    uint16_t proto = kProtoVersion;
+    uint16_t port = 0;
+    std::string name; // host player
+    uint8_t players = 0, max_players = 0;
+    std::string info; // stage and world, e.g. "Creature - Scalinus"
+    void write(Writer& w) const
+    {
+        w.u32(kDiscoverReply); w.u16(proto); w.u16(port); w.str8(name); w.u8(players); w.u8(max_players); w.str8(info);
+    }
+    bool read(Reader& r)
+    {
+        if (r.u32() != kDiscoverReply) return false;
+        proto = r.u16(); port = r.u16(); name = r.str8(); players = r.u8(); max_players = r.u8(); info = r.str8();
+        return r.ok();
+    }
 };
 
 enum RejectReason : uint8_t {

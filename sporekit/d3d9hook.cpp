@@ -171,6 +171,9 @@ static void on_frame_begin_present()
     g_last_t = t;
     if (g_frame == 1)
         SKLOG(SK_INFO, "first frame (thread %lu, main %lu)", GetCurrentThreadId(), main_thread_id());
+    // the game sizes/centers its window around device resets: place test windows afterwards
+    if (g_frame == 2 || g_frame == 120 || g_frame == 600)
+        run_outside_frame(place_test_window);
 
     vcursor_tick();
     cheats_flush_pending();
@@ -306,6 +309,7 @@ bool d3d9_install()
 }
 
 void* d3d_device() { return g_dev; }
+bool in_frame() { return g_in_frame || g_present_depth > 0; }
 void* game_window() { return g_hwnd; }
 uint64_t frame_index() { return g_frame; }
 double fps() { return g_fps; }

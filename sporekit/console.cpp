@@ -34,6 +34,40 @@ void run_on_main(std::function<void()> fn)
             PostMessageW(w, WM_SK_PUMP, 0, 0);
 }
 
+// tasks that must not run inside IDirect3DDevice9::Present (DXVK holds its locks there):
+// anything that may create D3D resources, e.g. Spore UI windows (fonts, textures)
+static std::deque<std::function<void()>> g_out_tasks;
+
+void run_outside_frame(std::function<void()> fn)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_task_mu);
+        g_out_tasks.push_back(std::move(fn));
+    }
+    if (HWND w = (HWND)game_window())
+        PostMessageW(w, WM_SK_PUMP_OUT, 0, 0);
+}
+
+void pump_outside_tasks()
+{
+    if (in_frame()) { // called from a message dispatched inside Present: try again later
+        if (HWND w = (HWND)game_window())
+            PostMessageW(w, WM_SK_PUMP_OUT, 0, 0);
+        return;
+    }
+    for (int guard = 0; guard < 256; guard++) {
+        std::function<void()> fn;
+        {
+            std::lock_guard<std::mutex> lk(g_task_mu);
+            if (g_out_tasks.empty())
+                return;
+            fn = std::move(g_out_tasks.front());
+            g_out_tasks.pop_front();
+        }
+        fn();
+    }
+}
+
 struct DelayedTask {
     uint64_t due;
     std::function<void()> fn;
@@ -185,7 +219,8 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
     req->ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     req->args = args;
     req->name = args[0];
-    run_on_main([req] {
+    auto post = (c.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame : run_on_main;
+    post([req] {
         Cmd cc;
         {
             std::lock_guard<std::mutex> lk(g_cmd_mu);
@@ -280,7 +315,8 @@ static void start_next(Client& c)
         c.pending_rc = rc;
         c.pending_done = done;
         std::string name = args[0];
-        run_on_main([out, rc, done, args, name] {
+        auto post = (cmd.flags & SK_CMD_OUTSIDE_FRAME) ? run_outside_frame : run_on_main;
+        post([out, rc, done, args, name] {
             Cmd cc;
             bool ok;
             {

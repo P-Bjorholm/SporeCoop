@@ -138,6 +138,19 @@ std::vector<PlayerInfo> Session::players() const
     return v;
 }
 
+int Session::rtt_of(uint8_t id) const
+{
+    for (auto& p : peers_)
+        if (p->id == id && (p->accepted || role_ == Role::Client))
+            return (int)p->conn.rtt_ms;
+    return -1;
+}
+
+std::string Session::host_address() const
+{
+    return role_ == Role::Client && !peers_.empty() ? peers_[0]->conn.remote.str() : std::string();
+}
+
 std::string Session::status() const
 {
     char b[256];
@@ -457,6 +470,18 @@ void Session::update()
         int n = sock_.recv_from(from, buf, sizeof buf);
         if (n <= 0)
             break;
+        if (n >= 6 && role_ == Role::Host && *(const uint32_t*)buf == kDiscoverQuery) {
+            DiscoverReply rep;
+            rep.port = sock_.local_port();
+            rep.name = my_name_;
+            rep.players = (uint8_t)players().size();
+            rep.max_players = kMaxPlayers;
+            rep.info = lobby_info;
+            Writer w;
+            rep.write(w);
+            sock_.send_to(from, w.data.data(), w.size());
+            continue;
+        }
         if (!Connection::looks_valid(buf, n))
             continue;
         Peer* p = find_peer(from);

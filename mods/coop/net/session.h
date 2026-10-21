@@ -36,6 +36,7 @@ public:
     uint32_t build = 0;      // exe build id; mismatch = reject
     uint32_t world = 0;      // host world id (save hash), sent in WELCOME
     uint32_t timeout_ms = 15000;
+    std::string lobby_info;  // host: shown to players looking for games on the network
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -58,6 +59,9 @@ public:
     std::vector<PlayerInfo> players() const; // including self
     std::string status() const;
     uint16_t port() const { return sock_.local_port(); }
+    // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
+    int rtt_of(uint8_t id) const;
+    std::string host_address() const; // guest: "ip:port" of the host
 
 private:
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);

@@ -1,7 +1,9 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <iphlpapi.h>
 
 #include <cmath>
 #include <cstdio>
@@ -9,12 +11,15 @@
 #include <map>
 #include <string>
 
+#include "coop_ui.h"
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
 #include "shared.h"
+#include "sui.h"
 #include "npc.h"
 #include "world.h"
+#include "net/discovery.h"
 #include "net/interp.h"
 #include "net/session.h"
 #include "sporekit.h"
@@ -42,6 +47,7 @@ struct Remote {
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
+    bool needs_world = false;  // host: joined while the host was not playing; send the world later
 };
 
 net::Session g_sess;
@@ -84,6 +90,77 @@ void feed(const std::string& s)
     while (g_feed.size() > 8)
         g_feed.pop_front();
     LOG("%s", s.c_str());
+}
+
+// ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
+std::deque<std::string> g_chat;
+std::map<uint8_t, bool> g_ready;   // by player id (the host keeps the truth)
+std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
+bool g_lobby_dirty = false;
+double g_last_lobby = 0;
+net::Discovery g_disc;
+bool g_disc_on = false;
+
+void chat_log(const std::string& s)
+{
+    g_chat.push_back(s);
+    while (g_chat.size() > 50)
+        g_chat.pop_front();
+}
+
+struct LocalAddr {
+    std::string ip;
+    uint32_t broadcast; // network byte order
+};
+std::vector<LocalAddr> local_addresses()
+{
+    static std::vector<LocalAddr> cache;
+    static DWORD at = 0;
+    if (!cache.empty() && GetTickCount() - at < 10000)
+        return cache;
+    at = GetTickCount();
+    cache.clear();
+    ULONG len = 16384;
+    std::vector<uint8_t> buf(len);
+    auto* aa = (IP_ADAPTER_ADDRESSES*)buf.data();
+    if (GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                             nullptr, aa, &len) != NO_ERROR)
+        return cache;
+    for (auto* a = aa; a; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+            continue;
+        for (auto* u = a->FirstUnicastAddress; u; u = u->Next) {
+            auto* sin = (sockaddr_in*)u->Address.lpSockaddr;
+            if (!sin || sin->sin_family != AF_INET)
+                continue;
+            uint32_t ip = sin->sin_addr.s_addr;
+            const uint8_t* b = (const uint8_t*)&ip;
+            if (b[0] == 127 || (b[0] == 169 && b[1] == 254))
+                continue;
+            int plen = u->OnLinkPrefixLength;
+            uint32_t mask = plen <= 0 ? 0 : htonl(plen >= 32 ? 0xFFFFFFFFu : ~(0xFFFFFFFFu >> plen));
+            char s[32];
+            snprintf(s, sizeof s, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+            cache.push_back({s, (ip & mask) | ~mask});
+        }
+    }
+    return cache;
+}
+
+void lan_scan(bool on)
+{
+    if (on == g_disc_on)
+        return;
+    g_disc_on = on;
+    if (!on) {
+        g_disc.stop();
+        return;
+    }
+    g_disc.targets = {0xFFFFFFFFu, 0x0100007Fu};
+    for (auto& a : local_addresses())
+        if (a.broadcast != 0xFFFFFFFFu)
+            g_disc.targets.push_back(a.broadcast);
+    g_disc.start();
 }
 
 uint32_t build_id()
@@ -173,7 +250,20 @@ void follow_phase(double now)
         return;
     uint64_t key = ((uint64_t)g_mode << 32) | modes::current_world();
     for (auto& [id, r] : g_remotes) {
-        if (r.echo || r.buf.empty())
+        if (r.echo)
+            continue;
+        if (r.needs_world && g_local) { // joined while the host was in a menu
+            r.needs_world = false;
+            r.world_sent = key;
+            r.joined_phase = false;
+            std::string err;
+            if (world::share_with(id, err, g_save_on_share))
+                feed("sending the world to " + r.name);
+            else
+                feed("cannot share the world: " + err);
+            continue;
+        }
+        if (r.buf.empty())
             continue;
         const auto& ls = r.buf.latest();
         bool behind = ls.mode != g_mode && (stage_mode(ls.mode) || ls.mode == modes::kEdit || ls.mode == modes::kEditor);
@@ -198,10 +288,46 @@ void follow_phase(double now)
     }
 }
 
+void send_lobby()
+{
+    net::Writer w;
+    auto pl = g_sess.players();
+    w.u8((uint8_t)pl.size());
+    for (auto& p : pl) {
+        w.u8(p.id);
+        w.u8(g_ready[p.id] ? 1 : 0);
+        int rtt = p.id == 0 ? 0 : g_sess.rtt_of(p.id);
+        w.u16((uint16_t)(rtt < 0 ? 0xFFFF : rtt));
+    }
+    for (auto& p : pl)
+        if (p.id != 0)
+            g_sess.send_reliable_to(p.id, net::MSG_LOBBY, w);
+}
+
+void lobby_tick(double now)
+{
+    if (g_sess.role() == net::Role::Host) {
+        if (g_lobby_dirty || now - g_last_lobby > 1.0) {
+            g_lobby_dirty = false;
+            g_last_lobby = now;
+            send_lobby();
+            const char* mode = modes::mode_name(g_mode);
+            std::string world = modes::current_world_name();
+            if (world.size() > 4 && world.substr(world.size() - 4) == ".spo")
+                world.resize(world.size() - 4);
+            g_sess.lobby_info = std::string(mode) + (world.empty() || !g_adapter ? "" : " - " + world);
+        }
+    }
+    if (g_disc_on)
+        g_disc.update(net::now_ms());
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
     g_sess.update();
+    lobby_tick(now);
+    coop_ui::tick();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     npc::tick(now);
@@ -436,6 +562,9 @@ void setup_callbacks()
     g_sess.cb.connected = [] { feed("connected to host"); };
     g_sess.cb.disconnected = [](const std::string& why) {
         feed("disconnected: " + why);
+        chat_log("* disconnected: " + why);
+        g_ready.clear();
+        g_lobby_rtt.clear();
         npc::on_session_end();
         for (auto& [id, r] : g_remotes)
             despawn(r);
@@ -448,8 +577,16 @@ void setup_callbacks()
         r.id = p.id;
         r.name = p.name;
         feed(p.name + " joined the pack");
+        chat_log("* " + p.name + " joined");
+        g_lobby_dirty = true;
         bool own_worlds = g_adapter && g_adapter->own_worlds;
-        if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
+        bool playing = g_adapter && g_local && stage_mode(g_mode);
+        if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds && !playing) {
+            // in menus or loading screens there is no world to send yet (the current save name
+            // is a stale snapshot): send it when the host starts playing
+            r.needs_world = true;
+            feed(p.name + " waits for your world: load or start a game");
+        } else if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
             std::string err;
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
@@ -492,6 +629,32 @@ void setup_callbacks()
                 game::set_time_of_day(q);
             return;
         }
+        if (type == net::MSG_READY && g_sess.role() == net::Role::Host) {
+            uint8_t on = r.u8();
+            if (r.ok()) {
+                g_ready[from] = on != 0;
+                g_lobby_dirty = true;
+            }
+            return;
+        }
+        if (type == net::MSG_LOBBY && g_sess.role() == net::Role::Client) {
+            uint8_t n = r.u8();
+            std::map<uint8_t, bool> ready;
+            std::map<uint8_t, int> rtt;
+            for (int i = 0; i < n && r.ok(); i++) {
+                uint8_t id = r.u8();
+                ready[id] = r.u8() != 0;
+                uint16_t t = r.u16();
+                rtt[id] = t == 0xFFFF ? -1 : t;
+            }
+            if (r.ok()) {
+                bool mine = g_ready[g_sess.my_id()];
+                g_ready = ready;
+                g_ready[g_sess.my_id()] = mine; // our own flag is ours until the host confirms it
+                g_lobby_rtt = rtt;
+            }
+            return;
+        }
         if (type == net::MSG_RES || type == net::MSG_RES_ADD) {
             shared::on_message(g_sess, type, from, r);
             return;
@@ -527,6 +690,9 @@ void setup_callbacks()
         if (it == g_remotes.end())
             return;
         feed(it->second.name + " left");
+        chat_log("* " + it->second.name + " left");
+        g_ready.erase(id);
+        g_lobby_dirty = true;
         despawn(it->second);
         g_remotes.erase(it);
     };
@@ -537,21 +703,94 @@ void setup_callbacks()
             r.name = g_sess.name_of(s.id);
         r.buf.push(s, H->time_seconds());
     };
-    g_sess.cb.chat = [](uint8_t id, const std::string& t) { feed("<" + g_sess.name_of(id) + "> " + t); };
+    g_sess.cb.chat = [](uint8_t id, const std::string& t) {
+        feed("<" + g_sess.name_of(id) + "> " + t);
+        chat_log(g_sess.name_of(id) + ": " + t);
+    };
+}
+
+// ---------------- actions (commands and UI) ----------------
+uint16_t default_port() { return (uint16_t)(net::kDefaultPort + H->instance_id() - 1); }
+
+void reset_lobby()
+{
+    g_ready.clear();
+    g_lobby_rtt.clear();
+    g_chat.clear();
+}
+
+bool do_host(uint16_t port, std::string& err)
+{
+    reset_lobby();
+    if (!g_sess.host(port, g_name, err))
+        return false;
+    feed("hosting on port " + std::to_string(g_sess.port()));
+    chat_log("* hosting on UDP port " + std::to_string(g_sess.port()));
+    g_lobby_dirty = true;
+    return true;
+}
+
+bool do_join(const std::string& addr, std::string& err)
+{
+    reset_lobby();
+    if (!g_sess.join(addr, g_name, err))
+        return false;
+    chat_log("* joining " + addr);
+    return true;
+}
+
+void do_leave()
+{
+    g_sess.leave("user");
+    npc::on_session_end();
+    for (auto& [id, r] : g_remotes)
+        despawn(r);
+    g_remotes.clear();
+    reset_lobby();
+}
+
+void set_ready(bool on)
+{
+    g_ready[g_sess.my_id()] = on;
+    if (g_sess.role() == net::Role::Client) {
+        net::Writer w;
+        w.u8(on ? 1 : 0);
+        g_sess.send_reliable_to(0, net::MSG_READY, w);
+    } else
+        g_lobby_dirty = true;
+}
+
+int share_all()
+{
+    int n = 0;
+    if (!(g_adapter && g_local)) { // not playing: no world yet, send it once the host plays
+        for (auto& [id, r] : g_remotes)
+            if (!r.echo)
+                r.needs_world = true;
+        feed("the world goes to everyone when you load or start a game");
+        return 0;
+    }
+    for (auto& p : g_sess.players()) {
+        std::string err;
+        if (p.id != 0 && world::share_with(p.id, err, g_save_on_share && g_adapter))
+            n++;
+        else if (p.id != 0)
+            feed("cannot share the world: " + err);
+    }
+    return n;
 }
 
 // ---------------- commands ----------------
 int c_host(void*, int argc, const char* const* argv, SkOut* out)
 {
-    uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : (uint16_t)(net::kDefaultPort + H->instance_id() - 1);
+    uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : default_port();
     if (argc > 2)
         g_name = argv[2];
     std::string err;
-    if (!g_sess.host(port, g_name, err)) {
+    if (!do_host(port, err)) {
         SAY("host failed: %s", err.c_str());
         return 1;
     }
-    feed("hosting on port " + std::to_string(g_sess.port()));
     SAY("hosting on UDP %u as '%s'", g_sess.port(), g_name.c_str());
     return 0;
 }
@@ -565,7 +804,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2)
         g_name = argv[2];
     std::string err;
-    if (!g_sess.join(argv[1], g_name, err)) {
+    if (!do_join(argv[1], err)) {
         SAY("join failed: %s", err.c_str());
         return 1;
     }
@@ -575,11 +814,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_leave(void*, int, const char* const*, SkOut* out)
 {
-    g_sess.leave("user");
-    npc::on_session_end();
-    for (auto& [id, r] : g_remotes)
-        despawn(r);
-    g_remotes.clear();
+    do_leave();
     SAY("left session");
     return 0;
 }
@@ -759,8 +994,122 @@ int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// ---------------- UI ----------------
+std::vector<coop_ui::PlayerRow> ui_players()
+{
+    std::vector<coop_ui::PlayerRow> v;
+    bool host = g_sess.role() == net::Role::Host;
+    for (auto& p : g_sess.players()) {
+        coop_ui::PlayerRow r;
+        r.id = p.id;
+        r.name = p.name;
+        r.host = p.id == 0;
+        r.me = p.id == g_sess.my_id();
+        r.ready = g_ready.count(p.id) && g_ready[p.id];
+        if (r.me)
+            r.stage = modes::mode_name(g_mode);
+        else {
+            auto it = g_remotes.find(p.id);
+            if (it != g_remotes.end() && !it->second.buf.empty()) {
+                const auto& ls = it->second.buf.latest();
+                r.stage = modes::mode_name(ls.mode);
+                if (ls.mode == g_mode && !same_place(ls) && g_adapter)
+                    r.stage += ", other world";
+            } else
+                r.stage = "...";
+        }
+        if (!r.me)
+            r.ping_ms = host || p.id == 0 ? g_sess.rtt_of(p.id) : (g_lobby_rtt.count(p.id) ? g_lobby_rtt[p.id] : -1);
+        v.push_back(r);
+    }
+    return v;
+}
+
+std::string ui_session_line()
+{
+    char b[256];
+    if (g_sess.role() == net::Role::Host)
+        snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players", g_sess.port(), (int)g_sess.players().size(),
+                 net::kMaxPlayers);
+    else if (g_sess.connected())
+        snprintf(b, sizeof b, "Connected to %s (%s)", g_sess.name_of(0).c_str(), g_sess.host_address().c_str());
+    else
+        snprintf(b, sizeof b, "Connecting to %s ...", g_sess.host_address().c_str());
+    return b;
+}
+
+std::string ui_world_line()
+{
+    uint32_t got = 0, total = 0;
+    if (g_sess.role() == net::Role::Client && world::progress(got, total) && total > 0) {
+        char b[160];
+        snprintf(b, sizeof b, "Receiving %s's world: %u%%", g_sess.name_of(0).c_str(),
+                 (unsigned)((uint64_t)got * 100 / total));
+        return b;
+    }
+    if (g_sess.role() == net::Role::Host && g_sess.players().size() > 1 && !(g_adapter && g_local))
+        return "Load or start a game: the guests get your world automatically";
+    if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)
+        return "Waiting for the host's world...";
+    return "";
+}
+
+void init_ui()
+{
+    coop_ui::Api a;
+    a.name = [] { return g_name; };
+    a.set_name = [](const std::string& n) { g_name = n; };
+    a.join = do_join;
+    a.host = do_host;
+    a.leave = do_leave;
+    a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
+    a.connected = [] { return g_sess.connected(); };
+    a.session_line = ui_session_line;
+    a.players = ui_players;
+    a.world_line = ui_world_line;
+    a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
+    a.set_ready = set_ready;
+    a.share_world = [] { share_all(); };
+    a.say = [](const std::string& t) {
+        if (g_sess.connected())
+            g_sess.send_chat(t);
+    };
+    a.chat = [] { return std::vector<std::string>(g_chat.begin(), g_chat.end()); };
+    a.lan_games = [] {
+        std::vector<coop_ui::LanGame> v;
+        for (auto& g : g_disc.games(net::now_ms()))
+            v.push_back({g.info.name, g.host.str(), g.info.info, g.info.players, g.info.max_players});
+        return v;
+    };
+    a.lan_scan = lan_scan;
+    a.local_addresses = [] {
+        std::vector<std::string> v;
+        for (auto& l : local_addresses())
+            v.push_back(l.ip);
+        return v;
+    };
+    a.mode = [] { return game::mode_id(); };
+    a.default_port = default_port();
+    coop_ui::init(H, M, std::move(a));
+}
+
+int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "log")) {
+        coop_ui::g_log_msgs = !coop_ui::g_log_msgs;
+        SAY("ui message log %s", coop_ui::g_log_msgs ? "on" : "off");
+        return 0;
+    }
+    if (argc > 1)
+        coop_ui::open(atoi(argv[1]) != 0);
+    SAY("%s", coop_ui::debug_state().c_str());
+    return 0;
+}
+
 void on_unload()
 {
+    coop_ui::shutdown();
+    lan_scan(false);
     g_sess.leave("mod unload");
     npc::on_session_end();
     for (auto& [id, r] : g_remotes)
@@ -768,7 +1117,7 @@ void on_unload()
     g_remotes.clear();
 }
 
-SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.2.0", on_unload};
+SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.3.0", on_unload};
 
 } // namespace
 
@@ -832,6 +1181,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
                    nullptr, MT);
     coop_register_debug_commands(H, M);
+    init_ui();
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1] - co-op window state (open/close it)", c_uistate, nullptr,
+                   SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");
     LOG("coop ready (name '%s')", g_name.c_str());

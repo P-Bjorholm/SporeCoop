@@ -1,0 +1,37 @@
+// Finding co-op games on the local network: broadcast a query to the default game ports,
+// hosts answer with their name, player count and stage (portable, unit tested).
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "protocol.h"
+#include "udp.h"
+
+namespace net {
+
+class Discovery {
+public:
+    struct Game {
+        Endpoint host;
+        DiscoverReply info;
+        uint32_t seen_ms = 0;
+    };
+    // where queries go (network byte order IPs): 255.255.255.255 and 127.0.0.1 by default
+    std::vector<uint32_t> targets;
+    uint32_t interval_ms = 1500;
+
+    bool start();
+    void stop();
+    bool active() const { return sock_.is_open(); }
+    void update(uint32_t now_ms);
+    std::vector<Game> games(uint32_t now_ms) const; // answers from the last few seconds
+
+private:
+    UdpSocket sock_;
+    uint32_t last_query_ = 0;
+    std::vector<Game> games_;
+};
+
+} // namespace net

@@ -4,9 +4,11 @@
 #include <cmath>
 #include <cstdio>
 #include <random>
+#include <chrono>
 #include <thread>
 
 #include "net/connection.h"
+#include "net/discovery.h"
 #include "net/interp.h"
 #include "net/session.h"
 
@@ -182,12 +184,41 @@ static void test_interp()
     CHECK(std::fabs(o.pos.x - 15.0f) < 0.01f);
 }
 
+static void test_discovery()
+{
+    Session host;
+    std::string err;
+    CHECK(host.host(kDefaultPort + kDiscoverPorts - 1, "LanHost", err));
+    host.lobby_info = "Creature - Testworld";
+    Discovery d;
+    CHECK(d.start());
+    d.targets = {0x0100007F}; // 127.0.0.1
+    d.interval_ms = 100;
+    std::vector<Discovery::Game> found;
+    for (int i = 0; i < 200 && found.empty(); i++) {
+        d.update(now_ms());
+        host.update();
+        d.update(now_ms());
+        found = d.games(now_ms());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(found.size() == 1);
+    if (!found.empty()) {
+        CHECK(found[0].info.name == "LanHost");
+        CHECK(found[0].info.info == "Creature - Testworld");
+        CHECK(found[0].info.players == 1);
+        CHECK(found[0].host.port == kDefaultPort + kDiscoverPorts - 1);
+    }
+    printf("discovery ok\n");
+}
+
 int main()
 {
     test_buffer();
     test_reliability();
     test_session();
     test_interp();
+    test_discovery();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

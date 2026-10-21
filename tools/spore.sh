@@ -31,6 +31,7 @@ cmd_install() {
 cmd_uninstall() {
     if [[ -f "$BIN/steam_api_orig.dll" ]]; then
         mv -f "$BIN/steam_api_orig.dll" "$BIN/steam_api.dll"
+        rm -f "$BIN/../Data/SporeCoop.package"
         echo "original steam_api.dll restored (mods folder left in place)"
     else
         echo "loader not installed"
@@ -48,6 +49,8 @@ cmd_deploy() {
         cp "$f" "$MODS/$n"
     done
     cp "$ROOT"/data/symbols/*.sym "$MODS/sporekit/symbols/"
+    # game resources: Spore loads every .package in its Data folder
+    [[ -f "$ROOT/build/SporeCoop.package" ]] && cp "$ROOT/build/SporeCoop.package" "$BIN/../Data/SporeCoop.package"
     for ini in "$ROOT"/data/config/*.ini; do
         [[ -f "$ini" ]] || continue
         [[ -f "$MODS/$(basename "$ini")" ]] || cp "$ini" "$MODS/"
@@ -70,7 +73,9 @@ prepare_profile() {
 import sys
 p, size = sys.argv[1], sys.argv[2]
 want = {'OptionFullScreen': '0', 'OptionTutorialsEnabled': '0', 'OptionShowHints': '0',
-        'OptionEdgeScroll': '0', 'OptionScreenSize': size}
+        'OptionEdgeScroll': '0', 'OptionScreenSize': size,
+        # test runs are silent (only the test profile, the player's own settings stay as they are)
+        'AudioMuteAll': 'true', 'AudioMasterVolume': '0.000000'}
 lines = open(p).read().splitlines()
 seen = set()
 out = []

@@ -12,6 +12,7 @@ add tribe      "python3 tools/tests/coop_mode.py --fixture tribe --planet Game0/
 add civ        "python3 tools/tests/coop_mode.py --fixture civ --planet Game0/Agrauel"
 add space      "python3 tools/tests/coop_mode.py --fixture space --planet Game0/Maraya"
 add phase      "python3 tools/tests/coop_phase.py"
+add ui         "python3 tools/tests/coop_ui.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}

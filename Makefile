@@ -20,8 +20,15 @@ KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: all loader sporekit coop clean test
-all: loader sporekit coop
+.PHONY: all loader sporekit coop res clean test
+all: loader sporekit coop res
+
+# game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
+UI_PNG := $(wildcard data/ui/*.png)
+res: $(B)/SporeCoop.package
+$(B)/SporeCoop.package: tools/mkpackage.py $(UI_PNG)
+	@mkdir -p $(B)
+	python3 tools/mkpackage.py $@ $(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f))
 
 loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll
@@ -43,7 +50,7 @@ $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ)
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
 $(B)/coop.dll: $(COOP_OBJ)
-	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32
+	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi
 
 # native Linux unit tests for portable netcode
 test:
