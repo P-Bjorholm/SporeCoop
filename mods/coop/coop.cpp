@@ -9,7 +9,9 @@
 #include <map>
 #include <string>
 
+#include "driver.h"
 #include "game.h"
+#include "npc.h"
 #include "world.h"
 #include "net/interp.h"
 #include "net/session.h"
@@ -30,9 +32,7 @@ struct Remote {
     std::string name;
     net::SnapshotBuffer buf;
     void* puppet = nullptr;
-    double last_cmd = 0;
-    double stuck_since = 0; // remote idle but puppet still away from it
-    net::Vec3 last_target;
+    drive::State drv;
     bool echo = false; // local loopback test remote
 };
 
@@ -127,38 +127,11 @@ void drive_puppet(Remote& r, void* av, double now)
         game::puppet_register(r.puppet);
         game::teleport(r.puppet, s.pos, s.rot);
         game::set_scale(r.puppet, game::scale(r.puppet) * g_puppet_scale);
-        r.last_cmd = 0;
+        r.drv = drive::State{};
         feed(r.name + " appeared in the world");
     }
     void* p = r.puppet;
-    net::Vec3 cur = game::position(p);
-    float err = net::dist(cur, s.pos);
-    float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.y * s.vel.y + s.vel.z * s.vel.z);
-    if (err > 8.f) {
-        game::teleport(p, s.pos, s.rot);
-        r.last_cmd = now;
-    } else if (sp > 0.3f || err > 0.8f) {
-        // walk towards a point slightly ahead of the interpolated position
-        net::Vec3 tgt{s.pos.x + s.vel.x * 0.2f, s.pos.y + s.vel.y * 0.2f, s.pos.z + s.vel.z * 0.2f};
-        if (now - r.last_cmd > 0.1 || net::dist(tgt, r.last_target) > 1.f) {
-            game::set_speed(p, sp > 0.5f ? sp : 2.f);
-            game::move_to(p, tgt, 0.3f);
-            r.last_cmd = now;
-            r.last_target = tgt;
-        }
-    } else {
-        game::set_orientation(p, s.rot);
-    }
-    // remote stands still but the puppet could not reach it (rocks, other creatures)
-    if (sp < 0.3f && err > 1.0f) {
-        if (r.stuck_since == 0)
-            r.stuck_since = now;
-        else if (now - r.stuck_since > 1.5) {
-            game::teleport(p, s.pos, s.rot);
-            r.stuck_since = 0;
-        }
-    } else
-        r.stuck_since = 0;
+    drive::step(p, s.pos, s.rot, s.vel, r.drv, now);
     // M1: puppets are invulnerable mirrors of the remote health
     float mh = game::max_health(p);
     if (mh > 0)
@@ -171,6 +144,7 @@ void on_frame(void*, int, void*)
     g_sess.update();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
+    npc::tick(now);
 
     void* av = game::avatar();
     if (av != g_last_avatar) {
@@ -321,6 +295,7 @@ void setup_callbacks()
     g_sess.cb.connected = [] { feed("connected to host"); };
     g_sess.cb.disconnected = [](const std::string& why) {
         feed("disconnected: " + why);
+        npc::on_session_end();
         for (auto& [id, r] : g_remotes)
             despawn(r);
         g_remotes.clear();
@@ -343,6 +318,12 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        switch (type) {
+        case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_NPC_STATE:
+        case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE:
+            npc::on_message(type, from, r);
             return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
@@ -402,6 +383,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
 int c_leave(void*, int, const char* const*, SkOut* out)
 {
     g_sess.leave("user");
+    npc::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
@@ -413,6 +395,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("%s", npc::status().c_str());
     void* av = game::avatar();
     SAY("mode=0x%08X avatar=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     double now = H->time_seconds();
@@ -508,6 +491,14 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+int c_npc(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1)
+        npc::set_enabled(strcmp(argv[1], "off") != 0);
+    SAY("npc sync %s\n%s", npc::enabled() ? "on" : "off", npc::status().c_str());
+    return 0;
+}
+
 int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "anims")) {
@@ -528,6 +519,7 @@ int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
 void on_unload()
 {
     g_sess.leave("mod unload");
+    npc::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
@@ -551,6 +543,26 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     world::init(H, M, feed);
     game::set_anim_listener(on_anim);
+    npc::Ctx ctx;
+    ctx.sess = &g_sess;
+    ctx.puppet_of = [](uint8_t id) -> void* {
+        auto it = g_remotes.find(id);
+        return it == g_remotes.end() ? nullptr : it->second.puppet;
+    };
+    ctx.player_pos = [](uint8_t id, net::Vec3& pos) {
+        auto it = g_remotes.find(id);
+        if (it == g_remotes.end() || it->second.buf.empty())
+            return false;
+        const auto& st = it->second.buf.latest();
+        if (!(st.flags & net::PF_IN_WORLD) || it->second.buf.age(H->time_seconds()) > 3.0)
+            return false;
+        pos = st.pos;
+        return true;
+    };
+    ctx.feed = feed;
+    npc::init(H, M, ctx);
+    npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
+    game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
@@ -564,6 +576,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.avatar", "print local avatar state", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
                    nullptr, MT);
     coop_register_debug_commands(H, M);

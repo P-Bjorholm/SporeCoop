@@ -185,6 +185,16 @@ void Session::send_event(uint8_t type, const Writer& w)
             p->conn.send_reliable(type, w);
 }
 
+bool Session::send_unreliable_to(uint8_t id, uint8_t type, const Writer& w)
+{
+    for (auto& p : peers_)
+        if ((p->accepted || role_ == Role::Client) && p->id == id) {
+            p->conn.send_unreliable(type, w);
+            return true;
+        }
+    return false;
+}
+
 size_t Session::pending_to(uint8_t id) const
 {
     for (auto& p : peers_)

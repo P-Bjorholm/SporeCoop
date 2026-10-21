@@ -49,6 +49,7 @@ public:
     // player event (reliable): client -> host, host relays to the other guests
     void send_event(uint8_t type, const Writer& w);
     size_t pending_to(uint8_t id) const;
+    bool send_unreliable_to(uint8_t id, uint8_t type, const Writer& w);
 
     Role role() const { return role_; }
     uint8_t my_id() const { return my_id_; }

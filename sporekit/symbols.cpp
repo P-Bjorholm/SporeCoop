@@ -72,6 +72,9 @@ static std::string file_hash_header(const std::wstring& path)
 
 bool symbols_load()
 {
+    g_syms.clear();
+    g_by_addr.clear();
+    g_files.clear();
     HMODULE exe = GetModuleHandleW(nullptr);
     g_base = (uintptr_t)exe;
     auto* dos = (IMAGE_DOS_HEADER*)exe;

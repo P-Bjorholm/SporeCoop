@@ -10,3 +10,9 @@ Simulator::cGameNounManager::Get=0x00B3D3D0 ; verified REA (called from Create) 
 Simulator::cGameNounManager::CreateInstance=0x00B20B80 ; verified REA (Create calls it with noun 0x18EB45E)
 Simulator::cGameNounManager::DestroyInstance=0x00B224F0 ; verified REA (Create failure path)
 Simulator::cGameNounManager::SetAvatar=0x00B1FC70 ; verified REA (Create isAvatar path)
+Simulator::cGameNounManager::CreateHerd=0x00B238B0 ; verified runtime: thiscall(pos*,species,size,ownedByAvatar,personality,createNest), size 0 -> empty herd; ModAPI m17 0xB23920
+Editors::cSpeciesManager::Get=0x00401090 ; verified REA (Create) + runtime
+Editors::cSpeciesManager::GetSpeciesProfile=0x004DF580 ; verified runtime: avatar species key -> avatar species profile
+Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14
+Simulator::cCreatureBase::PlayAnimation=0x00C12430 ; verified REA + ret 0xC (animID, block, disableBlend)
+Simulator::cCreatureBase::PlayAnimationTo=0x00C14AE0 ; verified ret 0x10

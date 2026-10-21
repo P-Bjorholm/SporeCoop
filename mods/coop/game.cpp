@@ -14,8 +14,62 @@ static SkMod* M;
 static bool g_ready;
 
 static uintptr_t a_NounGet, a_DestroyInstance, a_CreatureCreate, a_NPCTickAI, a_ModeMgrGet;
+static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd;
 
 static std::vector<void*> g_puppets;
+
+// ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
+typedef void(SK_THISCALL* Update_t)(void*, int);
+static Update_t o_Update;
+static std::vector<void*> g_seen, g_seen_out;
+static UpdateFilter g_update_filter;
+
+static void SK_THISCALL h_Update(void* self, int dt)
+{
+    g_seen.push_back(self);
+    if (g_update_filter && !g_update_filter(self))
+        return;
+    o_Update(self, dt);
+}
+
+const std::vector<void*>& creatures_updated()
+{
+    g_seen_out.swap(g_seen);
+    g_seen.clear();
+    std::sort(g_seen_out.begin(), g_seen_out.end());
+    g_seen_out.erase(std::unique(g_seen_out.begin(), g_seen_out.end()), g_seen_out.end());
+    return g_seen_out;
+}
+
+void set_update_filter(UpdateFilter fn) { g_update_filter = fn; }
+bool is_destroyed(void* c) { return field<uint8_t>(c, 0x21) != 0; } // cGameData::mbIsDestroyed
+
+// ---- combat via cCreatureAnimal TakeDamage (cCombatant vtable[6], this = creature+0x5A8) ----
+typedef int(SK_THISCALL* TakeDamage_t)(void*, float, uint32_t, int, const void*, void*);
+static TakeDamage_t o_TakeDamage;
+static DamageFilter g_damage_filter;
+
+static int SK_THISCALL h_TakeDamage(void* combatant, float dmg, uint32_t pol, int type, const void* pos, void* attacker)
+{
+    void* self = (uint8_t*)combatant - kCombatOff;
+    void* att = attacker ? (uint8_t*)attacker - kCombatOff : nullptr;
+    if (g_damage_filter && !g_damage_filter(self, dmg, type, att))
+        return 0;
+    return o_TakeDamage(combatant, dmg, pol, type, pos, attacker);
+}
+
+void set_damage_filter(DamageFilter fn) { g_damage_filter = fn; }
+
+void apply_damage(void* c, float dmg, int type, void* attacker)
+{
+    if (!o_TakeDamage)
+        return;
+    Vector3 pos = field<Vector3>(c, kPosOff);
+    o_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &pos,
+                 attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
+}
+
+void set_health(void* c, float hp) { field<float>(c, kHpOff) = hp; }
 static uintptr_t a_PlayAnim, a_PlayAnimTo;
 static AnimListener g_anim_listener;
 static bool g_in_puppet_anim;
@@ -80,6 +134,13 @@ bool init(const SkHost* host, SkMod* mod)
     a_ModeMgrGet = H->sym(req[4]);
     if (H->hook_create(M, (void*)a_NPCTickAI, (void*)h_NPCTickAI, (void**)&o_NPCTickAI) != 0)
         return false;
+    if (uintptr_t a = H->sym("Simulator::cCreatureAnimal::Update"))
+        H->hook_create(M, (void*)a, (void*)h_Update, (void**)&o_Update);
+    if (uintptr_t a = H->sym("Simulator::cCreatureAnimal::TakeDamage"))
+        H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
+    a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
+    a_GetSpecies = H->sym("Editors::cSpeciesManager::GetSpeciesProfile");
+    a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
     a_PlayAnim = H->sym("Simulator::cCreatureBase::PlayAnimation");
     a_PlayAnimTo = H->sym("Simulator::cCreatureBase::PlayAnimationTo");
     if (a_PlayAnim)
@@ -193,6 +254,35 @@ void set_speed(void* c, float speed) { vcall<void>(spatial(c), 0xC4 / 4, speed, 
 float scale(void* c) { return vcall<float>(spatial(c), 0x34 / 4); }       // GetScale
 float bounding_radius(void* c) { return vcall<float>(spatial(c), 0x70 / 4); } // GetBoundingRadius
 void set_scale(void* c, float s) { vcall<void>(spatial(c), 0x40 / 4, s); } // SetScale
+
+Key species_key(void* c)
+{
+    auto& k = field<ResourceKey>(c, kSpeciesKeyOff);
+    return {k.instance, k.type, k.group};
+}
+
+void* species_by_key(const Key& k)
+{
+    if (!a_SpeciesMgrGet || !a_GetSpecies)
+        return nullptr;
+    void* mgr = cdecl_call<void*>(a_SpeciesMgrGet);
+    ResourceKey rk{k.instance, k.type, k.group};
+    return mgr ? thiscall<void*>(a_GetSpecies, mgr, &rk) : nullptr;
+}
+
+void* create_herd(const net::Vec3& pos, void* species)
+{
+    if (!a_CreateHerd || !species)
+        return nullptr;
+    void* nm = cdecl_call<void*>(a_NounGet);
+    Vector3 p{pos.x, pos.y, pos.z};
+    // CreateHerd(const Vector3&, cSpeciesProfile*, herdSize, isOwnedByAvatar, personality, createNest)
+    return nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, 0, 0, 0, 0) : nullptr;
+}
+
+void* herd_of(void* c) { return field<void*>(c, kHerdOff); }
+
+uint32_t political_id(void* c) { return vcall<uint32_t>(c, 0x4C / 4); } // cGameData::GetPoliticalID
 
 void puppet_register(void* c)
 {

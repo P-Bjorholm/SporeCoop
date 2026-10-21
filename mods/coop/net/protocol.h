@@ -35,15 +35,9 @@ enum MsgType : uint8_t {
     MSG_WORLD_CHUNK = 16, // file data
     MSG_WORLD_DONE = 17,  // end of transfer
     MSG_ANIM = 18,        // a player's creature played an animation (attack, social, ...)
-};
-
-struct AnimEvent {
-    uint8_t id = 0;
-    uint32_t anim = 0;
-    int32_t block = -1;
-    uint8_t flags = 0; // 1 = disable blend-in, 2 = was PlayAnimationTo (had a target)
-    void write(Writer& w) const { w.u8(id); w.u32(anim); w.u32((uint32_t)block); w.u8(flags); }
-    bool read(Reader& r) { id = r.u8(); anim = r.u32(); block = (int32_t)r.u32(); flags = r.u8(); return r.ok(); }
+    MSG_NPC_SPAWN = 19,   // host -> guest: start mirroring an NPC
+    MSG_NPC_DESPAWN = 20, // host -> guest: stop mirroring an NPC
+    MSG_DAMAGE_REQ = 21,  // guest -> host: my attack hit NPC net_id
 };
 
 enum RejectReason : uint8_t {
@@ -166,6 +160,84 @@ struct Chat {
     std::string text;
     void write(Writer& w) const { w.u8(id); w.str16(text); }
     bool read(Reader& r) { id = r.u8(); text = r.str16(); return r.ok(); }
+};
+
+enum NpcFlags : uint8_t {
+    NF_DEAD = 1,
+    NF_FAMILY = 2, // member of the host avatar's herd
+};
+
+struct NpcSpawn {
+    uint16_t net_id = 0;
+    uint32_t key[3] = {0, 0, 0}; // species ResourceKey (instance, type, group)
+    float scale = 1;
+    uint8_t flags = 0;
+    Vec3 pos;
+    Quat rot;
+    float health = 0, max_health = 0;
+    void write(Writer& w) const
+    {
+        w.u16(net_id); w.u32(key[0]); w.u32(key[1]); w.u32(key[2]); w.f32(scale); w.u8(flags);
+        w.f32(pos.x); w.f32(pos.y); w.f32(pos.z); w.f32(rot.x); w.f32(rot.y); w.f32(rot.z); w.f32(rot.w);
+        w.f32(health); w.f32(max_health);
+    }
+    bool read(Reader& r)
+    {
+        net_id = r.u16(); key[0] = r.u32(); key[1] = r.u32(); key[2] = r.u32(); scale = r.f32(); flags = r.u8();
+        pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32(); rot.x = r.f32(); rot.y = r.f32(); rot.z = r.f32(); rot.w = r.f32();
+        health = r.f32(); max_health = r.f32();
+        return r.ok();
+    }
+};
+
+// one entry of an MSG_NPC_STATE batch: u32 time_ms, u8 count, entries...
+struct NpcState {
+    uint16_t net_id = 0;
+    Vec3 pos;
+    Quat rot;
+    Vec3 vel;
+    float health = 0;
+    uint8_t flags = 0;
+    static constexpr size_t kSize = 2 + 12 + 16 + 12 + 4 + 1;
+    void write(Writer& w) const
+    {
+        w.u16(net_id); w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
+        w.f32(rot.x); w.f32(rot.y); w.f32(rot.z); w.f32(rot.w);
+        w.f32(vel.x); w.f32(vel.y); w.f32(vel.z); w.f32(health); w.u8(flags);
+    }
+    bool read(Reader& r)
+    {
+        net_id = r.u16(); pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
+        rot.x = r.f32(); rot.y = r.f32(); rot.z = r.f32(); rot.w = r.f32();
+        vel.x = r.f32(); vel.y = r.f32(); vel.z = r.f32(); health = r.f32(); flags = r.u8();
+        return r.ok();
+    }
+};
+
+struct DamageReq { // guest -> host
+    uint16_t net_id = 0;
+    float damage = 0;
+    int32_t type = 0;
+    void write(Writer& w) const { w.u16(net_id); w.f32(damage); w.u32((uint32_t)type); }
+    bool read(Reader& r) { net_id = r.u16(); damage = r.f32(); type = (int32_t)r.u32(); return r.ok(); }
+};
+
+struct Damage { // host -> guest: you were hit
+    uint8_t player = 0;
+    float damage = 0;
+    int32_t type = 0;
+    uint16_t attacker = 0xFFFF; // NPC net id or 0xFFFF
+    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); }
+    bool read(Reader& r) { player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16(); return r.ok(); }
+};
+
+struct AnimEvent {
+    uint8_t id = 0;
+    uint32_t anim = 0;
+    int32_t block = -1;
+    uint8_t flags = 0; // 1 = disable blend-in, 2 = was PlayAnimationTo (had a target)
+    void write(Writer& w) const { w.u8(id); w.u32(anim); w.u32((uint32_t)block); w.u8(flags); }
+    bool read(Reader& r) { id = r.u8(); anim = r.u32(); block = (int32_t)r.u32(); flags = r.u8(); return r.ok(); }
 };
 
 struct WorldOffer {

@@ -126,6 +126,14 @@ static int c_sym(void*, int argc, const char* const* argv, SkOut* o)
     return 1;
 }
 
+static int c_sym_reload(void*, int, const char* const*, SkOut* o)
+{
+    bool ok = symbols_load();
+    outf(o, "%u symbols from %s (mods resolve symbols at load: mod.reload them)", (unsigned)symbols_count(),
+         symbols_file_name());
+    return ok ? 0 : 1;
+}
+
 static int c_sym_find(void*, int argc, const char* const* argv, SkOut* o)
 {
     NEED(2, "sym.find <substring> [limit]");
@@ -438,6 +446,7 @@ void register_builtin_commands()
     command_add(k, "wait.frames", "wait.frames <n> [timeout_ms]", c_wait_frames, nullptr, A);
     command_add(k, "log", "log [n] - last log lines", c_log, nullptr, A);
     command_add(k, "sym", "sym <name|addr> - resolve", c_sym, nullptr, A);
+    command_add(k, "sym.reload", "reload symbol files from mods/sporekit/symbols", c_sym_reload, nullptr, M);
     command_add(k, "sym.find", "sym.find <substring> [limit]", c_sym_find, nullptr, A);
     command_add(k, "mem.read", "mem.read <addr> [len]", c_mem_read, nullptr, A);
     command_add(k, "mem.write", "mem.write <addr> <hex>", c_mem_write, nullptr, M);

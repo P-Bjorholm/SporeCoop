@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "net/protocol.h"
 #include "sporekit.h"
@@ -56,6 +57,29 @@ void set_scale(void* c, float s);
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
 void set_anim_listener(AnimListener fn);
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
+
+// ---- creature registry: every cCreatureAnimal that ran Update since the last call ----
+const std::vector<void*>& creatures_updated();   // swap per frame (call once per frame)
+using UpdateFilter = bool (*)(void* creature);   // return false to skip the creature's Update
+void set_update_filter(UpdateFilter fn);
+bool is_destroyed(void* c);
+
+// ---- species / herds ----
+struct Key {
+    uint32_t instance, type, group;
+};
+Key species_key(void* c);
+void* species_by_key(const Key& k);
+void* create_herd(const net::Vec3& pos, void* species);
+void* herd_of(void* c);
+uint32_t political_id(void* c);
+
+// ---- combat ----
+// filter for cCreatureAnimal::TakeDamage: return true to let the game apply it
+using DamageFilter = bool (*)(void* creature, float damage, int type, void* attacker_creature);
+void set_damage_filter(DamageFilter fn);
+void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
+void set_health(void* c, float hp);
 
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures
 void puppet_register(void* c);
