@@ -59,7 +59,7 @@ bool enabled() { return g_enabled; }
 // called from inside the game's creature update loop: keep it cheap
 static bool update_filter(void* c)
 {
-    if (!g_enabled || !is_guest())
+    if (!g_enabled || !is_guest() || !game::in_creature_stage())
         return true;
     if (game::is_puppet(c) || c == game::avatar())
         return true;
@@ -278,7 +278,8 @@ static void guest_tick(double now)
 void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
-    if (!g_enabled || !C.sess)
+    // creature stage only: adventure creatures are scripted by the adventure on every machine
+    if (!g_enabled || !C.sess || !game::in_creature_stage())
         return;
     if (is_host())
         host_tick(now, creatures);

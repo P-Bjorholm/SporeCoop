@@ -59,12 +59,29 @@ static void creature_despawn(void* p) { game::destroy_creature(p); }
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 
+// adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
+static uint32_t S2(const char* n);
+static uint32_t adventure_place()
+{
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    if (!sm || !skg::readable(sm, 0xD0))
+        return 0;
+    uint8_t* data = *(uint8_t**)(sm + 0x74);
+    uint8_t* res = data && skg::readable(data, 0x14) ? *(uint8_t**)(data + 0x10) : nullptr;
+    if (!res || !skg::readable(res, 0x14))
+        return 0;
+    uint32_t inst = *(uint32_t*)(res + 8), group = *(uint32_t*)(res + 16);
+    return (inst ^ (group * 0x9E3779B1u)) | 1u;
+}
+
 // ---------------------------------------------------------------- space: UFOs
 // cGameDataUFO: cGameData 0x00, cLocomotiveObject 0x34 (pos +0x38, rot +0x44, vel +0x1FC),
 // cCombatant 0x508 (hp +0x540, max +0x534, invincible +0x588)
 constexpr uintptr_t kUfoLoco = 0x34, kUfoCombat = 0x508;
 
 static uintptr_t S(const char* n) { return g_host_for_modes ? g_host_for_modes->sym(n) : 0; }
+static uint32_t S2(const char* n) { return (uint32_t)S(n); }
 
 static uint8_t* space_player_data()
 {
@@ -463,7 +480,8 @@ static const Adapter kAdapters[] = {
     {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
-    {"Adventure", kScenario, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
+    // adventures are not saves: every player starts the same adventure, puppets meet inside it
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag},
 };
 

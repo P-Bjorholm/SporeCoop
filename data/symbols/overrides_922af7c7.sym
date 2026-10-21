@@ -28,3 +28,4 @@ Simulator::SpacePlayerData::ptr=0x016DEA6C ; verified asm of GetActiveStar (mov 
 Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; most used global in cell code (1122 refs), m17 0x16B3C04
 Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; m17 0x16B3C08
 Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; m17 0x16B3C0C
+App::cScenarioMode::ptr=0x016C8A84 ; runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4

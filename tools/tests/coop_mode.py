@@ -71,12 +71,39 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--keep-guest', action='store_true')
     ap.add_argument('--fixture')
+    ap.add_argument('--adventure', action='store_true', help='restart both and start the tutorial adventure on both')
     ap.add_argument('--planet')
     ap.add_argument('--port', type=int, default=47810)
     ap.add_argument('--move', default='1000,760')
     ap.add_argument('--dialog', default='980,606')
     a = ap.parse_args()
     spore = os.path.join(ROOT, 'tools', 'spore.sh')
+    if a.adventure:
+        subprocess.run([spore, 'kill'], stdout=subprocess.DEVNULL)
+        time.sleep(2)
+        subprocess.run([spore, 'deploy'], check=True, stdout=subprocess.DEVNULL)
+        # the Galactic Adventures "play" button offers the next adventure of the profile's
+        # campaign: give the guest the host's progress so both get the same adventure
+        src, dst = (os.path.join(APPDATA, p, 'Spore') for p in ('SporeKit-test', 'SporeKit-inst2'))
+        for f in os.listdir(src):
+            if f.endswith('.package'):
+                shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+        subprocess.run([spore, 'run', '-i', '2'], check=True, stdout=subprocess.DEVNULL)
+        for _ in range(120):
+            if up(2):
+                break
+            time.sleep(1)
+        time.sleep(5)
+        subprocess.run([spore, 'run', '-p', 'test'], check=True, stdout=subprocess.DEVNULL)
+        for _ in range(120):
+            if up(1):
+                break
+            time.sleep(1)
+        procs = [subprocess.Popen([sys.executable, os.path.join(HERE, 'adventure_start.py'), '-i', str(i)])
+                 for i in (1, 2)]
+        for p in procs:
+            p.wait()
+        a.keep_guest = True
     if a.fixture:
         subprocess.run([spore, 'kill'], stdout=subprocess.DEVNULL)
         time.sleep(2)
