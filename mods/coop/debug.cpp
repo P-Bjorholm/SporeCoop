@@ -149,7 +149,9 @@ int c_loadworld(void*, int argc, const char* const* argv, SkOut* out)
     int acc = skg::vcall<int>(db, 0x20 / 4);              // GetAccessFlags
     bool closed = skg::vcall<bool>(db, 0x1C / 4);         // Close
     bool ok = skg::vcall<bool>(db, 0x2C / 4, dir.c_str()); // SetLocation
-    bool opened = skg::vcall<bool>(db, 0x18 / 4, acc, 0, 0); // Open(access, createDisposition, autoOpen)
+    bool opened = skg::vcall<bool>(db, 0x18 / 4, acc ? acc : 3, 6, 0); // Open(access, CD::Default, autoOpen)
+    if (void* sm = skg::cdecl_call<void*>(H->sym("Simulator::cStarManager::Get")))
+        skg::thiscall<void>(H->sym("Simulator::cStarManager::ReadStarsFromSaveDB"), sm);
     SAY("access=%d close=%d open=%d\n", acc, closed, opened);
     void* mgr = skg::cdecl_call<void*>(H->sym("Simulator::cGamePersistenceManager::Get"));
     skg::thiscall<void>(H->sym("Simulator::cGamePersistenceManager::LoadGameByName"), mgr, name.c_str());

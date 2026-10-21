@@ -11,6 +11,7 @@
 #include <deque>
 #include <map>
 
+#include "game.h"
 #include "sporekit_game.hpp"
 
 namespace world {
@@ -339,6 +340,11 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
         err = "Open failed";
         return false;
     }
+    // the star manager keeps the stars of the previously selected slot: reload them
+    uintptr_t starget = H->sym("Simulator::cStarManager::Get"), readstars = H->sym("Simulator::cStarManager::ReadStarsFromSaveDB");
+    if (starget && readstars)
+        if (void* sm = skg::cdecl_call<void*>(starget))
+            skg::thiscall<void>(readstars, sm);
     skg::thiscall<void>(loadby, mgr, name.c_str());
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;

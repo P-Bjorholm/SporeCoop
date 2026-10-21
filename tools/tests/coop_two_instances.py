@@ -7,7 +7,9 @@
 4. move the guest, check both sides see a puppet tracking the remote player
 5. screenshots -> out/shots/two_host.png, two_guest.png
 
-usage: coop_two_instances.py [--keep] [--no-restart]
+usage: coop_two_instances.py [--no-restart] [--guest-menu]
+  --guest-menu  the guest stays in the galaxy menu with an empty profile and must
+                receive + auto-load the host world after joining
 """
 import os
 import subprocess
@@ -54,19 +56,26 @@ def shot(con, name):
 
 def main():
     restart = '--no-restart' not in sys.argv
+    guest_menu = '--guest-menu' in sys.argv
     if restart:
         sh('kill')
         time.sleep(2)
         sh('deploy')
         sh('fixture', 'restore', 'creature', 'test')
-        sh('fixture', 'restore', 'creature', 'inst2')
+        if guest_menu:
+            appdata = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/'
+                                         'drive_c/users/' + os.environ['USER'] + '/AppData/Roaming')
+            subprocess.run(['rm', '-rf', appdata + '/SporeKit-inst2/Spore/Games',
+                            appdata + '/SporeKit-inst2/Spore/Games-sporecoop-backup'])
+        else:
+            sh('fixture', 'restore', 'creature', 'inst2')
         sh('run', '-i', '2')
         assert wait_up(2), 'instance 2 did not start'
         time.sleep(5)
         sh('run', '-p', 'test')
         assert wait_up(1), 'instance 1 did not start'
         res = {}
-        th = [threading.Thread(target=load, args=(i, res)) for i in (1, 2)]
+        th = [threading.Thread(target=load, args=(i, res)) for i in ((1,) if guest_menu else (1, 2))]
         for t in th:
             t.start()
         for t in th:
@@ -75,7 +84,19 @@ def main():
             print(f'instance {i}:', res.get(i, '').splitlines()[:1])
     host, guest = Console(1), Console(2)
     print(host.call('cheat coop host 47810 Alice')['out'])
+    if guest_menu:
+        for _ in range(120):
+            if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+                break
+            time.sleep(1)
+        guest.call('wait.frames 700 60000')
     print(guest.call('cheat coop join 127.0.0.1:47810 Bob')['out'])
+    if guest_menu:
+        t0 = time.time()
+        while time.time() - t0 < 240 and not guest.call('coop.avatar')['ok']:
+            time.sleep(2)
+        print(f'guest in the host world after {time.time() - t0:.0f}s:', guest.call('coop.avatar')['out'].splitlines()[:1])
+        guest.call('wait.frames 300 60000')
     time.sleep(3)
     # walk the guest somewhere: click on the ground left of the screen
     guest.call('click 300 700')

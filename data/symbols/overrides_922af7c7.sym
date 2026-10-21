@@ -22,3 +22,4 @@ SporeCoop::TimeOfDay_Unavailable=0x01020F30 ; verified REA: SetTimeOfDay does no
 Simulator::cGamePersistenceManager::LoadGameByName=0x00B27FF0 ; verified probe+asm: thiscall(mgr, const char16_t* planetFile e.g. u"Scalinus.spo"), sets current/pending name, SetActiveMode(kLoadGameMode); called by GGE Play
 Simulator::cGamePersistenceManager::ReloadCurrentGame=0x00B27120 ; verified runtime: pending = current name, SetActiveMode(kLoadGameMode)
 Resource::GetDatabaseByID=0x006B1F20 ; verified runtime: cdecl(id) -> IDatabase; id 0x4729A47 = DatabaseDirectoryFiles of the current save folder
+Simulator::cStarManager::ReadStarsFromSaveDB=0x00BB8C60 ; verified ftrace+probe: thiscall(starMgr), reads stars.db from the save DB (0x4729A47) location; run on entering the galaxy menu
