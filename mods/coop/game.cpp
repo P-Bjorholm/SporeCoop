@@ -70,6 +70,13 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
 }
 
 void set_health(void* c, float hp) { field<float>(c, kHpOff) = hp; }
+
+void hit(void* c, float dmg, int type, void* attacker)
+{
+    Vector3 pos = field<Vector3>(c, kPosOff);
+    h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &pos,
+                 attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
+}
 static uintptr_t a_PlayAnim, a_PlayAnimTo;
 static AnimListener g_anim_listener;
 static bool g_in_puppet_anim;

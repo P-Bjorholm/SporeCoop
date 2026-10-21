@@ -452,3 +452,53 @@ std::string status()
 }
 
 } // namespace npc
+
+namespace npc {
+
+std::string list()
+{
+    std::string out;
+    char b[200];
+    void* av = game::avatar();
+    net::Vec3 ap = av ? game::position(av) : net::Vec3{};
+    if (is_host()) {
+        for (auto& [c, hn] : g_host_npcs) {
+            if (!g_seen_now.count(c))
+                continue;
+            snprintf(b, sizeof b, "  #%u species=%08X hp=%.1f dist=%.1f%s\n", hn.id, game::species_key(c).instance,
+                     game::health(c), net::dist(game::position(c), ap), game::is_dead(c) ? " DEAD" : "");
+            out += b;
+        }
+    } else {
+        for (auto& [id, px] : g_proxies) {
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f%s\n", id, px.key.instance,
+                     px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
+                     px.c ? net::dist(game::position(px.c), ap) : -1.f, px.killed ? " DEAD" : "");
+            out += b;
+        }
+    }
+    return out;
+}
+
+bool debug_hit(uint16_t id, float damage)
+{
+    auto it = g_proxies.find(id);
+    if (it == g_proxies.end() || !it->second.c || !game::avatar())
+        return false;
+    game::hit(it->second.c, damage, 0, game::avatar());
+    return true;
+}
+
+} // namespace npc
+
+namespace npc {
+bool debug_hurt(uint8_t player, uint16_t id, float damage)
+{
+    auto it = g_host_by_id.find(id);
+    void* pup = C.puppet_of(player);
+    if (it == g_host_by_id.end() || !g_seen_now.count(it->second) || !pup)
+        return false;
+    game::hit(pup, damage, 0, it->second);
+    return true;
+}
+} // namespace npc

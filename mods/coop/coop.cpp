@@ -493,6 +493,20 @@ int c_share(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "list")) {
+        SAY("%s%s", npc::status().c_str(), npc::list().c_str());
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "hurt")) {
+        bool ok = npc::debug_hurt((uint8_t)atoi(argv[2]), (uint16_t)atoi(argv[3]), (float)atof(argv[4]));
+        SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
+        return ok ? 0 : 1;
+    }
+    if (argc > 3 && !strcmp(argv[1], "hit")) {
+        bool ok = npc::debug_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
+        SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy");
+        return ok ? 0 : 1;
+    }
     if (argc > 1)
         npc::set_enabled(strcmp(argv[1], "off") != 0);
     SAY("npc sync %s\n%s", npc::enabled() ? "on" : "off", npc::status().c_str());
@@ -576,7 +590,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.avatar", "print local avatar state", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
                    nullptr, MT);
     coop_register_debug_commands(H, M);

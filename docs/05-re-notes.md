@@ -35,6 +35,10 @@ exe), `DYNAMIC_BASE`, есть `.reloc`. Импортирует из `steam_api.
 | `cGameNounManager::CreateInstance` | 0x00B20B80 | REA: Create вызывает с noun 0x18EB45E |
 | `cGameNounManager::DestroyInstance` | 0x00B224F0 | REA: ветка ошибки Create |
 | `cGameNounManager::SetAvatar` | 0x00B1FC70 | REA |
+| `cCreatureAnimal::TakeDamage` | 0x00C075A0 | runtime: `cCombatant` vtable[6] у cCreatureAnimal (`this` = существо+0x5A8), `ret 0x14`: `(float dmg, u32 attackerPolitical, int type, const Vector3*, cCombatant* attacker)` |
+| `cGameNounManager::CreateHerd` | 0x00B238B0 | REA: null только если species == null; `herdSize=0` → пустое стадо; поля стада: позиция +0x34, species +0xA4 |
+| `Editors::cSpeciesManager::Get/GetSpeciesProfile` | 0x00401090 / 0x004DF580 | runtime: ключ вида аватара → его профиль |
+| `cCreatureBase::PlayAnimation(To)` | 0x00C12430 / 0x00C14AE0 | REA + `ret 0xC` / `ret 0x10` |
 | `ArgScript::PrintF` | 0x00841050 | REA: vsnprintf в буфер 0x400 + запись в поток |
 | `App::cAppSystem::PreInit/Init`, `cSporeApp::Init/Shutdown` | 0x7E8BD0 / 0x7E67E0 / 0xF47E90 / 0xF475A0 | runtime: хуки срабатывают в правильном порядке |
 | `App::ICheatManager::Get`, `IGameModeManager::Get` | 0x67DDE0 / 0x67DCD0 | runtime (читы, id режимов) |
@@ -76,7 +80,18 @@ ID режимов: Creature 0x1654C01, Editor 0xDBDBA1, главное меню 
   сворачивается. Решение: «фоновый режим» SporeKit (глотает WM_ACTIVATE*/KILLFOCUS,
   хуки GetForegroundWindow/GetActiveWindow/GetFocus) и тестовый профиль в окне.
 
-## 5.6 Открытые вопросы
+## 5.6 Как устроена синхронизация NPC (M2)
+
+* **Реестр существ** — хук `cCreatureAnimal::Update`: каждое существо, обновлённое за кадр,
+  попадает в список; он же служит фильтром (у гостя свои NPC не обновляются и удаляются).
+* Хост выдаёт NPC `net_id`, рассылает `NPC_SPAWN` (ключ вида, флаг «семья»), `NPC_STATE` 10 Гц,
+  `NPC_DESPAWN`; гость создаёт прокси через `cCreatureAnimal::Create` в стаде своего вида
+  (`CreateHerd`, размер 0) либо в стаде аватара для «семьи», без ИИ (хук `NPCTickAI`).
+* Урон — хук `TakeDamage`: удар гостя по прокси → `DAMAGE_REQ` → хост применяет к настоящему
+  NPC с атакующим = марионеткой гостя; удар NPC по марионетке на хосте → `DAMAGE` → гость
+  применяет к своему аватару. Огня по своим нет.
+
+## 5.7 Открытые вопросы
 
 * Камера/матрицы вида для `world_to_screen` (ники над существами) — `cGameModeManager::GetViewer`.
 * Перекраска марионетки (другой цвет/размер для отличия от родни).

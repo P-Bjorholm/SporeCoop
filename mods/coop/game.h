@@ -79,6 +79,7 @@ uint32_t political_id(void* c);
 using DamageFilter = bool (*)(void* creature, float damage, int type, void* attacker_creature);
 void set_damage_filter(DamageFilter fn);
 void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
+void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
 void set_health(void* c, float hp);
 
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures

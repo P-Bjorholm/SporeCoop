@@ -30,6 +30,9 @@ bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool damage_filter(void* creature, float damage, int type, void* attacker);
 std::string status();
+std::string list();                                  // debug: mirrored NPCs
+bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
+bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
 void set_enabled(bool on);
 bool enabled();
 
