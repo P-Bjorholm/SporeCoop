@@ -41,6 +41,7 @@ struct Remote {
     bool echo = false; // local loopback test remote
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
+    bool joined_phase = false; // host: the guest played the host's mode after the last world send
 };
 
 net::Session g_sess;
@@ -178,13 +179,17 @@ void follow_phase(double now)
         bool behind = ls.mode != g_mode && (stage_mode(ls.mode) || ls.mode == modes::kEdit || ls.mode == modes::kEditor);
         if (!behind) {
             r.other_mode_since = -1;
+            if (ls.mode == g_mode)
+                r.joined_phase = true;
             continue;
         }
         if (r.other_mode_since < 0)
             r.other_mode_since = now;
-        if (now - r.other_mode_since < 5.0 || r.world_sent == key)
+        // once per phase, or again when the guest had followed and then left the phase
+        if (now - r.other_mode_since < 5.0 || (r.world_sent == key && !r.joined_phase))
             continue;
         r.world_sent = key;
+        r.joined_phase = false;
         std::string err;
         if (world::share_with(id, err, g_save_on_share))
             feed("next phase: sending the world to " + r.name);
@@ -448,6 +453,7 @@ void setup_callbacks()
             std::string err;
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
+            r.joined_phase = false;
             if (!world::share_with(p.id, err, save))
                 feed("cannot share the world: " + err);
             else
