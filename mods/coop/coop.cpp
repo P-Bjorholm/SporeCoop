@@ -45,6 +45,7 @@ std::deque<std::pair<double, std::string>> g_feed;
 bool g_overlay = true;
 bool g_share_world = true; // host sends its save to joining guests
 bool g_anim_log = false;
+double g_last_time_sync = 0;
 bool g_tag_self = false; // debug: draw a tag over our own avatar to check the projection
 float g_dbg_sc[3];
 float g_puppet_scale = 1.15f;
@@ -145,6 +146,17 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     npc::tick(now);
+    if (g_sess.role() == net::Role::Host && now - g_last_time_sync > 1.0) {
+        g_last_time_sync = now;
+        net::Quat q;
+        if (game::time_of_day(q)) {
+            net::Writer w;
+            w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
+            for (auto& p : g_sess.players())
+                if (p.id != 0)
+                    g_sess.send_unreliable_to(p.id, net::MSG_WORLD_TIME, w);
+        }
+    }
 
     void* av = game::avatar();
     if (av != g_last_avatar) {
@@ -318,6 +330,13 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
+            net::Quat q;
+            q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
+            if (r.ok() && game::avatar())
+                game::set_time_of_day(q);
             return;
         }
         switch (type) {

@@ -38,6 +38,7 @@ enum MsgType : uint8_t {
     MSG_NPC_SPAWN = 19,   // host -> guest: start mirroring an NPC
     MSG_NPC_DESPAWN = 20, // host -> guest: stop mirroring an NPC
     MSG_DAMAGE_REQ = 21,  // guest -> host: my attack hit NPC net_id
+    MSG_WORLD_TIME = 22,  // host -> guests: time of day (sky orientation quaternion)
 };
 
 enum RejectReason : uint8_t {

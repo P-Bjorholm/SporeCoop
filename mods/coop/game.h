@@ -82,6 +82,10 @@ void apply_damage(void* c, float damage, int type, void* attacker_creature); // 
 void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
 void set_health(void* c, float hp);
 
+// ---- time of day: orientation of the sky object (see docs/05-re-notes.md) ----
+bool time_of_day(net::Quat& q);
+void set_time_of_day(const net::Quat& q);
+
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures
 void puppet_register(void* c);
 void puppet_unregister(void* c);

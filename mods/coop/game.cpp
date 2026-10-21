@@ -291,6 +291,35 @@ void* herd_of(void* c) { return field<void*>(c, kHerdOff); }
 
 uint32_t political_id(void* c) { return vcall<uint32_t>(c, 0x4C / 4); } // cGameData::GetPoliticalID
 
+static void* tod_object()
+{
+    uintptr_t un = H->sym("SporeCoop::TimeOfDay_Unavailable"), get = H->sym("SporeCoop::TimeOfDay_GetObject");
+    if (!un || !get || cdecl_call<int>(un) != 0)
+        return nullptr;
+    return cdecl_call<void*>(get);
+}
+
+bool time_of_day(net::Quat& q)
+{
+    void* o = tod_object();
+    if (!o)
+        return false;
+    auto& r = field<Quaternion>(o, 0x10); // cSpatialObject::mOrientation
+    q = {r.x, r.y, r.z, r.w};
+    return true;
+}
+
+void set_time_of_day(const net::Quat& q)
+{
+    void* o = tod_object();
+    uintptr_t apply = H->sym("SporeCoop::TimeOfDay_Apply");
+    if (!o || !apply)
+        return;
+    Quaternion r{q.x, q.y, q.z, q.w};
+    vcall<void>(o, 0x3C / 4, &r); // SetOrientation
+    cdecl_call<void>(apply, o);
+}
+
 void puppet_register(void* c)
 {
     if (!is_puppet(c))

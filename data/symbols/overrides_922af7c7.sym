@@ -16,3 +16,6 @@ Editors::cSpeciesManager::GetSpeciesProfile=0x004DF580 ; verified runtime: avata
 Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14
 Simulator::cCreatureBase::PlayAnimation=0x00C12430 ; verified REA + ret 0xC (animID, block, disableBlend)
 Simulator::cCreatureBase::PlayAnimationTo=0x00C14AE0 ; verified ret 0x10
+SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified REA (cTimeOfDay::SetTimeOfDay): cdecl() -> spatial object whose orientation is the time of day
+SporeCoop::TimeOfDay_Apply=0x01021630 ; verified REA: cdecl(object), called after SetOrientation in SetTimeOfDay
+SporeCoop::TimeOfDay_Unavailable=0x01020F30 ; verified REA: SetTimeOfDay does nothing when it returns non-zero
