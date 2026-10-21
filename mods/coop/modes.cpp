@@ -1,5 +1,7 @@
 #include "modes.h"
 
+#include <windows.h>
+
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
@@ -351,7 +353,114 @@ static void cell_despawn(void* cp)
 
 static float cell_tag(void* cp) { return *(float*)((uint8_t*)cp + 0x58) * 1.2f + 0.5f; }
 
+// ---------------------------------------------------------------- tribe / civilization
+// RTS stages have no single avatar: a player is shown as a pointer - the point of the planet
+// under their mouse - with the name tag. Both play the same (host) world, so the tribe or the
+// cities themselves already exist on every machine.
+struct Marker {
+    net::Vec3 pos;
+};
+static Marker g_local_marker;
+
+static void* noun_manager()
+{
+    uintptr_t get = S("Simulator::cGameNounManager::Get");
+    return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+// a point on the planet surface of the player's community (sets the ray-cast sphere radius)
+static bool rts_anchor(net::Vec3& p)
+{
+    void* nm = noun_manager();
+    if (!nm)
+        return false;
+    void* tribe = skg::field<void*>(nm, 0x70);
+    if (tribe && skg::readable(tribe, 0x130)) {
+        auto v = skg::field<skg::Vector3>(tribe, 0x124);
+        p = {v.x, v.y, v.z};
+        return drive::speed(p) > 1;
+    }
+    uintptr_t f = S("Simulator::cGameNounManager::GetPlayerCivilization");
+    void* civ = f ? skg::thiscall<void*>(f, nm) : nullptr;
+    if (civ && skg::readable(civ, 0xA8)) {
+        void** b = skg::field<void**>(civ, 0x9C); // mCities (vector begin)
+        void** e = skg::field<void**>(civ, 0xA0);
+        if (b && e > b && skg::readable(b, 4) && *b && skg::readable(*b, 0x130)) {
+            auto v = skg::field<skg::Vector3>(*b, 0x124);
+            p = {v.x, v.y, v.z};
+            return drive::speed(p) > 1;
+        }
+    }
+    return false;
+}
+
+static void* rts_local()
+{
+    net::Vec3 a;
+    return rts_anchor(a) ? &g_local_marker : nullptr;
+}
+
+// planet point under the mouse (ray from the game camera against the planet sphere)
+static bool mouse_on_planet(net::Vec3& out)
+{
+    net::Vec3 anchor;
+    if (!rts_anchor(anchor))
+        return false;
+    HWND w = (HWND)g_host_for_modes->game_window();
+    POINT pt;
+    if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
+        return false;
+    uintptr_t mmget = S("App::IGameModeManager::Get"), ray = S("App::cViewer::GetCameraToPoint");
+    void* mm = mmget ? skg::cdecl_call<void*>(mmget) : nullptr;
+    void* viewer = mm ? skg::vcall<void*>(mm, 0x58 / 4) : nullptr;
+    if (!viewer || !ray)
+        return false;
+    skg::Vector3 o{}, d{};
+    if (!skg::thiscall<bool>(ray, viewer, (float)pt.x, (float)pt.y, &o, &d))
+        return false;
+    float dl = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    if (dl < 1e-6f)
+        return false;
+    d.x /= dl; d.y /= dl; d.z /= dl;
+    float R = drive::speed(anchor);
+    float b = o.x * d.x + o.y * d.y + o.z * d.z;
+    float c = o.x * o.x + o.y * o.y + o.z * o.z - R * R;
+    float disc = b * b - c;
+    if (disc < 0)
+        return false;
+    float t = -b - std::sqrt(disc);
+    if (t < 0)
+        t = -b + std::sqrt(disc);
+    if (t < 0)
+        return false;
+    out = {o.x + d.x * t, o.y + d.y * t, o.z + d.z * t};
+    return true;
+}
+
+static void rts_fill(void* m, net::PlayerState& st)
+{
+    Marker* mk = (Marker*)m;
+    net::Vec3 p;
+    if (mk == &g_local_marker && mouse_on_planet(p))
+        mk->pos = p;
+    st.flags |= net::PF_IN_WORLD;
+    st.pos = mk->pos;
+}
+
+static void* rts_spawn(const net::PlayerState& s, void*)
+{
+    auto* m = new Marker;
+    m->pos = s.pos;
+    return m;
+}
+
+static void rts_drive(void* m, const net::PlayerState& s, drive::State&, double) { ((Marker*)m)->pos = s.pos; }
+static void rts_despawn(void* m) { delete (Marker*)m; }
+static float rts_tag(void*) { return 0.5f; }
+
 static const Adapter kAdapters[] = {
+    {"Tribe", kTribe, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
+    {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     {"Adventure", kScenario, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},

@@ -16,6 +16,7 @@ public:
     void u16(uint16_t v) { raw(&v, 2); }
     void u32(uint32_t v) { raw(&v, 4); }
     void f32(float v) { raw(&v, 4); }
+    void f64(double v) { raw(&v, 8); }
     void raw(const void* p, size_t n)
     {
         const uint8_t* b = static_cast<const uint8_t*>(p);
@@ -65,6 +66,12 @@ public:
     {
         float v = 0;
         raw(&v, 4);
+        return v;
+    }
+    double f64()
+    {
+        double v = 0;
+        raw(&v, 8);
         return v;
     }
     bool raw(void* out, size_t n)

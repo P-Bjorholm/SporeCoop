@@ -41,6 +41,9 @@ enum MsgType : uint8_t {
     MSG_WORLD_TIME = 22,  // host -> guests: time of day (sky orientation quaternion)
     MSG_DNA = 23,         // host -> guests: shared DNA total (f32)
     MSG_DNA_ADD = 24,     // guest -> host: DNA the guest earned (f32 delta)
+    MSG_RES = 25,         // host -> guests: shared resource total (u8 id, f64)
+    MSG_RES_ADD = 26,     // guest -> host: local change of a shared resource (u8 id, f64 delta)
+    MSG_PING_MARK = 27,   // any: "look here" marker (vec3), relayed by the host
 };
 
 enum RejectReason : uint8_t {

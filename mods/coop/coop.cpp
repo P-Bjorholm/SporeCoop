@@ -12,6 +12,7 @@
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
+#include "shared.h"
 #include "npc.h"
 #include "world.h"
 #include "net/interp.h"
@@ -161,6 +162,7 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     npc::tick(now);
+    shared::tick(g_sess, game::mode_id(), now);
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
         if (total != g_dna_sent) {
@@ -240,12 +242,48 @@ void on_frame(void*, int, void*)
 
 int text_width(const std::string& s) { return (int)s.size() * 9; } // Arial 18 bold, approx.
 
+// "look here" marks (coop ping): shown for a few seconds at a world point
+struct Mark {
+    std::string who;
+    net::Vec3 pos;
+    uint32_t mode;
+    double until;
+};
+std::vector<Mark> g_marks;
+
+void add_mark(uint8_t from, const net::Vec3& p, uint32_t mode)
+{
+    g_marks.push_back({g_sess.name_of(from), p, mode, H->time_seconds() + 6.0});
+    feed(g_sess.name_of(from) + " pings a place");
+}
+
+void draw_marks()
+{
+    double now = H->time_seconds();
+    for (size_t i = 0; i < g_marks.size();) {
+        if (g_marks[i].until < now) {
+            g_marks.erase(g_marks.begin() + i);
+            continue;
+        }
+        const Mark& m = g_marks[i++];
+        if (m.mode != g_mode)
+            continue;
+        float w[3] = {m.pos.x, m.pos.y, m.pos.z}, sc[2];
+        if (H->world_to_screen(w, sc)) {
+            bool blink = ((int)(now * 4)) & 1;
+            std::string t = "[ ! ] " + m.who;
+            H->overlay_text((int)sc[0] - text_width(t) / 2, (int)sc[1] - 10, blink ? 0xFFFFD040 : 0xFFFF8020, t.c_str());
+        }
+    }
+}
+
 void on_overlay(void*, int, void*)
 {
     if (!g_overlay)
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
+    draw_marks();
     // name tags above remote players
     void* av = g_local;
     if (g_tag_self && av) {
@@ -359,6 +397,7 @@ void setup_callbacks()
         g_remotes.clear();
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
+        shared::on_session_change();
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto& r = g_remotes[p.id];
         r.id = p.id;
@@ -404,6 +443,27 @@ void setup_callbacks()
             q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
             if (r.ok() && game::avatar())
                 game::set_time_of_day(q);
+            return;
+        }
+        if (type == net::MSG_RES || type == net::MSG_RES_ADD) {
+            shared::on_message(g_sess, type, from, r);
+            return;
+        }
+        if (type == net::MSG_PING_MARK) { // u8 origin, vec3, u32 mode
+            uint8_t origin = r.u8();
+            net::Vec3 p;
+            p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+            uint32_t mode = r.u32();
+            if (!r.ok())
+                return;
+            if (g_sess.role() == net::Role::Host) { // relay to the other guests
+                origin = from;
+                net::Writer w;
+                w.u8(origin);
+                w.f32(p.x); w.f32(p.y); w.f32(p.z); w.u32(mode);
+                g_sess.broadcast_reliable(net::MSG_PING_MARK, w, from);
+            }
+            add_mark(origin, p, mode);
             return;
         }
         switch (type) {
@@ -560,6 +620,39 @@ int c_echo(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+int c_res(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc >= 4 && !strcmp(argv[1], "add")) {
+        std::string err;
+        if (!shared::debug_add(argv[2], atof(argv[3]), err)) {
+            SAY("%s", err.c_str());
+            return 1;
+        }
+    }
+    SAY("%s", shared::status().c_str());
+    return 0;
+}
+
+// coop.ping: mark the place under the mouse (RTS stages) or where you stand, for everybody
+int c_ping(void*, int, const char* const*, SkOut* out)
+{
+    if (!g_local || g_sess.role() == net::Role::None) {
+        SAY("play and join a session first");
+        return 1;
+    }
+    net::PlayerState st = local_state();
+    net::Writer w;
+    w.u8(g_sess.my_id());
+    w.f32(st.pos.x); w.f32(st.pos.y); w.f32(st.pos.z); w.u32(g_mode);
+    if (g_sess.role() == net::Role::Host)
+        g_sess.broadcast_reliable(net::MSG_PING_MARK, w);
+    else
+        g_sess.send_reliable_to(0, net::MSG_PING_MARK, w);
+    add_mark(g_sess.my_id(), st.pos, g_mode);
+    SAY("pinged (%.1f %.1f %.1f)", st.pos.x, st.pos.y, st.pos.z);
+    return 0;
+}
+
 int c_share(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (g_sess.role() != net::Role::Host) {
@@ -648,6 +741,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
+    shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
     game::set_dna_listener(on_dna);
@@ -685,6 +779,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
+    H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
+                   nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
                    nullptr, MT);
     coop_register_debug_commands(H, M);

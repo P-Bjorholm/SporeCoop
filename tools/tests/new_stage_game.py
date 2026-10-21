@@ -23,7 +23,8 @@ NEXT = (1086, 618)
 STEPS = {
     "space": [DICE_CARD, NEXT, DICE_NAME, NEXT, NEXT, NEXT, NEXT, DICE_STUFF, NEXT, (1090, 608)],
     "civ": [DICE_CARD, NEXT, DICE_NAME, NEXT, NEXT, NEXT, DICE_STUFF, NEXT, (1090, 608)],
-    "tribe": [DICE_CARD, NEXT, DICE_NAME, NEXT, NEXT, NEXT, (1090, 608)],
+    # diet card, sporepedia creature + confirm, theme, difficulty, planet name
+    "tribe": [(852, 536), NEXT, (428, 220), (1400, 1058), NEXT, NEXT, (1090, 608)],
     "creature": [DICE_CARD, NEXT, DICE_NAME, NEXT, NEXT, (1090, 608)],
     "cell": [(900, 537), NEXT, NEXT, (1090, 608)],  # diet card, difficulty, planet name
 }
