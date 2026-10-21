@@ -38,6 +38,19 @@ static void test_buffer()
     Reader bad(w.data.data(), 5);
     PlayerState u;
     CHECK(!u.read(bad));
+    // v2: mode + world identify where the player is
+    s.mode = 0x1654C05; s.world = 0x80B16021;
+    Writer w2;
+    s.write(w2);
+    Reader r2(w2.data.data(), w2.size());
+    PlayerState t2;
+    CHECK(t2.read(r2) && t2.mode == 0x1654C05 && t2.world == 0x80B16021);
+    // shared resource message payload (u8 id, f64)
+    Writer w3;
+    w3.u8(3);
+    w3.f64(123456.75);
+    Reader r3(w3.data.data(), w3.size());
+    CHECK(r3.u8() == 3 && r3.f64() == 123456.75 && r3.ok() && r3.left() == 0);
 }
 
 static void test_reliability()
