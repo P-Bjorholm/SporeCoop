@@ -33,6 +33,10 @@ struct Adapter {
     void (*despawn)(void* puppet);
     // height of the name tag above the entity origin (nullptr: 3 m)
     float (*tag_height)(void* entity);
+    // false when the game removed the puppet on its own (nullptr: always alive)
+    bool (*alive)(void* puppet);
+    // name tags go "up" along the planet normal; flat worlds (cell) use +z instead
+    bool flat;
 };
 
 // position of any entity created/controlled by adapter `a`

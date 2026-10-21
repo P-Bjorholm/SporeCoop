@@ -25,3 +25,6 @@ Resource::GetDatabaseByID=0x006B1F20 ; verified runtime: cdecl(id) -> IDatabase;
 Simulator::cStarManager::ReadStarsFromSaveDB=0x00BB8C60 ; verified ftrace+probe: thiscall(starMgr), reads stars.db from the save DB (0x4729A47) location; run on entering the galaxy menu
 SporeCoop::CurrentGameName=0x0167EF40 ; verified asm+runtime: eastl::string16 with the current save planet file (u"Scalinus.spo"), set by LoadGameByName
 Simulator::SpacePlayerData::ptr=0x016DEA6C ; verified asm of GetActiveStar (mov eax,[0x16DEA6C]; mov eax,[eax+8]); ModAPI m17 0x16DDA8C
+Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; most used global in cell code (1122 refs), m17 0x16B3C04
+Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; m17 0x16B3C08
+Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; m17 0x16B3C0C

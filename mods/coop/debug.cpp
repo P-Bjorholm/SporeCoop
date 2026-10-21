@@ -39,6 +39,46 @@ int c_load(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// coop.cell list | spawn <slot> [dx dy] : experiment with cell-stage objects
+int c_cell(void*, int argc, const char* const* argv, SkOut* out)
+{
+    using namespace skg;
+    uint8_t* g = *(uint8_t**)H->sym("Simulator::Cell::cCellGame::_ptr");
+    if (!g) {
+        SAY("not in the cell stage");
+        return 1;
+    }
+    uint8_t* data = *(uint8_t**)(g + 0x1C);
+    uint32_t n = *(uint32_t*)(g + 0x1C + 0x10);
+    uint32_t av = *(uint32_t*)(g + 0x411C);
+    if (argc < 2 || !strcmp(argv[1], "list")) {
+        for (uint32_t i = 1; i <= n && i < 4096; i++) {
+            uint8_t* c = data + i * 0x398;
+            if ((*(uint32_t*)c & 0xFFFF) != i)
+                continue;
+            float* p = (float*)(c + 0x4C);
+            SAY("%s#%u idx=%08X pos=(%.1f %.1f %.1f) size=%.2f res=%p model=%08X scale=%d hp=%d op=%.2f\n",
+                *(uint32_t*)c == av ? ">" : " ", i, *(uint32_t*)c, p[0], p[1], p[2], *(float*)(c + 0x58),
+                *(void**)(c + 0x108), *(uint32_t*)(c + 0xFC), *(int*)(c + 0x358), *(int*)(c + 0x244),
+                *(float*)(c + 0xA0));
+        }
+        return 0;
+    }
+    if (!strcmp(argv[1], "spawn") && argc >= 3) {
+        uint32_t slot = (uint32_t)atoi(argv[2]);
+        uint8_t* src = data + slot * 0x398;
+        uint8_t* me = data + (av & 0xFFFF) * 0x398;
+        float* mp = (float*)(me + 0x4C);
+        Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
+        uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,
+                                            *(void**)(src + 0x108), argc > 5 ? atoi(argv[5]) : *(int*)(src + 0x358), 1.f, 1.f, 1, (void*)nullptr, 0);
+        SAY("created %08X from #%u", idx, slot);
+        return 0;
+    }
+    SAY("usage: coop.cell list | spawn <slot> [dx dy]");
+    return 1;
+}
+
 int c_cam(void*, int argc, const char* const* argv, SkOut* out)
 {
     using namespace skg;
@@ -217,6 +257,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.load", "coop.load <GameN> <Planet> - load a local save (also from the menu)",
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.cell", "coop.cell list | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
+                      nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);

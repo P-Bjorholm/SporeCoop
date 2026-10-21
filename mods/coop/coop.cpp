@@ -21,6 +21,7 @@
 static const SkHost* H;
 static SkMod* M;
 extern const SkHost* g_host_for_modes; // modes.cpp
+extern SkMod* g_mod_for_modes;
 
 void coop_register_debug_commands(const SkHost* host, SkMod* self); // debug.cpp
 
@@ -131,6 +132,10 @@ void drive_puppet(Remote& r, double now)
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+    if (r.puppet && r.puppet_adapter && r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)) {
+        r.puppet = nullptr; // removed by the game itself: show it again
+        r.puppet_adapter = nullptr;
+    }
     if (!visible || (r.puppet && r.puppet_adapter != g_adapter)) {
         despawn(r);
         if (!visible)
@@ -260,6 +265,11 @@ void on_overlay(void*, int, void*)
         float h = ad->tag_height ? ad->tag_height(r.puppet) : 3.f;
         float up = len > 1 ? h / len : 0; // above the head, along the planet normal
         float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+        if (ad->flat) {
+            w[0] = p.x;
+            w[1] = p.y + h; // cell world: screen up is +y on the plane
+            w[2] = p.z;
+        }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
             H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, 0xFF80FF80, tag.c_str());
@@ -627,6 +637,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H = host;
     M = self;
     g_host_for_modes = host;
+    g_mod_for_modes = self;
     if (!game::init(H, M)) {
         H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
         return nullptr;

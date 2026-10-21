@@ -1,12 +1,15 @@
 #include "modes.h"
 
 #include <cmath>
+#include <cstring>
+#include <unordered_map>
 
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
 extern const SkHost* g_host_for_modes;
+extern SkMod* g_mod_for_modes;
 
 namespace modes {
 
@@ -154,7 +157,202 @@ static void space_despawn(void* u) { game::destroy_creature(u); } // DestroyInst
 
 static float space_tag(void*) { return 4.f; }
 
+// ---------------------------------------------------------------- cell stage
+// cCellGame (*0x16B4BE4): mCells pool at +0x1C (mpData +0, object size +0x14), mpCellQuery +0x40FC,
+// mAvatarCellIndex +0x411C. cCellObjectData (0x398 bytes): index +0, mIsIdle +4, mTargetPosition +8,
+// mTransform +0x48 (offset +0x4C, scale +0x58, rotation 3x3 +0x5C), mCellResource +0x108,
+// mIsInvulnerable +0x111, mChaseCellIndex +0x22C, mHealthPoints +0x244, mScale +0x358.
+static uint8_t* cell_game()
+{
+    uintptr_t p = S("Simulator::Cell::cCellGame::_ptr");
+    return p ? *(uint8_t**)p : nullptr;
+}
+
+// cObjectPoolIndex = slot (low 16 bits) | generation (high 16); the object's first field holds
+// its own full index while it lives (cObjectPool::GetIfNotDeleted 0xB72290)
+static uint8_t* cell_at(uint32_t idx)
+{
+    uint8_t* g = cell_game();
+    uint32_t slot = idx & 0xFFFF;
+    if (!g || !idx || slot >= 4096)
+        return nullptr;
+    uint8_t* data = *(uint8_t**)(g + 0x1C);
+    uint32_t size = *(uint32_t*)(g + 0x1C + 0x14);
+    if (!data || size != 0x398 || slot > *(uint32_t*)(g + 0x1C + 0x10))
+        return nullptr;
+    uint8_t* c = data + (size_t)slot * size;
+    return *(uint32_t*)c == idx ? c : nullptr;
+}
+
+static std::unordered_map<void*, uint32_t> g_cell_ids; // puppet -> its pool index
+
+static void* cell_local()
+{
+    uint8_t* g = cell_game();
+    return g ? cell_at(*(uint32_t*)(g + 0x411C)) : nullptr;
+}
+
+static void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3
+{
+    float tr = m[0] + m[4] + m[8];
+    if (tr > 0) {
+        float s = std::sqrt(tr + 1.f) * 2;
+        q.w = 0.25f * s;
+        q.x = (m[7] - m[5]) / s;
+        q.y = (m[2] - m[6]) / s;
+        q.z = (m[3] - m[1]) / s;
+    } else if (m[0] > m[4] && m[0] > m[8]) {
+        float s = std::sqrt(1.f + m[0] - m[4] - m[8]) * 2;
+        q.w = (m[7] - m[5]) / s;
+        q.x = 0.25f * s;
+        q.y = (m[1] + m[3]) / s;
+        q.z = (m[2] + m[6]) / s;
+    } else if (m[4] > m[8]) {
+        float s = std::sqrt(1.f + m[4] - m[0] - m[8]) * 2;
+        q.w = (m[2] - m[6]) / s;
+        q.x = (m[1] + m[3]) / s;
+        q.y = 0.25f * s;
+        q.z = (m[5] + m[7]) / s;
+    } else {
+        float s = std::sqrt(1.f + m[8] - m[0] - m[4]) * 2;
+        q.w = (m[3] - m[1]) / s;
+        q.x = (m[2] + m[6]) / s;
+        q.y = (m[5] + m[7]) / s;
+        q.z = 0.25f * s;
+    }
+}
+
+static void quat_to_mat(const net::Quat& q, float* m)
+{
+    float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z, xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z,
+          wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+    m[0] = 1 - 2 * (yy + zz); m[1] = 2 * (xy - wz);     m[2] = 2 * (xz + wy);
+    m[3] = 2 * (xy + wz);     m[4] = 1 - 2 * (xx + zz); m[5] = 2 * (yz - wx);
+    m[6] = 2 * (xz - wy);     m[7] = 2 * (yz + wx);     m[8] = 1 - 2 * (xx + yy);
+}
+
+static void cell_fill(void* cp, net::PlayerState& st)
+{
+    uint8_t* c = (uint8_t*)cp;
+    auto* pos = (float*)(c + 0x4C);
+    st.flags |= net::PF_IN_WORLD;
+    st.pos = {pos[0], pos[1], pos[2]};
+    mat_to_quat((float*)(c + 0x5C), st.rot);
+    auto* tgt = (float*)(c + 0x08);
+    net::Vec3 d{tgt[0] - pos[0], tgt[1] - pos[1], tgt[2] - pos[2]};
+    if (!*(bool*)(c + 4) && drive::speed(d) > 0.05f)
+        st.flags |= net::PF_MOVING;
+    st.health = (float)*(int*)(c + 0x244);
+    st.max_health = 6;
+    if (st.health <= 0)
+        st.flags |= net::PF_DEAD;
+    st.species = *(uint32_t*)(c + 0x58); // transform scale (cell size) travels in the species slot
+}
+
+// CreateCellObject asks GetModelKeyForCellResource for the model; the avatar's resource
+// ("PlayerCreature") maps to the species picked in the creator, not to the evolved cell the
+// player has now. While spawning a puppet the hook answers with the avatar's current model.
+typedef skg::ResourceKey*(__cdecl* GetModelKey_t)(skg::ResourceKey*, void*);
+static GetModelKey_t o_GetModelKey;
+static bool g_force_key;
+static skg::ResourceKey g_key;
+
+static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
+{
+    if (g_force_key) {
+        *ret = g_key;
+        return ret;
+    }
+    return o_GetModelKey(ret, res);
+}
+
+static void* cell_spawn(const net::PlayerState& s, void* local)
+{
+    if (!o_GetModelKey) {
+        uintptr_t a = S("Simulator::Cell::GetModelKeyForCellResource");
+        if (a)
+            g_host_for_modes->hook_create(g_mod_for_modes, (void*)a, (void*)h_GetModelKey, (void**)&o_GetModelKey);
+    }
+    uint8_t* g = cell_game();
+    uint8_t* me = (uint8_t*)local;
+    uintptr_t create = S("Simulator::Cell::CreateCellObject");
+    if (!g || !me || !create)
+        return nullptr;
+    skg::Vector3 p{s.pos.x, s.pos.y, s.pos.z};
+    void* query = *(void**)(g + 0x40FC);
+    void* res = *(void**)(me + 0x108);
+    // the avatar's own mScale is -1 ("player"); other cells with -1 are not drawn: use the level the
+    // player is at (GetCurrentAdvectInfo reports the current CellStageScale)
+    int scale = 1;
+    if (uintptr_t adv = S("Simulator::Cell::GetCurrentAdvectInfo")) {
+        int lvl = -1;
+        float a, b, c;
+        skg::cdecl_call<uint32_t>(adv, &lvl, &a, &b, &c);
+        if (lvl >= 0 && lvl < 8)
+            scale = lvl;
+    }
+    g_key = skg::field<skg::ResourceKey>(me, 0xFC);
+    g_force_key = o_GetModelKey && g_key.instance != 0;
+    uint32_t idx = skg::cdecl_call<uint32_t>(create, query, &p, 0.f, res, scale, 1.f, 1.f, 1, (void*)nullptr, 0);
+    g_force_key = false;
+    uint8_t* c = cell_at(idx);
+    if (!c)
+        return nullptr;
+    g_cell_ids[c] = idx;
+    *(bool*)(c + 0x111) = true; // invulnerable: nobody eats a friend
+    return c;
+}
+
+static void cell_drive(void* cp, const net::PlayerState& s, drive::State&, double)
+{
+    uint8_t* c = (uint8_t*)cp;
+    auto* pos = (float*)(c + 0x4C);
+    net::Vec3 cur{pos[0], pos[1], pos[2]};
+    // the cell game moves cells itself (our write lands after its update): swim towards the remote
+    // position like the player's own cell does (mTargetPosition + not idle), snap when far behind
+    if (net::dist(cur, s.pos) > 4.f) {
+        pos[0] = s.pos.x; pos[1] = s.pos.y; pos[2] = s.pos.z;
+    }
+    auto* tgt = (float*)(c + 0x08);
+    tgt[0] = s.pos.x; tgt[1] = s.pos.y; tgt[2] = s.pos.z;
+    *(bool*)(c + 4) = net::dist(cur, s.pos) < 0.2f;
+    skg::field<skg::Quaternion>(c, 0x14) = {s.rot.x, s.rot.y, s.rot.z, s.rot.w}; // mTargetOrientation
+    float size;
+    memcpy(&size, &s.species, 4);
+    if (size > 0.01f && size < 1000.f) {
+        *(float*)(c + 0x58) = size;
+        *(float*)(c + 0xB4) = size; // mTargetSize
+    }
+    *(int*)(c + 0x22C) = -1; // never chase anything
+    *(int*)(c + 0x220) = -1; // nor flee
+    *(int*)(c + 0x244) = 6;
+    *(bool*)(c + 0x111) = true;
+}
+
+static bool cell_alive(void* cp)
+{
+    auto it = g_cell_ids.find(cp);
+    bool ok = it != g_cell_ids.end() && cell_at(it->second) == cp;
+    if (!ok && it != g_cell_ids.end())
+        g_cell_ids.erase(it);
+    return ok;
+}
+
+static void cell_despawn(void* cp)
+{
+    if (!cell_alive(cp))
+        return;
+    g_cell_ids.erase(cp);
+    uint8_t* c = (uint8_t*)cp;
+    *(bool*)(c + 0x111) = false;
+    *(int*)(c + 0x244) = 0; // the cell game removes dead cells
+    *(float*)(c + 0xA4) = 0; // mTargetOpacity: fade out meanwhile
+}
+
+static float cell_tag(void* cp) { return *(float*)((uint8_t*)cp + 0x58) * 1.2f + 0.5f; }
+
 static const Adapter kAdapters[] = {
+    {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     {"Adventure", kScenario, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag},
@@ -224,3 +422,4 @@ uint32_t current_world()
 } // namespace modes
 
 const SkHost* g_host_for_modes;
+SkMod* g_mod_for_modes;
