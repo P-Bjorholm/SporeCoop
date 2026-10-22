@@ -23,6 +23,7 @@
 #include "tribe.h"
 #include "cellsync.h"
 #include "civ.h"
+#include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
 #include "world.h"
@@ -661,6 +662,7 @@ void on_frame(void*, int, void*)
     cellsync::tick(now);
     civ::tick(now);
     squadron::tick(now);
+    spacecoop::tick(now);
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
 
@@ -726,8 +728,10 @@ void add_mark(uint8_t from, const net::Vec3& p, uint32_t mode)
 
 void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uint32_t argb)
 {
-    for (auto& m : g_marks) // the same place again: refresh it
-        if (m.text == text && net::dist(m.pos, p) < 1.f) {
+    for (auto& m : g_marks) // the same beacon again: refresh it (it may follow a moving target)
+        if (m.text == text || (m.argb == argb && net::dist(m.pos, p) < 1.f && m.text.substr(0, 6) == text.substr(0, 6))) {
+            m.text = text;
+            m.pos = p;
             m.until = H->time_seconds() + seconds;
             return;
         }
@@ -783,6 +787,8 @@ void draw_owner_tags()
             if (!H->world_to_screen(w, sc))
                 return;
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
+            if (tribe::is_chief(c))
+                n = "\u2605 " + n + "'s chief";
             H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
                             owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
         },
@@ -816,6 +822,7 @@ void on_overlay(void*, int, void*)
     H->screen_size(&sw, &sh);
     draw_marks();
     cellsync::draw_overlay();
+    spacecoop::draw_overlay();
     draw_owner_tags();
     draw_civ_tags();
     // name tags above remote players
@@ -934,6 +941,7 @@ void setup_callbacks()
         creations::on_session_end();
         civ::on_session_end();
         squadron::on_session_end();
+        spacecoop::on_session_end();
         for (auto& [id, r] : g_remotes)
             despawn(r);
         g_remotes.clear();
@@ -1103,6 +1111,10 @@ void setup_callbacks()
             add_mark(origin, p, mode);
             return;
         }
+        if (type == net::MSG_SPACE) {
+            spacecoop::on_message(type, from, r);
+            return;
+        }
         if (type >= net::MSG_UFO_STATE && type <= net::MSG_UFO_DAMAGE) {
             squadron::on_message(type, from, r);
             return;
@@ -1190,6 +1202,7 @@ void do_leave()
 {
     g_sess.leave("user");
     npc::on_session_end();
+    spacecoop::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
@@ -1294,6 +1307,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
+    SAY("%s", spacecoop::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
@@ -1633,6 +1647,8 @@ int give_selected_to(uint8_t to)
         return tribe::give_selected(to);
     if (g_mode == modes::kCiv)
         return civ::give_selected(to);
+    if (g_mode == modes::kSpace)
+        return spacecoop::give_spice(10);
     return 0;
 }
 
@@ -1660,8 +1676,24 @@ void init_ui()
             bool city = false;
             n = civ::own_selected(&city);
             what = city ? "city" : "vehicle";
+        } else if (g_mode == modes::kSpace) {
+            std::string sto;
+            n = spacecoop::spice(sto);
+            if (n < 0)
+                return 0;
+            what = "spice";
         }
         return n;
+    };
+    a.jump = [](std::string& to) { return g_sess.connected() && spacecoop::can_jump(to); };
+    a.jump_do = [] {
+        H->run_outside_frame(
+            [](void*) {
+                std::string e = spacecoop::jump(0xFF);
+                if (!e.empty())
+                    notice("can't jump: " + e, -1);
+            },
+            nullptr);
     };
     a.give_do = [] { give_selected_to(give_target()); };
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
@@ -1979,6 +2011,35 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
     squadron::init(H, M, std::move(sqc));
+    spacecoop::Ctx spc;
+    spc.sess = &g_sess;
+    spc.notice = [](const std::string& t) { // every machine words its own messages (MSG_SPACE)
+        feed(t);
+        chat_log("* " + t);
+    };
+    spc.my_place = [] { return g_mode == modes::kSpace ? g_world : 0u; };
+    spc.partners = [] {
+        std::vector<spacecoop::Partner> v;
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo || r.buf.empty())
+                continue;
+            const net::PlayerState& s = r.buf.latest();
+            if (s.mode != modes::kSpace)
+                continue;
+            v.push_back({id, r.name, s.world, s.pos, r.puppet});
+        }
+        return v;
+    };
+    spc.beacon = add_beacon;
+    spacecoop::init(H, M, std::move(spc));
+    H->command_add(M, "coop.space",
+                   "coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet]"
+                   " - space co-op",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", spacecoop::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player>] - space co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", squadron::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());

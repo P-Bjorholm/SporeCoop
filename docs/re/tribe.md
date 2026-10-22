@@ -336,3 +336,225 @@ Simulator::cTribeUI::Get=0x00CD41E0 ; verified returns [0x169C2A8], class name u
 * Food cost / validation path for buying a tool or a baby (UI side) not found.
 * How the held-tool model / gather/eat animations are shown — needed for good-looking mirrors.
 * Whether mID (+0x24) is identical between host and guest after loading the same save.
+
+---------------------------------------------------------------------------------------------
+## Co-op features (pincer, duet, healers, chief, epic)
+
+Static analysis only (llvm-objdump + REA/Ghidra on the full exe, plus game data from
+`Data/PatchData.package`). Marks: **✔** verified in this build (prologue / `ret N` / call sites),
+**~** likely (role sure, some semantics inferred), **?** unknown / check at runtime.
+(✔ ≈ V, ~ ≈ P, ? ≈ U in the sections above.)
+
+### A. Combat damage (goal: "pincer")
+
+The damage path is a virtual call on the **cCombatant** sub-object (`creature+0x5A8`, slot
+0x18 = TakeDamage). Every override has the same signature:
+`int __thiscall TakeDamage(cCombatant* this, float dmg, uint32 attackerPolID, int type,
+const Vector3* pos, cCombatant* attacker)` **ret 0x14** ✔ (the mod's `TakeDamage_t` matches).
+
+| Class (victim) | combatant vtable | TakeDamage | Calls | Conf |
+|---|---|---|---|---|
+| cCombatant (base) | 0x1469070, … | **0xBFCEF0** | stores `attacker` at combatant **+0x28** (intrusive, = last attacker), HP −= dmg at +0x38, death at ≤0 | ✔ |
+| cCreatureBase | 0x146AE58 | **0xC1A4E0** | invulnerability checks (avatar, space mode…), then 0xBFCEF0 (call at 0xC1A942) | ✔ |
+| cCreatureAnimal | 0x146A948 | 0xC075A0 (the hook in game.cpp) | 0xC1A4E0 | ✔ |
+| **cCreatureCitizen** | **0x146B5C8** | **0xC26920** | 0xC1A4E0, then tribe logic (below) | ✔ |
+| cTribeHut (noun 0x1E4DAAE, main vt 0x1474FB0, combatant at +0x120) | 0x1474E50 | 0xC9CA20 | 0xBFCEF0; relationship events 0x530CF04/05 | ✔ |
+| cTribeTool (noun 0x18C8F0C, main vt 0x1475210, combatant at +0x120) | 0x1475178 | 0xC9D7F0 | 0xBFCEF0 | ✔ |
+
+**Answer: tribe combat does NOT go through the mod's damage filter for citizen victims.**
+`game.cpp` hooks 0xC075A0 = cCreatureAnimal only, so it fires in the tribe stage only when an
+*animal* is hit (hunting, epic creature, pets). Citizen-vs-citizen hits go
+0xC26920 → 0xC1A4E0 → 0xBFCEF0. Hooking **0xC1A4E0** catches animals + citizens with one hook;
+0xBFCEF0 additionally catches huts/tools/vehicles/UFOs.
+
+Citizen TakeDamage 0xC26920 details ✔:
+* `this` = citizen+0x5A8; victim citizen = `this − 0x5A8`; victim tribe = `this+0xA6C`
+  (= citizen **+0x1014**, mpOwnerTribe).
+* `attacker` (arg5) is a cCombatant*; `attacker->vt[0x0C]()` returns the owner object
+  (`lea eax,[ecx−0x5A8]` for creatures), `attacker->vt[0x08]()` its spatial (owner+0xC0).
+  The function itself casts the owner to a citizen (`0xAC7FD0(obj, 0x18EB4B7)` = cdecl
+  object_cast by noun id via vt 0x20) and reads `+0x1014` → attacker tribe. Non-citizen
+  attackers: cast with 0x18EB45E (animal) → herd.
+* Survived + victim has a tribe + `attackerPolID != −1` → `ApplyRelationship(victimPol,
+  attackerPol, 0x530CF00, 1.0)` (victim tribe gets angry at attacker) ✔.
+* Killed: event-log entries (0x7C5B1068 "you killed …", 0xAF9432AB "member killed"),
+  message 0x5C80207 {victim, attackerTribe, attackerHerd} ✔.
+* Base 0xBFCEF0 keeps the last attacker at combatant+0x28 — handy to ask "who hit this enemy".
+
+**Pincer recipe (host).** Hook **0xC26920** (thiscall, ret 0x14, same typedef as game.cpp):
+```
+victim = this-0x5A8; vt = victim[+0x1014];  att = attacker ? attacker->vt[0xC]() : 0
+if att is citizen (vt 0x20 == 0x18EB4B7) and att[+0x1014] == playerTribe and vt != playerTribe:
+    owner = coop owner of att;  remember (vt, owner, now)
+    if the other player hit any member of vt within N s -> dmg *= k   (change arg1, call original)
+```
+Raids on buildings: same idea on 0xC9CA20 (hut, owner = this−0x120, tribe = hut+0x230 ✔ via
+vt 0x58 = 0xC9C430) and 0xC9D7F0 (tool, tribe = tool+0x1F8 ✔ 0xC9DB60).
+
+### B. Relationships / social (goal: "duet")
+
+Relationships live in **cRelationshipManager**, keyed by political IDs; nothing per-tribe stores
+the "feelings" value (only timers). Political ID of any cGameData = `vt[0x4C]()` =
+**0x5AADB0** `mov eax,[ecx+0x30]` ✔ (cTribe and citizen; setter vt 0x48 = 0x804880).
+
+| Function | Address | Signature | Conf |
+|---|---|---|---|
+| cRelationshipManager::Get | 0xB3D390 | cdecl() → mgr (mode-dependent switch) | ✔ |
+| CalculateRelationship | **0xD00940** | thiscall(mgr, polA, polB, int 0) ret 0xC → float ST0, = 0xD05A60 clamped to [g 0x14797FC, g 0x1479800] | ✔ |
+| CalculateRelationshipAbsolute | 0xD05A60 | thiscall(mgr, polA, polB, int) ret 0xC → float ST0 | ✔ |
+| GetRelationshipLevel | 0xD008D0 | thiscall(mgr, float value) ret 4 → 0..4 (thresholds mgr+0x10..+0x1C; ≥2 = friendly side) | ✔ / meaning ~ |
+| **ApplyRelationship** | **0xD06280** | thiscall(mgr, polA, polB, uint32 eventId, float scale) ret 0x10 → float ST0 (caller `fstp st0`) | ✔ |
+| (event store) | 0xD05DD0 | thiscall(mgr, data, polA, polB, event, scale) ret 0x14; scale 0 → no-op; in tribe mode refreshes the tribe UI | ✔ |
+
+Convention: `polA` = the side whose feelings change, `polB` = the other side. The tribe debug
+text "This Tribe Feelings for Player" (0xC947CE) = `CalculateRelationship(npcTribePol,
+playerTribePol, 0)` ✔.
+
+Tribe events seen (ids are hashes, names unknown):
+| Event | Where | Use |
+|---|---|---|
+| 0x530CF00 | citizen TakeDamage | attacked (scale 1) ✔ |
+| 0x530CF02 | gift tick 0xDBC790 | gift food received (scale 1) ✔ |
+| 0x530CF04 / 05 | hut/tool TakeDamage | building attacked / destroyed ~ |
+| 0x530CF06 | 0xDBB830, 0xDBC790, 0xCC6E57 | scale = −current → reset to neutral ~ |
+| **0x530CF07** | social tick 0xDA2FA0, 0xDAE970 | scale = (target − current) → **raw delta**; used to jump to the "friendly/allied" threshold (g 0x1582368 / 0x158236C, tuning, 0 in the file) ~ |
+| 0x530CF0A / 0B | tribe HandleMessage 0xCD2D7E (msg 0x46AB559, cheat/debug) | ± by sign ~ |
+
+cTribe fields (from its serializer table at 0x1355xxx, offsets ✔): `+0x2C4 mInitialRelationship`,
+`+0x2C8 mChieftainRespawnTimer`, `+0x2CC mGiftRelationshipDecayTimer` (zeroed on social success),
+`+0x260 mpFoodMat`, `+0x19CC mpDomesticatedAnimalsHerd`, `+0x19D0 mpTotemPole`.
+
+**How the performance works** (✔ structure, ~ names). Citizens' current behaviour-tree node id is
+`ai[+0x1D8]` (`ai = citizen[+0xB4C]`). BT action table (0x1594xxx, entries `{nodeId, enter,
+tick, exit}`; tick = cdecl, **arg1 = the creature**, plain `ret`, returns bool):
+| Node id | tick | Behaviour |
+|---|---|---|
+| **0xB46E8803** | **0xDA2FA0** | social performance with instruments (tool types 4/5/6 pick anims; chief has own anims) |
+| 0x546E8804 | — | NPC side "being socialised" (chooser returns InputAction 0x2D) |
+| 0x562C0FB | 0xDB9B20 | heal (section C) |
+| 0x4623E0C | 0xDBC790 | gift food |
+| 0x461300F | 0xDABDE0 | eat |
+| 0x4611FF4 | 0xDAF810 | sleep (heals) |
+
+The social tick looks up a **session record**: `idx = ai[+0x600][+0x1A8]`,
+`s = SocialSession_Get(idx)` = **0xD9F500** cdecl(int) → record+4 or 0 (pool 0x15945A8/AC,
+stride 0x210) ✔. Session: `+0x04 state` (6 = finished), `+0x08` player tribe, **`+0x0C` target
+NPC tribe** ✔, `+0xE8` mini-game UI object (vtable 0x14823F8; **progress float at +0x68**,
+success when ≥ 1.0 — 0xE31110), `+0xEC` result mode (1/2 → which threshold). On success:
+ApplyRelationship(npcPol, playerPol, 0x530CF07, threshold − current), npcTribe+0x2CC = 0.
+Player orders: social mode (`TribeUI[+0x390] == 0`) + click other tribe's hut → InputAction
+0xE (level < 2) / 0xF (≥ 2, refused with a sound); attack mode (+0x390 == 1) → 0xC → CitizenAction
+15 ✔. Which CitizenAction id starts the 0xB46E8803 node was not pinned down (?).
+
+**Duet recipe (host, no hook needed):** each ~0.5 s, for every player-tribe member `c` with
+`ai=c[+0xB4C]` and `ai[+0x1D8] == 0xB46E8803`: `s = 0xD9F500(ai[+0x600][+0x1A8])`,
+`target = s[+0xC]`; group owners per target. If both players have performers on the same
+target: `ApplyRelationship(Get(), target->vt4C(), playerTribe->vt4C(), 0x530CF07, +delta)`
+(raw delta, ~), or speed up the mini-game: `ui = s[+0xE8]; *(float*)(ui+0x68) += x` (~).
+Read back with CalculateRelationship to cap at the threshold. Optional hook instead of polling:
+0xDA2FA0 (cdecl; declare ≥9 dword args and forward all — caller cleans).
+
+### C. Healing (goal: healer bonus)
+
+* Player order: InputAction 0x28 → CitizenAction **5** (only members with tool 9, see §2) ✔.
+* Execution: BT node 0x562C0FB, tick **0xDB9B20** — cdecl, plain `ret`: **arg1 = healer**
+  (citizen), **arg6 = cCreatureBase\*\* target** (patient = `0xD99440(*arg6)`, cdecl
+  "valid target" → creature or 0), heal = rate × arg8 ✔ (arg8 ≈ dt, ~).
+  Body: plays anim 0x562CFBF on the healer, `AddHealth(patient+0x5A8, amount)`; when the
+  patient reaches max HP it increments `TribeUI+0x7C` map[patient mID] (mFullHealsPerPerTribeMember,
+  achievement 0x90EC8983) and flags the healer's AI ✔.
+* **cCombatant::AddHealth 0xBFD2C0** thiscall(combatant, float amount) ret 4, clamps to
+  `vt[0x58]()` (max HP) ✔. Also used by eating (0xDABDE0) and sleeping (0xDAF810) — so hooking
+  it alone can't name a healer.
+
+**Healer recipe:** hook **0xDB9B20** (cdecl, forward 9+ args). Before: `pat = 0xD99440(*arg6)`,
+`hp0 = pat[+0x5E0]`, `max = pat[+0x5D4]`. After: if `hp0 < max && pat[+0x5E0] >= max` (a full
+heal just finished) and both are player-tribe citizens with different coop owners → food bonus
+(section F).
+
+### D. Chieftain (goal: chief / marker)
+
+* The chief is **cCommunity::mpLeader at tribe+0x11C** (serializer `mpLeader 0x11C` ✔; shared
+  with cCity). Exactly **one** leader per tribe; there is no per-member chief flag.
+  | Function | Address | Signature | Conf |
+  |---|---|---|---|
+  | cCommunity::GetLeader | 0xC00770 | `mov eax,[ecx+0x11C]; ret` | ✔ |
+  | cCommunity::SetLeader | 0xC00780 | thiscall(community, citizen) ret 4 (intrusive AddRef/Release) | ✔ |
+  | cTribe::GetChieftain | 0xC8FEB0 | thiscall → leader cast to 0x4F176642 or 0 | ✔ |
+  | **cTribe::SetChieftain** | **0xC8FED0** | thiscall(tribe, citizen /*0 = first adult not +0xB5E*/) ret 4 | ✔ |
+  | cCreatureCitizen::IsChieftain | 0xC233F0 | thiscall → bool (`(city?city:tribe)->leader == this`) | ✔ |
+  | cCreatureCitizen::SetSpecializedTool | **0xC27AE0** | thiscall(int toolType) ret 4; writes +0x102C, **0 on the leader becomes 0xB**, refreshes handheld (vt 0xAC(1)) and the tribe palette | ✔ |
+  | cCreatureCitizen GetDesiredScale (vt 0x80) | 0xC23E10 | → float ST0; leader × g 0x1582214 (tuning), others random in [g 0x15DA92C, g 0x15DA930] | ✔ |
+* SetChieftain does: SetLeader(c); `spatial(c+0xC0)->vt[0x40](c->vt[0x80](0))` (SetScale to the
+  chief scale); `SetSpecializedTool(c, 0xB)` (**tool 11 = chief staff**); `combatant->vt[0x2C](1)`;
+  0xC0BD00; `ai[+0x5FC] |= 0x20`; 0xC26450(−1). Respawn after death uses tribe+0x2C8 (~).
+* Chief look = staff (tool 0xB) + bigger scale; no hat found (accessories are tribe-wide, ?).
+* **Marker for any member** (~, cosmetic, test at runtime): scale up `spatial(c+0xC0)->vt[0x40]
+  (c->vt[0x80]() * 1.15f)` (re-apply after age change / load), or give the staff with
+  `SetSpecializedTool(c, 0xB)` — this replaces the member's tool/job and may confuse the UI
+  palette counts, so prefer scale. Do **not** call SetChieftain on a second member (it moves the
+  single leader slot).
+
+### E. Epic creatures (goal: spawn an epic near the village)
+
+* `cCreatureAnimal::IsEpic` = **0xC0C200** thiscall → `c[+0xE84] && c[+0xE84][+0x388]` ✔.
+  `+0xE84` is the creature's **archetype tuning** (not the herd; mHerd is +0x1674, GetHerd
+  0xC046B0). Tuning +0x388 is the prop **`isEpic`** (0xD2125BFE, loader 0x4DE8EF/0x4DE953 ✔),
+  +0x389 is prop 0x299ABCFF (?).
+* Create 0xC09B00 sets it ✔: `tuning = cSpeciesManager::GetArchetypeTuning(herd[+0x88]
+  archetype, herd[+0xF0] generation)` = **0x4E0080** thiscall(specMgr 0x401090(), id, gen) ret 8;
+  setter 0xC0C2A0. For an epic, Create also sets `c[+0x2A8]` and in tribe mode posts 0x4F84BD4 (~
+  epic warning). The avatar species path uses 0x4E01E0 instead.
+* Archetype prop files: group **0x02F98B67** (type 0x00B1B104). `isEpic = 1` in instances
+  **0xFC811218** and **0x95511253** (both parent 0x2EA8FB98 = "default"; found in
+  PatchData.package and Spore_Game.package) ✔ data; names unknown. 0xDADA0591 = fallback
+  archetype, 0xD77DC235 = tribe domesticated animals (0xC90258).
+* cHerd fields (serializer ✔): +0x34 pos, +0x84 mOwnedByAvatar, **+0x88 mArchetype**,
+  +0x8C mArchetypeGroup, +0xA4 species, **+0xF0 mGeneration**, +0xF4 mTargetHerdSize,
+  +0x108 mTerritoryRadius, +0x150 mScaleMultiplier, +0x154 mHitpointOverride, +0x158
+  mDamageMultiplier, +0x15C mCreaturePersonality, +0x160 mpNest, **+0x218 mbEnabled**.
+  `cHerd::SetEnabled` = **0xC6AE50** thiscall(bool) ret 4 ✔. CreateHerd (0xB238B0) calls
+  SetEnabled(**false**) in creature/tribe mode — the scenario spawner (0xEEE0EC) re-enables it.
+
+**Epic spawn recipe (host, ~ — test at runtime):**
+```
+prof = cSpeciesManager::GetSpeciesProfile(0x401090(), &speciesKey)   // 0x4DF580, verified
+herd = nm->CreateHerd(&pos, prof, 0, false, 0, false)                  // 0xB238B0
+herd[+0x88] = 0xFC811218; herd[+0xF0] = 0;  0xC6AE50(herd, true)       // SetEnabled
+c = cCreatureAnimal::Create(&pos, prof, 1, herd, false, false)         // 0xC09B00, cdecl
+check 0xC0C200(c) == true; optionally herd[+0x154]/[+0x158] for HP/damage
+```
+Species: reuse a species already on the planet (any `cCreatureAnimal` with noun 0x18EB45E;
+its profile is what Create got) so the guest has the model. Position: tribe spatial
+`tribe+0x124` + offset outside the zoning radius (`tribe+0x330`).
+
+### F. Food
+
+* Food = bundles in `cGameBundleContainer` at **tribe+0x20C** (vector begin/end at +4/+8,
+  amount float at bundle+0x134, type at +0x12C) ✔ — what shared.cpp reads.
+  Total: container `0xCEE4D0` thiscall → float ST0 ✔; cTribe vt 0xA4 = 0xC8E850 → int ✔.
+* **cTribe::AddFood = 0xC8F7E0** thiscall(tribe, **int delta**) ret 4 ✔: `delta>0` →
+  `cBundleManager::CreateBundles(Get(), float delta, tribe+0x20C, 0xC8EB10(tribe) /*bundle type*/)`;
+  `delta<0` → `RemoveBundles(Get(), float −delta, tribe+0x20C, 0)`. Used by NPC tribe AI
+  (0xCE3836, 0xCE3EE8). Works on an empty container (creates bundles), unlike editing +0x134.
+* cBundleManager: Get 0xB3D380 (cdecl → [0x167FABC]) ✔; CreateBundles **0xAC79B0**
+  thiscall(bm, float, container*, int type) ret 0xC ✔; RemoveBundles **0xAC7C10**
+  thiscall(bm, float, container*, int) ret 0xC → float ST0 ✔.
+* **cTribe::UpdateFoodVisuals 0xC94CD0** thiscall(tribe, float **delta**) ret 4 ✔ only shows
+  the floating "+N/−N food" text above the food mat (0xC94950) and only for the player tribe —
+  it does **not** change food. Game callers pass the delta (gift: −amount at 0xDBCF0D; deposit:
+  +bundle amount at 0xDBC1F4). ⚠ `shared.cpp s_food()` passes the new **total** → probably shows
+  a wrong popup on every sync; pass `v − cur`.
+
+**Bonus food recipe:** `thiscall(0xC8F7E0, playerTribe, n); thiscall(0xC94CD0, playerTribe,
+(float)n);` on the host — shared.cpp then mirrors the total to the guest.
+
+### Recommended hook points (summary)
+| Goal | Hook / poll | Notes |
+|---|---|---|
+| Pincer | hook **0xC26920** (citizen TakeDamage, thiscall ret 0x14) (+ 0xC9CA20 huts) | attacker = arg5->vt[0xC](), tribes at +0x1014; scale arg1 |
+| Duet | poll `ai[+0x1D8]==0xB46E8803` + session 0xD9F500 `+0xC` | bonus via ApplyRelationship 0xD06280 (event 0x530CF07) or minigame `+0xE8→+0x68` |
+| Healers | hook **0xDB9B20** (cdecl heal tick) | arg1 healer, `*arg6` patient; detect HP reaching max |
+| Chief marker | SetSpecializedTool 0xC27AE0 / spatial vt 0x40 scale | one real chief only (tribe+0x11C) |
+| Epic | CreateHerd + herd+0x88 = 0xFC811218 + SetEnabled + Create | archetype tuning isEpic |
+| Food | cTribe::AddFood 0xC8F7E0 + UpdateFoodVisuals(delta) | fix shared.cpp delta |

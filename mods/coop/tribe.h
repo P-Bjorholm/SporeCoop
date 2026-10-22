@@ -41,6 +41,10 @@ uint8_t owner_of(void* citizen);
 bool active(); // tribe sync running (tribe stage, connected)
 bool center(net::Vec3& pos); // position of the player tribe
 // members of the player tribe with their owner (for name tags)
+// the epic creature was hit by a creature (host; from the creature damage filter)
+void note_animal_hit(void* animal, void* attacker_creature);
+// a chief of a player (bigger, "★" tag)
+bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 
 } // namespace tribe

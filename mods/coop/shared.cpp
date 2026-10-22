@@ -58,6 +58,7 @@ static void s_food(double v)
     if (!t || !food_bundles(t, b, e) || b == e || !g_food(cur))
         return;
     double d = v - cur;
+    const float shown = (float)d; // UpdateFoodVisuals shows "+N/-N": it takes the change, not the total
     for (float** it = b; it < e && std::fabs(d) > 1e-4; it++) { // spend from the bundles in order
         if (!*it || !skg::readable(*it, 0x138))
             continue;
@@ -72,7 +73,8 @@ static void s_food(double v)
         }
     }
     if (uintptr_t f = S("Simulator::cTribe::UpdateFoodVisuals"))
-        skg::thiscall<void>(f, t, (float)v);
+        if (std::fabs(shown) >= 1.f)
+            skg::thiscall<void>(f, t, shown);
 }
 
 // civilization: GetPlayerCivilization() -> cCivilization::mWealth (+0x98)

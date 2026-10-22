@@ -1,4 +1,6 @@
 #include "npc.h"
+#include "modes.h"
+#include "tribe.h"
 #include "teamplay.h"
 
 #include <algorithm>
@@ -442,6 +444,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         return true;
     }
     if (is_host()) {
+        if (game::mode_id() == modes::kTribe)
+            tribe::note_animal_hit(c, attacker);
         if (c == av) {
             damage = teamplay::on_own_damage(av, damage);
             return true;

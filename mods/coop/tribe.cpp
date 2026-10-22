@@ -246,6 +246,8 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
     return 0;
 }
 
+static void coop_init();
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -270,6 +272,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    coop_init();
     return true;
 }
 
@@ -570,6 +573,337 @@ static void guest_tick(double now)
     }
 }
 
+// ---------------- co-op mechanics (docs/re/tribe.md, co-op features) ----------------
+// pincer: members of two players hitting the same tribe within 10 s deal 50% more damage
+// chief: every player has a chief (its lowest-id adult member, bigger, "★" tag); members near their
+//        chief hit 20% harder; a chief about to die next to a partner's member keeps 30% health
+// duet: performances of both players for the same tribe fill the social mini-game faster
+// healers: a full heal of a partner's member brings 5 food
+// epic: now and then an epic creature comes to the village; killed by both players: 80 food
+constexpr double kPincerWindow = 10.0;
+static uintptr_t a_CitizenTD, a_HealTick, a_PatientOf, a_AddFood, a_FoodFx, a_SessionGet, a_CreateHerd,
+    a_HerdEnable, a_CreatureCreate;
+static std::unordered_map<void*, std::unordered_map<uint8_t, double>> g_pincer; // enemy tribe -> owner -> time
+static std::unordered_map<void*, double> g_pincer_told;
+static std::unordered_map<uint8_t, void*> g_chief;                              // owner -> chief citizen
+static std::unordered_map<void*, float> g_chief_scale;                          // chief -> its own scale
+static std::unordered_map<void*, double> g_chief_saved;                         // chief -> last rescue
+static uint32_t g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills;
+static void* g_epic;
+static std::unordered_set<uint8_t> g_epic_hitters;
+static double g_epic_next, g_last_duet, g_duet_told;
+
+static uint16_t member_id(void* c)
+{
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        auto it = g_hm.find(c);
+        return it == g_hm.end() ? 0 : it->second.id;
+    }
+    auto it = g_gid_of.find(c);
+    return it == g_gid_of.end() ? 0 : it->second;
+}
+
+bool is_chief(void* c)
+{
+    for (auto& [o, ch] : g_chief)
+        if (ch == c)
+            return true;
+    return false;
+}
+
+// every machine picks the same chiefs (ids and owners come from the host)
+static void chiefs_tick()
+{
+    void* pt = player_tribe();
+    std::unordered_map<uint8_t, void*> want;
+    std::unordered_map<uint8_t, uint16_t> best;
+    if (pt)
+        for (void* c : members(pt)) {
+            uint8_t o = owner_of(c);
+            uint16_t id = member_id(c);
+            if (o >= 0xFE || !id || F<uint8_t>(c, kAgeOff) != 1 || !game::object_alive(c))
+                continue;
+            if (!best.count(o) || id < best[o]) {
+                best[o] = id;
+                want[o] = c;
+            }
+        }
+    // scale: chiefs stand out (spatial vt 0x40 SetScale; citizen vt 0x80 its desired scale)
+    for (auto it = g_chief_scale.begin(); it != g_chief_scale.end();) {
+        bool still = false;
+        for (auto& [o, c] : want)
+            if (c == it->first)
+                still = true;
+        if (!still) {
+            if (game::object_alive(it->first))
+                vcall<void>((uint8_t*)it->first + 0xC0, 0x40 / 4, it->second);
+            it = g_chief_scale.erase(it);
+        } else
+            ++it;
+    }
+    for (auto& [o, c] : want)
+        if (!g_chief_scale.count(c)) {
+            float sc = vcall<float>(c, 0x80 / 4, 0); // GetDesiredScale(int), ret 4
+            if (sc <= 0.01f || sc > 10.f)
+                sc = 1.f;
+            g_chief_scale[c] = sc;
+            vcall<void>((uint8_t*)c + 0xC0, 0x40 / 4, sc * 1.3f);
+        }
+    g_chief = want;
+}
+
+static bool near_own_chief(void* c, uint8_t owner)
+{
+    auto it = g_chief.find(owner);
+    return it != g_chief.end() && it->second != c && net::dist(game::position(it->second), game::position(c)) < 15.f;
+}
+
+// cCreatureCitizen TakeDamage 0xC26920 (this = citizen+0x5A8): every hit on a citizen
+using CTD_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
+static CTD_t o_CitizenTD;
+static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type, const void* pos, void* att)
+{
+    if (is_host() && active()) {
+        void* victim = (uint8_t*)comb - 0x5A8;
+        void* pt = player_tribe();
+        void* vt = F<void*>(victim, kOwnerTribeOff);
+        void* ac = att && !IsBadReadPtr(att, 4) ? vcall<void*>(att, 0xC / 4) : nullptr;
+        uint8_t ao = ac && g_hm.count(ac) ? g_hm[ac].owner : 0xFF;
+        double now = H->time_seconds();
+        if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
+            auto& hits = g_pincer[vt];
+            hits[ao] = now;
+            int players = 0;
+            for (auto& [o, t] : hits)
+                if (now - t < kPincerWindow)
+                    players++;
+            if (players >= 2) {
+                dmg *= 1.5f;
+                g_pincer_hits++;
+                if (now - g_pincer_told[vt] > 60 && C.notice) {
+                    g_pincer_told[vt] = now;
+                    C.notice("pincer attack: +50% damage");
+                }
+            }
+            if (near_own_chief(ac, ao)) {
+                dmg *= 1.2f;
+                g_aura_hits++;
+            }
+        }
+        // a chief about to fall next to a partner's member: the tribe protects it
+        if (vt == pt && is_chief(victim)) {
+            float hp = F<float>(victim, 0x5E0), mx = F<float>(victim, 0x5D4);
+            uint8_t o = owner_of(victim);
+            if (dmg >= hp && mx > 0 && now - g_chief_saved[victim] > 60) {
+                for (void* m : members(pt)) {
+                    uint8_t mo = owner_of(m);
+                    if (mo < 0xFE && mo != o && net::dist(game::position(m), game::position(victim)) < 15.f) {
+                        dmg = std::max(0.f, hp - mx * 0.3f);
+                        g_chief_saved[victim] = now;
+                        g_chief_rescues++;
+                        if (C.notice)
+                            C.notice(C.sess->name_of(mo) + " saved " + C.sess->name_of(o) + "'s chief");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return o_CitizenTD(comb, dmg, pol, type, pos, att);
+}
+
+static void bonus_food(int n)
+{
+    void* pt = player_tribe();
+    if (!pt || !a_AddFood)
+        return;
+    thiscall<void>(a_AddFood, pt, n);
+    if (a_FoodFx)
+        thiscall<void>(a_FoodFx, pt, (float)n);
+}
+
+// heal tick 0xDB9B20 (cdecl: arg1 healer, *arg6 patient): a full heal of a partner's member
+using HealTick_t = bool(SK_CDECL*)(void*, void*, void*, void*, void*, void**, void*, float, void*, void*, void*, void*);
+static HealTick_t o_HealTick;
+static bool SK_CDECL h_HealTick(void* healer, void* a2, void* a3, void* a4, void* a5, void** target, void* a7, float a8,
+                                void* a9, void* a10, void* a11, void* a12)
+{
+    void* pat = nullptr;
+    float hp0 = 0, mx = 0;
+    if (is_host() && active() && target && a_PatientOf) {
+        pat = skg::cdecl_call<void*>(a_PatientOf, *target);
+        if (pat) {
+            hp0 = F<float>(pat, 0x5E0);
+            mx = F<float>(pat, 0x5D4);
+        }
+    }
+    bool r = o_HealTick(healer, a2, a3, a4, a5, target, a7, a8, a9, a10, a11, a12);
+    if (pat && mx > 0 && hp0 < mx && F<float>(pat, 0x5E0) >= mx) {
+        uint8_t ho = owner_of(healer), po = owner_of(pat);
+        if (ho < 0xFE && po < 0xFE && ho != po) {
+            bonus_food(5);
+            if (g_heals++ % 4 == 0 && C.notice)
+                C.notice(C.sess->name_of(ho) + " healed " + C.sess->name_of(po) + "'s tribe member: +5 food");
+        }
+    }
+    return r;
+}
+
+// duet: performances (BT node 0xB46E8803) of both players for the same tribe
+static void duet_tick(double now)
+{
+    if (now - g_last_duet < 0.5 || !a_SessionGet)
+        return;
+    g_last_duet = now;
+    void* pt = player_tribe();
+    if (!pt)
+        return;
+    std::unordered_map<void*, std::unordered_set<uint8_t>> perf; // target tribe -> owners
+    std::unordered_map<void*, void*> ui_of;
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        uint8_t* ai = o < 0xFE ? F<uint8_t*>(c, 0xB4C) : nullptr;
+        if (!ai || IsBadReadPtr(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u)
+            continue;
+        uint8_t* blk = F<uint8_t*>(ai, 0x600);
+        if (!blk || IsBadReadPtr(blk, 0x1AC))
+            continue;
+        uint8_t* ss = skg::cdecl_call<uint8_t*>(a_SessionGet, F<int>(blk, 0x1A8));
+        if (!ss || IsBadReadPtr(ss, 0xF0))
+            continue;
+        void* target = F<void*>(ss, 0xC);
+        if (!target)
+            continue;
+        perf[target].insert(o);
+        ui_of[target] = F<void*>(ss, 0xE8);
+    }
+    for (auto& [target, owners] : perf) {
+        if (owners.size() < 2)
+            continue;
+        void* ui = ui_of[target];
+        if (ui && !IsBadReadPtr(ui, 0x6C)) {
+            float& p = F<float>(ui, 0x68);
+            if (p < 0.97f)
+                p = std::min(0.97f, p + 0.04f); // +8% a second on top of the performance
+            g_duet_ticks++;
+        }
+        if (now - g_duet_told > 60 && C.notice) {
+            g_duet_told = now;
+            C.notice("duet: friendship grows faster");
+        }
+    }
+}
+
+// epic: a giant of a species on the planet comes to the village (host)
+static bool spawn_epic()
+{
+    void* pt = player_tribe();
+    if (!pt || !a_CreateHerd || !a_HerdEnable || !a_CreatureCreate || g_epic)
+        return false;
+    net::Vec3 tp = tribe_pos(pt);
+    // a species already on the planet (the guests have its model): the nearest animal
+    void* prof = nullptr;
+    struct Pick {
+        net::Vec3 tp;
+        void* prof = nullptr;
+        float bd = 1e9f;
+    } pick{tp};
+    game::for_each_object(
+        [](void* a, uint32_t noun, void* u) {
+            auto* pk = (Pick*)u;
+            if (noun != 0x18EB45E || !game::object_alive(a))
+                return true;
+            float d = net::dist(game::position(a), pk->tp);
+            if (d < pk->bd && game::species_profile(a)) {
+                pk->bd = d;
+                pk->prof = game::species_profile(a);
+            }
+            return true;
+        },
+        &pick);
+    prof = pick.prof;
+    if (!prof)
+        return false;
+    float len = std::sqrt(tp.x * tp.x + tp.y * tp.y + tp.z * tp.z);
+    // 60 m from the village, along a tangent of the planet
+    net::Vec3 up = len > 1 ? net::Vec3{tp.x / len, tp.y / len, tp.z / len} : net::Vec3{0, 0, 1};
+    net::Vec3 side = std::fabs(up.z) < 0.9f ? net::Vec3{up.y, -up.x, 0} : net::Vec3{0, up.z, -up.y};
+    float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
+    net::Vec3 p{tp.x + side.x / sl * 60.f, tp.y + side.y / sl * 60.f, tp.z + side.z / sl * 60.f};
+    float pp[3] = {p.x, p.y, p.z};
+    void* nmgr = game::noun_manager();
+    void* herd = nmgr ? thiscall<void*>(a_CreateHerd, nmgr, pp, prof, 0, false, 0, false) : nullptr;
+    if (!herd)
+        return false;
+    F<uint32_t>(herd, 0x88) = 0xFC811218u; // an archetype with isEpic = 1
+    F<uint32_t>(herd, 0xF0) = 0;
+    thiscall<void>(a_HerdEnable, herd, true);
+    void* c = skg::cdecl_call<void*>(a_CreatureCreate, pp, prof, 1, herd, false, false);
+    if (!c)
+        return false;
+    g_epic = c;
+    g_epic_hitters.clear();
+    g_epics++;
+    if (C.notice)
+        C.notice("an epic creature comes! together: 80 food");
+    return true;
+}
+
+static void epic_tick(double now)
+{
+    if (g_epic && (!game::object_alive(g_epic) || game::is_dead(g_epic))) {
+        int food = g_epic_hitters.size() >= 2 ? 80 : 30;
+        bonus_food(food);
+        g_epic_kills++;
+        if (C.notice)
+            C.notice(std::string("epic creature down: +") + std::to_string(food) + " food");
+        g_epic = nullptr;
+        g_epic_next = now + 600;
+    }
+    if (!g_epic_next)
+        g_epic_next = now + 480; // the first one after 8 minutes together
+    if (!g_epic && now > g_epic_next && C.sess->players().size() >= 2) {
+        g_epic_next = now + 600;
+        spawn_epic();
+    }
+}
+
+// the epic's hitters (animals go through the game's creature damage filter)
+void note_animal_hit(void* animal, void* attacker_creature)
+{
+    if (animal && animal == g_epic && attacker_creature && g_hm.count(attacker_creature))
+        g_epic_hitters.insert(g_hm[attacker_creature].owner);
+}
+
+static void coop_tick(double now)
+{
+    chiefs_tick();
+    if (is_host()) {
+        duet_tick(now);
+        epic_tick(now);
+    }
+}
+
+static void coop_init()
+{
+    a_CitizenTD = H->sym("Simulator::cCreatureCitizen::TakeDamage");
+    a_HealTick = H->sym("SporeCoop::BT_HealTick");
+    a_PatientOf = H->sym("SporeCoop::BT_ValidTarget");
+    a_AddFood = H->sym("SporeCoop::cTribe_AddFood");
+    a_FoodFx = H->sym("Simulator::cTribe::UpdateFoodVisuals");
+    a_SessionGet = H->sym("SporeCoop::SocialSession_Get");
+    a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
+    a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
+    a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
+    if (a_CitizenTD)
+        H->hook_create(M, (void*)a_CitizenTD, (void*)h_CitizenTD, (void**)&o_CitizenTD);
+    if (a_HealTick && a_PatientOf)
+        H->hook_create(M, (void*)a_HealTick, (void*)h_HealTick, (void**)&o_HealTick);
+    H->log(M, SK_INFO, "tribe co-op: citizen damage %s, heal %s, duet %s, epic %s", a_CitizenTD ? "on" : "off",
+           a_HealTick && a_PatientOf ? "on" : "off", a_SessionGet ? "on" : "off",
+           a_CreateHerd && a_HerdEnable && a_CreatureCreate ? "on" : "off");
+}
+
 void tick(double now)
 {
     if (!active())
@@ -578,6 +912,7 @@ void tick(double now)
         host_tick(now);
     else if (is_guest())
         guest_tick(now);
+    coop_tick(now);
 }
 
 static uint32_t g_rx, g_rx_skipped, g_resets;
@@ -646,7 +981,16 @@ std::string status()
                  "local_tribes=%u player_tribe=%p\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
                  (unsigned)all_tribes().size(), player_tribe());
-    return b;
+    std::string out = b;
+    std::string chiefs;
+    for (auto& [o, c] : g_chief)
+        chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
+    snprintf(b, sizeof b,
+             "tribe co-op: pincer=%u aura=%u chief_rescues=%u duet=%u heals=%u epics=%u epic_kills=%u epic=%p "
+             "chiefs=%s\n",
+             g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
+             chiefs.c_str());
+    return out + b;
 }
 
 // ---- debug (tests): orders through the same hooked functions the UI uses ----
@@ -662,6 +1006,37 @@ static void* local_of(uint16_t id)
 
 std::string debug(const std::vector<std::string>& a)
 {
+    // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe
+    auto hit = [](void* victim, void* attacker, float dmg) {
+        float before = F<float>(victim, 0x5E0);
+        // the combatant's TakeDamage (vt 0x18): the same path as a real blow, with our hooks
+        static const float zero[3] = {0, 0, 0}; // the hit direction must not be null
+        vcall<int>((uint8_t*)victim + 0x5A8, 0x18 / 4, dmg, 0xFFFFFFFFu, 0, zero,
+                   attacker ? (uint8_t*)attacker + 0x5A8 : nullptr);
+        char b[64];
+        snprintf(b, sizeof b, "hp %.2f -> %.2f", before, F<float>(victim, 0x5E0));
+        return std::string(b);
+    };
+    if (a.size() >= 4 && a[0] == "pincer" && is_host()) { // pincer <victim id> <attacker id> <dmg>
+        void* v = local_of((uint16_t)atoi(a[1].c_str())), *at = local_of((uint16_t)atoi(a[2].c_str()));
+        if (!v || !at)
+            return "no such member";
+        return hit(v, at, (float)atof(a[3].c_str()));
+    }
+    if (!a.empty() && a[0] == "epic" && is_host()) {
+        if (a.size() >= 3 && a[1] == "hit") { // epic hit <attacker id> <dmg>
+            void* at = local_of((uint16_t)atoi(a[2].c_str()));
+            if (!g_epic || !at)
+                return "no epic / member";
+            return hit(g_epic, at, a.size() > 3 ? (float)atof(a[3].c_str()) : 50.f);
+        }
+        bool ok = spawn_epic();
+        uintptr_t is_epic = H->sym("SporeCoop::cCreatureAnimal_IsEpic");
+        char b[96];
+        snprintf(b, sizeof b, "epic %s %p is_epic=%d hp=%.0f", ok ? "spawned" : "not spawned", g_epic,
+                 g_epic && is_epic ? (int)thiscall<bool>(is_epic, g_epic) : -1, g_epic ? F<float>(g_epic, 0x5E0) : 0.f);
+        return b;
+    }
     if (a.size() >= 3 && a[0] == "select") { // select <id> <0|1>
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         if (!c)
