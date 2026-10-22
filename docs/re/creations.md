@@ -46,7 +46,7 @@ Record types that hold a creation:
 - `png` 0x2F7D0004 in the model group (Sporepedia card 128×128, model data steganographic in the
   pixels, no extra chunks) and in group+1 (0x40626201, plain thumbnail ~). Not needed to play.
 - `pollen_metadata` 0x030BDEE3 (big-endian: version 13, own key {type, group, instance} at +0x0C,
-  parent key, timestamps, UTF-16BE author "pam3es" and creation name). Useful for the UI.
+  parent key, timestamps, UTF-16BE author (the profile user name) and creation name). Useful for the UI.
 - prop 0x00B1B104 in group 0x4062E500 (per-creation prop, not decoded).
 - Baked meshes/textures of Maxis creations: 0x00E6BCE5 in groups +2/+3, 0x41626202/03,
   0x40627100/01 and 0x2F4E681C in 0x40622900/01. Baked data of player creations lives in
