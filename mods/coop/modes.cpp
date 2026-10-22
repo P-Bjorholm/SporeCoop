@@ -224,6 +224,34 @@ void cell_move(uint8_t* c, const net::Vec3& p)
 
 static std::unordered_map<void*, uint32_t> g_cell_ids; // puppet -> its pool index
 
+// The cell step moves and turns every cell (a puppet turns towards where it swims); poses written
+// at the end of the frame were overridden before the next drawing. The last pose of each puppet is
+// applied again right after the step (SimUpdate), so what is drawn is the remote pose.
+struct CellPose {
+    net::Vec3 pos;
+    float rot[9];
+};
+static std::unordered_map<void*, CellPose> g_cell_pose;
+typedef void(__cdecl* SimUpdate_t)(float);
+static SimUpdate_t o_SimUpdate;
+static uint8_t* cell_at_checked(void* cp);
+
+static void __cdecl h_SimUpdate(float dt)
+{
+    o_SimUpdate(dt);
+    for (auto it = g_cell_pose.begin(); it != g_cell_pose.end();) {
+        uint8_t* c = cell_at_checked(it->first);
+        if (!c) {
+            it = g_cell_pose.erase(it);
+            continue;
+        }
+        cell_move(c, it->second.pos);
+        memcpy(c + 0x5C, it->second.rot, sizeof it->second.rot);
+        *(uint16_t*)(c + 0x48) |= 2; // rotation dirty
+        ++it;
+    }
+}
+
 static void* cell_local()
 {
     uint8_t* g = cell_game();
@@ -316,8 +344,19 @@ void cell_destroy(uint32_t idx)
             skg::cdecl_call<void>(a, idx, 0, 0.f, 0);
 }
 
+static uint8_t* cell_at_checked(void* cp)
+{
+    auto it = g_cell_ids.find(cp);
+    return it != g_cell_ids.end() && cell_at(it->second) == cp ? (uint8_t*)cp : nullptr;
+}
+
 static void ensure_model_hook()
 {
+    if (!o_SimUpdate) {
+        uintptr_t a = S("Simulator::Cell::SimUpdate");
+        if (a)
+            g_host_for_modes->hook_create(g_mod_for_modes, (void*)a, (void*)h_SimUpdate, (void**)&o_SimUpdate);
+    }
     if (!o_GetModelKey) {
         uintptr_t a = S("Simulator::Cell::GetModelKeyForCellResource");
         if (a)
@@ -391,9 +430,13 @@ static void cell_drive(void* cp, const net::PlayerState& s, drive::State&, doubl
     tgt[1] = s.pos.y + (moving ? s.vel.y * 0.3f : 0.f);
     tgt[2] = s.pos.z;
     *(bool*)(c + 4) = !moving;
-    // facing: the rotation itself, not only the target the game turns towards
+    // facing: the rotation itself, not only the target the game turns towards; applied again
+    // after the next cell step (h_SimUpdate), before the frame is drawn
     quat_to_mat(s.rot, (float*)(c + 0x5C));
     *(uint16_t*)(c + 0x48) |= 2; // rotation dirty
+    CellPose& pose = g_cell_pose[cp];
+    pose.pos = s.pos;
+    memcpy(pose.rot, c + 0x5C, sizeof pose.rot);
     skg::field<skg::Quaternion>(c, 0x14) = {s.rot.x, s.rot.y, s.rot.z, s.rot.w}; // mTargetOrientation
     *(uint8_t*)(c + 0x354) = 1;
     float size;
@@ -423,6 +466,7 @@ static void cell_despawn(void* cp)
         return;
     uint32_t idx = g_cell_ids[cp];
     g_cell_ids.erase(cp);
+    g_cell_pose.erase(cp);
     *(bool*)((uint8_t*)cp + 0x111) = false;
     cell_destroy(idx); // hp 0 or opacity 0 would only hide it (docs/re/cell.md §5)
 }

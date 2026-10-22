@@ -213,6 +213,11 @@ thresholds every 50 points (0,50,100,…).
   it for the avatar on a level change (factor from the level table 0x14846B0 `+0x0C`); the
   smoother moves `+0x58` towards `+0xB4`. Level table: `{worldLevel, threshold, parts, avatarSize,
   worldScale, ?, ?}`, avatarSize 1, 1.73, 3, 5.2, 10 … 52000.
+- **Poses of remote cells** ✔: the cell step `SimUpdate` 0xE7F3A0 (cdecl `(float dt)`) moves and
+  turns every cell (a cell turns towards where it swims) and the GFX update draws after it. A
+  pose written at the end of the frame is drawn only after the next step changed it (facing off by
+  up to 170°): hook SimUpdate and write position (through the particles) and the rotation matrix
+  `+0x5C` (flag 2 in `+0x48`) after the original. Rotating the particles instead blows the body up.
 - Teleport (✔ fields): write `+0x4C` pos (z = 0 on the gameplay layer), `+0x08` target = pos,
   `+0x84` = pos, `+0x90` vel = 0, `+0x04` idle = 1, `flags(+0x48) |= 4; ++counter(+0x4A)`; query
   position is refreshed by 0xE7C080 the same frame. Camera follows the avatar (?) — check for a jump.

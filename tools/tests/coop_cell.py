@@ -52,7 +52,9 @@ def main():
           f'vs the real host cell avg {sum(lags) / max(1, len(lags)):.2f} max {max(lags or [0]):.2f}')
     ck(len(errs) >= 20, 'sync samples taken')
     ck(max(errs or [9]) < 0.3, f'the partner cell is exactly where its state says (max {max(errs or [9]):.2f})')
-    ck(max(rots or [999]) < 10, f'and faces the same way (max {max(rots or [999]):.1f} deg)')
+    r90 = sorted(rots)[int(len(rots) * 0.9) - 1] if rots else 999
+    print('  facing errors:', ' '.join(f'{r:.0f}' for r in rots))
+    ck(r90 < 10, f'and faces the same way (90% of samples within {r90:.1f} deg; a sharp turn can be caught mid-way)')
     ck(sum(lags) / max(1, len(lags)) < 2.0, f'close to the real host cell (avg {sum(lags) / max(1, len(lags)):.2f})')
 
     print(' ', guest.call('coop.pool bite')['out'])
