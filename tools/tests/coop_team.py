@@ -46,6 +46,21 @@ def main():
     j1, _ = team(host)
     ck(j1 is not None and j0 is not None and j1 == j0 + 1, f'joint hunt bonus on the host: joint hits {j0} -> {j1}')
 
+    # pack regeneration while the partner is close: a light NPC hit first, then the guest heals
+    ids = re.findall(r'#(\d+) .*hp=', host.call('coop.npc list')['out'])
+    hr0, _ = hp(guest)
+    for cand in [nid] + ids:
+        host.call(f'coop.npc hurt 1 {cand} 3')
+        time.sleep(1.2)
+        hr1, _ = hp(guest)
+        if hr1 is not None and hr0 is not None and hr1 < hr0:
+            break
+    print('  pack:', guest.call('coop.team')['out'].splitlines()[-1])
+    time.sleep(4)
+    hr2, _ = hp(guest)
+    ck(hr2 is not None and hr1 is not None and hr1 < (hr0 or 0) and hr2 > hr1,
+       f'pack regen next to the partner: hp {hr0} -> {hr1} (hit) -> {hr2}')
+
     # the pack protects: the host forwards a lethal NPC hit to the guest standing next to it
     h0, mx = hp(guest)
     _, r0 = team(guest)
@@ -66,11 +81,6 @@ def main():
     chat = host.call('coop.status')['out']
     ck('saved Bob' in chat, 'everybody sees "Alice saved Bob from death"')
 
-    # pack regeneration while the partner is close (a lethal hit can throw the guest away)
-    print(' ', guest.call('coop.team come')['out'])
-    time.sleep(4)
-    h2, _ = hp(guest)
-    ck(h2 is not None and h1 is not None and h2 > h1, f'pack regen: hp {h1} -> {h2}')
     print('  host :', host.call('coop.team')['out'].splitlines()[-1])
     print('  guest:', guest.call('coop.team')['out'].splitlines()[-1])
     shot(host, 'team_host.png')

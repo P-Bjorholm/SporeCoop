@@ -45,6 +45,8 @@ void* avatar_herd();
 void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
 void destroy_creature(void* c);
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
+// cSpatialObject::SetPosition (vtable 0x38): moves without touching locomotion/animation
+void set_position(void* c, const net::Vec3& pos);
 void set_orientation(void* c, const net::Quat& rot);
 void move_to(void* c, const net::Vec3& dst, float stop_dist);
 void stop(void* c);

@@ -3,14 +3,13 @@
 (guest) starts in the galaxy menu with an empty profile, joins, receives and auto-loads the
 host world, then both must see each other's puppet.
 
-usage: coop_mode.py [--fixture NAME --planet SLOT/PLANET] [--keep-guest] [--move X,Y] [--dialog X,Y]
+usage: coop_mode.py [--fixture NAME --planet SLOT/PLANET] [--keep-guest] [--move X,Y]
   --fixture      restart both games, restore out/fixtures/NAME.tgz for the host and load
                  SLOT/PLANET there (e.g. --fixture space --planet Game0/Maraya). Without it the
                  host must already be playing. (Quitting one Wine instance of the bottle kills
                  the others, so the guest is only restarted together with the host.)
   --keep-guest   reuse a running guest
   --move X,Y     host clicks there to move (default 1000,760)
-  --dialog X,Y   host clicks there after the join to close the "game saved" box (default 980,606)
 """
 import argparse
 import os
@@ -76,7 +75,6 @@ def main():
     ap.add_argument('--planet')
     ap.add_argument('--port', type=int, default=47810)
     ap.add_argument('--move', default='1000,760')
-    ap.add_argument('--dialog', default='980,606')
     a = ap.parse_args()
     spore = os.path.join(ROOT, 'tools', 'spore.sh')
     if a.adventure:
@@ -168,10 +166,10 @@ def main():
         time.sleep(1)
     guest.call('wait.frames 700 60000')
     print(out(guest, f'cheat coop join 127.0.0.1:{a.port} Bob'))
-    dx, dy = map(int, a.dialog.split(','))
     t0 = time.time()
-    # host saved before sharing: close the confirmation box whenever it stops the host's frames
-    wait_guest_in(host, guest, 300, close=lambda h: h.call(f'click {dx} {dy}'))
+    # host saved before sharing: close the confirmation box (Enter) whenever it stops the host's
+    # frames; a click could land in the game while the host is still saving
+    wait_guest_in(host, guest, 300)
     gav = guest.call('coop.avatar')
     print(f'guest after {time.time() - t0:.0f}s:', gav['out'].splitlines()[0] if gav['out'] else '?')
     ok = gav['ok'] and gav['out'].split(':')[0] == mode

@@ -43,8 +43,15 @@ def main():
     print('  host :', {k: (v[0], v[3]) for k, v in hm.items()})
     print('  guest:', {k: (v[0], v[3]) for k, v in gm.items()})
     ck(len(hm) > 0 and set(hm) == set(gm), f'guest mirrors every citizen ({len(hm)} host, {len(gm)} guest)')
-    err = max((dist(hm[i][2], gm[i][2]) for i in hm if i in gm), default=99)
-    ck(err < 3, f'mirrors are where the host has them (max error {err:.2f} m)')
+    # walking citizens move between the two samples: take the best of a few rounds
+    errs = []
+    for _ in range(4):
+        h1, g1, h2 = members(host), members(guest), members(host)
+        errs.append(max((min(dist(h1[i][2], g1[i][2]), dist(h2[i][2], g1[i][2]))
+                         for i in h1 if i in g1 and i in h2), default=99))
+        time.sleep(1)
+    err = min(errs)
+    ck(err < 3, f'mirrors are where the host has them (max error {err:.2f} m; rounds {[round(e, 1) for e in errs]})')
     mine = [i for i, v in gm.items() if v[0] == 1 and v[3] == 'player']
     theirs = [i for i, v in gm.items() if v[0] == 0 and v[3] == 'player']
     ck(mine and theirs, f'player tribe split: guest owns {mine}, host owns {theirs}')

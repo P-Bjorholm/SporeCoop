@@ -326,6 +326,12 @@ void teleport(void* c, const net::Vec3& pos, const net::Quat& rot)
     vcall<void>(spatial(c), 0x44 / 4, &p, &q);
 }
 
+void set_position(void* c, const net::Vec3& pos)
+{
+    Vector3 p{pos.x, pos.y, pos.z};
+    vcall<void>(spatial(c), 0x38 / 4, &p);
+}
+
 void set_orientation(void* c, const net::Quat& rot)
 {
     Quaternion q{rot.x, rot.y, rot.z, rot.w};

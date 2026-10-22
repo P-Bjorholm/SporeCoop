@@ -539,7 +539,7 @@ static void guest_tick(double now)
     for (auto& [id, g] : g_gm) {
         if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
             continue;
-        drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now);
+        drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
             game::set_health(g.c, g.hp);
@@ -556,10 +556,17 @@ void tick(double now)
         guest_tick(now);
 }
 
+static uint32_t g_rx, g_rx_skipped, g_resets;
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (!g_ok)
         return;
+    if (type == net::MSG_TRIBE_STATE) {
+        g_rx++;
+        if (!is_guest() || game::mode_id() != modes::kTribe)
+            g_rx_skipped++;
+    }
     if (type == net::MSG_TRIBE_STATE && is_guest() && game::mode_id() == modes::kTribe)
         guest_state(r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && game::mode_id() == modes::kTribe)
@@ -576,7 +583,11 @@ void on_session_end()
     g_player_members_seen = 0;
 }
 
-void on_world_change() { on_session_end(); }
+void on_world_change()
+{
+    g_resets++;
+    on_session_end();
+}
 
 bool center(net::Vec3& pos)
 {
@@ -606,8 +617,11 @@ std::string status()
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u\n", (unsigned)g_hm.size(), g_cmds_done,
                  g_cmds_rejected);
     else
-        snprintf(b, sizeof b, "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u\n", (unsigned)g_gm.size(),
-                 g_spawned, g_removed, g_cmds_sent);
+        snprintf(b, sizeof b,
+                 "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
+                 "local_tribes=%u player_tribe=%p\n",
+                 (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
+                 (unsigned)all_tribes().size(), player_tribe());
     return b;
 }
 
@@ -675,9 +689,16 @@ std::string list()
                 auto it = g_gid_of.find(c);
                 id = it == g_gid_of.end() ? 0 : it->second;
             }
-            snprintf(b, sizeof b, "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f)\n", id, c,
-                     ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff), game::health(c),
-                     cp.x, cp.y, cp.z);
+            net::Vec3 v = game::velocity(c), sv{};
+            if (C.sess && C.sess->role() != net::Role::Host) { // the host's velocity in the snapshot
+                auto it = g_gm.find(id);
+                if (it != g_gm.end())
+                    sv = it->second.vel;
+            }
+            snprintf(b, sizeof b,
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f\n", id,
+                     c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
+                     game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv));
             out += b;
         }
     }
