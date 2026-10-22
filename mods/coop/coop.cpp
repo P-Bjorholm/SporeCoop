@@ -278,27 +278,34 @@ struct Vote {
 };
 Vote g_vote;
 bool g_vote_bypass = false;
+bool g_vote_opened_ui = false; // the vote opened the co-op window: it closes again afterwards
 double g_vote_last_send = 0;
 using Submit_t = bool(SK_CDECL*)(void*);
 Submit_t o_Submit;
 void broadcast_vote();
 void set_ready(bool on);
 
+void start_vote(void* req, const std::string& text)
+{
+    if (req)
+        skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
+    g_vote = Vote{true, req, H->time_seconds(), text, 60};
+    for (auto& p : g_sess.players())
+        g_ready[p.id] = p.id == 0;
+    g_lobby_dirty = true;
+    broadcast_vote();
+    notice(text + ": press I'm ready (F9)", -1);
+    g_vote_opened_ui = !coop_ui::is_open();
+    coop_ui::open(true);
+}
+
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
         if (g_sess.role() == net::Role::Host) {
-            if (!g_vote.active) {
-                skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
-                g_vote = Vote{true, req, H->time_seconds(), g_name + " wants to evolve (" + modes::mode_name(mode) + ")", 60};
-                for (auto& p : g_sess.players())
-                    g_ready[p.id] = p.id == 0;
-                g_lobby_dirty = true;
-                broadcast_vote();
-                notice(g_vote.text + ": press I'm ready (F9)", -1);
-                coop_ui::open(true);
-            }
+            if (!g_vote.active)
+                start_vote(req, g_name + " wants to evolve (" + modes::mode_name(mode) + ")");
             return false; // runs when the vote is over
         }
         notice(g_name + " is in the editor: the host's evolution is the one everybody gets", -1);
@@ -314,6 +321,9 @@ void finish_vote(const char* why)
     void* req = g_vote.request;
     g_vote.active = false;
     broadcast_vote();
+    if (g_vote_opened_ui)
+        coop_ui::open(false);
+    g_vote_opened_ui = false;
     notice(std::string("evolution starts (") + why + ")", -1);
     if (req) // editors create D3D resources: outside the frame
         H->run_outside_frame(
@@ -838,13 +848,18 @@ void setup_callbacks()
             std::string text = r.str8();
             if (!r.ok())
                 return;
-            bool started = on && !g_vote.active;
+            bool started = on && !g_vote.active, ended = !on && g_vote.active;
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;
             if (started) {
                 g_ready[g_sess.my_id()] = false;
+                g_vote_opened_ui = !coop_ui::is_open();
                 coop_ui::open(true);
+            }
+            if (ended && g_vote_opened_ui) {
+                coop_ui::open(false);
+                g_vote_opened_ui = false;
             }
             return;
         }
@@ -1315,6 +1330,11 @@ std::string ui_world_line()
                  (unsigned)((uint64_t)got * 100 / total));
         return b;
     }
+    // the host is evolving in an editor: everybody gets the new body afterwards
+    uint32_t host_mode = g_sess.role() == net::Role::Host ? g_mode
+                         : (g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().mode : 0);
+    if (host_mode == modes::kEdit || host_mode == modes::kEditor)
+        return g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
     if (g_sess.role() == net::Role::Host && g_sess.players().size() > 1 && !(g_adapter && g_local))
         return "Load or start a game: the guests get your world automatically";
     if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)
@@ -1488,12 +1508,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
-                           g_vote = Vote{true, nullptr, H->time_seconds(), g_name + " wants to evolve (test)", 60};
-                           for (auto& p : g_sess.players())
-                               g_ready[p.id] = p.id == 0;
-                           g_lobby_dirty = true;
-                           broadcast_vote();
-                           coop_ui::open(true);
+                           start_vote(nullptr, g_name + " wants to evolve (test)");
                        } else if (argc > 1 && !strcmp(argv[1], "editor")) {
                            // open the creature editor like ModAPI mods do (EditorRequest + Submit)
                            uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");

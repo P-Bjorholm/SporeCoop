@@ -41,7 +41,29 @@ def main():
     print('  host mode after the vote:', mode(host))
     ck(mode(host) != m0, 'the editor opened after the vote')
     host.call('wait.frames 200 60000')
+    ck(hu.state().get('open') == '0', 'the co-op window closed itself after the vote')
     shot(host, 'vote_editor.png')
+    gs = guest.call('coop.uistate 1')['out']
+    time.sleep(2)
+    ck('evolving the species in the editor' in guest.call('coop.uistate')['out'], 'the guest sees the host evolving')
+    guest.call('coop.uistate 0')
+
+    # 3. leaving the editor: the evolved species goes to everybody
+    host.call('click 1416 1062')  # the green "done" check of the editor
+    t0 = time.time()
+    while time.time() - t0 < 30 and mode(host) != m0:
+        time.sleep(1)
+    ck(mode(host) == m0, 'the host is back in its stage')
+    t0 = time.time()
+    got = False
+    while time.time() - t0 < 120 and not got:
+        got = 'evolved the species' in guest.call('coop.status')['out'] and guest.call('coop.avatar')['ok']
+        time.sleep(2)
+    time.sleep(20)
+    st = guest.call('coop.status')['out']
+    ck('evolved the species' in st, 'everybody is told about the evolution')
+    ck(re.search(r"remote 0 'Alice' puppet=[0-9A-F]{8} ", st) and 'puppet=00000000' not in st.split("remote 0")[1][:40],
+       'the guest got the evolved world and sees the host again')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
