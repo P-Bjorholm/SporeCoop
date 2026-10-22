@@ -116,6 +116,12 @@ cmd_run() {
 # the Wine process command line starts with the Windows path, e.g. F:\...\SporeApp.exe
 GAME_RE='^[A-Z]:\\.*SporeApp\.exe'
 
+kill_tree() {
+    local c
+    for c in $(pgrep -P "$1"); do kill_tree "$c"; done
+    kill -9 "$1" 2>/dev/null || true
+}
+
 cmd_kill() {
     pkill -f "$GAME_RE" || true
     sleep 1
@@ -125,7 +131,11 @@ cmd_kill() {
     for z in $(ps -eo pid=,stat=,comm= | awk '$2 ~ /Z/ && $3 ~ /SporeApp/ {print $1}'); do
         kill -9 "$z" 2>/dev/null || true
     done
-    pkill -f "[b]wrap --args [0-9]* -- bottles-cli run -b $BOTTLE -e $BIN/SporeApp.exe" || true
+    # launch sandboxes keep a wine services tree alive after the game exits: kill the whole tree
+    local w
+    for w in $(ps -eo pid,comm,args | awk -v bin="$BIN/SporeApp.exe" '$2=="bwrap" && index($0, bin) {print $1}'); do
+        kill_tree "$w"
+    done
     # leftover launch wrappers (the [x] trick keeps pkill from matching this shell)
     pkill -f "[b]ottles-cli run -b $BOTTLE -e $BIN/SporeApp.exe" || true
     pkill -f "[s]tart.exe /exec start /wait /unix $BIN/SporeApp.exe" || true

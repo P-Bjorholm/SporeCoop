@@ -106,10 +106,22 @@ static bool g_our_destroy, g_food_guard;
 static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged;
 
 // ---------------- both: symbiosis ----------------
-static double g_last_regen, g_invuln_until;
-static uint32_t g_rescues;
+// A lethal hit does not kill a player who has a partner in the pool: the cell is knocked out for
+// kDownTime seconds. A partner who stays right next to it for kReviveHold seconds revives it
+// (half health). Otherwise it respawns next to the partner as a small cell (half size), which
+// grows back by eating or at the next level up. Alone in the pool the vanilla death happens
+// (it rebuilds the whole level).
+constexpr double kDownTime = 10.0, kReviveHold = 1.5;
+constexpr float kSmall = 0.5f;
+static double g_last_regen, g_invuln_until, g_last_tick;
+static uint32_t g_revives, g_respawns;
+static bool g_downed;
+static double g_down_since, g_hold;
+static net::Vec3 g_down_pos;
+static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
+static float g_body_size = 0; // the target size we wrote, to notice the game resizing the avatar
 
-static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr)
+static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr)
 {
     uint8_t* a = avatar();
     if (!a || !C.partners)
@@ -126,35 +138,114 @@ static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr)
                 *where = p;
         }
     }
+    if (dist)
+        *dist = best.empty() ? -1.f : bd;
     return best;
 }
 
-// The avatar would die: with a partner in the pool it respawns next to them instead
-// (the vanilla death rebuilds the whole level and would wipe every mirror).
-static bool save_avatar(uint8_t* c)
+// "right next to": the cells (almost) touch
+static float revive_dist(uint8_t* a)
 {
-    if (!c || c != avatar() || !C.sess || !C.sess->connected())
-        return false;
-    net::Vec3 at;
-    std::string partner = nearest_partner(1e9f, &at);
-    if (partner.empty())
-        return false;
-    F<int>(c, kHp) = 6;
-    F<uint8_t>(c, kDead) = 0;
-    F<uint8_t>(c, kDying) = 0;
-    F<uint8_t>(c, kInvuln) = 1;
-    g_invuln_until = H->time_seconds() + 3.0;
-    net::Vec3 p{at.x + 2.f, at.y + 1.f, 0.f};
+    float size = F<float>(a, kSize);
+    return std::max(3.f, size * 3.f);
+}
+
+// A cell with a soft body (the avatar) takes its position from the centroid of its particles
+// (0xE7C080: +0x250 count, +0x254 particle indices into *(G+0x4108)+0x4654, 12 bytes each), so
+// moving it means moving the particles too; +0x1C4 is the body velocity added to them.
+static void stop_at(uint8_t* c, const net::Vec3& p)
+{
+    net::Vec3 old = pos_of(c);
+    float d[3] = {p.x - old.x, p.y - old.y, p.z - old.z};
+    int n = F<int>(c, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 80)
+        for (int i = 0; i < n; i++) {
+            auto* q = (float*)(parts + 0x4654 + 12 * (size_t)F<uint32_t>(c, 0x254 + 4 * i));
+            q[0] += d[0]; q[1] += d[1]; q[2] += d[2];
+        }
+    auto* bv = (float*)(c + 0x1C4);
+    bv[0] = bv[1] = bv[2] = 0;
     set_pos(c, p);
     auto* t = (float*)(c + kTarget);
     t[0] = p.x; t[1] = p.y; t[2] = p.z;
     auto* v = (float*)(c + kVel);
     v[0] = v[1] = v[2] = 0;
-    F<uint8_t>(c, 0x04) = 1; // idle
-    g_rescues++;
-    if (C.notice)
-        C.notice(partner + " saved " + C.my_name() + ": symbiosis");
+}
+
+// scale the avatar body (target size; the game smooths +0x58 towards it), keeping the mass in step
+static void set_body(uint8_t* a, float factor)
+{
+    float cur = F<float>(a, kTargetSize);
+    if (cur <= 0)
+        return;
+    float full = g_body < 1.f ? cur / g_body : cur;
+    float want = full * factor, k = want / cur;
+    F<float>(a, kTargetSize) = want;
+    F<float>(a, 0xB8) *= k * k; // mass ~ size^2 (as SetCellSize 0xE57190 computes it)
+    F<float>(a, 0xBC) /= k * k; // inverse mass
+    g_body = factor;
+    g_body_size = want;
+}
+
+static bool go_down(uint8_t* c)
+{
+    if (!c || c != avatar() || !C.sess || !C.sess->connected())
+        return false;
+    if (!g_downed) {
+        if (nearest_partner(1e9f).empty())
+            return false; // alone in the pool: the vanilla death
+        g_downed = true;
+        g_down_since = H->time_seconds();
+        g_hold = 0;
+        g_down_pos = pos_of(c);
+        if (C.notice)
+            C.notice(C.my_name() + " is knocked out: swim right next to them within 10 s");
+    }
+    F<int>(c, kHp) = 1;
+    F<uint8_t>(c, kDead) = 0;
+    F<uint8_t>(c, kDying) = 0;
+    F<uint8_t>(c, kInvuln) = 1;
+    g_invuln_until = 0;
+    stop_at(c, g_down_pos);
     return true;
+}
+
+static void downed_tick(uint8_t* a, double now, double dt)
+{
+    if (F<uint8_t>(a, kDying) || F<uint8_t>(a, kDead)) {
+        F<uint8_t>(a, kDead) = 0;
+        F<uint8_t>(a, kDying) = 0;
+    }
+    F<int>(a, kHp) = 1;
+    F<uint8_t>(a, kInvuln) = 1;
+    stop_at(a, g_down_pos);
+    float d = 0;
+    std::string helper = nearest_partner(revive_dist(a), nullptr, &d);
+    g_hold = helper.empty() ? 0 : g_hold + dt;
+    if (!helper.empty() && g_hold >= kReviveHold) { // revived by the partner
+        g_downed = false;
+        F<int>(a, kHp) = 3;
+        g_invuln_until = now + 2.0;
+        g_revives++;
+        if (C.notice)
+            C.notice(helper + " revived " + C.my_name());
+        return;
+    }
+    if (now - g_down_since < kDownTime)
+        return;
+    // nobody came: respawn next to the partner, small again
+    g_downed = false;
+    net::Vec3 at = g_down_pos;
+    std::string partner = nearest_partner(1e9f, &at);
+    stop_at(a, partner.empty() ? at : net::Vec3{at.x + 2.f, at.y + 1.f, 0.f});
+    F<uint8_t>(a, 0x04) = 1; // idle
+    F<int>(a, kHp) = 6;
+    g_invuln_until = now + 3.0;
+    set_body(a, kSmall);
+    g_respawns++;
+    if (C.notice)
+        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
 }
 
 // ---------------- hooks ----------------
@@ -200,7 +291,7 @@ using KillCell_t = bool(SK_CDECL*)(uint8_t*, uint32_t, void*, bool, int, float);
 static KillCell_t o_KillCell;
 static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt)
 {
-    if (in_cell() && save_avatar(c))
+    if (in_cell() && go_down(c))
         return false;
     return o_KillCell(c, killer, res, by_player, type, dt);
 }
@@ -209,7 +300,7 @@ using Break_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Break_t o_Break;
 static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 {
-    if (in_cell() && save_avatar(victim))
+    if (in_cell() && go_down(victim))
         return;
     o_Break(victim, attacker, f);
 }
@@ -238,6 +329,9 @@ static AddFood_t o_AddFood;
 static void SK_CDECL h_AddFood(int amount, bool plant)
 {
     o_AddFood(amount, plant);
+    uint8_t* a = in_cell() ? avatar() : nullptr;
+    if (a && amount > 0 && g_body < 1.f) // we ate: the small body grows back (50 points = full size)
+        set_body(a, std::min(1.f, g_body + amount * 0.01f));
     if (is_guest() && !g_food_guard && amount != 0 && in_cell()) {
         net::Writer w;
         w.u32((uint32_t)amount);
@@ -464,8 +558,16 @@ static void guest_tick(double now)
 static void symbiosis_tick(double now)
 {
     uint8_t* a = avatar();
+    double dt = g_last_tick > 0 ? std::min(now - g_last_tick, 0.5) : 0;
+    g_last_tick = now;
     if (!a)
         return;
+    if (g_body < 1.f && std::fabs(F<float>(a, kTargetSize) - g_body_size) > g_body_size * 0.01f)
+        g_body = 1.f; // the game resized the avatar (level change): full size again
+    if (g_downed) {
+        downed_tick(a, now, dt);
+        return;
+    }
     if (g_invuln_until > 0 && now > g_invuln_until) {
         F<uint8_t>(a, kInvuln) = 0;
         g_invuln_until = 0;
@@ -566,6 +668,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    if (g_downed) {
+        g_downed = false;
+        if (uint8_t* a = in_cell() ? avatar() : nullptr)
+            F<uint8_t>(a, kInvuln) = 0;
+    }
     for (auto& [h, m] : g_mirrors)
         if (m.local)
             destroy_local(m.local);
@@ -607,6 +714,13 @@ std::string debug(const std::vector<std::string>& a)
         F<int>(av, kHp) = atoi(a[1].c_str());
         return "hp set";
     }
+    if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner
+        net::Vec3 at;
+        if (nearest_partner(1e9f, &at).empty())
+            return "no partner";
+        stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
+        return "moved";
+    }
     if (a.size() >= 3 && a[0] == "hurt") { // host: send a bite to player <id>
         net::Writer w;
         w.u32(0xFFFFFFFFu);
@@ -615,11 +729,16 @@ std::string debug(const std::vector<std::string>& a)
         C.sess->send_reliable_to((uint8_t)atoi(a[1].c_str()), net::MSG_CELL_HIT, w);
         return "bite sent";
     }
-    char b[160];
+    char b[320];
     int local = 0;
     for_each_cell([&](uint8_t*, uint32_t) { local++; });
-    snprintf(b, sizeof b, "avatar hp=%d pos=(%.1f %.1f) local_gameplay_cells=%d\n", F<int>(av, kHp), pos_of(av).x,
-             pos_of(av).y, local);
+    float pd = 0;
+    nearest_partner(1e9f, nullptr, &pd);
+    snprintf(b, sizeof b,
+             "avatar hp=%d pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "revive_dist=%.1f local_gameplay_cells=%d\n",
+             F<int>(av, kHp), pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
+             g_downed ? 1 : 0, pd, revive_dist(av), local);
     return b + status();
 }
 
@@ -629,14 +748,14 @@ std::string status()
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u eats_in=%u rescues=%u\n", food, g_hits_in, g_eats_in,
-                 g_rescues);
+        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u eats_in=%u revives=%u respawns=%u\n", food, g_hits_in,
+                 g_eats_in, g_revives, g_respawns);
     else
         snprintf(b, sizeof b,
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
-                 "rescues=%u\n",
+                 "revives=%u respawns=%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
-                 g_rescues);
+                 g_revives, g_respawns);
     return b;
 }
 

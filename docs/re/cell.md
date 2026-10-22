@@ -204,6 +204,15 @@ thresholds every 50 points (0,50,100,…).
 
 ## 6. Avatar move / respawn, regen
 
+- **The avatar has a soft body**: 0xE7C080 recomputes its `+0x4C` every frame as the centroid of
+  its particles when `+0x248` (GFX) ≠ 0 and `+0x250` (particle count) > 1: indices `+0x254[i]`
+  into `*(G+0x4108) + 0x4654 + 12*idx` (Vec3), body velocity `+0x1C4` is added to them. Writing
+  `+0x4C` alone is undone the next frame ✔ — translate every particle by the same delta.
+- Size ✔: `SetCellSize` 0xE57190 (EAX = cell index, stack float factor): `+0xB4` target =
+  factor·√c·G+0x514C/G+0x5150, `+0xB8` = size²·k (mass), `+0xBC` = c/`+0xB8`; AddFoodPoints calls
+  it for the avatar on a level change (factor from the level table 0x14846B0 `+0x0C`); the
+  smoother moves `+0x58` towards `+0xB4`. Level table: `{worldLevel, threshold, parts, avatarSize,
+  worldScale, ?, ?}`, avatarSize 1, 1.73, 3, 5.2, 10 … 52000.
 - Teleport (✔ fields): write `+0x4C` pos (z = 0 on the gameplay layer), `+0x08` target = pos,
   `+0x84` = pos, `+0x90` vel = 0, `+0x04` idle = 1, `flags(+0x48) |= 4; ++counter(+0x4A)`; query
   position is refreshed by 0xE7C080 the same frame. Camera follows the avatar (?) — check for a jump.
