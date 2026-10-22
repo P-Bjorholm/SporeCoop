@@ -30,6 +30,7 @@
 #include "net/interp.h"
 #include "net/session.h"
 #include "notify.h"
+#include "syncdbg.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
@@ -1609,6 +1610,31 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.feed = feed;
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
+    H->command_add(M, "coop.sync", "coop.sync - pose of every synchronized object (key x y z qx qy qz qw), tests",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       std::vector<syncdbg::Entry> v;
+                       auto player = [&](uint8_t id, const modes::Adapter* a, void* e) {
+                           if (!a || !e)
+                               return;
+                           net::PlayerState st;
+                           a->fill(e, st);
+                           v.push_back({"p" + std::to_string(id), st.pos, st.rot});
+                       };
+                       if (g_sess.connected()) {
+                           player(g_sess.my_id(), g_adapter, g_local);
+                           for (auto& [id, r] : g_remotes)
+                               if (!r.echo)
+                                   player(id, r.puppet_adapter, r.puppet);
+                       }
+                       for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries,
+                                       squadron::sync_entries, cellsync::sync_entries})
+                           for (auto& e : f())
+                               v.push_back(e);
+                       for (auto& e : v) // one line per call: the console buffer of a call is 8 KB
+                           SAY("%s", syncdbg::format({e}).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.notify", "coop.notify <text> - show a co-op notification (game event log)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::string t;

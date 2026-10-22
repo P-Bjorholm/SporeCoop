@@ -278,7 +278,7 @@ static void guest_tick(double now)
             g_proxy_of[px.c] = id;
             game::teleport(px.c, s.pos, s.rot);
         }
-        drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now);
+        drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
             game::apply_damage(px.c, 1e6f, 0, nullptr); // play the death locally
@@ -510,10 +510,15 @@ std::string list()
             out += b;
         }
     } else {
+        double now = H->time_seconds();
         for (auto& [id, px] : g_proxies) {
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f%s\n", id, px.key.instance,
-                     px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
-                     px.c ? net::dist(game::position(px.c), ap) : -1.f, px.killed ? " DEAD" : "");
+            net::PlayerState st;
+            bool have = px.buf.sample(now, st);
+            float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s\n", id,
+                     px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
+                     px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
+                     px.killed ? " DEAD" : "");
             out += b;
         }
     }
@@ -556,4 +561,19 @@ bool debug_hurt(uint8_t player, uint16_t id, float damage)
     game::hit(pup, damage, 0, it->second);
     return true;
 }
+std::vector<syncdbg::Entry> sync_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        for (auto& [c, h] : g_host_npcs)
+            if (game::object_alive(c))
+                v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
+    } else {
+        for (auto& [id, px] : g_proxies)
+            if (px.c && game::object_alive(px.c))
+                v.push_back({"n" + std::to_string(id), game::position(px.c), game::orientation(px.c)});
+    }
+    return v;
+}
+
 } // namespace npc

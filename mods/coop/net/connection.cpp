@@ -59,17 +59,25 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     sp.seq = seq;
     sp.time = now;
 
-    // unreliable first (latest state matters most), drop what doesn't fit
+    // unreliable first (latest state matters most); what does not fit goes into the next packet of
+    // this flush (snapshots come in several chunks: dropping the rest froze those objects)
+    size_t used = 0;
     for (auto& [type, payload] : unrel_out_) {
-        if (w.size() + 4 + payload.size() > kMaxPacket || count == 255)
+        if (count == 255)
             break;
+        if (w.size() + 4 + payload.size() > kMaxPacket) {
+            if (count == 0 && used == 0)
+                used++; // can never fit any packet: drop it
+            break;
+        }
         w.u8(type);
         w.u8(0);
         w.u16((uint16_t)payload.size());
         w.raw(payload.data(), payload.size());
         count++;
+        used++;
     }
-    unrel_out_.clear();
+    unrel_out_.erase(unrel_out_.begin(), unrel_out_.begin() + used);
     for (auto& m : rel_out_) {
         if (!(m.sends == 0 || now - m.last_sent >= rto))
             continue;

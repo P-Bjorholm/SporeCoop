@@ -454,9 +454,11 @@ void Session::handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now
 void Session::flush(uint32_t now)
 {
     std::vector<uint8_t> pkt;
-    for (auto& p : peers_)
-        for (int i = 0; i < 16 && p->conn.build_packet(now, pkt); i++)
+    for (auto& p : peers_) {
+        for (int i = 0; i < 32 && p->conn.build_packet(now, pkt); i++)
             sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
+        p->conn.drop_unreliable();
+    }
 }
 
 void Session::update()

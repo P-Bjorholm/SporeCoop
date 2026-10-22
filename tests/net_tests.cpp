@@ -55,6 +55,32 @@ static void test_buffer()
     CHECK(r3.u8() == 3 && r3.f64() == 123456.75 && r3.ok() && r3.left() == 0);
 }
 
+// a snapshot in several big unreliable chunks: every chunk goes out (one per packet), none is lost
+static void test_unreliable_chunks()
+{
+    printf("unreliable chunks larger than one packet\n");
+    Connection a, b;
+    for (int k = 0; k < 5; k++) {
+        Writer w;
+        w.u8((uint8_t)k);
+        for (int i = 0; i < 1000; i++)
+            w.u8(0x55);
+        a.send_unreliable(9, w);
+    }
+    std::vector<uint8_t> pkt;
+    std::vector<int> got;
+    int packets = 0;
+    while (a.build_packet(2000, pkt)) {
+        packets++;
+        b.on_packet(pkt.data(), pkt.size(), 2000, [&](uint8_t type, Reader& r) {
+            if (type == 9) got.push_back(r.u8());
+        });
+    }
+    CHECK(packets == 5);
+    CHECK(got.size() == 5 && got[0] == 0 && got[4] == 4);
+    CHECK(a.unreliable_queued() == 0);
+}
+
 static void test_reliability()
 {
     printf("reliable channel under 30%% loss + reordering\n");
@@ -215,6 +241,7 @@ static void test_discovery()
 int main()
 {
     test_buffer();
+    test_unreliable_chunks();
     test_reliability();
     test_session();
     test_interp();

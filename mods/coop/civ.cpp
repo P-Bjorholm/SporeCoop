@@ -112,6 +112,7 @@ struct GV {
     net::Quat rot;
     float hp = 0;
     double seen = 0;
+    net::VelocityEstimate est; // vehicles snapshots carry no velocity
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
@@ -747,6 +748,7 @@ static void guest_state(net::Reader& r)
         void* v = g.v;
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
+        g.est.update(m.pos, now);
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);
             g.v = v = nullptr;
@@ -810,11 +812,12 @@ static void guest_tick(double now)
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
             continue;
         net::Vec3 cur = veh_pos(g.v);
-        float d = net::dist(cur, g.pos);
-        net::Vec3 p = g.pos;
-        if (d < 30.f && d > 0.01f) { // glide over a few frames
-            float k = 0.25f;
-            p = {cur.x + (g.pos.x - cur.x) * k, cur.y + (g.pos.y - cur.y) * k, cur.z + (g.pos.z - cur.z) * k};
+        net::Vec3 want = g.est.at(now); // moved on with the estimated velocity (no lag behind the host)
+        float d = net::dist(cur, want);
+        net::Vec3 p = want;
+        if (d < 30.f && d > 0.01f) { // glide out small corrections
+            float k = 0.5f;
+            p = {cur.x + (want.x - cur.x) * k, cur.y + (want.y - cur.y) * k, cur.z + (want.z - cur.z) * k};
         }
         void* sp = (uint8_t*)g.v + kVSpatial;
         float pp[3] = {p.x, p.y, p.z}, q[4] = {g.rot.x, g.rot.y, g.rot.z, g.rot.w};
@@ -1006,6 +1009,23 @@ std::string debug(const std::vector<std::string>& a)
     }
     return "usage: coop.civ select <id> <0|1> | move <id> <x> <y> <z> | buy <city> <0 land|1 water|2 air> | "
            "build <city> <house|factory|fun>";
+}
+
+std::vector<syncdbg::Entry> sync_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    auto alive = all_vehicles();
+    auto live = [&](void* x) { return std::find(alive.begin(), alive.end(), x) != alive.end(); };
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        for (auto& [x, h] : g_hv)
+            if (live(x))
+                v.push_back({"v" + std::to_string(h.id), veh_pos(x), veh_rot(x)});
+    } else {
+        for (auto& [id, g] : g_gv)
+            if (g.v && live(g.v))
+                v.push_back({"v" + std::to_string(id), veh_pos(g.v), veh_rot(g.v)});
+    }
+    return v;
 }
 
 } // namespace civ

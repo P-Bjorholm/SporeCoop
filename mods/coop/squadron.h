@@ -5,6 +5,8 @@
 //    the host are applied to the guest's own ship; mirrors never fire on their own
 #pragma once
 
+#include "syncdbg.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -27,6 +29,7 @@ void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 std::string status();
+std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string debug(const std::vector<std::string>& args);
 
 } // namespace squadron

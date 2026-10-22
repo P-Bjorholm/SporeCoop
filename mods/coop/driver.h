@@ -47,6 +47,8 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             const float k = 0.15f;
             game::set_position(p, {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k});
         }
+        // face where the remote faces (walking would turn the puppet towards its own path)
+        game::set_orientation(p, rot);
     } else {
         game::set_orientation(p, rot);
     }

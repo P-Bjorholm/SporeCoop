@@ -5,6 +5,8 @@
 //        hits on proxies to the host and takes damage the host reports.
 #pragma once
 
+#include "syncdbg.h"
+
 #include <functional>
 #include <string>
 
@@ -35,6 +37,7 @@ bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
 void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
+std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet

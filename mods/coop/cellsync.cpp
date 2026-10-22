@@ -939,4 +939,27 @@ std::string status()
     return b;
 }
 
+std::vector<syncdbg::Entry> sync_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    if (!in_cell())
+        return v;
+    auto entry = [&](uint8_t* c, uint32_t key) {
+        net::Quat q;
+        modes::mat_to_quat((float*)(c + kRot), q);
+        v.push_back({"c" + std::to_string(key), pos_of(c), q});
+    };
+    if (is_host()) {
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (!modes::cell_is_puppet(c))
+                entry(c, idx);
+        });
+    } else {
+        for (auto& [h, m] : g_mirrors)
+            if (uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr)
+                entry(c, h);
+    }
+    return v;
+}
+
 } // namespace cellsync

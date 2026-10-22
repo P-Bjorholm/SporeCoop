@@ -70,8 +70,10 @@ def start(fixture='creature', planet=None, load_args=()):
     sh('run', '-i', '2')
     time.sleep(2)  # two sandboxes starting at the very same moment can race on the bottle
     sh('run', '-p', 'test')
-    assert wait_up(2), 'instance 2 did not start'
-    assert wait_up(1), 'instance 1 did not start'
+    for inst, args in ((2, ('-i', '2')), (1, ('-p', 'test'))):
+        if not wait_up(inst, 90):  # two sandboxes starting together sometimes lose one: start it again
+            sh('run', *args)
+            assert wait_up(inst), f'instance {inst} did not start'
     host, guest = Console(1), Console(2)
     if planet:  # GameN/Planet of the fixture, loaded through the mod (works from the galaxy menu)
         for _ in range(180):

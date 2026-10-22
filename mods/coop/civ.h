@@ -8,6 +8,8 @@
 //  - city captures and new buildings on the host are repeated on every guest
 #pragma once
 
+#include "syncdbg.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -28,6 +30,7 @@ void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 std::string status();
+std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();

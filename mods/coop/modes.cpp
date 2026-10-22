@@ -49,7 +49,7 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
 
 static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
 {
-    drive::step(p, s.pos, s.rot, s.vel, ds, now);
+    drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true);
     float mh = game::max_health(p); // puppets mirror the remote health, never die locally
     if (mh > 0)
         game::set_health(p, mh);

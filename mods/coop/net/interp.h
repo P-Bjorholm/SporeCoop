@@ -1,6 +1,7 @@
 // Snapshot interpolation buffer for remote player states (portable).
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <deque>
 
@@ -108,6 +109,31 @@ private:
     std::deque<Snap> snaps_;
     double offset_ = 0;
     bool have_offset_ = false;
+};
+
+// Velocity of a remote object from its snapshots (for objects whose snapshots carry no velocity):
+// update() on every snapshot, at(now) = where it should be now (moved on for the snapshot's age)
+struct VelocityEstimate {
+    Vec3 pos{}, vel{};
+    double t = 0;
+    void update(const Vec3& p, double now)
+    {
+        double dt = now - t;
+        if (t > 0 && dt > 0.02 && dt < 1.0) {
+            Vec3 v{(p.x - pos.x) / (float)dt, (p.y - pos.y) / (float)dt, (p.z - pos.z) / (float)dt};
+            bool jump = dist(p, pos) > 200.f;
+            vel = jump ? Vec3{} : Vec3{vel.x + (v.x - vel.x) * 0.6f, vel.y + (v.y - vel.y) * 0.6f, vel.z + (v.z - vel.z) * 0.6f};
+        } else if (dt >= 1.0)
+            vel = {};
+        pos = p;
+        t = now;
+    }
+    // latency: the one-way delay before the snapshot arrived
+    Vec3 at(double now, double latency = 0.03) const
+    {
+        float a = (float)std::min(std::max(now - t + latency, 0.0), 0.4);
+        return {pos.x + vel.x * a, pos.y + vel.y * a, pos.z + vel.z * a};
+    }
 };
 
 } // namespace net

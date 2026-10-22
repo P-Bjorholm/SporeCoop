@@ -72,6 +72,13 @@ private:
     uint16_t next_rel_expected_ = 0;
     std::map<uint16_t, std::pair<uint8_t, std::vector<uint8_t>>> rel_in_;
     std::vector<std::pair<uint8_t, std::vector<uint8_t>>> unrel_out_;
+
+public:
+    // unreliable messages not sent by the end of a flush are stale by the next one
+    void drop_unreliable() { unrel_out_.clear(); }
+    size_t unreliable_queued() const { return unrel_out_.size(); }
+
+private:
 };
 
 } // namespace net

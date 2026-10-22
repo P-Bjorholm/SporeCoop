@@ -1,5 +1,6 @@
 #include "squadron.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
@@ -76,6 +77,7 @@ struct Mirror {
     net::Quat rot;
     float hp = 0;
     double seen = 0;
+    net::VelocityEstimate est; // ship snapshots carry no velocity
 };
 static std::unordered_map<uint16_t, Mirror> g_mirrors;
 static std::unordered_map<void*, uint16_t> g_mirror_of;
@@ -258,6 +260,7 @@ static void guest_state(net::Reader& r)
         g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
         m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
+        m.est.update(p, now);
         if (m.u && (!game::object_alive(m.u) || F<int>(m.u, kState) == 2)) {
             g_mirror_of.erase(m.u);
             m.u = nullptr;
@@ -304,7 +307,8 @@ static void guest_tick(double now)
             continue;
         if (!here || now - m.seen > 3.0)
             continue;
-        float p[3] = {m.pos.x, m.pos.y, m.pos.z}, q[4] = {m.rot.x, m.rot.y, m.rot.z, m.rot.w};
+        net::Vec3 at = m.est.at(now); // moved on with the estimated velocity (fast ships)
+        float p[3] = {at.x, at.y, at.z}, q[4] = {m.rot.x, m.rot.y, m.rot.z, m.rot.w};
         vcall<void>((uint8_t*)m.u + kLoco, 0x38 / 4, (const float*)p); // SetPosition
         vcall<void>((uint8_t*)m.u + kLoco, 0x3C / 4, (const float*)q); // SetOrientation
         // the UFO's own controller steers to mNextPosition/mDestination: pin them
@@ -464,6 +468,27 @@ std::string debug(const std::vector<std::string>& a)
         return "hit sent";
     }
     return "usage: coop.fleet list | shoot <id> <dmg> | hurt <ship id> <player>";
+}
+
+std::vector<syncdbg::Entry> sync_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    auto rot = [](void* u) {
+        auto& r = F<float[4]>(u, kRot);
+        return net::Quat{r[0], r[1], r[2], r[3]};
+    };
+    auto ufos = all_ufos();
+    auto live = [&](void* x) { return std::find(ufos.begin(), ufos.end(), x) != ufos.end(); };
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        for (auto& [u, id] : g_hid)
+            if (live(u))
+                v.push_back({"s" + std::to_string(id), pos_of(u), rot(u)});
+    } else {
+        for (auto& [id, m] : g_mirrors)
+            if (m.u && live(m.u))
+                v.push_back({"s" + std::to_string(id), pos_of(m.u), rot(m.u)});
+    }
+    return v;
 }
 
 } // namespace squadron

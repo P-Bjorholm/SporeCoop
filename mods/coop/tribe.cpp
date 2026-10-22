@@ -705,4 +705,19 @@ std::string list()
     return out;
 }
 
+std::vector<syncdbg::Entry> sync_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    if (C.sess && C.sess->role() == net::Role::Host) {
+        for (auto& [c, h] : g_hm)
+            if (game::object_alive(c))
+                v.push_back({"t" + std::to_string(h.id), game::position(c), game::orientation(c)});
+    } else {
+        for (auto& [id, g] : g_gm)
+            if (g.c && game::object_alive(g.c))
+                v.push_back({"t" + std::to_string(id), game::position(g.c), game::orientation(g.c)});
+    }
+    return v;
+}
+
 } // namespace tribe

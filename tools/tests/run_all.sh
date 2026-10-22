@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every co-op test (about 75 minutes). Results: out/tests/<name>.log + summary.
+# Run every co-op test (about 100 minutes). Results: out/tests/<name>.log + summary.
 set -u
 cd "$(dirname "$0")/../.."
 mkdir -p out/tests
@@ -20,6 +20,7 @@ add cell_coop  "python3 tools/tests/coop_cell.py"
 add space_coop "python3 tools/tests/coop_space.py"
 add vote       "python3 tools/tests/coop_vote.py"
 add notify     "python3 tools/tests/coop_notify.py"
+add sync       "python3 tools/tests/coop_sync.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}

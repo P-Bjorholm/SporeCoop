@@ -5,6 +5,8 @@
 //    order only their own members; guest orders are sent to the host and executed there
 #pragma once
 
+#include "syncdbg.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -26,6 +28,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
 std::string status();
+std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 // owner of a player tribe member (player id), 0xFF if unknown
