@@ -46,6 +46,19 @@ enum MsgType : uint8_t {
     MSG_PING_MARK = 27,   // any: "look here" marker (vec3), relayed by the host
     MSG_READY = 28,       // guest -> host: u8 ready
     MSG_LOBBY = 29,       // host -> guests: u8 count, {u8 id, u8 ready, u16 rtt_ms}
+    MSG_NOTICE = 30,      // any: str8 text everybody sees (phase events, rescues), relayed by the host
+    MSG_TRIBE_STATE = 31, // host -> guests: tribes + citizens snapshot (chunked)
+    MSG_TRIBE_CMD = 32,   // guest -> host: order for own tribe members
+    MSG_CELL_STATE = 33,  // host -> guests: NPC cells and food snapshot (chunked)
+    MSG_CELL_HIT = 34,    // guest -> host: u32 host cell index, u8 damage, u8 type
+    MSG_CELL_EAT = 35,    // guest -> host: u32 host cell index (eaten / destroyed by the guest)
+    MSG_CELL_FOOD = 36,   // host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant
+    MSG_CIV_STATE = 37,   // host -> guests: cities (owners, political ids) + vehicles snapshot (chunked)
+    MSG_CIV_CMD = 38,     // guest -> host: vehicle order / move / purchase / building
+    MSG_CIV_BUILD = 39,   // host -> guests: a building appeared in a city (city index, noun, position)
+    MSG_UFO_STATE = 40,   // host -> guests in its place: NPC ships snapshot (chunked)
+    MSG_UFO_HIT = 41,     // guest -> host: u16 ship id, f32 damage, i32 type, vec3 dir
+    MSG_UFO_DAMAGE = 42,  // host -> guest: f32 damage, i32 type, vec3 dir, u16 attacker ship id
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

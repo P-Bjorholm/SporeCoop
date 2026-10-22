@@ -181,7 +181,7 @@ static float space_tag(void*) { return 4.f; }
 // mAvatarCellIndex +0x411C. cCellObjectData (0x398 bytes): index +0, mIsIdle +4, mTargetPosition +8,
 // mTransform +0x48 (offset +0x4C, scale +0x58, rotation 3x3 +0x5C), mCellResource +0x108,
 // mIsInvulnerable +0x111, mChaseCellIndex +0x22C, mHealthPoints +0x244, mScale +0x358.
-static uint8_t* cell_game()
+uint8_t* cell_game()
 {
     uintptr_t p = S("Simulator::Cell::cCellGame::_ptr");
     return p ? *(uint8_t**)p : nullptr;
@@ -189,7 +189,7 @@ static uint8_t* cell_game()
 
 // cObjectPoolIndex = slot (low 16 bits) | generation (high 16); the object's first field holds
 // its own full index while it lives (cObjectPool::GetIfNotDeleted 0xB72290)
-static uint8_t* cell_at(uint32_t idx)
+uint8_t* cell_at(uint32_t idx)
 {
     uint8_t* g = cell_game();
     uint32_t slot = idx & 0xFFFF;
@@ -211,7 +211,7 @@ static void* cell_local()
     return g ? cell_at(*(uint32_t*)(g + 0x411C)) : nullptr;
 }
 
-static void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3
+void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3
 {
     float tr = m[0] + m[4] + m[8];
     if (tr > 0) {
@@ -241,7 +241,7 @@ static void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3
     }
 }
 
-static void quat_to_mat(const net::Quat& q, float* m)
+void quat_to_mat(const net::Quat& q, float* m)
 {
     float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z, xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z,
           wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
@@ -285,13 +285,48 @@ static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
     return o_GetModelKey(ret, res);
 }
 
-static void* cell_spawn(const net::PlayerState& s, void* local)
+bool cell_is_puppet(void* c) { return g_cell_ids.count(c) != 0; }
+
+void cell_destroy(uint32_t idx)
+{
+    // DestroyCell(idx, spawnLoot, float, int): the game's own removal (setting hp 0 does not remove)
+    if (uintptr_t a = S("Simulator::Cell::DestroyCell"))
+        if (cell_at(idx))
+            skg::cdecl_call<void>(a, idx, 0, 0.f, 0);
+}
+
+static void ensure_model_hook()
 {
     if (!o_GetModelKey) {
         uintptr_t a = S("Simulator::Cell::GetModelKeyForCellResource");
         if (a)
             g_host_for_modes->hook_create(g_mod_for_modes, (void*)a, (void*)h_GetModelKey, (void**)&o_GetModelKey);
     }
+}
+
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot)
+{
+    ensure_model_hook();
+    uint8_t* g = cell_game();
+    uintptr_t create = S("Simulator::Cell::CreateCellObject");
+    if (!g || !res_ref || !create)
+        return 0;
+    skg::Vector3 p{pos.x, pos.y, pos.z};
+    skg::Quaternion q{0, 0, 0, 1};
+    if (rot)
+        q = {rot->x, rot->y, rot->z, rot->w};
+    g_key = {key[0], key[1], key[2]};
+    g_force_key = o_GetModelKey && key[0] != 0;
+    // (query, pos, elevation, ref, level, sizeFactor, cellSize 0 = auto, applySize, orientation, collision group -1)
+    uint32_t idx = skg::cdecl_call<uint32_t>(create, *(void**)(g + 0x40FC), &p, 0.f, res_ref, level, 1.f, 0.f, 1,
+                                             (void*)&q, -1);
+    g_force_key = false;
+    return cell_at(idx) ? idx : 0;
+}
+
+static void* cell_spawn(const net::PlayerState& s, void* local)
+{
+    ensure_model_hook();
     uint8_t* g = cell_game();
     uint8_t* me = (uint8_t*)local;
     uintptr_t create = S("Simulator::Cell::CreateCellObject");
@@ -361,11 +396,10 @@ static void cell_despawn(void* cp)
 {
     if (!cell_alive(cp))
         return;
+    uint32_t idx = g_cell_ids[cp];
     g_cell_ids.erase(cp);
-    uint8_t* c = (uint8_t*)cp;
-    *(bool*)(c + 0x111) = false;
-    *(int*)(c + 0x244) = 0; // the cell game removes dead cells
-    *(float*)(c + 0xA4) = 0; // mTargetOpacity: fade out meanwhile
+    *(bool*)((uint8_t*)cp + 0x111) = false;
+    cell_destroy(idx); // hp 0 or opacity 0 would only hide it (docs/re/cell.md §5)
 }
 
 static float cell_tag(void* cp) { return *(float*)((uint8_t*)cp + 0x58) * 1.2f + 0.5f; }

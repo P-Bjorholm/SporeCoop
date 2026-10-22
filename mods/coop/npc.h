@@ -20,6 +20,8 @@ struct Ctx {
     // last known world position of player `id`; false if not in the world
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
     std::function<void(const std::string&)> feed;
+    // RTS stages (no avatar): the shared centre (player tribe) all players are near
+    std::function<bool(net::Vec3& pos)> stage_center;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
@@ -30,6 +32,7 @@ void on_world_change();                       // world unloaded: forget (not des
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
+void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
 std::string list();                                  // debug: mirrored NPCs

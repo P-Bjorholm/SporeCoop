@@ -48,4 +48,13 @@ uint32_t current_world(); // crc32 of the current save name, 0 if none
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
 std::string current_world_name();
 
+// ---- cell stage helpers (pool access, creation with a given model) ----
+uint8_t* cell_game();             // cCellGame*
+uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
+bool cell_is_puppet(void* cell);  // a remote player's cell
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
+void cell_destroy(uint32_t idx);
+void mat_to_quat(const float* m, net::Quat& q);
+void quat_to_mat(const net::Quat& q, float* m);
+
 } // namespace modes

@@ -17,6 +17,11 @@
 #include "modes.h"
 #include "shared.h"
 #include "sui.h"
+#include "teamplay.h"
+#include "tribe.h"
+#include "cellsync.h"
+#include "civ.h"
+#include "squadron.h"
 #include "npc.h"
 #include "world.h"
 #include "net/discovery.h"
@@ -106,6 +111,19 @@ void chat_log(const std::string& s)
     g_chat.push_back(s);
     while (g_chat.size() > 50)
         g_chat.pop_front();
+}
+
+// an event everybody sees (feed + lobby chat): guests send it to the host, the host relays it
+void notice(const std::string& text, int from = -1)
+{
+    feed(text);
+    chat_log("* " + text);
+    net::Writer w;
+    w.str8(text);
+    if (g_sess.role() == net::Role::Host)
+        g_sess.broadcast_reliable(net::MSG_NOTICE, w, from);
+    else if (g_sess.role() == net::Role::Client && from < 0)
+        g_sess.send_reliable_to(0, net::MSG_NOTICE, w);
 }
 
 struct LocalAddr {
@@ -241,6 +259,37 @@ bool stage_mode(uint32_t m)
            m == modes::kSpace;
 }
 
+void notice(const std::string& text, int from); // feed + chat log on every player
+
+// Phase events of the host. The species is shared: when the host comes back from an editor
+// (evolution inside a stage) or starts a new stage, every guest gets the new world at once.
+uint32_t g_last_stage = 0;  // last stage the local player played
+bool g_was_in_editor = false;
+
+void on_mode_change(uint32_t from, uint32_t to)
+{
+    bool editor = to == modes::kEdit || to == modes::kEditor;
+    if (editor && stage_mode(from))
+        g_was_in_editor = true;
+    if (!stage_mode(to))
+        return;
+    bool new_stage = g_last_stage && to != g_last_stage;
+    bool evolved = g_was_in_editor && !new_stage;
+    g_was_in_editor = false;
+    uint32_t last = g_last_stage;
+    g_last_stage = to;
+    if (g_sess.role() != net::Role::Host || !g_share_world || g_remotes.empty() || !last)
+        return;
+    if (!new_stage && !evolved)
+        return;
+    for (auto& [id, r] : g_remotes)
+        if (!r.echo)
+            r.needs_world = true; // sent by follow_phase as soon as the host controls something
+    notice(new_stage ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
+                     : g_name + " evolved the species: everybody gets the new body",
+           -1);
+}
+
 // The host decides when a phase ends: when the host plays a stage and a guest stays in another
 // stage (or its editor) for a few seconds, the host world is sent again and the guest loads it.
 void follow_phase(double now)
@@ -266,7 +315,9 @@ void follow_phase(double now)
         if (r.buf.empty())
             continue;
         const auto& ls = r.buf.latest();
-        bool behind = ls.mode != g_mode && (stage_mode(ls.mode) || ls.mode == modes::kEdit || ls.mode == modes::kEditor);
+        // a guest in an editor is left alone (it may be evolving inside the same stage); a guest
+        // that plays another stage than the host is pulled back into the host's stage
+        bool behind = ls.mode != g_mode && stage_mode(ls.mode);
         if (!behind) {
             r.other_mode_since = -1;
             if (ls.mode == g_mode)
@@ -355,7 +406,10 @@ void on_frame(void*, int, void*)
         }
     }
 
+    uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
+    if (g_mode != prev_mode)
+        on_mode_change(prev_mode, g_mode);
     g_adapter = modes::for_mode(g_mode);
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
@@ -364,11 +418,18 @@ void on_frame(void*, int, void*)
         if (g_last_avatar) {
             forget_puppets();
             npc::on_world_change();
+            tribe::on_world_change();
         }
         g_last_avatar = g_local;
     }
 
     follow_phase(now);
+    tribe::tick(now);
+    cellsync::tick(now);
+    civ::tick(now);
+    squadron::tick(now);
+    if (g_sess.connected() && g_mode == modes::kCreature)
+        teamplay::tick(game::avatar(), now);
 
     if (now - g_last_send >= 0.05) {
         g_last_send = now;
@@ -448,6 +509,43 @@ void draw_marks()
     }
 }
 
+// tribe stage: the owner's name over every member of the player tribe (own members in gold)
+void draw_owner_tags()
+{
+    tribe::for_each_owned(
+        [](void* c, uint8_t owner, void*) {
+            net::Vec3 p = game::position(c);
+            float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            float up = len > 1 ? 2.6f / len : 0;
+            float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+            if (!H->world_to_screen(w, sc))
+                return;
+            std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
+            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
+                            owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
+        },
+        nullptr);
+}
+
+// civilization: owner names over the player's cities and vehicles
+void draw_civ_tags()
+{
+    civ::for_each_owned(
+        [](void*, const net::Vec3& p, uint8_t owner, bool city, void*) {
+            float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            float up = len > 1 ? (city ? 30.f : 6.f) / len : 0;
+            float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+            if (!H->world_to_screen(w, sc))
+                return;
+            std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
+            if (city)
+                n = "[" + n + "]";
+            H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
+                            owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
+        },
+        nullptr);
+}
+
 void on_overlay(void*, int, void*)
 {
     if (!g_overlay)
@@ -455,6 +553,8 @@ void on_overlay(void*, int, void*)
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     draw_marks();
+    draw_owner_tags();
+    draw_civ_tags();
     // name tags above remote players
     void* av = g_local;
     if (g_tag_self && av) {
@@ -497,6 +597,13 @@ void on_overlay(void*, int, void*)
     int x = sw > 0 ? sw - 480 : 900, y = 70;
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
+    if (g_sess.connected() && g_mode == modes::kCreature) {
+        std::string t = teamplay::status();
+        if (!t.empty()) {
+            H->overlay_text(x, y, 0xFF8CF08C, t.c_str());
+            y += 20;
+        }
+    }
     for (auto& p : g_sess.players()) {
         std::string line = (p.id == g_sess.my_id() ? "> " : "  ") + p.name;
         auto it = g_remotes.find(p.id);
@@ -566,6 +673,10 @@ void setup_callbacks()
         g_ready.clear();
         g_lobby_rtt.clear();
         npc::on_session_end();
+        tribe::on_session_end();
+        cellsync::on_session_end();
+        civ::on_session_end();
+        squadron::on_session_end();
         for (auto& [id, r] : g_remotes)
             despawn(r);
         g_remotes.clear();
@@ -629,6 +740,18 @@ void setup_callbacks()
                 game::set_time_of_day(q);
             return;
         }
+        if (type == net::MSG_NOTICE) {
+            std::string t = r.str8();
+            if (!r.ok())
+                return;
+            if (g_sess.role() == net::Role::Host)
+                notice(t, from); // relay to the other guests
+            else {
+                feed(t);
+                chat_log("* " + t);
+            }
+            return;
+        }
         if (type == net::MSG_READY && g_sess.role() == net::Role::Host) {
             uint8_t on = r.u8();
             if (r.ok()) {
@@ -674,6 +797,22 @@ void setup_callbacks()
                 g_sess.broadcast_reliable(net::MSG_PING_MARK, w, from);
             }
             add_mark(origin, p, mode);
+            return;
+        }
+        if (type >= net::MSG_UFO_STATE && type <= net::MSG_UFO_DAMAGE) {
+            squadron::on_message(type, from, r);
+            return;
+        }
+        if (type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) {
+            civ::on_message(type, from, r);
+            return;
+        }
+        if (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) {
+            cellsync::on_message(type, from, r);
+            return;
+        }
+        if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD) {
+            tribe::on_message(type, from, r);
             return;
         }
         switch (type) {
@@ -824,7 +963,13 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
     SAY("%s", npc::status().c_str());
+    SAY("%s", tribe::status().c_str());
+    SAY("%s", cellsync::status().c_str());
+    SAY("%s", civ::status().c_str());
+    SAY("%s", squadron::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
+    for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
+        SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     double now = H->time_seconds();
@@ -966,6 +1111,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
         return ok ? 0 : 1;
     }
+    if (argc > 3 && !strcmp(argv[1], "hosthit")) { // host avatar hits host NPC #id
+        bool ok = npc::debug_host_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
+        SAY(ok ? "host hit applied" : "no such npc");
+        return ok ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "hit")) {
         bool ok = npc::debug_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
         SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy");
@@ -1052,6 +1202,28 @@ std::string ui_world_line()
     if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)
         return "Waiting for the host's world...";
     return "";
+}
+
+std::vector<std::pair<std::string, net::Vec3>> partners()
+{
+    std::vector<std::pair<std::string, net::Vec3>> v;
+    double now = H->time_seconds();
+    for (auto& [id, r] : g_remotes) {
+        if (r.echo || r.buf.empty() || r.buf.age(now) > 3.0)
+            continue;
+        const auto& s = r.buf.latest();
+        if ((s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) && same_place(s))
+            v.push_back({r.name, s.pos});
+    }
+    return v;
+}
+
+int c_team(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1)
+        teamplay::set_enabled(strcmp(argv[1], "off") != 0);
+    SAY("teamplay %s\n%s", teamplay::enabled() ? "on" : "off", teamplay::status().c_str());
+    return 0;
 }
 
 void init_ui()
@@ -1158,6 +1330,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return true;
     };
     ctx.feed = feed;
+    ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
     game::set_damage_filter(npc::damage_filter);
@@ -1181,6 +1354,84 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
                    nullptr, MT);
     coop_register_debug_commands(H, M);
+    teamplay::Ctx tc;
+    tc.partners = partners;
+    tc.notice = [](const std::string& t) { notice(t, -1); };
+    tc.my_name = [] { return g_name; };
+    teamplay::init(H, M, std::move(tc));
+    tribe::Ctx trc;
+    trc.sess = &g_sess;
+    trc.feed = feed;
+    tribe::init(H, M, std::move(trc));
+    cellsync::Ctx cc;
+    cc.sess = &g_sess;
+    cc.partners = partners;
+    cc.notice = [](const std::string& t) { notice(t, -1); };
+    cc.my_name = [] { return g_name; };
+    cc.puppet_owner = [](void* cell) -> int {
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet == cell && !r.echo)
+                return id;
+        return -1;
+    };
+    cellsync::init(H, M, std::move(cc));
+    H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", cellsync::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    civ::Ctx cvc;
+    cvc.sess = &g_sess;
+    cvc.feed = feed;
+    civ::init(H, M, std::move(cvc));
+    squadron::Ctx sqc;
+    sqc.sess = &g_sess;
+    sqc.with_host = [] {
+        auto it = g_remotes.find(0);
+        return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
+    sqc.puppet_owner = [](void* u) -> int {
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet == u && !r.echo)
+                return id;
+        return -1;
+    };
+    sqc.puppet_of = [](uint8_t id) -> void* {
+        auto it = g_remotes.find(id);
+        return it == g_remotes.end() ? nullptr : it->second.puppet;
+    };
+    squadron::init(H, M, std::move(sqc));
+    H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player>] - space co-op",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", squadron::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.civ",
+                   "coop.civ [select <id> <0|1> | move <id> <x> <y> <z> | buy <city> <loco> | build <city> <kind>]",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1) {
+                           SAY("%s", civ::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                           return 0;
+                       }
+                       SAY("%s%s", civ::status().c_str(), civ::list().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.tribe",
+                   "coop.tribe [select <id> <0|1> | walk <x> <y> <z> | act <action> <target id>] - tribe co-op",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1) {
+                           SAY("%s", tribe::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                           return 0;
+                       }
+                       SAY("%s%s", tribe::status().c_str(), tribe::list().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
+                   nullptr, MT);
     init_ui();
     H->command_add(M, "coop.uistate", "coop.uistate [0|1] - co-op window state (open/close it)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);

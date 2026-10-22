@@ -20,6 +20,11 @@ static bool g_enabled = true;
 static constexpr float kRelevance = 110.f;  // m around a guest
 static constexpr float kHysteresis = 20.f;  // keep until kRelevance + this
 static constexpr double kStateInterval = 0.1;
+static constexpr float kRtsRelevance = 250.f; // tribe stage: m around the player tribe
+
+// NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage
+static bool npc_stage() { return game::in_creature_stage() || game::mode_id() == 0x1654C02; }
+static bool rts_stage() { return game::mode_id() == 0x1654C02; }
 
 // ------------------------------------------------------------------ host side
 struct HostNpc {
@@ -60,7 +65,7 @@ bool enabled() { return g_enabled; }
 // called from inside the game's creature update loop: keep it cheap
 static bool update_filter(void* c)
 {
-    if (!g_enabled || !is_guest() || !game::in_creature_stage())
+    if (!g_enabled || !is_guest() || !npc_stage())
         return true;
     if (game::is_puppet(c) || c == game::avatar())
         return true;
@@ -121,7 +126,9 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
     g_seen_now.clear();
-    if (!av)
+    net::Vec3 center;
+    bool rts = rts_stage() && C.stage_center && C.stage_center(center);
+    if (!av && !rts)
         return;
     for (void* c : creatures) {
         if (c == av || game::is_puppet(c) || game::is_destroyed(c))
@@ -157,7 +164,11 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             continue;
         auto& known = g_known[p.id];
         net::Vec3 gp;
-        if (!C.player_pos(p.id, gp)) {
+        float relevance = kRelevance;
+        if (rts) {
+            gp = center;
+            relevance = kRtsRelevance;
+        } else if (!C.player_pos(p.id, gp)) {
             for (uint16_t id : known)
                 send_despawn(p.id, id);
             known.clear();
@@ -168,11 +179,11 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             uint16_t id = g_host_npcs[c].id;
             float d = net::dist(game::position(c), gp);
             bool k = known.count(id) != 0;
-            if (!k && d < kRelevance) {
+            if (!k && d < relevance) {
                 send_spawn(p.id, id, c);
                 known.insert(id);
                 k = true;
-            } else if (k && d > kRelevance + kHysteresis) {
+            } else if (k && d > relevance + kHysteresis) {
                 send_despawn(p.id, id);
                 known.erase(id);
                 k = false;
@@ -240,7 +251,7 @@ static void guest_tick(double now)
             g_removed_local++;
         }
     g_kill.clear();
-    if (!av)
+    if (!av && !rts_stage()) // the tribe stage has no avatar
         return;
     for (auto& [id, px] : g_proxies) {
         net::PlayerState s;
@@ -280,7 +291,7 @@ void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
     // creature stage only: adventure creatures are scripted by the adventure on every machine
-    if (!g_enabled || !C.sess || !game::in_creature_stage())
+    if (!g_enabled || !C.sess || !npc_stage())
         return;
     if (is_host())
         host_tick(now, creatures);
@@ -521,6 +532,12 @@ bool debug_hit(uint16_t id, float damage)
 } // namespace npc
 
 namespace npc {
+void* proxy(uint16_t id)
+{
+    auto it = g_proxies.find(id);
+    return it == g_proxies.end() ? nullptr : it->second.c;
+}
+
 bool debug_host_hit(uint16_t id, float damage)
 {
     auto it = g_host_by_id.find(id);
