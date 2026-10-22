@@ -24,6 +24,9 @@ add sync       "python3 tools/tests/coop_sync.py"
 add creations  "python3 tools/tests/coop_creations.py"
 add creations_cell "python3 tools/tests/coop_creations_cell.py"
 add select     "python3 tools/tests/coop_select.py"
+add tribe_play "python3 tools/tests/coop_tribe_play.py"
+add civ_play   "python3 tools/tests/coop_civ_play.py"
+add space_play "python3 tools/tests/coop_space_play.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}

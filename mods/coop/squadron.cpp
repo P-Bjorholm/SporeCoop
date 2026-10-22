@@ -10,6 +10,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "spacecoop.h"
 #include "sporekit_game.hpp"
 
 using skg::thiscall;
@@ -91,6 +92,8 @@ using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*
 static TakeDamage_t o_TakeDamage;
 static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int type, const float* dir, void* attacker)
 {
+    if (in_space() && (uint8_t*)combat - kCombat == player_ufo()) // rescue: a lethal hit may only disable us
+        dmg = spacecoop::filter_own_damage((uint8_t*)combat - kCombat, dmg, type);
     if (!in_space() || g_applying || !C.sess || !C.sess->connected())
         return o_TakeDamage(combat, dmg, pol, type, dir, attacker);
     void* u = (uint8_t*)combat - kCombat;
@@ -137,6 +140,8 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
                                   int show)
 {
     if (owner && is_guest() && in_space() && g_mirror_of.count((uint8_t*)owner - kLoco))
+        return 0;
+    if (owner && spacecoop::disabled() && (uint8_t*)owner - kLoco == player_ufo()) // a disabled ship can't shoot
         return 0;
     return o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
 }

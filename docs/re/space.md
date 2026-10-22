@@ -362,3 +362,241 @@ Update 0xC5E3E0 ("player present" = target planet is active and context 0):
   FireTool is blocked.
 * Runtime checks needed: SpawnUFO/CreateUFO null-tolerance of callers on guests; host NPC AI
   targeting Defender puppets; `+0x691` semantics; record-level colony replay on later visits.
+
+## Co-op features (rescue, jump, raids, missions, terraform, cargo)
+
+Static analysis only (llvm-objdump + Ghidra headless decompile, no runtime). Marks: ✔ verified in
+this build's code (prologue / `ret N` / call sites / field use), ~ likely (behaviour inferred from
+code, names are ours), ? unknown. [ModAPI] = name/meaning recalled from ModAPI, addresses differ.
+
+### 7.1 Globals and getters used below (✔)
+
+| what | address | notes |
+|---|---|---|
+| `SpacePlayerData*` | `[0x16DEA6C]` | +0x04 active `cPlanet*`, +0x08 active `cStar*`, +0x0C ?, +0x10 context (0 planet, 1 system, 2 galaxy, −1 transition), +0x18 player pol, +0x1C cached player `cEmpire*`, +0x20 colonies |
+| GetCurrentContext | 0x01020F30 | cdecl () → int |
+| GetActiveStar / GetActiveStarRecord | 0x010210E0 / 0x010210F0 | cdecl; record = `star+0x48` (null-safe) |
+| GetActivePlanet / GetActivePlanetRecord | 0x01021110 / 0x01021150 | cdecl; record = `planet+0x13C` |
+| GetPlayerEmpire | 0x010211B0 | cdecl → `cEmpire*` (re-cached from pol) |
+| GetPlayerHomePlanetRecord | 0x01021220 | cdecl; `cEmpire::RequireHomePlanet` 0xC31870 or active planet |
+| SetCurrentContext(int) | 0x01021850 | cdecl; only writer of +0x10 (called by the transitions below) |
+| SetActiveStarAndPlanet(cStarRecord*, cPlanetRecord*) | 0x010218A0 | cdecl; RecordToStar 0xBB38C0 → +0x08, RecordToPlanet 0xBB5B20 → +0x04 (planet null if not in star). Low-level setter, no loading |
+| `cAppModeSpace*` (space game mode, vtable 0x1494AF8, name u"cAppModeSpace") | `[0x16DA918]`, getter 0x00FD9C50 | set by ctor 0xFDC9F0; `+0x15C` = `cSimulatorSpaceGame*` |
+| `cSimulatorSpaceGame*` | `[0x16DD0DC]`, getter 0x01002A70 | +0x40 = **`cPlayerInventory*`** (generic getter 0xA1AC50 = `mov eax,[ecx+0x40]`), +0x78 NPC UFO vector |
+| `cSimulatorPlayerUFO*` | `[0x16DC9F4]`, getter 0x00FFBD00 | +0x24 planet-invulnerability counter (inc 0xFFBF50 / dec 0xFFBF60 / >0 test 0xFFBF40), +0x40 player `cGameDataUFO*` |
+| `cStarManager::GetStarRecord(StarID)` | 0x00BA6EB0 | thiscall(starMgr 0xB3D370(), id) `ret 4`; 0 → `[+0x14C]`, −1 → null, else table `+0xC8`[(id>>12)*5][id&0xFFF] |
+| `cStarManager::GetPlanetRecord(PlanetID)` | 0x00BA6EF0 | thiscall `ret 4`; star = id&0xFFFFFF, planet index = id>>24 |
+| star id / planet id | starRecord+0x70 / planetRecord+0x184 | as used by `modes.cpp` (`space_place`) |
+| `cEmpire::GetStars` / `GetHomeStarRecord` | 0x00C30A10 / 0x00C30DA0 | thiscall; `lea eax,[ecx+0x88]` (vector<cStarRecord*>) / home star id +0xB0 → GetStarRecord |
+
+### 7.2 Player ship destruction → "disabled 20 s" (rescue)
+
+Death path (✔, all inside `cGameDataUFO::TakeDamage` 0xC3CEA0, `ebp` = combatant = ufo+0x508):
+1. base `cCombatant::TakeDamage` 0xBFCEF0: `HP(+0x540) -= dmg`; if `HP < 1.5259e-5` (const
+   0x146A3B8): HP = 0, state +0x53C = 2, message 0x1622184. Damage boost multiplier only for the
+   *attacker* side (player damage-boost tool 0x168E044), so a hit on the player loses exactly `dmg`.
+   Early returns: `ufo+0x588` invincible, state already 2, planet + `cSimulatorPlayerUFO+0x24 > 0`.
+2. back in 0xC3CEA0 at 0xC3D545: `if (HP <= 0 && mUFOType == 0)` → `cSimulatorSpaceGame->0x1005020(10)`,
+   sound 0xD456D958, unless adventure/scenario checks (0x1015C90 → 0xA97F80 / 0xFF02D0) call
+   **`cGameDataUFO::PlayerDestroyed` 0x00C3C660** (thiscall(ufo) plain `ret`: cinematic
+   `SPG_PlayerDestroyed_*`, handle → +0x7F0, hides ship +0x77C=0/+0x77D=1), then event log
+   0x949ACE8 and `cSimulatorUniverse(*0x16DD778)->0x100E580(attacker)`.
+   Second caller of 0xC3C660: 0x1016948 (inside 0x10167F0, when the player UFO has HP ≤ 0 after an
+   adventure/sequence ends) ~.
+3. Cinematic end → UFO message handler 0xC3B6A0 (msg 0x44F1189 / 0x67B2A95, `ufo+0x7F0` set) →
+   **Respawn 0x00C38420** (thiscall(ufo), `ret`): picks the owned star (cEmpire::GetStars) nearest to
+   the active star (fallback home star), travels there with the §7.3 sequence (+ landing 0xFE0E00),
+   message 0x6174B67, clears +0x7F0, `state = 0`, **`cCombatant::SetHealth` 0x00F92480**
+   (`thiscall(combatant, float)`, `ret 4`, writes combatant+0x38 = ufo+0x540) with
+   GetMaxHitPoints (combatant vt+0x58, ST0), energy +0x7F4 = max +0x7F8.
+
+Healing (✔):
+* **`cCombatant::AddHealth(float)` 0x00BFD2C0** (thiscall(combatant), `ret 4`): if amount > 0:
+  HP += amount clamped to max, **state +0x34 (ufo+0x53C) := 0** (posts 0x1622184 if it changed).
+  Not blocked by the invincible flag → the right call to revive a disabled ship.
+* `TakeDamage(..., type 10)` heals too but is blocked by invincible +0x588 (checked in the base).
+* Repair tools: `cRepairToolStrategy::OnHit` 0x0105B140 (thiscall(strategy, tool, pos, hitType, int),
+  `ret 0x10`) heals the **owner** (tool+0x114) by `maxHP * tool->0xCE6AB0() * [0x13EB950]` through
+  AddHealth; `cEnergyRepairToolStrategy::OnHit` 0x0105B0B0 refills energy via 0xC38B30;
+  **`cRepairAOEToolStrategy::WhileFiring` 0x01057FF0** heals the owner and every UFO in range that
+  belongs to the player empire or an ally (0xD01FE0) with `combatant->TakeDamage(amount, playerPol, 10,
+  &zero 0x16E2AF4, nullptr)` (vt+0x18) + effect 0xC38B00(2,1). So a partner's Repair-AoE already
+  "hits" our puppet on the host with type 10 → a natural rescue trigger.
+
+Recommended hook (extend the existing TakeDamage hook in `squadron.cpp`):
+* `this == localUFO+0x508`, `type != 10`, partner in the same system, not disabled:
+  if `HP - dmg < 1.5259e-5` → call the original with `dmg = HP - 1` (or skip it) so HP stays ≥ 1;
+  set disabled (20 s timer), `ufo+0x588 = 1` (no further damage), block FireTool (owner = local)
+  and the controller Update 0x01062CF0 for the local UFO (zero `ctx+0..8`, return) so it drifts dead.
+* Rescue: on partner Repair-AoE (puppet hit with type 10 on the host → message to the owner) or
+  proximity: `ufo+0x588 = 0; AddHealth(ufo+0x508, max*0.5)`.
+* Timeout: `ufo+0x588 = 0`, `SetHealth(ufo+0x508, 0)`, `ufo+0x53C = 2`, then call
+  `0xC3C660(ufo)` → native cinematic and respawn at the nearest colony (also call
+  `cSimulatorSpaceGame->0x1005020(10)` / event log only if you want the full native side effects ~).
+* Alternative single hook: `0xC3C660` itself (skip while rescue is possible). Simpler, but by then
+  state = 2, the death sound/event log already ran ~.
+
+### 7.3 Travel / "jump to partner"
+
+| function | address | signature | notes |
+|---|---|---|---|
+| **`SpaceTeleportTo(cStarRecord*)`** | 0x010228C0 | cdecl, `ret` | ✔ the `space -flyto …` debug cheat target. **No-op unless context == 2 (galaxy)**. Refunds the travel cost (`cEmpire::SetMoney(GetMoney() + cost)`), then `cSimulatorPlayerUFO::TravelToStar` and `SnapToDestination` 0xC37FA0 → instant arrival in galaxy view |
+| `cSimulatorPlayerUFO::TravelToStar(cStarRecord*)` | 0x01002040 | thiscall(playerUFOsingleton), ✔ | normal galaxy flight: cost = 0xFFC390(curRec, dstRec) (thiscall on player-UFO singleton, `ret 8`), "not enough money" msg 0x3E7E341, `AddMoney(-cost)`, sets active star via 0x10218A0(dst, 0), star+0x44 = 1 (visited) |
+| **`cAppModeSpace::TravelToStarSystem(cStarRecord*, bool keepPosse)`** | 0x00FDD380 | thiscall(`[0x16DA918]`), `ret 8` ✔ | **system → other system** jump: `simSpaceGame->0x1009310(0, keepPosse, 0)` (destroy NPC UFOs, keep posse if true), `SetActiveStarAndPlanet(star, 0)`, tool reset 0x1048E10, picks a planet (0xFDD1F0: owned/colonised first) and makes it active, places the UFO next to it (0xC3C2D0 + 0xC38320). Callers: respawn (keepPosse 0), Return-home tool 0x1051D98 (1), wormhole 0xFDD4E0 (1) |
+| `cAppModeSpace::EnterSolarSystem()` | 0x00FDD590 | thiscall, `ret` ✔ | galaxy → system of the active star (loads planets 0xBB5CE0, context 1) |
+| `cAppModeSpace::LeavePlanet(bool)` | 0x00FDE3D0 | thiscall, `ret 4` ✔ | planet → system (sets context 1 via `simSpaceGame->0x10038F0`); respawn and Return-home pass 0 |
+| respawn landing | 0x00FE0E00 | thiscall, `ret` ~ | only caller is respawn: lands on the active planet |
+| cSimulatorSpaceGame context switches | 0x01003330 → 2, 0x01003530 → 0, 0x010038F0 → 1 | thiscall ✔ | low level, called by the mode functions above |
+| `cSimulatorSpaceGame::DestroyNPCUFOs(keepAmbush, keepPosse, bool)` | 0x01009310 | thiscall `ret 0xC` ✔ | iterates +0x78, DestroyUFO 0x102C350 |
+
+Native sequence (copied from Respawn 0xC38420, ✔), to put the player into star `dst`:
+```
+mode = *(void**)0x16DA918;
+switch (GetCurrentContext()) {
+case 0: thiscall(0xB7D650, *(void**)0x167FADC, GetActivePlanet());  // planet-model cleanup, ret 4
+        thiscall(0xFDE3D0, mode, 0);                                 // leave planet -> system
+        break;
+case 2: thiscall(0xFDD590, mode);                                    // galaxy -> current system
+        break;
+}                                                                    // case 1: nothing
+thiscall(0xFDD380, mode, dst, /*keepPosse*/ 1);                      // jump to the other system
+```
+Galaxy-only alternative: `SpaceTeleportTo(dst)` (free, instant), then optionally
+`EnterSolarSystem()`. Partner's star: send `starRecord+0x70` (StarID), resolve with
+`cStarManager::GetStarRecord` 0xBA6EB0 (same galaxy layout → same ids). Run it outside Present
+(SK_CMD_OUTSIDE_FRAME). ? whether FDD380 is safe while a cinematic/comm screen is open — guard on
+`ufo+0x7F0 == 0` and context ≠ −1.
+
+### 7.4 Raids and plunder (builds on §6)
+
+* All missions/events are nouns 0x2AA5ADA. Enumerate (✔): `vec = thiscall(0xB21260, nounMgr,
+  0xCD7E80, 0xD3D3D0, 0xFECEA0, 0xB1E430, 0x2AA5ADA)`, iterate `[ret+4]..[ret+8]`.
+* Mission ids (+0x78) handled by cRaidEvent::Update 0xC5E3E0: 0xA4B0A2DF (pirate raid),
+  0xC4956AA7 (raid plunder), 0xD646C543, 0x77184BAE (? other raid-type events).
+* **Raid plunder** = separate class `cRaidPlunderEvent` (✔): noun 0x397BFF3, Cast 0x397BFF2
+  (0xC5B0C0, chains to cMission Cast, *not* to cRaidEvent), vtable 0x1470168: Update **0xC5DC60**,
+  Accept 0xC5B260, Completed 0xC5B2E0, Failed 0xC5B300. Starter 0x010143E0 (`ret 8`,
+  `(cPlanetRecord* colony, vector<cMission*>* out)`, event-table routine, no direct callers):
+  CreateMission(0xC4956AA7, colony, owner of star, 0), Cast, fills +0x200/+0x204, **event log
+  0x31DF9AC0 (table 0x131A9F54) = "Raid Plundering occurred"** via ShowEvent 0xDD8640,
+  SetTargetPlanet 0xC472C0, Accept. Cheat variant 0x01012940 (`ret 8`, `raid -plunder`).
+  Update: waits for the player (spawns ships via 0xC5D2C0 like the raid), while ships alive and
+  before timeout (prop 0x2B9E524) steals spice from the target planet (0xC71150 with a negative
+  amount ~) → 3; no ships left → event 0x25594EA8 + 5 (Completed = defended); timeout →
+  0x102C0D0 (ships leave), event 0xB681FBA2, → 6 (Failed = plundered).
+* State machine `cMissionManager::Update` 0x00FEF240 (thiscall, `ret 8`, ✔): per mission by
+  `GetState` (vt+0x60 = `[+0x84]`): 2 → OnAccept (vt+0x88), SetState(3); **3 → `r = Update(dt)`
+  (vt+0x7C); if r ≠ 3 → SetState(r)**; 5 → OnCompleted (vt+0x94) → SetState(9 if +0x17C else 1);
+  6 → OnFailed (vt+0x98) → 1; 7 → Abort (vt+0x90) → 1; 8 → Reject (vt+0x8C) → 1; 1 → removed (0xFEDB30).
+* Detect a raid on planet P (✔): mission with Cast(0x3960C0A) (raid) or Cast(0x397BFF2) (plunder),
+  `[+0x84] == 3`, target `cPlanet*` `[+0x1E8]` (getter 0x970A90; record = `planet+0x13C`,
+  PlanetID = `record+0x184`). Generic: `cMissionManager::ThereIsEventInPlanet` 0x00FEE020
+  (thiscall(mgr 0xFEB880()), `cPlanetRecord*`) `ret 4` → any active mission with flag `+0x130 & 1`
+  (event) whose vt+0xF4 (0xC45EC0: `target->+0x13C == rec`) matches.
+* Start/end hooks: start = `cMissionManager::CreateMission` 0xFEC420 post-call (`ret 0x10`) with id
+  0xA4B0A2DF / 0xC4956AA7; end = **`cMission::SetState` 0xC47E00** (thiscall(int) `ret 4`) with 5
+  (defended) / 6 (lost/plundered) on a raid/plunder mission; or the class handlers 0xC5BB70 /
+  0xC5BC60 (raid) and 0xC5B2E0 / 0xC5B300 (plunder).
+* Co-op: the guest at the raided colony sees host-mirrored raid UFOs (they are normal NPC UFOs with
+  `ufo+0x800 == mission`); a guest's colony raid can't be mirrored from the host's save (different
+  colonies) — to let the partner help, the owner of the raided planet stays authoritative and the
+  helper "jumps" there (§7.3); helper hits on raid UFOs go through the §2 host path only if the owner
+  is the host ?.
+
+### 7.5 Missions
+
+cMission fields (✔ unless noted): `mMissionID` +0x78 (template prop instance), elapsed ms +0x7C,
+state +0x84, giver empire id +0x8C / cached `cEmpire*` +0x90 (`GetOwnerEmpire` 0xC45320), target
+empire id +0x94, source planet +0x9C, **reward money (float) +0xA0**, reward tool ResourceKey +0xA4,
+extra reward tool keys vector<ResourceKey> +0x11C..+0x120, flags +0x130 (bit0 = event ~),
++0x17C next step (non-zero → state 9), props +0x180, `mpTargetPlanet` +0x1E8.
+`IsActive` 0xC44DC0 (state == 3). States: 0 ?, 1 finished/removed, 2 accepted, 3 active, 4 ?,
+5 completed, 6 failed, 7 aborted, 8 rejected, 9 completed-with-follow-up ~.
+Wrappers (thiscall, `ret`): Accept 0xC486F0 (2), Reject 0xC48700 (8), Abort 0xC48710 (7),
+**Complete 0xC48720 (5)**, **Fail 0xC48730 (6)**. Base vtable `cMission` 0x146DCC8 (Update +0x7C
+0xC479F0, OnCompleted +0x94 **0xC46CC0**, OnFailed +0x98 0xC46B30).
+Base OnCompleted pays: reward tools via `cPlayerInventory::AddItemByKey` 0xFF4490 (§7.7),
+`cEmpire::AddMoney((int)+0xA0)` on the player empire, relationship +/− with the giver (0xD06280,
+pol 0x526E519), stats/sounds.
+Player's missions: enumerate mission nouns (§7.4), `state == 3 && !(flags & 1)`; ? which one the UI
+tracks as "current".
+Feasibility of "a mission taken by one counts for both": missions exist only in the taker's save
+(own galaxy save per player), so the partner cannot complete *the same object*. Feasible variant:
+hook `SetState` 0xC47E00 (value 5/6) or OnCompleted, send `{missionID, money +0xA0, tool keys,
+giver pol}` and pay the partner with AddMoney / AddItemByKey (relationship only if political ids
+match across saves — ? same galaxy seed should give the same ids). Objective sharing (e.g. partner
+kills/scans counting) would need per-mission-class hooks — not recommended.
+
+### 7.6 Terraforming
+
+Tool effect = `cToolStrategy::OnHit` 0x010593B0 (✔ `ret 0x10`, 4 stack args
+`(cSpaceToolData* tool, const Vector3* pos, int hitType, int)`, ecx unused). Per hitType 0..3 it reads
+three float deltas from the tool (hitType 1: +0x26C/+0x270/+0x274, 2: +0x278.., 0: +0x284.., 3: +0x290..;
+getters 0x104C050..0x104C100), then only in planet context posts kMsgToolOnHit 0x56690BB and, with
+`tm = cTerraformingManager::Get()` 0xB3D500 (`[0x167FB10]`) and `p = GetActivePlanet()`:
+
+| function | address | effect |
+|---|---|---|
+| `tm->AddAtmosphereDelta(cPlanet*, float)` ~name | **0x00BBC480** thiscall `ret 8` ✔ | `p+0x154` (terrain, null if not loaded) `+0x1FD4 += d`; the terrain update 0xC7FC40 integrates it into **record+0xB0** over time |
+| `tm->AddWaterDelta(cPlanet*, float)` ~name | **0x00BBC4B0** thiscall `ret 8` ✔ | only if p is active and context 0: `cPlanet::SetScoreB8` 0xC71F20(Get 0xC71EB0 + d) → record+0xB8 clamped to the range from 0xFC20A0(B0,B4); `tm+0x64 = 0` |
+| `tm->AddTemperatureDelta(cPlanet*, float)` ~name | **0x00BBC500** thiscall `ret 8` ✔ | terrain `+0x1FD8 += d` → record+0xB4 |
+| `CalculateTScore(float b0, float b4)` | 0x00FC2040 cdecl → int 0..3 ✔ | distance from the centre; so +0xB0/+0xB4 are the two T-score axes (atmosphere/temperature [ModAPI]) |
+| `tm->GetTScore(cPlanetRecord* or null=active)` | 0x00BBC7B0 thiscall `ret 4` ✔ | |
+
+Recommended: hook the three appliers (one place for all terraform tools). When the local player
+calls them on the active planet, send `{PlanetID, which, d}`; a partner on the same planet replays
+with the same function (its own copy of the planet) → both planets move at the sum of both
+players' rates. Optional bonus multiplier `d *= 1.5` while a partner is on the planet. Partner
+elsewhere: apply to `GetPlanetRecord(id)+0xB0/+0xB4` directly (not loaded → no terrain object).
+
+### 7.7 Inventory: tools, charges, spice cargo, money
+
+`inv = *(cPlayerInventory**)(*(uint8_t**)0x16DD0DC + 0x40)` ✔. `cPlayerInventory` vtable 0x14958A0
+(ctor 0xFF5040) derives from `cSpaceInventory` (vtable 0x14740B8, ctor 0xC87CA0): items
+`vector<cSpaceInventoryItem*>` +0x34..+0x3C, max stack +0x48 (−1 = unlimited, setter vt+0x58).
+
+| vt | address (player / base) | signature | conf |
+|---|---|---|---|
+| +0x5C | 0xC873C0 | `int GetItemCount()` | ✔ |
+| +0x60 | 0xC873D0 | `cSpaceInventoryItem* GetItem(int index)` `ret 4` | ✔ |
+| +0x64 | 0xC873F0 | `int FindItem(int itemType, const ResourceKey* key)` `ret 8`, −1 if none | ✔ |
+| +0x68 | 0xC87170 | `GetItemByKey(key)` = type 2 (tool) lookup `ret 4` | ✔ |
+| +0x70 / +0x74 | 0xC874A0 / 0xC871A0 | `bool HasItem(type, key)` / `HasTool(key)` | ✔ |
+| +0x78 | 0xFF3FD0 / 0xC87F00 | `bool RemoveItem(cSpaceInventoryItem*)` `ret 4` | ✔ |
+| +0x7C | 0xFF40B0 / 0xC87F70 | `bool TakeItem(int index, cSpaceInventoryItemPtr* out, int count)` `ret 0xC`: count −1 or ≥ stack → removes the whole item into *out; less → splits (`item+0x10 -= count`); tools with ammo move charges (ConsumeAmmo/AddAmmo) | ✔ (split branch ~) |
+| +0x80 | 0xFF4780 / 0xC881E0 | **`bool AddItem(cSpaceInventoryItem* item, cSpaceInventoryItem* cargoSlot /*null = find free*/, bool apply)`** `ret 0xC`: same key+type stacks (`count += item.count`, capped by +0x48), cargo types 0/1/4/5/6 need a free cargo slot (type 3) else returns 0; tools: ammo merge | ✔ |
+| +0x88 / +0x8C / +0x90 / +0x94 | 0xC875A0 / 0xC87550 / 0xC875D0 / 0xFF39E0 | cargo slots: count / free count / `GetFreeSlot(out*)` / `AddCargoSlots(n)` | ✔ |
+
+`cSpaceInventoryItem` (size 0x7C, ctor 0xC877E0): +0x0C tool sub-object (vt+0x0C Cast(0x707459F0) →
+`cSpaceToolData*`), **+0x10 count**, **+0x14 item type** (2 tool, 3 empty cargo slot, 4 trading
+object / spice; 0/1/5/6 other cargo — plant/animal/rare ~), +0x18 price, +0x1C non-stackable,
+key via vt+0x18 (returns `ResourceKey*`), vt+0x14 SetKey.
+
+Tools (✔): `cPlayerInventory::GetTool(const ResourceKey*)` **0xFF3BF0** (thiscall `ret 4` →
+`cSpaceToolData*` or null); `cSpaceToolData` charges **+0x7C** current (getter 0xA02C10), +0x1A0
+max, +0x19C use cost, uses-ammo flag `+0x174 bit 5` (0x104CBD0); **AddAmmo(int)** 0x0104CBE0
+(`ret 4`, clamps to max), **ConsumeAmmo(int)** 0x0104CC10 (`ret 4`, −1 = use cost, no clamp).
+New tool: **`cPlayerInventory::AddItemByKey(const ResourceKey*)` 0xFF4490** (`ret 4`, loads via
+`cToolManager::LoadTool` 0x104E350, AddItem(item,0,1), event log 0x15E1A624) — used by mission rewards.
+
+Spice (✔ from `space -addCargo` and the colony-collect code 0x103E6F0): spice is a trading object
+(type 4) keyed by the planet's spice key `record+0x198` (getter 0xB8DBB0). Add N:
+```
+cSpaceInventoryItem* it = nullptr;
+thiscall(0x103A490, cSpaceTrading::Get() /*0xB3D4A0*/, &it, &spiceKey, N, 0.0f /*price*/); // CreateTradingObject, ret 0x10
+vcall(inv, 0x80/4, it, nullptr, true);   // stacks onto existing spice of that key, else needs a free slot
+it->Release();                            // vt+0x08
+```
+Remove N: `i = vcall(inv, 0x64/4, 4, &spiceKey); vcall(inv, 0x7C/4, i, &out, N); out->Release()`.
+Read amount: `GetItem(i)->+0x10`.
+
+Money (✔): `cEmpire` +0xD0 (int, 0..99 999 999): GetMoney 0xC30DF0, **AddMoney(int)** 0xC31B40
+(`ret 4`, clamps), **SetMoney(int)** 0xC31BA0 (`ret 4`). Player empire = GetPlayerEmpire 0x10211B0.
+Sending money/spice/tools between players = subtract locally with the functions above, send, add
+on the receiver; all safe in any context (no planet needed).
+
+### 7.8 Open (?)
+* Exact meaning of OnHit hitType 0..3 and of record+0xB8 (water [ModAPI] ?).
+* Whether `TravelToStarSystem` is safe during comm screens / cinematics; FE0E00 details.
+* Mission state 0/4 meaning; how the UI picks the tracked mission.
+* Political ids identical across two saves of the same galaxy (needed for shared relationships).

@@ -35,15 +35,16 @@ Documentation lives in [`docs/`](docs/README.md).
 | M4 "Convenience" | ✅ the world is transferred and loaded on the guest automatically (from the menu), the host saves before the transfer; the guest plays its own creature (M8) |
 | M5 "All modes" | ✅ Cell, Creature, Tribe, Civilization, Space, Adventures: see [docs/07-modes.md](docs/07-modes.md) and the table below |
 | M6 "Interface" | ✅ "Co-op" entry in Spore's main menu, native connection window, lobby (players, stage, ping, readiness, chat), LAN game discovery, F9 in-game, notifications as slide-out panels with icons: [docs/08-ui.md](docs/08-ui.md) |
-| M7 "Together" | ✅ one world across all phases: Cell "Symbiosis" (knockout, revival by a partner, respawn as a small cell), Creature "Pack", Tribe "Chiefs", Civilization "Governors", Space "Squadron", voting on evolution: [docs/09-coop-design.md](docs/09-coop-design.md) |
+| M7 "Together" | ✅ one world across all phases: Cell "Symbiosis" (knockout, revival by a partner, respawn as a small cell), Creature "Pack", Tribe "Chiefs" (pincers, a chief per player, duets, epic creatures), Civilization "Governors" (roles, joint sieges, alarms, superweapon votes), Space "Squadron" (rescue, jump to partner, raid alerts, terraforming together), voting on evolution: [docs/09-coop-design.md](docs/09-coop-design.md) |
 | M8 "Own creations" | ✅ everyone has their own creature and cell (from "My Creations"), visible to all, chosen in the F9 window, each evolves in their own editor; ⏳ "done" exit from the guest's editor, ship: [docs/09-coop-design.md](docs/09-coop-design.md) §9.4.1 |
 
 | Mode | What others see | Shared |
 |---|---|---|
 | Cell | the player's cell with its model, at the exact position and rotation; knockout is visible to everyone | tide pool (NPCs, food), food progress |
 | Creature | creature in the pack, animations | DNA, NPCs and damage via the host, time of day |
-| Tribe / Civilization | a nickname pointer where the player is working with the mouse, `coop ping` | tribe food / money |
-| Space | the player's ship in the same system or on the planet | empire money |
+| Tribe | owner labels over every member, each player's chief | tribe food; pincer attacks, duets, healers, epic creatures |
+| Civilization | owner labels over cities and vehicles, alarm beacons | money; roles, joint sieges, superweapon votes, gifts, trade |
+| Space | the player's ship in the same system or on the planet | empire money; rescue, jump to partner, raid alerts, mission tools, terraforming together, spice gifts |
 | Adventures | captain in the same adventure | — |
 
 ## Quick start (development)

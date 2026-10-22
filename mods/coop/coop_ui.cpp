@@ -167,7 +167,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
-    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr;
+    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, jump_btn = nullptr;
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -391,6 +391,11 @@ static void build_dialog()
             A.creation_cycle(-1);
         g_dirty = true;
     });
+    D.jump_btn = add_button(L, "jump", {400, 404, 560, 434}, "", [] {
+        if (A.jump_do)
+            A.jump_do();
+        g_dirty = true;
+    });
     D.give_btn = add_button(L, "give", {570, 404, 720, 434}, "", [] {
         if (A.give_do)
             A.give_do();
@@ -513,8 +518,12 @@ static void refresh_lobby()
     }
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
-    bool giving = A.give && !gto.empty() && cl.empty();
-    if (giving) {
+    bool space = gwhat == "spice";
+    bool giving = A.give && !gto.empty() && (cl.empty() || space);
+    if (space) // the ship can't be changed in flight: the row is for the cargo
+        cl = gn ? std::string(T("Spice in cargo: ", "Специи в трюме: ")) + std::to_string(gn)
+                : T("No spice in cargo to give", "В трюме нет специи");
+    else if (giving) {
         const char* w = gwhat == "city" ? T("the city whose menu you opened", "город, меню которого открыто")
                         : gwhat == "vehicle" ? T("selected vehicles: ", "выбрано машин: ")
                                              : T("selected tribe members: ", "выбрано жителей: ");
@@ -531,7 +540,11 @@ static void refresh_lobby()
     }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
-    text(D.give_btn, std::string(T("Give to ", "Отдать ")) + gto);
+    text(D.give_btn, space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto);
+    std::string jto;
+    bool jump = A.jump && A.jump(jto);
+    show(D.jump_btn, jump);
+    text(D.jump_btn, std::string(T("Jump to ", "К звезде: ")) + jto);
     bool can = (!cl.empty() && !giving && ck != 2 && cown > 0) || roles;
     show(D.creation_prev, can);
     show(D.creation_next, can);

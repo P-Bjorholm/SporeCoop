@@ -46,6 +46,13 @@ only from working together.
   Guest commands go to the host, and members move identically for everyone.
 * Roles emerge naturally: one hunts and feeds, another fights, a third makes friends.
 * Buildings and new members are bought from shared food; whoever bought it owns it.
+* **Working together pays:** a *pincer* (members of two players hit the same tribe within 10 s)
+  deals +50 % damage; every player has their own **chief** (bigger, tagged "<name>'s chief"):
+  members near it hit +20 %, and a chief about to fall next to a partner's member is saved once a
+  minute; a *duet* (both players perform for the same tribe) fills the social mini-game faster;
+  a healer who fully heals a partner's member brings 5 food; every 10 minutes an **epic creature**
+  comes to the village: 80 food if both players fought it, 30 otherwise. Members can be given to
+  a partner (F9 window or `coop.give`).
 
 ### Civilization — "Governors"
 * One civilization, a shared treasury. **Cities are split between players**: the capital goes to the host,
@@ -56,6 +63,13 @@ only from working together.
 * **Vehicles** belong to the buyer, and only the buyer drives them. Joint attacks: a city
   is captured faster if vehicles of several players storm it.
 * Diplomacy (alliances, trade, religion) is the host's; guests make suggestions via ping and chat.
+* **Roles** (F9 window, `coop.role`): *military* — own vehicles hit buildings 25 % harder;
+  *economic* — trade between players' cities pays more; *religious* — own preachers convert 50 %
+  faster, twice as fast while another player's army besieges the city.
+* **Joint siege:** a city hit by vehicles of two players within 10 s falls 50 % faster.
+* **Alarm:** a player city under attack is marked for everybody (label and edge arrow), and the
+  other players' vehicles nearby go 50 % faster for 20 s.
+* **Superweapons** fire only after a vote of all players. Vehicles and cities can be given away.
 
 ### Space — "Squadron"
 * One empire, a shared budget, shared colonies. Everyone has their own ship.
@@ -64,6 +78,18 @@ only from working together.
 * **Colonies.** Anyone can found a colony; it is shared. Defending colonies from raids
   is easier with two: one fights off pirates, the other repairs/delivers.
 * Freedom: you can scatter across the galaxy, but missions and wars pay off better together.
+* Every player flies in their own copy of the galaxy (same seed); these link the copies:
+  * **Rescue:** a lethal hit while a partner is in the same system only *disables* the ship for
+    20 s (no shooting, "SHIP DISABLED" on screen, a "REPAIR <name>" beacon for the partner);
+    the partner repairs it by flying within 60 m for 2 s, else the native death and respawn follow.
+  * **Jump to partner:** travel straight to a partner's star system (F9 window, `coop.space jump`).
+  * **Raids:** a raid on a colony alerts the partners (with the jump offer); a raid beaten with a
+    partner in the system pays 2000 more.
+  * **Missions:** a completed mission gives its reward tools to the partners too; done with a
+    partner nearby: +25 % money.
+  * **Terraforming together:** partners on the same planet change both copies of it.
+  * **Cargo:** give spice to a partner (F9 window: "Give 10"); without a free slot it comes back.
+* Not possible with separate saves: shared colony *ownership* (each save keeps its own colonies).
 
 ### Adventures
 * Everyone shares one adventure (guests auto-launch the host's adventure), with a party of captains.
@@ -84,9 +110,12 @@ only from working together.
 | Creature | Joint hunting +25 %, "The pack protects" (40 % health instead of death, once a minute), regeneration near a partner; NPCs, fights, DNA shared (existing) | `teamplay.cpp`, `npc.cpp` | `coop_team.py`, `coop_two_instances.py` |
 | Tribe | All members of all tribes are host mirrors; the player tribe's members are split between players; you can select and command only your own; guest orders (move, attack, hunt, gather…) are executed by the host; animals around the tribe are shared; owner labels | `tribe.cpp` | `coop_tribe.py` |
 | Civilization | All vehicles are host mirrors; cities are split (the capital is shared while there are fewer cities than players); a vehicle belongs to its buyer; guest purchases, orders and buildings go through the host; host buildings and captures are replayed on guests; owner labels | `civ.cpp` | `coop_civ.py` |
+| Tribe (co-op) | Pincer +50 %, own chief per player (aura, protection, tag), duet, healer food, epic creature at the village | `tribe.cpp` (co-op section) | `coop_tribe_play.py` |
+| Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
+| Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
 
-Not done yet: shared colonies in space (analysis in docs/re/space.md §5), NPC civilizations' city growth
+Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
 
 ## 9.4.1 Your own creations
