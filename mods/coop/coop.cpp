@@ -268,6 +268,8 @@ bool stage_mode(uint32_t m)
 }
 
 void notice(const std::string& text, int from); // feed + chat log on every player
+void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uint32_t argb);
+bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
 
 // Phase events of the host. The species is shared: when the host comes back from an editor
 // (evolution inside a stage) or starts a new stage, every guest gets the new world at once.
@@ -293,8 +295,31 @@ Submit_t o_Submit;
 void broadcast_vote();
 void set_ready(bool on);
 
+std::function<void()> g_vote_action; // a vote for something else than an editor (a superweapon ...)
+std::string g_vote_done = "evolution starts";
+
+// a vote whose result runs `action` (outside the frame) when everybody is ready or time is up
+bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action)
+{
+    if (g_vote.active)
+        return false;
+    g_vote = Vote{true, nullptr, H->time_seconds(), text, 60, 0u};
+    g_vote_action = std::move(action);
+    g_vote_done = done;
+    for (auto& p : g_sess.players())
+        g_ready[p.id] = p.id == 0;
+    g_lobby_dirty = true;
+    broadcast_vote();
+    notice(text + ": press I'm ready (F9)", -1);
+    g_vote_opened_ui = !coop_ui::is_open();
+    coop_ui::open(true);
+    return true;
+}
+
 void start_vote(void* req, const std::string& text)
 {
+    g_vote_action = nullptr;
+    g_vote_done = "evolution starts";
     if (req)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u};
@@ -378,7 +403,13 @@ void finish_vote(const char* why)
     if (g_vote_opened_ui)
         coop_ui::open(false);
     g_vote_opened_ui = false;
-    notice(std::string("evolution starts (") + why + ")", -1);
+    notice(g_vote_done + " (" + why + ")", -1);
+    if (g_vote_action) {
+        static std::function<void()> run;
+        run = std::move(g_vote_action);
+        g_vote_action = nullptr;
+        H->run_outside_frame([](void*) { run(); }, nullptr);
+    }
     if (req) // editors create D3D resources: outside the frame
         H->run_outside_frame(
             [](void* r) {
@@ -1076,7 +1107,7 @@ void setup_callbacks()
             squadron::on_message(type, from, r);
             return;
         }
-        if (type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) {
+        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM) {
             civ::on_message(type, from, r);
             return;
         }
@@ -1926,6 +1957,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     cvc.feed = feed;
     cvc.notice = [](const std::string& t) { notice(t, -1); };
     cvc.role_of = [](uint8_t id) { return g_roles.count(id) ? g_roles[id] : (uint8_t)0; };
+    cvc.vote = [](const std::string& t, const std::string& d, std::function<void()> a) {
+        return start_action_vote(t, d, std::move(a));
+    };
+    cvc.beacon = add_beacon;
     civ::init(H, M, std::move(cvc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;

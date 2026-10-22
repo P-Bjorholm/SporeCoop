@@ -398,6 +398,236 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
     return r;
 }
 
+// ---------------- co-op: siege, roles, alarm, superweapon (docs/re/civ.md, co-op features) -----
+// The game sees all players as one civilization: who did it comes from the attacking vehicle and
+// the mod's owner table.
+constexpr double kJointWindow = 10.0;
+static uint8_t g_hit_by = 0xFF;                         // the player whose vehicle is hitting right now
+static std::unordered_map<void*, std::unordered_map<uint8_t, double>> g_siege; // city -> player -> last hit
+static std::unordered_set<void*> g_joint_told;
+static uint32_t g_joint_hits, g_military_hits, g_religious_boosts, g_alarms, g_votes;
+
+static uint8_t player_of_combatant(void* att)
+{
+    if (!att || IsBadReadPtr(att, 4))
+        return 0xFF;
+    void* v = vcall<void*>(att, 0x5C / 4, 0x137E8E0u); // the vehicle behind a combatant
+    if (!v)
+        return 0xFF;
+    auto it = g_hv.find(v);
+    return it == g_hv.end() ? 0xFF : it->second.owner;
+}
+
+static uint8_t role(uint8_t p) { return C.role_of && p != 0xFF ? C.role_of(p) : 0; }
+
+// building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
+// the player is remembered for the capture damage the original adds
+using BTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
+static BTakeDamage_t o_BTakeDamage, o_HallTakeDamage;
+static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int type, const void* dir, void* att)
+{
+    uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
+    if (p != 0xFF && role(p) == 1) {
+        dmg *= 1.25f;
+        g_military_hits++;
+    }
+    uint8_t prev = g_hit_by;
+    g_hit_by = p;
+    int r = orig(self, dmg, pol, type, dir, att);
+    g_hit_by = prev;
+    return r;
+}
+static int SK_THISCALL h_BTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
+{
+    return b_damage(o_BTakeDamage, s, d, pol, t, dir, a);
+}
+static int SK_THISCALL h_HallTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
+{
+    return b_damage(o_HallTakeDamage, s, d, pol, t, dir, a);
+}
+
+// capture damage: the city is taken faster when vehicles of two or more players attack it
+using AddCapture_t = void(SK_CDECL*)(void*, void*, void*, uint32_t, float, uint32_t, bool);
+static AddCapture_t o_AddCapture;
+static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, float dmg, uint32_t att, bool f)
+{
+    if (is_host() && active() && city && g_hit_by != 0xFF) {
+        double now = H->time_seconds();
+        auto& hits = g_siege[city];
+        hits[g_hit_by] = now;
+        int players = 0;
+        for (auto& [p, t] : hits)
+            if (now - t < kJointWindow)
+                players++;
+        if (players >= 2) {
+            dmg *= 1.5f;
+            g_joint_hits++;
+            if (!g_joint_told.count(city) && C.notice) {
+                g_joint_told.insert(city);
+                C.notice("joint siege: the city falls 50% faster");
+            }
+        }
+    }
+    o_AddCapture(ctx, city, meter, owner, dmg, att, f);
+}
+
+// religious conversion: a religious governor's preachers near the city convert faster, and even
+// more while another player's army besieges it
+using Convert_t = void(SK_THISCALL*)(void*, uint32_t, int);
+static Convert_t o_Convert;
+static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
+{
+    if (is_host() && active() && city && count > 0) {
+        net::Vec3 cp = city_pos(city);
+        uint8_t preacher = 0xFF;
+        for (auto& [v, h] : g_hv)
+            if (role(h.owner) == 3 && F<int>(v, kVPurpose) == 2 && net::dist(veh_pos(v), cp) < 200.f) {
+                preacher = h.owner;
+                break;
+            }
+        if (preacher != 0xFF) {
+            float k = 1.5f;
+            double now = H->time_seconds();
+            auto it = g_siege.find(city);
+            if (it != g_siege.end())
+                for (auto& [p, t] : it->second)
+                    if (p != preacher && now - t < kJointWindow)
+                        k = 2.f; // combined arms
+            count = (int)std::ceil(count * k);
+            g_religious_boosts++;
+        }
+    }
+    o_Convert(city, pol, count);
+}
+
+// a player's city is attacked: everybody sees it (beacon + notice), and the other players'
+// vehicles near it rush there faster for a while
+struct Boost {
+    float orig;
+    double until;
+};
+static std::unordered_map<void*, Boost> g_boost;
+static std::unordered_map<void*, double> g_alarm_at;
+
+static void show_alarm(void* city, uint8_t kind, uint8_t owner)
+{
+    if (!city || !C.beacon)
+        return;
+    std::string who = owner == kShared ? "the capital" : C.sess->name_of(owner) + "'s city";
+    C.beacon(city_pos(city), (kind ? "✝ " : "⚔ ") + who + (kind ? " is being converted" : " is under attack"),
+             20.0, 0xFFFF4040);
+}
+
+using OnAttacked_t = void(SK_THISCALL*)(void*, int, uint32_t);
+static OnAttacked_t o_OnAttacked;
+static void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
+{
+    o_OnAttacked(city, kind, att);
+    if (!is_host() || !active() || kind > 1)
+        return;
+    uint8_t owner = owner_of_city(city);
+    void* pc = player_civ();
+    if (owner == 0xFF || (pc && att == pol_of(pc)))
+        return;
+    double now = H->time_seconds();
+    if (now - g_alarm_at[city] < 20.0)
+        return;
+    g_alarm_at[city] = now;
+    g_alarms++;
+    int ci = host_index_of_city(city);
+    net::Writer w;
+    w.u8((uint8_t)ci); w.u8((uint8_t)kind); w.u8(owner);
+    C.sess->broadcast_reliable(net::MSG_CIV_ALARM, w);
+    show_alarm(city, (uint8_t)kind, owner);
+    if (C.notice)
+        C.notice(std::string(owner == kShared ? "the capital" : C.sess->name_of(owner) + "'s city") +
+                 (kind ? " is being converted: help!" : " is under attack: help!"));
+    // the defenders: vehicles of the other players within reach go 50% faster for 20 s
+    net::Vec3 cp = city_pos(city);
+    for (auto& [v, h] : g_hv) {
+        if (h.owner == owner || net::dist(veh_pos(v), cp) > 600.f)
+            continue;
+        auto& b = g_boost[v];
+        if (b.until < now)
+            b.orig = F<float>(v, 0x218);
+        b.until = now + 20.0;
+    }
+}
+
+static void boost_tick(double now)
+{
+    for (auto it = g_boost.begin(); it != g_boost.end();) {
+        void* v = it->first;
+        bool alive = g_hv.count(v) && game::object_alive(v);
+        if (!alive) {
+            it = g_boost.erase(it);
+            continue;
+        }
+        if (now > it->second.until) {
+            F<float>(v, 0x218) = it->second.orig; // back to its own speed
+            it = g_boost.erase(it);
+            continue;
+        }
+        float want = it->second.orig * 1.5f; // RecalcStats rewrites it: keep it up every tick
+        if (F<float>(v, 0x218) != want)
+            F<float>(v, 0x218) = want;
+        ++it;
+    }
+}
+
+// superweapons are fired by a vote of all players
+using FireSW_t = bool(SK_THISCALL*)(void*, int, const float*);
+static FireSW_t o_FireSW;
+static bool g_sw_bypass;
+static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
+{
+    if (g_sw_bypass || !active() || C.sess->players().size() < 2)
+        return o_FireSW(civ, type, target);
+    float pos[3] = {target ? target[0] : 0, target ? target[1] : 0, target ? target[2] : 0};
+    if (is_guest()) { // the host asks everybody
+        net::Writer w;
+        w.u8(5 /* CMD_SUPER */);
+        w.u32((uint32_t)type);
+        w.f32(pos[0]); w.f32(pos[1]); w.f32(pos[2]);
+        send_cmd(w);
+        return false;
+    }
+    static void* s_civ;
+    static int s_type;
+    static float s_pos[3];
+    s_civ = civ; s_type = type;
+    memcpy(s_pos, pos, sizeof s_pos);
+    bool has_target = target != nullptr;
+    if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
+                         [has_target] {
+                             g_sw_bypass = true;
+                             o_FireSW(s_civ, s_type, has_target ? s_pos : nullptr);
+                             g_sw_bypass = false;
+                         }))
+        g_votes++;
+    return false;
+}
+
+static void host_superweapon_request(uint8_t from, net::Reader& r)
+{
+    int type = (int)r.u32();
+    float pos[3] = {r.f32(), r.f32(), r.f32()};
+    void* pc = player_civ();
+    if (!r.ok() || !pc || !C.vote)
+        return;
+    static int s_type;
+    static float s_pos[3];
+    static void* s_civ;
+    s_type = type; s_civ = pc;
+    memcpy(s_pos, pos, sizeof s_pos);
+    if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [] {
+            g_sw_bypass = true;
+            o_FireSW(s_civ, s_type, s_pos);
+            g_sw_bypass = false;
+        }))
+        g_votes++;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -450,6 +680,22 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_UIMessage, (void*)h_UIMessage, (void**)&o_UIMessage);
     H->hook_create(M, (void*)a_AddBuilding, (void*)h_AddBuilding, (void**)&o_AddBuilding);
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
+    // co-op mechanics (optional: a missing symbol only disables that mechanic)
+    struct Opt {
+        const char* name;
+        void* hook;
+        void** orig;
+    } opts[] = {
+        {"Simulator::cBuilding::TakeDamage", (void*)h_BTakeDamage, (void**)&o_BTakeDamage},
+        {"Simulator::cCityHall::TakeDamage", (void*)h_HallTakeDamage, (void**)&o_HallTakeDamage},
+        {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
+        {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
+        {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
+        {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
+    };
+    for (auto& o : opts)
+        if (uintptr_t a = H->sym(o.name))
+            H->hook_create(M, (void*)a, o.hook, o.orig);
     return true;
 }
 
@@ -527,9 +773,11 @@ static void trade_tick(double now)
                  std::to_string(g_trade_total) + " so far)");
 }
 
+static void boost_tick(double now);
 static void host_tick(double now)
 {
     trade_tick(now);
+    boost_tick(now);
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -671,6 +919,10 @@ static void host_command(uint8_t from, net::Reader& r)
             return nullptr;
         return it->second;
     };
+    if (kind == 5) { // a guest wants to fire a superweapon: everybody votes
+        host_superweapon_request(from, r);
+        return;
+    }
     if (kind == CMD_GIVE) {
         uint8_t what = r.u8(), to = r.u8(), n = r.u8();
         int given = 0;
@@ -938,6 +1190,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         host_command(from, r);
     else if (type == net::MSG_CIV_BUILD && is_guest())
         guest_build(r);
+    else if (type == net::MSG_CIV_ALARM && is_guest()) {
+        uint8_t ci = r.u8(), kind = r.u8(), owner = r.u8();
+        if (r.ok() && ci < g_host_cities.size())
+            show_alarm(g_host_cities[ci], kind, owner);
+    }
 }
 
 void on_session_end()
@@ -971,13 +1228,14 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
 
 std::string status()
 {
-    char b[256];
+    char b[512];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
-                 "trade_pairs=%d trade_total=%d\n",
+                 "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
-                 g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total);
+                 g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
+                 g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size());
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u\n",
@@ -1035,6 +1293,37 @@ static void* local_vehicle(uint16_t id)
 
 std::string debug(const std::vector<std::string>& a)
 {
+    // tests of the co-op mechanics through the game's own functions (host)
+    if (a.size() >= 3 && a[0] == "siege" && is_host()) { // siege <city> <player>: capture damage by that player
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        uintptr_t ctxf = H->rebase(0x1021150);
+        if (!city)
+            return "no such city";
+        void* pc = player_civ();
+        g_hit_by = (uint8_t)atoi(a[2].c_str());
+        float before = F<float>(city, 0x748);
+        (void)pc; // an attacker that is not the city's owner (the game ignores its own civ)
+        h_AddCapture(skg::cdecl_call<void*>(ctxf), city, (uint8_t*)city + 0x2F0, pol_of(city), 10.f, 0x0BADF00Du,
+                     false);
+        g_hit_by = 0xFF;
+        char b[96];
+        snprintf(b, sizeof b, "capture %.2f -> %.2f", before, F<float>(city, 0x748));
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "alarm" && is_host()) { // alarm <city>: as if an enemy attacked it
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        g_alarm_at.erase(city);
+        h_OnAttacked(city, 0, 0x0BADF00D);
+        return "alarm raised";
+    }
+    if (a.size() >= 2 && a[0] == "super") { // super <type>: fire a superweapon (through the vote)
+        void* pc = player_civ();
+        return pc ? std::string("fired -> ") + (h_FireSW(pc, atoi(a[1].c_str()), nullptr) ? "1" : "0") : "no civ";
+    }
     if (a.size() >= 3 && a[0] == "select") {
         void* v = local_vehicle((uint16_t)atoi(a[1].c_str()));
         if (!v)

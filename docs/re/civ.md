@@ -326,3 +326,191 @@ slot, noun}, CIV_OWNERSHIP{city→player table}.
 * Whether cGameData mID (+0x24) is persisted in the save (would be a better network key).
 * Capture() args 3–5, RemoveCity 2nd arg, BuyCity 0xBF0500 args.
 * Civ vehicle-list removal on death (Die only marks dead/effects; list cleanup not traced).
+
+---------------------------------------------------------------------------------------------
+## Co-op features (siege, roles, trade, alarm, superweapon)
+
+Static analysis (llvm-objdump of the full exe), 2026-10-22. Marks in this section:
+**✔** verified (prologue, `ret N`, call sites), **~** likely (role clear, details inferred),
+**?** unknown. All political ids below are civ political ids — in co-op every player shares
+the one player civ, so the game itself can never tell *which player* acted: the mod must take
+that from the attacking vehicle (TakeDamage arg 5) or from its own owner tables.
+
+**Correction to §6:** the capture/convert/buy percentages run **0..100** (constant 100.0 at
+0x13EC4A8), not 0..1. `0xBE9AB0` and `0xBEAB60` capture at `>= 100`.
+
+### A. Military siege (capture progress)
+
+City fields: **+0x748 float mCapturePercent (0..100)**, **+0x74C mCaptureID** (attacker pol,
+-1 = none), +0x2F0 capture-meter object (UI, `0xBD8320` getter), **+0x98 + 8·kind uint64
+last-attack time** (kind 0 military, 1 religious, 2 economic), +0xB0 "under attack" event
+cooldown timer, +0x200/+0x238 hit-effect timers on buildings.
+
+Damage flow (vehicle shot → building combatant, `this` = building+0x120, args
+`(float dmg, uint32 attackerPol, int dmgType, const Vector3* dir, cCombatant* attacker)`
+ret 0x14 — same as the creature/UFO TakeDamage):
+
+| Function | Address | Signature / role | Conf |
+|---|---|---|---|
+| building TakeDamage (house, factory, ent., …) | 0xBCEE30 | combatant vt[6] in vtables 0x1467A10/E80/80C0/82F8/8588. Generic HP damage via `0xBFCEF0` (same args, ret 0x14); when the building **becomes destroyed** (`0x8E8220(comb)` = comb+0x34 state == 2) it adds `0xBD80E0(attackerPol,0) × k` capture damage through AddCaptureDamage | ✔ |
+| **city hall TakeDamage** | 0xBCF840 | combatant vt[6] at 0x1467C60 (vtable 0x1467C48). In civ mode: relationship hit `0xD062B0(owner, attacker, 0x526E501, 1.0)`, then **only if `AreAllBuildingsDestroyed(city)` (or dmgType 0xD)** → `AddCaptureDamage(…, dmg, attackerPol, type==0xD)`. dmgType 0xC → `0xBE2CE0(city, dmg, pol)` (queued city event 0x5F601F4, 2 s), 0xB → only restarts timer city+0x230 | ✔ |
+| turret TakeDamage | 0xBD0640 | vt[6] at 0x1467758 (`this` = turret+0x588), ret 0x14; HP only, no capture progress | ✔ (ret/vtable) |
+| building "attacked by" | 0xBCD9E0 | combatant vt[7] thiscall(cCombatant* attacker) ret 4: attacker → pol (military vehicle `+0xB20==0`, UFO 0xB033B403, creature 0xD0036E08), `civ->0xBF03D0(pol,pos)`, **`city->OnAttacked(0, pol)`** (turret version 0xBCE7B0 at 0x146775C does the same) | ✔ |
+| `AreAllBuildingsDestroyed` | 0xBD9E50 | thiscall(city) → bool: every building except the city hall (+0x320) has state 2 | ✔ |
+| **AddCaptureDamage** | **0xBE9C50** | **cdecl** `(planetCtx /*0x1021150()*/, cCity*, meter /*city+0x2F0*/, uint32 ownerPol, float dmg, uint32 attackerPol, bool flag)` (caller `add esp,0x1C`). `p = +0x748; id = +0x74C (-1→attacker); p += dmg·0.1 if id==attacker else p -= dmg·0.1 (negative → flips to attacker); clamp 100` → `SetCaptureProgress`; civ mode → `CheckMilitaryCapture(city, flag)` | ✔ |
+| SetCaptureProgress | 0xBD7E40 | thiscall(city, uint32 pol, float pct) ret 8: writes +0x74C/+0x748, updates the meter | ✔ |
+| CheckMilitaryCapture | 0xBE9AB0 | thiscall(city, bool flag) ret 4: `+0x748 >= 100` and `+0x74C` ≠ owner → event (0xEDD4A52F lost / 0x43D2843C won, group 0x2BB7AFF), clears the per-pol maps +0x5A0/+0x5BC/+0x5D8 and +0x98, `Capture(pol, 0, 0, flag, 0)` | ✔ |
+| UpdateCaptureDecay | 0xBE2240 | thiscall(city) ret (per city tick from 0xAE57F8): if **not** `IsUnderAttack(0)` → `+0x748 -= 0.1` per tick (→0 resets +0x74C); recomputes religious +0x750 (see B); drops ids of dead civs | ✔ |
+
+**Goal: faster capture when 2+ players attack.** Hook the two TakeDamage functions
+(0xBCEE30, 0xBCF840; `thiscall`, ret 0x14): vehicle = `attacker->vt[0x5C](0x137E8E0)`
+(the combatant's cast, as 0xBCD9E0 does; or `attacker - 0x508`), record
+`city → {player → last hit time}`; when ≥2 players hit the city in the last N s, scale arg 1
+`dmg` (this speeds both building destruction and the city-hall capture), **or** hook
+`AddCaptureDamage` 0xBE9C50 (cdecl, arg 5 at [esp+0x14]) and scale only the capture part
+(the TakeDamage hook sets a "current attacker" for it, the call is synchronous). Host only;
+the guests get the capture via the existing CIV_CITY_OWNER path. A manual top-up is also
+possible: `SetCaptureProgress(city, pol, p)` then `CheckMilitaryCapture(city, 0)`.
+
+### B. Religious conversion
+
+City fields: **+0x5A0 `map<uint32 pol, int>` followers** (citizens per religion; owner's
+own count included), +0x5BC / +0x5D8 per-pol maps (converted-from-owner / converted-from-rival
+counters, cleared each 0xBEB800 pass), **+0x750 mConvertPercent**, **+0x754 mConvertID**,
++0x618 vector of 0x80-byte "preacher slots", +0x62C their objects (+0x1DC = pol, slot+0x70 =
+the religious cVehicle).
+
+* `+0x750` is **recomputed every tick** in 0xBE2240:
+  `200·followers[convertID] / (followers[convertID] + followers[owner])`, clamped 0..100 —
+  so writing +0x750 has no lasting effect; the state is the followers map. ✔
+* **ConvertCitizens 0xBEB1C0** — thiscall(city, uint32 converterPol, int count) ret 8: moves
+  up to `count` followers from the owner (or from a rival converter) to `converterPol`, sets
+  +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
+  Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
+  calls `OnAttacked(1, pol)` and computes `count` from tuning 0x169D235 (0xCEEA30…0xCEEB70) ~.
+* **Hook point (religious role bonus): 0xBEB1C0**, scale `count` ([esp+8]) when the slot's
+  vehicle (find via +0x62C/+0x618, or simply the religious vehicle of the bonus player nearest
+  the city) belongs to a "religious" player. ~ (the slot→vehicle mapping is not fully traced)
+
+### C. Economic: buy progress, buying, trade routes, trade income
+
+City fields: **+0x55C `vector<{cCity* partner, route object*, int type}>` trade routes**
+(stride 0xC), +0x570 `map<uint32 pol, float>` (entry created when a route with that civ
+exists; GetBuyPrice returns -1 without it), **+0x758 mBuyPercent / +0x75C mBuyID**.
+
+| Function | Address | Signature / role | Conf |
+|---|---|---|---|
+| **TradeDelivery** | 0xBE1990 | thiscall(city, uint32 traderPol, float cargo, cVehicle*) ret 0xC → float ST0 (next cargo, tuning 0xCEEC20). `x = cargo/6` (×1/3 if traderPol == city owner, i.e. own-civ trade); city's civ and trader's civ get `AddMoney` (×8 / ×4, with difficulty) + money popups | ✔ sig, ~ formula |
+| AddMoney | 0xBEFEB0 | thiscall(civ, float, bool applyDifficulty) ret 8; mWealth clamp 999999 (fixes §1 "(float)") | ✔ |
+| GetEconomicInfluence | 0xBD9570 | thiscall(city, float vehiclePower /*v+0xC50*/) ret 4 → ST0 (tuning 0xCEEC70(#buildings, +0x64C, x)) | ✔ |
+| **AddBuyProgress** | 0xBDD250 | thiscall(city, float amount, uint32 pol) ret 8: returns if pol==owner; `+0x758 ±= amount·8/(buyerCityCount+6)`, clamp 100; at 100 for the player: message 0x53039B6 + event 0x927DCA97 | ✔ |
+| economic vehicle trade behaviour | 0xDCC830 | cdecl(cVehicle*, state*) → bool: shuttles between home city `0xC9F550(v)` (= v+0xB5C) and the order target city; requires `HasTradeRouteWith(target, vehiclePol)`; at target: `TradeDelivery` + `AddBuyProgress(target, GetEconomicInfluence(v+0xC50), pol)`; at home: `TradeDelivery` | ✔ |
+| HasTradeRouteWith | 0xBDB330 | thiscall(city, uint32 pol) ret 4 → bool (any route partner of civ `pol`) | ✔ |
+| **AddTradeRoute** | 0xBE1470 | thiscall(city, cCity* other, int routeType) ret 8: pushes the entry on **both** cities, `routeType 0` creates the ground route object (noun 0x2B8A4E7, cast 0x2BCA14B, init 0xC41DA0), space computes 1/2; event 0x3F5A88F8 for the player. No same-civ check | ✔ sig, ~ type |
+| AddTradeRouteWithCiv | 0xBE1950 | thiscall(city, uint32 pol) ret 4: `0xBD9400(city, civ)` picks that civ's city → AddTradeRoute(it, 0). Used by the economic vehicle "create route" behaviour 0xDCA100 (order 9) | ✔ |
+| RemoveTradeRoute | 0xBDFA50 | thiscall(city, cCity*) ret 4 (one side, destroys the route object) | ✔ |
+| RemoveTradeRoutesWithCiv | 0xBDFB10 | thiscall(city, uint32 pol) ret 4 → partner; called by ChangeOwner (+0xBE8EE8) | ✔ |
+| GetBuyPrice | 0xBE9380 | thiscall(city, uint32 buyerPol) ret 4 → ST0; -1 if no +0x570 entry (no trade route), else tuning 0xCEECD0(entry, 0xBE6EC0(city, cityCount)) | ✔ |
+| cCivilization::BuyCity | 0xBF0500 | thiscall(civ, cCity*, float price) ret 8: only starts it — civ+0x440 pending city, +0x448 price, cinematic; **FinishBuyCity 0xBF05E0** thiscall(civ, bool ok) ret 4 → `cCity 0xBE9980(city, civPol, price)` | ✔ |
+| cCity buy | 0xBE9980 | thiscall(city, uint32 buyerPol, float price /*0 = GetBuyPrice*/) ret 8: SpendMoney if affordable, `Capture(pol, 2, 0, 0, 0)` | ✔ |
+| GetCityCount | 0xBF0300 | thiscall(civ) → `(+0xA0 - +0x9C) / 4` | ✔ |
+
+Pie command BuyCity (0x37E95BB) → `BuyCity(playerCiv, city, GetBuyPrice(city, playerPol))`
+(0xCF3600). The co-op players never buy each other's cities (same civ).
+
+**Trade route between two players' cities.** Both cities are in the same civ, so the native
+"trade with civ" path does not apply. Options:
+1. ~ `AddTradeRoute(cityA, cityB, 0)` 0xBE1470 (host; guests replay it — visual route) and
+   order an economic vehicle `SetOrder(v, cityB, 5, 1)`: HasTradeRouteWith(cityB, ownPol) is
+   then true, TradeDelivery pays ×1/3 (own-civ), AddBuyProgress returns early. Untested: the
+   input strategy may refuse order 5 on an own city, and ChangeOwner removes routes.
+2. **Recommended:** keep the co-op route in the mod (visual via AddTradeRoute or a toast only)
+   and pay income from the host: every N s `AddMoney(civ, k·f(cities), true)` 0xBEFEB0.
+   Economic role bonus: hook `TradeDelivery` 0xBE1990 (scale `cargo`, [esp+8]) or AddMoney
+   calls with return address inside 0xBE1990.
+
+### D. Vehicle speed
+
+* **v+0x218 float = max speed** (= locomotive(v+0x34)+0x1E4, mStandardSpeed). Written by
+  `cVehicle::RecalcStats` 0xCA40A0 (thiscall, plain ret; tuning 0x169D9A8 `0xCEED60(loco,
+  power +0xC50, speed +0xC54, health +0xC58)` → +0xC5C damage, +0x218 speed, +0x534 max HP)
+  and by Load 0xCA67B0. ✔
+* `cVehicle::GetMaxSpeed` 0xC9F500 thiscall(v) → ST0 `v+0x218 × (adventure mult.)`, used by
+  the movement code (10 callers 0xCA9ADF…0xCB3299); MoveTo 0xCA3590 (spatial vt 0xE0) reads
+  v+0x218 directly and passes it to spatial **vt 0xC4 SetDesiredSpeed(float, int)** ret 8
+  (0xC9EE60 → 0xC41E60: locomotive+0x1E0 = v+0x214). Getters: vt 0xC8 → +0x1E0, vt 0xCC → +0x1E4. ✔
+* **Temporary boost:** save `v+0x218`, write `old·k`, and for an already moving vehicle
+  also `(v+0x34)->vt0xC4(newSpeed, 0)` (or re-issue its move order); restore later. RecalcStats
+  (model reload/upgrade) overwrites it — re-apply after. Mirrors on guests do not need it
+  (pose comes from the host). ~ (effect on the per-tick locomotion not run-time tested)
+
+### E. "Your city is under attack"
+
+* **cCity::OnAttacked 0xC00C20** — thiscall(city, int kind, uint32 attackerPol) ret 8. ✔
+  * if the city was **not** attacked (that kind) in the last 20 s (or mode is 0x1654C02):
+    sends message **0x30AA01B** through the message manager `0x883910()` (= [0x16524AC],
+    vt 0x14 `MessageSend(id, msg, 0)`); payload: `+8 cCity*`, `+0x18 kind`, `+0x20 attackerPol`.
+    Handled e.g. by the UI proc 0xE11AB0. ✔ (`0x883910` vs `App::IMessageManager::Get`
+    0x67DC80 ([0x15FE888]) — different globals, which one AddListener must use is **?**)
+  * stores `now` at city+0x98+8·kind (IsUnderAttack reads it);
+  * civ mode, kind ≠ 2, city owner == player pol, cooldown city+0xB0 > 15 s →
+    `cCivModeStrategy 0xCF9190(city, 0x38320B95, 0xAA9A8ED7, &pos, …)` = the event-log entry
+    "Your city under attack" (+ tutorial/music side effects), restarts +0xB0. ✔
+  * callers: building/turret vt[7] 0xBCD9E0/0xBCE7B0 (kind 0, military hits), preach tick
+    0xBEB2F0 (kind 1), city-hall space path 0xBCFFD1, tribe 0xC8E8A7.
+* `cCity::IsUnderAttack` **0xC005E0** thiscall(city, int kind) ret 4 → bool
+  (`now - stamp[kind] < 20000 ms`). ✔
+* The event is hidden by `cUIEventLog 0xDD7620(log, 0x38320B95, 0, nameHash)` in ChangeOwner
+  (0xBE8B3D) and in city tick 0xBEB800 ~15 s after the last attack. ~
+* **Hook point:** `OnAttacked` 0xC00C20 (host): when `kind ∈ {0,1}` and
+  `!IsUnderAttack(city, kind)` (edge) → look up the city's co-op owner and send a toast /
+  CIV_CITY_ALARM to that player (attackerPol tells friend/foe; NPC civs attack with their own
+  pol). Polling alternative without hooks: `IsUnderAttack(city, 0/1)` for every city each 1 s.
+
+### F. Superweapons
+
+Civ fields: +0x484 `bool unlocked[12]`, +0x490 per-type cooldown timers (stride 0x20),
++0x4CC "global weapon used" flag; global 0x168CD4C = cheat unlockSuperWeapons (free, always
+usable).
+
+| Function | Address | Signature / role | Conf |
+|---|---|---|---|
+| CanUseSuperweapon | 0xBF8B20 | thiscall(civ, int type) ret 4 → bool: unlocked && affordable (`0xBF7850`: mWealth ≥ cost) && no cooldown (`0xBF18B0`); types 2/5/8 only once (+0x4CC) | ✔ |
+| **GetSuperweaponCost** | 0xBF6DD0 | thiscall(civ, int type) ret 4 → ST0. type 0/6/11: 4000; 1/4/7: 16000; 3/9/10: 2000; **2/5/8: 12000 × max(1, cities not owned by this civ)** (the planet-wide ones) | ✔ |
+| **FireSuperweapon** | 0xBF8B90 | thiscall(civ, int type, const Vector3* target) ret 8: CanUse → picks the own city that can launch (`0xBDA1B0(city, type)`) nearest to target (target = zero vector 0x169DC6C for untargeted) → `city 0xBE5D10(type, target)` launches; `mWealth -= cost`; restarts cooldown; sets +0x4CC for 2/5/8; player event (table 0x1469DA8) | ✔ |
+| SelectSuperweapon (UI) | 0xCF1D30 | cCityInputStrategy thiscall(input, int type) ret 4: types 2/5/8 fire at once (`FireSuperweapon(civ, type, &zero)`, return addr **0xCF1DC4**); others arm the targeting cursor (command 0x58B3913 "SuperweaponActivate", input+0x140) | ✔ |
+| targeted fire on click | 0xCF5230 | `0xBDA420(type, &pos)` valid → `FireSuperweapon(playerCiv, input+0x104, &pos)` (return addr **0xCF68C5**) | ✔ |
+| UI button | 0xE05568 | superweapon panel calls SelectSuperweapon; 0xE0615F checks CanUse for the button state | ~ |
+
+Type → name mapping is **?** (12 types; 2/5/8 are the "global" ones).
+
+**Hook point (vote):** hook `FireSuperweapon` 0xBF8B90. When the call comes from the local
+UI (return address 0xCF1DC4 or 0xCF68C5) and the mod is not replaying: consume it (return),
+send `CIV_SW_PROPOSE{type, target}` (guest → host), host opens the vote (cost check via
+`CanUseSuperweapon`/`GetSuperweaponCost`). On a pass the host calls the original
+`FireSuperweapon(playerCiv, type, &target)` (host simulates; money is shared). Guests must
+always consume local fires (they only mirror the results).
+
+### G. Giving a vehicle to another player
+
+* The only native "control" test is `IsPlayerOwned` (vehicle spatial vt 0x58 = **0xC9E810**:
+  `v->GetPoliticalID() == cGameNounManager 0xB1F8E0 GetPlayerPoliticalID()`), plus membership
+  in `civ+0xB0` / `civ+0xD4` (selectable list read by the terrain cursor). ✔
+* All co-op players share the player civ, so **nothing in the game blocks** a guest-owned
+  vehicle: re-assigning is purely the mod's `vehicle_owner` table (+ the SetIsSelected hook
+  of §8.1). Orders store the issuer pol (order +0x14) but it is not checked against an owner. ~
+* Moving a vehicle to a *different* civ would need `AddVehicle` 0xBF5750 on the new civ and
+  removal from the old `civ+0xB0`/`+0xD4` (removal function not found — **?**).
+
+### H. Summary of recommended hook points (host side)
+
+| Goal | Hook | Notes |
+|---|---|---|
+| Faster siege with 2+ players | 0xBCEE30 + 0xBCF840 (attacker id, scale dmg) and/or 0xBE9C50 (scale capture dmg) | building TakeDamage `this`=building+0x120, ret 0x14 |
+| Military role bonus | same, per attacker player | |
+| Religious role bonus | 0xBEB1C0 ConvertCitizens (scale count) | |
+| Economic role bonus | 0xBE1990 TradeDelivery (scale cargo) / 0xBDD250 | |
+| Co-op trade route | mod-side route + periodic `AddMoney` 0xBEFEB0 (option 2), visual via 0xBE1470 | |
+| Speed buff | write v+0x218 (+ spatial vt 0xC4) | restore after; RecalcStats 0xCA40A0 resets |
+| City alarm | 0xC00C20 OnAttacked (edge via 0xC005E0) | kinds 0 mil, 1 rel |
+| Superweapon vote | 0xBF8B90 FireSuperweapon (ret addrs 0xCF1DC4 / 0xCF68C5) | |

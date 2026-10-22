@@ -25,6 +25,10 @@ struct Ctx {
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
     std::function<uint8_t(uint8_t player)> role_of;  // 0 none, 1 military, 2 economic, 3 religious
+    // host: a vote of all players; `action` runs when it passes (false: another vote is running)
+    std::function<bool(const std::string& text, const std::string& done, std::function<void()> action)> vote;
+    // a world beacon (label + edge arrow) on this machine
+    std::function<void(const net::Vec3& pos, const std::string& text, double seconds, uint32_t argb)> beacon;
 };
 // own vehicles selected now, else 1 if an own city's menu was opened last (the "give" button)
 int own_selected(bool* city = nullptr);

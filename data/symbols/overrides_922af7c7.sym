@@ -101,3 +101,76 @@ Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (R
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
 Simulator::Cell::PreloadModel=0x00E624C0 ; cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
 Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
+Simulator::cCity::AddCaptureDamage=0x00BE9C50 ; verified cdecl(planetCtx, city, city+0x2F0 meter, ownerPol, float dmg, attackerPol, bool) caller add esp,0x1C; +0x748 += dmg*0.1, max 100 (docs/re/civ.md co-op A)
+Simulator::cCity::SetCaptureProgress=0x00BD7E40 ; verified thiscall(attackerPol, float pct) ret 8: +0x74C/+0x748 + meter
+Simulator::cCity::CheckMilitaryCapture=0x00BE9AB0 ; verified thiscall(bool flag) ret 4: +0x748>=100 -> Capture(pol,0,0,flag,0)
+Simulator::cCity::UpdateCaptureDecay=0x00BE2240 ; verified thiscall() ret: mil decay 0.1/tick unless IsUnderAttack(0), recomputes +0x750
+Simulator::cCity::AreAllBuildingsDestroyed=0x00BD9E50 ; verified thiscall() -> bool (city hall excluded)
+Simulator::cCity::IsUnderAttack=0x00C005E0 ; verified thiscall(int kind 0 mil/1 rel/2 eco) ret 4 -> bool (last attack < 20 s, stamp +0x98+8*kind)
+Simulator::cCity::OnAttacked=0x00C00C20 ; verified thiscall(int kind, attackerPol) ret 8: msg 0x30AA01B, event 0x38320B95/0xAA9A8ED7 for player cities
+Simulator::cBuilding::TakeDamage=0x00BCEE30 ; verified combatant vt[6] (this=building+0x120) (float dmg, pol, type, const Vector3*, cCombatant* attacker) ret 0x14
+Simulator::cCityHall::TakeDamage=0x00BCF840 ; verified combatant vt[6] at 0x1467C60 (this=hall+0x120) ret 0x14, capture damage only when all buildings destroyed
+Simulator::cTurret::TakeDamage=0x00BD0640 ; verified combatant vt[6] at 0x1467758 (this=turret+0x588) ret 0x14
+Simulator::cBuilding::OnAttackedBy=0x00BCD9E0 ; verified combatant vt[7] thiscall(cCombatant* attacker) ret 4 -> city OnAttacked(0, pol)
+Simulator::cCombatant::ApplyDamage=0x00BFCEF0 ; verified thiscall(comb, float dmg, pol, type, dir, attacker) ret 0x14 (HP part of building TakeDamage)
+Simulator::cCity::ConvertCitizens=0x00BEB1C0 ; verified thiscall(converterPol, int count) ret 8: followers map +0x5A0, then CheckReligiousConversion
+Simulator::cCity::CheckReligiousConversion=0x00BEAB60 ; verified thiscall() ret: +0x750>=100 -> Capture(+0x754, 1, 0,0,0)
+Simulator::cCity::AddBuyProgress=0x00BDD250 ; verified thiscall(float amount, pol) ret 8: +0x758 += amount*8/(buyerCities+6)
+Simulator::cCity::GetEconomicInfluence=0x00BD9570 ; verified thiscall(float vehiclePower) ret 4 -> float ST0
+Simulator::cCity::TradeDelivery=0x00BE1990 ; verified thiscall(traderPol, float cargo, cVehicle*) ret 0xC -> float ST0 (pays both civs via AddMoney)
+Simulator::cCity::HasTradeRouteWith=0x00BDB330 ; verified thiscall(pol) ret 4 -> bool (routes vector +0x55C, stride 0xC)
+Simulator::cCity::AddTradeRoute=0x00BE1470 ; verified thiscall(cCity* other, int routeType 0=ground) ret 8, adds the entry on both cities
+Simulator::cCity::AddTradeRouteWithCiv=0x00BE1950 ; verified thiscall(pol) ret 4
+Simulator::cCity::RemoveTradeRoute=0x00BDFA50 ; verified thiscall(cCity* partner) ret 4
+Simulator::cCity::RemoveTradeRoutesWithCiv=0x00BDFB10 ; verified thiscall(pol) ret 4 -> partner city
+Simulator::cCity::GetBuyPrice=0x00BE9380 ; verified thiscall(buyerPol) ret 4 -> float ST0 (-1 = no trade route)
+Simulator::cCity::BuyByCiv=0x00BE9980 ; verified thiscall(buyerPol, float price 0=auto) ret 8 -> Capture(pol,2,0,0,0)
+Simulator::cCivilization::AddMoney=0x00BEFEB0 ; verified thiscall(float, bool applyDifficulty) ret 8, clamp 999999
+Simulator::cCivilization::GetCityCount=0x00BF0300 ; verified thiscall() -> int
+Simulator::cCivilization::BuyCity=0x00BF0500 ; verified thiscall(cCity*, float price) ret 8 (pending +0x440, cinematic)
+Simulator::cCivilization::FinishBuyCity=0x00BF05E0 ; verified thiscall(bool ok) ret 4 -> cCity BuyByCiv
+Simulator::cCivilization::CanUseSuperweapon=0x00BF8B20 ; verified thiscall(int type) ret 4 -> bool
+Simulator::cCivilization::GetSuperweaponCost=0x00BF6DD0 ; verified thiscall(int type 0..11) ret 4 -> float ST0
+Simulator::cCivilization::FireSuperweapon=0x00BF8B90 ; verified thiscall(int type, const Vector3* target) ret 8 (spends money, cooldown)
+Simulator::cCityInputStrategy::SelectSuperweapon=0x00CF1D30 ; verified thiscall(int type) ret 4 (types 2/5/8 fire at once, ret addr 0xCF1DC4)
+Simulator::cVehicle::GetMaxSpeed=0x00C9F500 ; verified thiscall() -> float ST0 = v+0x218 (x adventure mult)
+Simulator::cVehicle::RecalcStats=0x00CA40A0 ; verified thiscall() ret: rewrites +0xC5C dmg, +0x218 speed, +0x534 max HP
+Simulator::cLocomotiveObject::SetDesiredSpeed=0x00C41E60 ; verified thiscall(loco, float, int) ret 8 -> loco+0x1E0 (vehicle spatial vt 0xC4 = 0xC9EE60 wrapper)
+Simulator::cVehicle::IsPlayerOwned=0x00C9E810 ; verified spatial vt 0x58: pol == GetPlayerPoliticalID
+Simulator::cGameNounManager::GetPlayerPoliticalID=0x00B1F8E0 ; verified thiscall(nm) -> pol (mode switch), compared with vehicle/city pol everywhere
+Simulator::cCombatant::TakeDamage=0x00BFCEF0 ; verified base (ported cCreatureAnimal::TakeDamage name is wrong): thiscall(combatant, float dmg, u32 attackerPol, int type, const Vector3*, cCombatant* attacker) ret 0x14, last attacker -> +0x28 (docs/re/tribe.md)
+Simulator::cCreatureBase::TakeDamage=0x00C1A4E0 ; verified creature-base combatant vt+0x18 (vtable 0x146AE58), same args ret 0x14; called by animal 0xC075A0 and citizen 0xC26920
+Simulator::cCreatureCitizen::TakeDamage=0x00C26920 ; verified citizen combatant vt+0x18 (vtable 0x146B5C8), this=citizen+0x5A8, same args ret 0x14
+SporeCoop::cTribeHut_TakeDamage=0x00C9CA20 ; verified hut (noun 0x1E4DAAE) combatant vt+0x18, this=hut+0x120, ret 0x14
+SporeCoop::cTribeTool_TakeDamage=0x00C9D7F0 ; verified tool (noun 0x18C8F0C) combatant vt+0x18, this=tool+0x120, ret 0x14
+SporeCoop::cCombatant_AddHealth=0x00BFD2C0 ; verified thiscall(combatant, float amount) ret 4, clamps to vt+0x58 max HP
+Simulator::cGameData::GetPoliticalID=0x005AADB0 ; verified vt+0x4C: mov eax,[ecx+0x30]; ret (cTribe, citizen)
+Simulator::cRelationshipManager::Get=0x00B3D390 ; verified cdecl() -> manager (mode switch)
+Simulator::cRelationshipManager::ApplyRelationship=0x00D06280 ; verified thiscall(mgr, polA, polB, u32 eventId, float scale) ret 0x10, float in ST0
+Simulator::cRelationshipManager::CalculateRelationship=0x00D00940 ; verified thiscall(mgr, polA, polB, int 0) ret 0xC -> float ST0 (clamped 0xD05A60)
+Simulator::cRelationshipManager::CalculateRelationshipAbsolute=0x00D05A60 ; verified thiscall(mgr, polA, polB, int) ret 0xC -> float ST0
+SporeCoop::cRelationshipManager_GetLevel=0x00D008D0 ; verified thiscall(mgr, float value) ret 4 -> 0..4 (thresholds mgr+0x10..+0x1C)
+SporeCoop::SocialSession_Get=0x00D9F500 ; verified cdecl(int idx = ai[+0x600][+0x1A8]) -> session (+0x8 player tribe, +0xC target tribe, +0xE8 minigame) or 0
+SporeCoop::BT_SocialTick=0x00DA2FA0 ; verified cdecl BT tick of node 0xB46E8803, arg1 = performing creature, plain ret
+SporeCoop::BT_HealTick=0x00DB9B20 ; verified cdecl BT tick of node 0x562C0FB, arg1 = healer, arg6 = cCreatureBase** patient, plain ret
+SporeCoop::BT_GiftFoodTick=0x00DBC790 ; verified cdecl BT tick of node 0x4623E0C (table 0x1594B40), arg1 = citizen
+SporeCoop::BT_ValidTarget=0x00D99440 ; verified cdecl(creature) -> creature or 0 (alive/active check)
+Simulator::cBundleManager::Get=0x00B3D380 ; verified cdecl -> [0x167FABC]
+Simulator::cBundleManager::CreateBundles=0x00AC79B0 ; verified thiscall(bm, float amount, cGameBundleContainer*, int type) ret 0xC
+Simulator::cBundleManager::RemoveBundles=0x00AC7C10 ; verified thiscall(bm, float amount, cGameBundleContainer*, int 0) ret 0xC -> float ST0
+SporeCoop::cGameBundleContainer_GetTotal=0x00CEE4D0 ; verified thiscall(container) -> float ST0 sum of bundle +0x134
+SporeCoop::cTribe_AddFood=0x00C8F7E0 ; verified thiscall(tribe, int delta) ret 4: Create/RemoveBundles on tribe+0x20C
+Simulator::cTribe::UpdateFoodVisuals=0x00C94CD0 ; verified thiscall(tribe, float delta) ret 4: floating +N popup only (player tribe), does not change food
+SporeCoop::cCommunity_GetLeader=0x00C00770 ; verified mov eax,[ecx+0x11C]; ret (mpLeader, tribe/city chief)
+SporeCoop::cCommunity_SetLeader=0x00C00780 ; verified thiscall(community, citizen) ret 4, intrusive ref
+SporeCoop::cTribe_GetChieftain=0x00C8FEB0 ; verified thiscall(tribe) -> leader cast to citizen or 0
+SporeCoop::cTribe_SetChieftain=0x00C8FED0 ; verified thiscall(tribe, citizen|0=first adult) ret 4: SetLeader + chief scale + SetSpecializedTool(0xB)
+Simulator::cCreatureCitizen::IsChieftain=0x00C233F0 ; verified thiscall -> bool (owner city/tribe leader == this)
+Simulator::cCreatureCitizen::SetSpecializedTool=0x00C27AE0 ; verified thiscall(int toolType) ret 4 (+0x102C; 0 on the leader -> 0xB staff)
+Simulator::cCreatureCitizen::GetOwnerTribe=0x00C23070 ; verified mov eax,[ecx+0x1014]; ret
+SporeCoop::cCreatureCitizen_GetDesiredScale=0x00C23E10 ; verified citizen vt+0x80 -> float ST0 (leader x g 0x1582214)
+SporeCoop::cCreatureAnimal_IsEpic=0x00C0C200 ; verified thiscall -> [+0xE84] archetype tuning && tuning[+0x388] (prop isEpic 0xD2125BFE)
+SporeCoop::cSpeciesManager_GetArchetypeTuning=0x004E0080 ; verified thiscall(specMgr, archetypeId, generation) ret 8, used by Create with herd+0x88/+0xF0
+Simulator::cHerd::SetEnabled=0x00C6AE50 ; verified thiscall(herd, bool) ret 4 (+0x218 mbEnabled); CreateHerd calls it with false in creature/tribe mode
+SporeCoop::cTribeHut_GetTribe=0x00C9C430 ; verified hut vt+0x58: mov eax,[ecx+0x230]
+SporeCoop::cTribeTool_GetTribe=0x00C9DB60 ; verified mov eax,[ecx+0x1F8]
