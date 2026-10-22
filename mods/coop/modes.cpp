@@ -15,6 +15,9 @@ extern SkMod* g_mod_for_modes;
 
 namespace modes {
 
+void* (*g_species_for_player)(uint8_t player);
+bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
+
 // ---------------------------------------------------------------- creature / captain
 static void* creature_local() { return game::avatar(); }
 
@@ -38,7 +41,10 @@ static void creature_fill(void* av, net::PlayerState& st)
 
 static void* creature_spawn(const net::PlayerState& s, void* av)
 {
-    void* p = game::spawn_creature(s.pos, game::species_profile(av), game::avatar_herd());
+    void* own = g_species_for_player ? g_species_for_player(s.id) : nullptr;
+    void* herd = own ? game::create_herd(s.pos, own) : nullptr;
+    void* p = own && herd ? game::spawn_creature(s.pos, own, herd)
+                          : game::spawn_creature(s.pos, game::species_profile(av), game::avatar_herd());
     if (!p)
         return nullptr;
     game::puppet_register(p);
@@ -141,6 +147,9 @@ static void* space_spawn(const net::PlayerState& s, void* local)
     if (!emp)
         return nullptr;
     skg::ResourceKey model = skg::field<skg::ResourceKey>(emp, 0xB8); // cEmpire::mUFOKey
+    uint32_t own[3];
+    if (g_model_for_player && g_model_for_player(s.id, 2, own)) // the player's own ship
+        model = {own[0], own[1], own[2]};
     // UfoType 6 = Defender: friendly to its political id (ours)
     void* u = skg::cdecl_call<void*>(spawn, 6, &pol, &model);
     if (!u)
@@ -406,6 +415,9 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
             scale = lvl;
     }
     g_key = skg::field<skg::ResourceKey>(me, 0xFC);
+    uint32_t own[3];
+    if (g_model_for_player && g_model_for_player(s.id, 1, own)) // the player's own cell
+        g_key = {own[0], own[1], own[2]};
     g_force_key = o_GetModelKey && g_key.instance != 0;
     uint32_t idx = skg::cdecl_call<uint32_t>(create, query, &p, 0.f, res, scale, 1.f, 1.f, 1, (void*)nullptr, 0);
     g_force_key = false;

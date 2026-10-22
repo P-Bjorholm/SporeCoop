@@ -43,6 +43,10 @@ struct Adapter {
 net::Vec3 entity_pos(const Adapter* a, void* e);
 
 const Adapter* for_mode(uint32_t mode);
+// the species a remote player's creature puppet is built from (its own creation), nullptr = local
+extern void* (*g_species_for_player)(uint8_t player);
+// the model a remote player's cell (kind 1) / spaceship (kind 2) puppet uses; false = the local one
+extern bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
 const char* mode_name(uint32_t mode);
 uint32_t current_world(); // crc32 of the current save name, 0 if none
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()

@@ -29,6 +29,7 @@
 #include "net/discovery.h"
 #include "net/interp.h"
 #include "net/session.h"
+#include "creations.h"
 #include "notify.h"
 #include "syncdbg.h"
 #include "sporekit.h"
@@ -522,6 +523,7 @@ void on_frame(void*, int, void*)
     double now = H->time_seconds();
     g_last_frame = now;
     notify::tick(now);
+    creations::tick(now);
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
@@ -816,6 +818,7 @@ void setup_callbacks()
         npc::on_session_end();
         tribe::on_session_end();
         cellsync::on_session_end();
+        creations::on_session_end();
         civ::on_session_end();
         squadron::on_session_end();
         for (auto& [id, r] : g_remotes)
@@ -824,6 +827,7 @@ void setup_callbacks()
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
+        creations::on_player_join(p.id);
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto& r = g_remotes[p.id];
         r.id = p.id;
@@ -967,6 +971,10 @@ void setup_callbacks()
         }
         if (type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) {
             civ::on_message(type, from, r);
+            return;
+        }
+        if (type == net::MSG_CREATION) {
+            creations::on_message(type, from, r);
             return;
         }
         if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO) {
@@ -1128,6 +1136,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
+    SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
@@ -1150,7 +1159,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 float dot = std::fabs(q.x * s.rot.x + q.y * s.rot.y + q.z * s.rot.z + q.w * s.rot.w);
                 rot_err = 2.f * std::acos(std::min(1.f, dot)) * 57.2958f;
             }
-            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f\n", p.x, p.y, p.z, net::dist(p, s.pos), rot_err);
+            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f species=%08X\n", p.x, p.y, p.z,
+                net::dist(p, s.pos), rot_err,
+                g_mode == modes::kCreature ? game::species_key(r.puppet).instance : 0u);
         }
     }
     return 0;
@@ -1610,6 +1621,28 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.feed = feed;
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
+    creations::Ctx crc;
+    crc.sess = &g_sess;
+    crc.feed = feed;
+    crc.name_of = [](uint8_t id) { return g_sess.name_of(id); };
+    crc.appearance_changed = [](uint8_t id) { // rebuild that player's puppet with its own look
+        auto it = g_remotes.find(id);
+        if (it != g_remotes.end())
+            despawn(it->second);
+    };
+    creations::init(H, M, std::move(crc));
+    modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
+    modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
+        creations::Key k = creations::player_key(id, (creations::Kind)kind);
+        key[0] = k.instance; key[1] = k.type; key[2] = k.group;
+        return k.instance != 0;
+    };
+    H->command_add(M, "coop.creations", "coop.creations [list | next|prev <creature|cell|ufo> | choose <kind> <hex>]",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", creations::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.sync", "coop.sync - pose of every synchronized object (key x y z qx qy qz qw), tests",
                    [](void*, int, const char* const*, SkOut* out) {
                        std::vector<syncdbg::Entry> v;

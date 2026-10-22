@@ -1,6 +1,10 @@
 // Native (Linux) tests for the portable coop netcode: make test
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
+#include "net/dbpf.h"
 #include <cmath>
 #include <cstdio>
 #include <random>
@@ -79,6 +83,47 @@ static void test_unreliable_chunks()
     CHECK(packets == 5);
     CHECK(got.size() == 5 && got[0] == 0 && got[4] == 4);
     CHECK(a.unreliable_queued() == 0);
+}
+
+static void test_dbpf()
+{
+    printf("dbpf write/read, EditorSaves of the test profile\n");
+    std::vector<dbpf::Record> recs = {{{0x7C000001, 0x1A99B06B, 0x40626200}, {1, 2, 3, 4}},
+                                      {{0x7C000001, 0x030BDEE3, 0x40626200}, std::vector<uint8_t>(300, 9)}};
+    dbpf::Package pk;
+    CHECK(pk.load(dbpf::write(recs)));
+    CHECK(pk.entries().size() == 2);
+    std::vector<uint8_t> out;
+    const dbpf::Entry* e = pk.find(recs[1].key);
+    CHECK(e && pk.read(*e, out) && out == recs[1].data);
+    // the real thing (RefPack records, pollen metadata names), when the test profile exists
+    const char* home = getenv("HOME");
+    const char* user = getenv("USER");
+    if (!home || !user)
+        return;
+    std::string path = std::string(home) + "/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users/" +
+                       user + "/AppData/Roaming/SporeKit-test/Spore/EditorSaves.package";
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        printf("  (no test profile EditorSaves.package)\n");
+        return;
+    }
+    std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    dbpf::Package es;
+    CHECK(es.load(file));
+    int bems = 0, names = 0;
+    for (auto& en : es.entries()) {
+        std::vector<uint8_t> d;
+        if (en.key.type == 0x1A99B06B && en.key.group == 0x40626200) {
+            CHECK(es.read(en, d) && d.size() > 1000 && d[0] == 0xD3 && d[1] == 0x7E);
+            bems++;
+        }
+        std::string a, n;
+        if (en.key.type == 0x030BDEE3 && es.read(en, d) && dbpf::metadata_names(d, a, n) && !n.empty())
+            names++;
+    }
+    printf("  %d creatures, %d names\n", bems, names);
+    CHECK(bems > 0 && names >= bems);
 }
 
 static void test_reliability()
@@ -242,6 +287,7 @@ int main()
 {
     test_buffer();
     test_unreliable_chunks();
+    test_dbpf();
     test_reliability();
     test_session();
     test_interp();
