@@ -1,98 +1,98 @@
-# 3. Геймплей кооператива
+# 3. Co-op gameplay
 
-## 3.1 Концепция: «Стая» (этап Существа)
+## 3.1 Concept: "Posse" (Creature stage)
 
-Первым целевым этапом выбран **этап Существа** — он самый «кооперативный» по природе:
-в Spore уже есть механика стаи (до 3 союзников рядом с игроком, их здоровье
-показывается в интерфейсе), бой, социализация и общий прогресс через ДНК.
+The **Creature stage** was chosen as the first target because it is the most co-op-friendly
+by nature: Spore already has a posse mechanic (up to 3 allies near the player, with their
+health shown in the UI), combat, socializing and shared progress through DNA.
 
-Кооп делает **других игроков членами твоей стаи**: 2–4 игрока (хост + до 3 гостей —
-ровно столько, сколько слотов стаи в игре), каждый управляет своим существом, мир
-и прогресс — общие, мир принадлежит хосту.
+Co-op turns **other players into members of your posse**: 2–4 players (host + up to 3 guests —
+exactly as many as the game's posse slots), each controlling their own creature; the world
+and progress are shared, and the world belongs to the host.
 
-С версии M5 кооп работает во всех режимах, см. [7. Кооп во всех режимах](07-modes.md).
-Ниже — исходный анализ, с которого начинали (этап Существа остаётся самым полным).
+Since M5, co-op works in all modes; see [7. Co-op in all modes](07-modes.md).
+Below is the original analysis we started from (the Creature stage is still the most complete).
 
-Почему не другие этапы (на старте):
+Why not the other stages (initially):
 
-| Этап | Проблема | Когда |
+| Stage | Problem | When |
 |---|---|---|
-| Клетка | 2D-мир с жёсткой камерой одного игрока | не планируется |
-| Племя/Цивилизация | RTS-управление, огромный объём синхронизации юнитов/зданий | позже, возможно «совместное управление» |
-| Космос | у каждого своя галактика-сохранение; но звёздная карта одинаковая | этап «Ведомый» (см. 3.7) |
-| Приключения (GA) | хорошо подходят: маленькие сценарии, капитаны | второй целевой этап |
+| Cell | 2D world with a rigid single-player camera | not planned |
+| Tribe/Civilization | RTS controls, huge amount of unit/building sync | later, possibly "shared control" |
+| Space | each player has their own galaxy save; but the star map is identical | "Wingman" stage (see 3.8) |
+| Adventures (GA) | good fit: small scenarios, captains | second target stage |
 
-## 3.2 Как выглядит сессия
+## 3.2 What a session looks like
 
-**Хост**
-1. Загружает своё сохранение на этапе Существа (или начинает новое).
-2. Открывает консоль читов `Ctrl+Shift+C` → `coop host` (порт по умолчанию 47810).
-3. В правом верхнем углу: `CO-OP: хост · 0/3 игроков · порт 47810`.
+**Host**
+1. Loads their Creature stage save (or starts a new one).
+2. Opens the cheat console `Ctrl+Shift+C` → `coop host` (default port 47810).
+3. Top-right corner shows: `CO-OP: host · 0/3 players · port 47810`.
 
-**Гость**
-1. В главном меню: `Ctrl+Shift+C` → `coop join 192.168.1.10` (`coop name Ник` — заранее).
-2. Мод проверяет совместимость (версия мода, сборка exe), получает от хоста
-   **снимок мира** (папку сохранения, единицы МБ), кладёт его в слот
-   «Co-op: <хост>» и загружает (этап M1: гость загружает слот вручную).
-3. Гость появляется рядом с существом хоста: «<Ник> присоединился к стае».
+**Guest**
+1. In the main menu: `Ctrl+Shift+C` → `coop join 192.168.1.10` (`coop name Nick` beforehand).
+2. The mod checks compatibility (mod version, exe build), receives a **world snapshot**
+   from the host (the save folder, a few MB), puts it into the slot
+   "Co-op: <host>" and loads it (milestone M1: the guest loads the slot manually).
+3. The guest appears next to the host's creature: "<Nick> joined the posse".
 
-**В игре**
-* Над каждым игроком — ник и полоска здоровья; гости занимают слоты стаи у хоста
-  (их здоровье видно в стандартном интерфейсе стаи).
-* Чат: `coop say <текст>` (позже — клавиша Enter в оверлее), лента в углу экрана.
-* Отключение гостя: его существо «уходит» (растворяется), слот стаи освобождается.
+**In game**
+* Each player has a nickname and a health bar above them; guests occupy the host's posse
+  slots (their health is visible in the standard posse UI).
+* Chat: `coop say <text>` (later — the Enter key in the overlay), feed in the corner of the screen.
+* Guest disconnect: their creature "leaves" (dissolves), freeing the posse slot.
 
-## 3.3 Правила общего мира (хост — авторитет)
+## 3.3 Shared world rules (host is authoritative)
 
-| Что | Кто решает | Как видят остальные |
+| What | Who decides | How others see it |
 |---|---|---|
-| Движение своего существа | каждый игрок у себя (отзывчивость) | интерполяция 100 мс |
-| NPC-существа, гнёзда, яйца, фрукты, эпики | **хост** (ИИ только у хоста) | марионетки у гостя в радиусе ~150 м |
-| Атака/навык гостя по NPC | гость шлёт «навык X по цели Y», урон считает хост | анимация у всех, здоровье цели от хоста |
-| Урон по гостю от NPC | хост | гость получает событие урона |
-| Смерть гостя | — | через 10 с возрождается у гнезда хоста |
-| ДНК | общий пул хоста: убийство/дружба любого игрока даёт ДНК всем в радиусе 50 м | одна шкала прогресса |
-| Части тела (кости, находки) | общие разблокировки | — |
-| Зов спаривания → редактор | хост решает, когда; гости ждут в «лобби редактора» | M4: каждый редактирует своё существо |
-| Переход на этап Племени | сессия корректно завершается с сообщением | — |
-| Пауза | у хоста — пауза для всех; у гостя — только локальное меню | — |
+| Movement of your own creature | each player locally (responsiveness) | 100 ms interpolation |
+| NPC creatures, nests, eggs, fruit, epics | **host** (AI runs only on the host) | puppets on the guest within ~150 m |
+| Guest attack/ability on an NPC | guest sends "ability X on target Y", host computes damage | animation for everyone, target health from the host |
+| Damage to a guest from an NPC | host | guest receives a damage event |
+| Guest death | — | respawns at the host's nest after 10 s |
+| DNA | host's shared pool: a kill/befriend by any player gives DNA to everyone within 50 m | single progress bar |
+| Body parts (bones, finds) | shared unlocks | — |
+| Mating call → editor | host decides when; guests wait in an "editor lobby" | M4: everyone edits their own creature |
+| Transition to the Tribe stage | session ends cleanly with a message | — |
+| Pause | host: pauses for everyone; guest: local menu only | — |
 
-Доверие между игроками (кооп с друзьями): античита нет, гость сам сообщает свою позицию.
+Players trust each other (co-op with friends): there is no anti-cheat, the guest reports its own position.
 
-## 3.4 Внешность гостя
+## 3.4 Guest appearance
 
-* M1: гость выглядит как существо **вида хоста** с другим цветом/размером (вид точно
-  есть в обоих мирах — снимок мира хоста).
-* M4: гость выбирает своё существо из Sporepedia; файл творения (`.crt`, единицы КБ)
-  передаётся хосту и другим гостям и регистрируется в их базе ресурсов.
+* M1: the guest looks like a creature of the **host's species** with a different color/size (the
+  species is guaranteed to exist in both worlds — it's the host's world snapshot).
+* M4: the guest picks their own creature from the Sporepedia; the creation file (`.crt`, a few KB)
+  is sent to the host and the other guests and registered in their resource database.
 
-## 3.5 Этапы разработки
+## 3.5 Development milestones
 
-| Веха | Содержимое | Критерий готовности |
+| Milestone | Contents | Done when |
 |---|---|---|
-| **M0 Инфраструктура** | loader, SporeKit, devkit, sporectl, сборка, деплой в Bottles, база символов | игра стартует с модами, `sporectl info/shot/cheat` работают |
-| **M1 «Призраки»** | сеть, сессия host/join, марионетка удалённого игрока: позиция, поворот, анимации ходьбы/бега/прыжка; ники; фейковый пир | у хоста по миру ходит существо гостя (или `fakepeer.py`) |
-| **M2 «Стая»** | гость = член стаи у хоста; NPC у гостя — марионетки хоста; события навыков и урона | совместный бой с одним NPC выглядит одинаково у обоих |
-| **M3 «Общий прогресс»** | ДНК, части, смерть и возрождение, яйца/гнёзда | гость может убить NPC и хост получит ДНК |
-| **M4 «Удобство»** | автоматическая передача и загрузка мира, своё существо гостя, меню вместо читов, редактор | вход в сессию за 1 команду |
-| **M5 Приключения** | кооп в Galactic Adventures: капитаны, общие цели акта | — |
+| **M0 Infrastructure** | loader, SporeKit, devkit, sporectl, build, deployment to Bottles, symbol database | the game starts with mods, `sporectl info/shot/cheat` work |
+| **M1 "Ghosts"** | networking, host/join session, remote player puppet: position, rotation, walk/run/jump animations; nicknames; fake peer | the guest's creature walks around the host's world (or `fakepeer.py`) |
+| **M2 "Posse"** | guest = posse member on the host; NPCs on the guest are host puppets; ability and damage events | a joint fight with one NPC looks the same for both |
+| **M3 "Shared progress"** | DNA, parts, death and respawn, eggs/nests | the guest can kill an NPC and the host gets DNA |
+| **M4 "Convenience"** | automatic world transfer and loading, guest's own creature, menus instead of cheats, editor | joining a session takes 1 command |
+| **M5 Adventures** | co-op in Galactic Adventures: captains, shared act goals | — |
 
-## 3.6 Что уже работает (2026-10-20)
+## 3.6 What works already (2026-10-20)
 
-* Хост/гость, ники, чат, анимации действий, передача мира хоста гостю.
-* NPC существуют только у хоста; у гостя — их отражения в радиусе 110 м, удары гостя и урон
-  от NPC идут через хоста. Время суток и общее ДНК синхронизированы.
-* Не синхронизировано пока: социальные мини-игры с NPC (у гостя отражение NPC не отвечает),
-  яйца, гнёзда, фрукты и находки частей тела, внешность гостя (вид хоста).
+* Host/guest, nicknames, chat, action animations, transfer of the host's world to the guest.
+* NPCs exist only on the host; the guest sees their reflections within 110 m, guest hits and
+  damage from NPCs go through the host. Time of day and shared DNA are synchronized.
+* Not synchronized yet: social mini-games with NPCs (the NPC reflection on the guest doesn't respond),
+  eggs, nests, fruit and body-part finds, guest appearance (host's species).
 
-## 3.7 Ограничения, о которых честно говорим игроку
+## 3.7 Limitations we are upfront about with players
 
-* Гость играет в **мире хоста**: его собственное сохранение не меняется.
-* Сессия существует только на этапе Существа; редактор существ — однопользовательский до M4.
-* Соединение напрямую по IP (проброс порта UDP 47810 или VPN типа Tailscale/ZeroTier).
+* The guest plays in the **host's world**: their own save is not changed.
+* A session exists only in the Creature stage; the creature editor is single-player until M4.
+* Direct IP connection (UDP port 47810 forwarding or a VPN such as Tailscale/ZeroTier).
 
-## 3.8 Идея на будущее: «Ведомый» в Космосе
+## 3.8 Future idea: "Wingman" in Space
 
-У всех игроков одна и та же звёздная карта, поэтому гость в Космосе может
-«прилететь» в систему хоста: виден его НЛО, совместный бой с пиратами/эпиками,
-общие события в системе. Требует отдельного RE космического симулятора.
+All players share the same star map, so a guest in Space can
+"fly into" the host's system: the host's UFO is visible, joint fights with pirates/epics,
+shared events in the system. Requires separate RE of the space simulator.

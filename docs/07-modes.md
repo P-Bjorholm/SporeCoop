@@ -1,113 +1,114 @@
-# 7. Кооп во всех режимах
+# 7. Co-op in every mode
 
-Мод определяет режим игры (`GetActiveModeID`) каждый кадр и выбирает для него **адаптер**
-(`mods/coop/modes.{h,cpp}`). Адаптер отвечает на три вопроса:
+Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **adapter** for it
+(`mods/coop/modes.{h,cpp}`). An adapter answers three questions:
 
-1. Чем управляет локальный игрок (`local`) и как это описать в `PlayerState`
-   (позиция, ориентация, скорость, здоровье, флаги — `fill`).
-2. Как показать удалённого игрока («марионетка»: `spawn` / `drive` / `despawn`, `alive`).
-3. Где игрок находится (`place`): игроки видят друг друга, только когда у них совпадают
-   **режим** и **место**. По умолчанию место — это имя текущего сохранения (crc32 строки
-   `CurrentGameName`, 0x0167EF40). В космосе место — звезда или планета, в приключениях —
-   ключ приключения.
+1. What the local player controls (`local`) and how to describe it in `PlayerState`
+   (position, orientation, velocity, health, flags — `fill`).
+2. How to show a remote player (a "puppet": `spawn` / `drive` / `despawn`, `alive`).
+3. Where the player is (`place`): players see each other only when both their **mode** and
+   **place** match. By default the place is the current save's name (crc32 of the
+   `CurrentGameName` string, 0x0167EF40). In space the place is a star or planet; in adventures
+   it is the adventure key.
 
-`PlayerState` (протокол v2) несёт `mode` и `world`, поэтому в панели видно, кто где:
+`PlayerState` (protocol v2) carries `mode` and `world`, so the panel shows who is where:
 `Bob [Space]`, `Bob [Adventure, other world]`.
 
-## 7.1 Сводка
+## 7.1 Summary
 
-| Режим | Что у игрока | Марионетка у других | Место | Общий прогресс | Тест |
+| Mode | What the player has | Puppet seen by others | Place | Shared progress | Test |
 |---|---|---|---|---|---|
-| Клетка | клетка-аватар (пул `cCellGame`) | клетка с моделью аватара, неуязвимая | сохранение | — | `coop_mode.py --fixture cell` ✅ |
-| Существо | существо-аватар | существо в стае аватара | сохранение | ДНК, NPC у хоста, урон через хоста | `coop_two_instances.py` ✅ |
-| Племя | указатель мыши на планете | ник-указатель + отметки `coop ping` | сохранение | еда племени | `--fixture tribe` ✅ |
-| Цивилизация | указатель мыши на планете | ник-указатель + отметки | сохранение | деньги цивилизации | `--fixture civ` ✅ |
-| Космос | корабль игрока (`cSimulatorPlayerUFO`) | корабль-«защитник», неуязвимый | звезда (StarID) или планета (PlanetID) | деньги империи | `--fixture space` ✅ |
-| Приключения | капитан (существо-аватар) | капитан-существо | ключ приключения | — | эхо-марионетка ✅ |
-| Редакторы, меню | — | марионетки скрыты | — | — | — |
+| Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | — | `coop_mode.py --fixture cell` ✅ |
+| Creature | avatar creature | creature in the avatar's pack | save | DNA, host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
+| Tribe | mouse pointer on the planet | name-tagged pointer + `coop ping` marks | save | tribe food | `--fixture tribe` ✅ |
+| Civilization | mouse pointer on the planet | name-tagged pointer + marks | save | civilization money | `--fixture civ` ✅ |
+| Space | player's ship (`cSimulatorPlayerUFO`) | "defender" ship, invulnerable | star (StarID) or planet (PlanetID) | empire money | `--fixture space` ✅ |
+| Adventures | captain (avatar creature) | captain creature | adventure key | — | echo puppet ✅ |
+| Editors, menus | — | puppets hidden | — | — | — |
 
-## 7.2 Мир, сохранение и вход гостя
+## 7.2 World, saving and guest join
 
-* Гость входит из главного меню (`coop join`). Хост **сохраняет игру** (тем же сообщением
-  `kMsgSaveGame` 0x1CD20F0, что и кнопка меню, через `MessagePost`), ждёт запись файлов
-  (2,5 с) и передаёт папку сохранения. Гость кладёт её в свободный слот и загружает
-  планету, названную хостом. В одном слоте бывает несколько планет.
-* Космос: игра сохраняет только вне планет. Если хост на планете, гость ждёт, а хост
-  видит «a player is waiting for the world: leave the planet to save». Принудительное
-  сохранение на планете проверено и отвергнуто: такое сохранение загружается с ошибками
-  интерфейса каждый кадр (0xEBDD12) и зависанием.
-* Приключения не являются сохранениями. Мир не передаётся, каждый запускает то же
-  приключение сам. Марионетки появляются, когда ключи приключений совпадают.
-* Синхронное сохранение (`MessageSend`) из хука кадра (внутри `Present`) взаимоблокирует
-  потоки DXVK, поэтому используется только `MessagePost`.
+* The guest joins from the main menu (`coop join`). The host **saves the game** (with the same
+  `kMsgSaveGame` 0x1CD20F0 message the menu button uses, via `MessagePost`), waits for the files
+  to be written (2.5 s) and sends the save folder. The guest puts it into a free slot and loads
+  the planet the host named. One slot can contain several planets.
+* Space: the game only saves when off-planet. If the host is on a planet, the guest waits and the
+  host sees "a player is waiting for the world: leave the planet to save". Forcing a save on a
+  planet was tried and rejected: such a save loads with UI errors every frame (0xEBDD12)
+  and a hang.
+* Adventures are not saves. No world is transferred; everyone launches the same adventure
+  themselves. Puppets appear once the adventure keys match.
+* A synchronous save (`MessageSend`) from the frame hook (inside `Present`) deadlocks the
+  DXVK threads, so only `MessagePost` is used.
 
-## 7.3 Клетка
+## 7.3 Cell
 
-* `cCellGame` = `*0x016B4BE4`. Пул клеток `+0x1C` (данные `+0`, число объектов `+0x10`,
-  размер объекта `+0x14` = 0x398), индекс аватара `+0x411C`.
-  `cObjectPoolIndex` = слот (младшие 16 бит) | поколение (старшие 16). Объект живой,
-  пока его первое поле равно полному индексу (`GetIfNotDeleted` 0xB72290).
-* Марионетка создаётся через `CreateCellObject(query +0x40FC, pos, 0, ресурс аватара,
-  уровень, 1, 1, true)`. Уровень берётся из `GetCurrentAdvectInfo`: собственный `mScale`
-  аватара равен −1, а клетки с −1 не рисуются. Модель задаёт хук
-  `GetModelKeyForCellResource`: на время создания он отвечает текущим `mModelKey` аватара.
-  Без хука ресурс «PlayerCreature» дал бы клетку из стартового выбора.
-* Движение задаётся через `mTargetPosition` с `mIsIdle = false`, как у самого игрока.
-  Если отставание больше 4 м, позиция ставится напрямую. Погоня и бегство отключены,
-  клетка неуязвима и всегда с 6 HP. При удалении HP = 0 и прозрачность 0, клетку убирает
-  сама игра.
+* `cCellGame` = `*0x016B4BE4`. Cell pool at `+0x1C` (data `+0`, object count `+0x10`,
+  object size `+0x14` = 0x398), avatar index `+0x411C`.
+  `cObjectPoolIndex` = slot (low 16 bits) | generation (high 16). An object is alive
+  while its first field equals the full index (`GetIfNotDeleted` 0xB72290).
+* The puppet is created via `CreateCellObject(query +0x40FC, pos, 0, avatar resource,
+  level, 1, 1, true)`. The level comes from `GetCurrentAdvectInfo`: the avatar's own `mScale`
+  is −1, and cells with −1 are not rendered. The model is set by a hook on
+  `GetModelKeyForCellResource`: during creation it returns the avatar's current `mModelKey`.
+  Without the hook the "PlayerCreature" resource would produce the cell from the initial selection.
+* Movement is driven through `mTargetPosition` with `mIsIdle = false`, just like the player's own cell.
+  If it lags by more than 4 m, the position is set directly. Chasing and fleeing are disabled;
+  the cell is invulnerable and always has 6 HP. On removal HP = 0 and opacity 0, and the game
+  itself cleans the cell up.
 
-## 7.4 Племя и Цивилизация — «указатели»
+## 7.4 Tribe and Civilization — "pointers"
 
-В RTS-этапах нет одного аватара, а мир у всех один (мир хоста). Племя, города и жители
-поэтому уже есть на каждой машине. Мод показывает **где игрок сейчас работает**:
+The RTS stages have no single avatar, and everyone shares one world (the host's). The tribe,
+cities and citizens therefore already exist on every machine. The mod shows **where each player is
+currently working**:
 
-* Указатель — точка планеты под мышью. Луч берётся из `cViewer::GetCameraToPoint`
-  и пересекается со сферой радиуса |позиция племени/первого города|.
-* `coop ping` ставит всем мигающую отметку `[ ! ] Ник` на 6 с (`MSG_PING_MARK`,
-  хост пересылает её остальным).
-* Общие ресурсы (`shared.cpp`, `MSG_RES`/`MSG_RES_ADD`). Итог хранится у хоста, гости
-  шлют свои изменения (заработали или потратили) и получают итог обратно:
-  * еда племени — сумма пачек еды в `cGameBundleContainer` племени (+0x20C, вектор +4,
-    количество `float` в пачке +0x134; сверено с `cTribe::GetTotalFood` 0xC8E850),
-    после изменения вызывается `UpdateFoodVisuals`;
-  * деньги цивилизации — `cCivilization::mWealth` (+0x98) из `GetPlayerCivilization`;
-  * деньги в космосе — `cEmpire::mEmpireMoney` (+0xD0) из `GetPlayerEmpire`.
-* Команды юнитам не синхронизируются. Каждый управляет копией того же племени или
-  цивилизации у себя, общими остаются ресурсы и отметки. Полная синхронизация юнитов —
-  отдельный большой этап (см. 7.7).
+* The pointer is the point on the planet under the mouse. The ray comes from `cViewer::GetCameraToPoint`
+  and is intersected with a sphere of radius |position of the tribe/first city|.
+* `coop ping` places a blinking `[ ! ] Name` mark for everyone for 6 s (`MSG_PING_MARK`;
+  the host relays it to the others).
+* Shared resources (`shared.cpp`, `MSG_RES`/`MSG_RES_ADD`). The total lives on the host; guests
+  send their changes (earned or spent) and get the total back:
+  * tribe food — sum of the food bundles in the tribe's `cGameBundleContainer` (+0x20C, vector +4,
+    `float` amount per bundle +0x134; verified against `cTribe::GetTotalFood` 0xC8E850);
+    `UpdateFoodVisuals` is called after a change;
+  * civilization money — `cCivilization::mWealth` (+0x98) from `GetPlayerCivilization`;
+  * space money — `cEmpire::mEmpireMoney` (+0xD0) from `GetPlayerEmpire`.
+* Unit commands are not synchronized. Each player controls their own copy of the same tribe or
+  civilization; only resources and marks are shared. Full unit sync is a separate large
+  milestone (see 7.7).
 
-## 7.5 Космос
+## 7.5 Space
 
-* Корабль игрока: `cSimulatorPlayerUFO::Get()+0x40`. Части `cGameDataUFO`:
-  `cLocomotiveObject` +0x34 (позиция +0x38, ориентация +0x44, скорость +0x1FC),
-  `cCombatant` +0x508 (HP +0x540, макс. +0x534, неуязвимость +0x588).
-* Марионетка создаётся через `SpawnUFO(Defender=6, политический ID игрока, mUFOKey империи)`.
-  Корабль-«защитник» дружелюбен к своей империи. Каждый кадр мод выставляет позицию
-  и ориентацию, а также `mNextPosition`/`mDestination`/`mbAtDestination`, иначе
-  ИИ корабля уводит его к своей цели.
-* Место: `SpacePlayerData` (`*0x016DEA6C`, сверено по `GetActiveStar`) → контекст
-  (0 планета, 1 система, 2 галактика). На планете местом служит `PlanetID`, в системе —
-  `StarID`. В галактике марионетки скрыты.
+* Player ship: `cSimulatorPlayerUFO::Get()+0x40`. Parts of `cGameDataUFO`:
+  `cLocomotiveObject` +0x34 (position +0x38, orientation +0x44, velocity +0x1FC),
+  `cCombatant` +0x508 (HP +0x540, max +0x534, invulnerability +0x588).
+* The puppet is created via `SpawnUFO(Defender=6, player's political ID, empire's mUFOKey)`.
+  A "defender" ship is friendly to its own empire. Every frame the mod sets the position
+  and orientation, as well as `mNextPosition`/`mDestination`/`mbAtDestination`; otherwise
+  the ship's AI steers it towards its own goal.
+* Place: `SpacePlayerData` (`*0x016DEA6C`, verified via `GetActiveStar`) → context
+  (0 planet, 1 system, 2 galaxy). On a planet the place is the `PlanetID`, in a system the
+  `StarID`. In the galaxy view puppets are hidden.
 
-## 7.6 Переходы между фазами (кто решает, что фаза закончилась)
+## 7.6 Phase transitions (who decides a phase is over)
 
-* **Решает хост.** Прогресс фазы общий (ДНК, еда, деньги), его считает игра хоста.
-  Когда у хоста выполняется обычное условие перехода, фаза заканчивается для всех.
-* Хост проходит редактор и переход, затем при новом входе или по `coop share` передаёт
-  новый мир гостям. Пока игроки в разных режимах, марионетки скрыты, а в панели показан
-  режим каждого (`Bob [Editor]`).
-* В планах: панель готовности («Фаза завершена — готовы: Alice ✔, Bob …», таймаут 60 с,
-  `coop next`) и блокировка самостоятельного перехода у гостей.
-* В космосе конца фазы нет. В приключениях конец акта у каждого свой, а встречаются
-  игроки в одном приключении.
+* **The host decides.** Phase progress is shared (DNA, food, money) and is computed by the host's game.
+  When the host meets the normal transition condition, the phase ends for everyone.
+* The host goes through the editor and the transition, then sends the new world to guests on the
+  next join or on `coop share`. While players are in different modes, puppets are hidden and the
+  panel shows each player's mode (`Bob [Editor]`).
+* Planned: a readiness panel ("Phase complete — ready: Alice ✔, Bob …", 60 s timeout,
+  `coop next`) and blocking guests from advancing on their own.
+* Space has no phase end. In adventures each player's act ends separately, and players
+  meet within the same adventure.
 
-## 7.7 Чего пока нет
+## 7.7 Not yet implemented
 
-* Синхронизация юнитов племени и цивилизации (общее управление). Нужен хост-авторитет
-  для `cCreatureCitizen::DoAction`/`cVehicle` (`MoveTo`, `SetTarget`) с сетевыми
-  идентификаторами юнитов по политическому ID и индексу.
-* Автозапуск у гостя того же приключения, что у хоста. Функция запуска приключения
-  по ключу пока не найдена: меню идёт через `kMsgSetGameModeByName` 0xE11333, а ресурс
-  приключения читает `cScenarioResource::Read` 0xF2FC40 через менеджер ресурсов.
-* Общие NPC вне этапа Существа: клетки, жители и корабли симулируются у каждого свои.
+* Tribe and civilization unit sync (shared control). Needs host authority
+  for `cCreatureCitizen::DoAction`/`cVehicle` (`MoveTo`, `SetTarget`) with network
+  unit IDs based on political ID and index.
+* Auto-launching the host's adventure on the guest. A function that starts an adventure
+  by key has not been found yet: the menu goes through `kMsgSetGameModeByName` 0xE11333, and the
+  adventure resource is read by `cScenarioResource::Read` 0xF2FC40 via the resource manager.
+* Shared NPCs outside the Creature stage: cells, citizens and ships are simulated separately on each machine.

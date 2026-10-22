@@ -1,99 +1,99 @@
-# 6. Тестирование
+# 6. Testing
 
-## 6.1 Окружение
+## 6.1 Environment
 
-* Игра установлена в бутылку Bottles **Games** (runner `caffe-10.0`, DXVK), реестр Spore там уже есть.
-* Запуск: `tools/spore.sh run [-p профиль] [-i N]` → `bottles-cli run -b Games -e .../SporeApp.exe -- <ключи>`.
-  Аргументы игры идут после `--`; переменные окружения Bottles фильтрует, поэтому настройки
-  передаются ключами командной строки (`-sporekit-profile:test`, `-sporekit-instance:2`).
-* Сборка: llvm-mingw (`~/.local/opt/llvm-mingw-*/bin/i686-w64-mingw32-clang++`), `make`.
+* The game is installed in the Bottles bottle **Games** (runner `caffe-10.0`, DXVK); the Spore registry entries are already there.
+* Launch: `tools/spore.sh run [-p profile] [-i N]` → `bottles-cli run -b Games -e .../SporeApp.exe -- <args>`.
+  Game arguments go after `--`. Bottles filters environment variables, so settings are passed
+  as command-line switches (`-sporekit-profile:test`, `-sporekit-instance:2`).
+* Build: llvm-mingw (`~/.local/opt/llvm-mingw-*/bin/i686-w64-mingw32-clang++`), `make`.
 
-## 6.2 Профили — тесты не трогают ваши сохранения
+## 6.2 Profiles — tests don't touch your saves
 
-`-sporekit-profile:<имя>` перенаправляет пользовательские данные Spore в
-`AppData/Roaming/SporeKit-<имя>/Spore`. `spore.sh run -p test` создаёт профиль из копии ваших
-настроек, но в окне 1440×1080, без обучалок и подсказок. Экземпляр `-i 2` сам использует
-профиль `inst2`. Фикстура с сохранением на этапе Существа:
-
-```bash
-tools/spore.sh fixture save creature test       # снять
-tools/spore.sh fixture restore creature inst2   # положить в другой профиль
-python3 tools/tests/load_game.py -i 2           # загрузить её через меню
-```
-
-Фикстуры других режимов (`out/fixtures/*.tgz`) делаются так:
+`-sporekit-profile:<name>` redirects Spore's user data to
+`AppData/Roaming/SporeKit-<name>/Spore`. `spore.sh run -p test` creates the profile from a copy of
+your settings, but with a 1440×1080 window and no tutorials or hints. Instance `-i 2` uses the
+`inst2` profile automatically. A fixture with a Creature stage save:
 
 ```bash
-python3 tools/tests/new_stage_game.py <cell|creature|tribe|civ|space>  # новая игра через выбор этапа
-python3 tools/tests/space_setup.py      # космос: новая игра, пропуск обучения, выход с планеты, сохранение
-tools/sporectl.py coop.save             # сохранить (как кнопка меню)
-tools/spore.sh fixture save <имя> test
-tools/sporectl.py coop.load Game0 Планета   # загрузить сохранение профиля прямо из меню
+tools/spore.sh fixture save creature test       # capture
+tools/spore.sh fixture restore creature inst2   # put into another profile
+python3 tools/tests/load_game.py -i 2           # load it via the menu
 ```
 
-Тестовые запуски не мешают за компьютером:
-* **без звука** — `prepare_profile` ставит в тестовых профилях `AudioMuteAll true` и
-  `AudioMasterVolume 0` (настройки звука игрока и PipeWire не трогаются: PipeWire запомнил
-  бы приглушение по имени приложения и для обычной игры);
-* **на втором мониторе** — SporeKit в тестовых запусках переносит окно игры на неосновной
-  монитор (экземпляр 1 к левому краю, остальные к правому), не забирая фокус.
-  `[sporekit] test_monitor = auto|primary|off` в `mods/sporekit.ini`; команда `window [x y|test]`.
+Fixtures for other modes (`out/fixtures/*.tgz`) are made like this:
 
-## 6.3 Цикл разработки
+```bash
+python3 tools/tests/new_stage_game.py <cell|creature|tribe|civ|space>  # new game via stage selection
+python3 tools/tests/space_setup.py      # space: new game, skip tutorial, leave the planet, save
+tools/sporectl.py coop.save             # save (same as the menu button)
+tools/spore.sh fixture save <name> test
+tools/sporectl.py coop.load Game0 Planet   # load a profile save directly from the menu
+```
+
+Test runs don't get in the way of whoever is at the computer:
+* **muted** — `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
+  profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
+  the mute by application name and apply it to normal play too);
+* **on the second monitor** — in test runs SporeKit moves the game window to a non-primary
+  monitor (instance 1 to the left edge, the rest to the right) without stealing focus.
+  `[sporekit] test_monitor = auto|primary|off` in `mods/sporekit.ini`; command `window [x y|test]`.
+
+## 6.3 Development loop
 
 ```bash
 make && tools/spore.sh deploy
 tools/spore.sh run -p test
-python3 tools/tests/load_game.py                 # до этапа Существа
+python3 tools/tests/load_game.py                 # up to the Creature stage
 make coop && tools/spore.sh deploy && tools/sporectl.py mod.reload coop
-tools/sporectl.py shot                           # посмотреть экран
-tools/sporectl.py exc                            # пойманные исключения (адрес + символ)
-tools/sporectl.py hangdump                       # стек главного потока в лог
-tools/spore.sh logs                              # хвост sporekit.log
+tools/sporectl.py shot                           # look at the screen
+tools/sporectl.py exc                            # caught exceptions (address + symbol)
+tools/sporectl.py hangdump                       # main thread stack to the log
+tools/spore.sh logs                              # tail of sporekit.log
 ```
 
-## 6.4 Уровни тестов
+## 6.4 Test levels
 
-| Уровень | Что | Как |
+| Level | What | How |
 |---|---|---|
-| Юнит (Linux) | сериализация, надёжная доставка под 30% потерь, сессия по localhost, интерполяция | `make test` |
-| Loopback в игре | марионетка повторяет собственного аватара | `sporectl coop.echo on 6 0.3` |
-| Протокол | хост в игре + фейковый гость на Python | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
-| Интеграция | две копии игры на одной машине, host/join, передача мира | `python3 tools/tests/coop_two_instances.py` |
-| Режимы | любой режим по фикстуре: гость из меню получает и грузит мир, обе марионетки, движение | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Планета`, `coop_mode.py --adventure` |
-| Ручной | реальная игра по сети | два ПК / VPN, пакет `tools/package.sh` |
+| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, interpolation | `make test` |
+| In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
+| Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
+| Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
+| Modes | any mode from a fixture: guest joins from the menu, receives and loads the world, both puppets, movement | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Planet`, `coop_mode.py --adventure` |
+| Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
-## 6.5 Скорость запуска
+## 6.5 Startup speed
 
-Двухкопийный тест готов к проверкам примерно за 40 с (было около 90):
-* обе копии запускаются сразу (2 с между ними), без ожидания первой;
-* вместо длинных ожиданий в кадрах после загрузки — проверка готовности и 4 с паузы;
-* окно «игра сохранена» у хоста (хост сохраняется перед отправкой мира) закрывается,
-  как только у хоста встают кадры, а не через фиксированное время;
-* мир по локальной сети/localhost идёт большим окном (600 сообщений в пути при пинге
-  < 40 мс, буферы сокета 4 МБ): 3,8 МБ за ~2,5 с вместо 7,5 с.
+The two-instance test is ready for checks in about 40 s (it used to take about 90):
+* both instances start right away (2 s apart), without waiting for the first one;
+* instead of long frame-count waits after loading, a readiness check plus a 4 s pause;
+* the host's "game saved" dialog (the host saves before sending the world) is closed
+  as soon as the host's frames stall, rather than after a fixed delay;
+* over LAN/localhost the world is sent with a large window (600 messages in flight at ping
+  < 40 ms, 4 MB socket buffers): 3.8 MB in ~2.5 s instead of 7.5 s.
 
-Игра сама ограничивает себя 30 кадрами в секунду (33 мс на кадр, `App::FrameLimit_ptr`).
-`[sporekit] test_frame_ms` ускоряет кадры в меню у тестовых копий, `frame_ms` — везде,
-консоль: `frame.limit <мс>|auto`. По умолчанию выключено: физика клеток рассчитана на
-30 кадров (на 130 кадрах клетка игрока уплывает сама), а тесты интерфейса ждут кадрами.
+The game caps itself at 30 frames per second (33 ms per frame, `App::FrameLimit_ptr`).
+`[sporekit] test_frame_ms` speeds up menu frames in test instances, `frame_ms` does so everywhere;
+console: `frame.limit <ms>|auto`. Off by default: cell physics is tuned for 30 fps
+(at 130 fps the player's cell drifts on its own), and UI tests wait in frames.
 
-### Точность синхронизации
+### Sync accuracy
 
-`tools/tests/coop_sync.py` во всех фазах сравнивает положение и поворот каждого
-синхронизируемого объекта у хоста и у гостя (команда `coop.sync`: игроки, звери, клетки,
-жители, машины, корабли). Замер гостя сравнивается с ближайшим из двух замеров хоста
-вокруг него. Типичные значения (90% замеров): клетки 0,02 м, звери 0,2–0,7 м, жители
-0,8 м / 6°, напарник 1 м / 6° (отставание на время сглаживания), машины 1,2 м, корабли
-8,5 м при скоростях около 100 м/с.
+`tools/tests/coop_sync.py` compares, in every phase, the position and rotation of each
+synchronized object on the host and on the guest (command `coop.sync`: players, animals, cells,
+citizens, vehicles, ships). Each guest sample is compared with the closer of the two host samples
+around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, citizens
+0.8 m / 6°, partner 1 m / 6° (lag equal to the smoothing time), vehicles 1.2 m, ships
+8.5 m at speeds around 100 m/s.
 
-## 6.6 Известные особенности Wine
+## 6.6 Known Wine quirks
 
-* MinHook не должен замораживать потоки (может зависнуть `VirtualProtect`).
-* Во втором процессе одного wineserver блокирующие сокеты/`select()` и старт новых потоков
-  иногда зависают — консоль работает на неблокирующих сокетах в одном потоке.
-* Без фокуса Spore перестаёт рисовать; в тестовых запусках включён «фоновый режим» SporeKit.
-* **Выход одного экземпляра убивает все экземпляры бутылки** (так ведёт себя запуск через
-  bottles-cli). Поэтому тесты перезапускают обе копии вместе: сначала гостя, потом хоста.
-* Зависший процесс Wine может остаться наполовину мёртвым (зомби-лидер с живыми потоками)
-  и держать UDP-порт 47810. `spore.sh kill` добивает такие процессы `SIGKILL`.
+* MinHook must not freeze threads (`VirtualProtect` may hang).
+* In the second process of the same wineserver, blocking sockets/`select()` and starting new threads
+  sometimes hang — the console runs on non-blocking sockets in a single thread.
+* Spore stops rendering without focus; test runs enable SporeKit's "background mode".
+* **Exiting one instance kills all instances in the bottle** (that's how launching through
+  bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
+* A hung Wine process can be left half-dead (a zombie leader with live threads)
+  and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.

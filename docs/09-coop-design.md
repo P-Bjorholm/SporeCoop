@@ -1,124 +1,124 @@
-# 9. Концепция: совместная игра, а не игра рядом
+# 9. Concept: playing together, not side by side
 
-До этой версии каждый игрок играл в своей копии мира хоста, а общими были только ресурсы
-и видимость. Новая цель: **один мир — одна команда**. Все игроки находятся в одном и том же
-мире и влияют на него, у каждого своя роль и своё имущество, а лучшие результаты получаются
-только вместе.
+Before this version every player played in their own copy of the host's world, and only resources
+and visibility were shared. The new goal: **one world, one team**. All players are in the same
+world and affect it, each has their own role and their own property, and the best results come
+only from working together.
 
-## 9.1 Три правила для всех фаз
+## 9.1 Three rules for all phases
 
-1. **Один мир, считает хост.** Всё, что двигается и живёт (существа, жители, техника,
-   корабли), симулирует только игра хоста. У гостей вместо собственных копий —
-   «отражения» объектов хоста (как NPC в фазе Существа сейчас). Поэтому миры не расходятся.
-2. **У всего есть владелец.** Аватар, житель племени, город, машина, корабль принадлежат
-   конкретному игроку. Команды владельца гость отправляет хосту, хост выполняет, результат
-   видят все. Чужим имуществом командовать нельзя, но его видно (подпись и цвет владельца).
-3. **Вместе выгоднее.** В каждой фазе есть механики, которые работают только когда игроки
-   рядом или действуют одновременно: помощь, оживление, совместная атака, общий прогресс.
+1. **One world, simulated by the host.** Everything that moves and lives (creatures, tribe members, vehicles,
+   ships) is simulated only by the host's game. Instead of their own copies, guests have
+   "mirrors" of the host's objects (like the NPCs in the Creature phase today). So the worlds never diverge.
+2. **Everything has an owner.** An avatar, a tribe member, a city, a vehicle, a ship belongs to
+   a specific player. A guest sends the owner's commands to the host, the host executes them, and everyone sees
+   the result. You cannot command someone else's property, but you can see it (owner's label and color).
+3. **Together is better.** Every phase has mechanics that only work when players are
+   close to each other or act at the same time: assistance, revival, joint attacks, shared progress.
 
-## 9.2 Фазы
+## 9.2 Phases
 
-### Клетка — «Симбиоз»
-* Одна лужа: NPC-клетки, еда и хищники общие (считает хост, у гостей отражения).
-* **Связка.** Если клетки игроков рядом (≤ 6 м), обе быстрее восстанавливают здоровье.
-* **Нокаут и оживление.** Смертельный удар (если напарник в той же луже) не убивает, а
-  оглушает клетку на 10 с: она замирает и неуязвима. Напарник, подплывший вплотную
-  (≈ 3 м) и продержавшийся рядом 1,5 с, оживляет её с половиной здоровья. Не успел —
-  клетка возрождается рядом с напарником, но **маленькой** (половина размера); она
-  дорастает, когда ест (50 очков еды — полный размер) или на следующем уровне.
-  Прогресс (полоса эволюции, детали) не теряется. Один в луже — обычная смерть Spore.
-* **Добыча вдвоём.** Урон по крупной клетке складывается, еда делится на всех.
-* Общая полоса эволюции (как ДНК).
+### Cell — "Symbiosis"
+* One tide pool: NPC cells, food and predators are shared (simulated by the host, mirrored on guests).
+* **Bond.** If players' cells are close (≤ 6 m), both regenerate health faster.
+* **Knockout and revive.** A lethal hit (if a partner is in the same pool) does not kill but
+  stuns the cell for 10 s: it freezes and is invulnerable. A partner who swims right next to it
+  (≈ 3 m) and stays there for 1.5 s revives it with half health. If they fail, the
+  cell respawns next to the partner but **small** (half size); it
+  grows back by eating (50 food points — full size) or at the next level.
+  Progress (evolution bar, parts) is not lost. Alone in the pool — normal Spore death.
+* **Hunting together.** Damage to a large cell adds up, food is shared by everyone.
+* A shared evolution bar (like DNA).
 
-### Существо — «Стая»
-* Уже есть: одна планета, общие NPC, бои через хоста, общая ДНК.
-* **Оживление.** Если игрок погиб, а напарник рядом, напарник может поднять его
-  (подойти и подержать социальное действие / клавиша), иначе — возрождение в гнезде.
-* **Совместная охота.** Если по одной цели бьют двое, урон каждого +25 %.
-* **Совместное общение.** Социальные действия любого игрока продвигают дружбу с тем же
-  гнездом (считает хост) — с несколькими игроками подружиться проще.
-* **Эпики** сильнее, но дают больше ДНК: в одиночку их почти не одолеть.
+### Creature — "Pack"
+* Already there: one planet, shared NPCs, fights via the host, shared DNA.
+* **Revive.** If a player dies and a partner is nearby, the partner can pick them up
+  (walk up and hold a social action / key), otherwise they respawn at the nest.
+* **Joint hunting.** If two players hit the same target, each one's damage is +25 %.
+* **Joint socializing.** Any player's social actions advance friendship with the same
+  nest (counted by the host) — with several players, befriending is easier.
+* **Epics** are stronger but give more DNA: they are nearly impossible to beat alone.
 
-### Племя — «Вожди»
-* Одно племя, общая еда и хижины. **Жители делятся между игроками**: у хоста свои,
-  у каждого гостя свои (по умолчанию поровну, новые жители — тому, кто их «купил»).
-* Каждый выделяет и ведёт **своих** жителей: охота, сбор, нападение, музыка.
-  Команды гостя уходят хосту, жители у всех двигаются одинаково.
-* Роли получаются сами: один охотится и кормит, другой воюет, третий дружит.
-* Покупка построек и новых жителей — из общей еды, кто купил, тому и принадлежит.
+### Tribe — "Chiefs"
+* One tribe, shared food and huts. **Tribe members are split between players**: the host has their own,
+  each guest has their own (equal shares by default; new members go to whoever "bought" them).
+* Everyone selects and leads **their own** members: hunting, gathering, attacking, music.
+  Guest commands go to the host, and members move identically for everyone.
+* Roles emerge naturally: one hunts and feeds, another fights, a third makes friends.
+* Buildings and new members are bought from shared food; whoever bought it owns it.
 
-### Цивилизация — «Губернаторы»
-* Одна цивилизация, общая казна. **Города делятся между игроками**: столица у хоста,
-  остальные раздаются в лобби, захваченный или купленный город достаётся тому, чья
-  техника его взяла.
-* В **своём** городе игрок строит здания и покупает технику. В чужом — нельзя
-  (подсказка «город игрока Alice»).
-* **Техника** принадлежит покупателю, водит её только он. Совместные атаки: город
-  захватывается быстрее, если его штурмуют техникой нескольких игроков.
-* Дипломатия (союзы, торговля, религия) — у хоста, гости предлагают через пинг и чат.
+### Civilization — "Governors"
+* One civilization, a shared treasury. **Cities are split between players**: the capital goes to the host,
+  the rest are handed out in the lobby, and a captured or bought city goes to the player whose
+  vehicles took it.
+* In **their own** city a player builds buildings and buys vehicles. In someone else's they cannot
+  (hint: "Alice's city").
+* **Vehicles** belong to the buyer, and only the buyer drives them. Joint attacks: a city
+  is captured faster if vehicles of several players storm it.
+* Diplomacy (alliances, trade, religion) is the host's; guests make suggestions via ping and chat.
 
-### Космос — «Эскадра»
-* Одна империя, общий бюджет, общие колонии. У каждого свой корабль.
-* **Звено.** Корабли в одной системе: противники и пираты общие (считает хост),
-  выстрелы гостей попадают по тем же целям.
-* **Колонии.** Колонию может основать любой; она общая. Защищать колонии от набегов
-  удобно вдвоём: один отбивает пиратов, другой чинит/доставляет.
-* Свобода: можно разлетаться по галактике, но задания и войны выгоднее вместе.
+### Space — "Squadron"
+* One empire, a shared budget, shared colonies. Everyone has their own ship.
+* **Wing.** Ships in the same system: enemies and pirates are shared (simulated by the host),
+  guests' shots hit the same targets.
+* **Colonies.** Anyone can found a colony; it is shared. Defending colonies from raids
+  is easier with two: one fights off pirates, the other repairs/delivers.
+* Freedom: you can scatter across the galaxy, but missions and wars pay off better together.
 
-### Приключения
-* Одно приключение у всех (автозапуск у гостей приключения хоста), отряд из капитанов.
+### Adventures
+* Everyone shares one adventure (guests auto-launch the host's adventure), with a party of captains.
 
-## 9.3 Переход между фазами — «Голосование»
-* Когда общий прогресс фазы набран, у **всех** появляется окно «Перейти в Племя?
-  Готовы: Alice ✔, Bob …». Переход начинается, когда все готовы или через 60 с.
-* Хост проходит редактор и заставку, затем мир автоматически приходит гостям.
-* Гость не может уйти вперёд сам: кнопка перехода у него ведёт к голосованию.
-* Редактор внутри фазы (например, существо после зова) гостей не выбрасывает.
+## 9.3 Phase transitions — "Vote"
+* When the phase's shared progress is complete, **everyone** gets a window "Move to Tribe?
+  Ready: Alice ✔, Bob …". The transition starts when everyone is ready or after 60 s.
+* The host goes through the editor and the cutscene, then the world is sent to guests automatically.
+* A guest cannot advance alone: their transition button leads to the vote.
+* An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
 
-## 9.4 Что уже работает (проверено автотестами на двух копиях игры)
+## 9.4 What already works (verified by automated tests on two game instances)
 
-| Фаза | Сделано | Модуль | Тест |
+| Phase | Done | Module | Test |
 |---|---|---|---|
-| Все | Голосование за эволюцию: запрос хоста на редактор (новая фаза или эволюция внутри фазы) ждёт, пока все нажмут «I'm ready», 60 с или «Start now»; после возвращения хоста из редактора или входа в новую фазу мир сразу уходит всем («эволюция вместе»); редактор гостя не прерывается | `coop.cpp` (`h_Submit`, `on_mode_change`) | `coop_vote.py` |
-| Клетка | Одна лужа: NPC и еда хоста у гостя пассивными отражениями, у гостя нет своих; укусы гостя применяет хост; укусы NPC хоста по клетке гостя приходят гостю; общий счёт еды; «Симбиоз» — нокаут на 10 с (видят все: прозрачная клетка, «KO n», полоска оживления, стрелка к напарнику за экраном, эффекты игры), оживление напарником вплотную, иначе возрождение рядом с ним маленькой клеткой (растёт от еды); лечение рядом с напарником; клетка напарника точно на месте и смотрит туда же (поза ставится сразу после шага симуляции) | `cellsync.cpp` | `coop_cell.py` |
-| Существо | Совместная охота +25 %, «Стая защищает» (40 % здоровья вместо смерти, раз в минуту), восстановление рядом с напарником; NPC, бои, ДНК общие (было) | `teamplay.cpp`, `npc.cpp` | `coop_team.py`, `coop_two_instances.py` |
-| Племя | Все жители всех племён — отражения хоста; жители игрока поделены между игроками; выделять и приказывать можно только своим; приказы гостя (идти, атаковать, охотиться, собирать…) выполняет хост; животные вокруг племени общие; подписи владельцев | `tribe.cpp` | `coop_tribe.py` |
-| Цивилизация | Все машины — отражения хоста; города поделены (столица общая, пока городов меньше, чем игроков); машина принадлежит покупателю; покупка, приказы и постройки гостя идут через хоста; постройки и захваты хоста повторяются у гостей; подписи владельцев | `civ.cpp` | `coop_civ.py` |
-| Космос | В системе/на планете хоста корабли NPC — его, у гостя отражения (свои NPC гостя там убираются); выстрелы гостя применяет хост; попадания NPC по кораблю гостя приходят гостю; отражения не стреляют сами | `squadron.cpp` | `coop_space.py` |
+| All | Evolution vote: the host's request to enter an editor (new phase or evolution within a phase) waits until everyone presses "I'm ready", 60 s, or "Start now"; once the host returns from the editor or enters the new phase, the world is immediately sent to everyone ("evolving together"); a guest's editor session is not interrupted | `coop.cpp` (`h_Submit`, `on_mode_change`) | `coop_vote.py` |
+| Cell | One pool: the host's NPCs and food appear on the guest as passive mirrors, the guest has none of its own; guest bites are applied by the host; bites by the host's NPCs on the guest's cell are sent to the guest; shared food counter; "Symbiosis" — a 10 s knockout (visible to all: translucent cell, "KO n", revive bar, off-screen arrow to the partner, game effects), revive by a partner right next to you, otherwise respawn next to them as a small cell (grows by eating); healing near a partner; the partner's cell is exactly in place and faces the same way (pose is set right after the simulation step) | `cellsync.cpp` | `coop_cell.py` |
+| Creature | Joint hunting +25 %, "The pack protects" (40 % health instead of death, once a minute), regeneration near a partner; NPCs, fights, DNA shared (existing) | `teamplay.cpp`, `npc.cpp` | `coop_team.py`, `coop_two_instances.py` |
+| Tribe | All members of all tribes are host mirrors; the player tribe's members are split between players; you can select and command only your own; guest orders (move, attack, hunt, gather…) are executed by the host; animals around the tribe are shared; owner labels | `tribe.cpp` | `coop_tribe.py` |
+| Civilization | All vehicles are host mirrors; cities are split (the capital is shared while there are fewer cities than players); a vehicle belongs to its buyer; guest purchases, orders and buildings go through the host; host buildings and captures are replayed on guests; owner labels | `civ.cpp` | `coop_civ.py` |
+| Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 
-Пока не сделано: общие колонии в космосе (разбор в docs/re/space.md §5), рост городов NPC-цивилизаций
-у гостя ещё идёт свой (постройки хоста при этом приходят), автозапуск приключения у гостей.
+Not done yet: shared colonies in space (analysis in docs/re/space.md §5), NPC civilizations' city growth
+on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
 
-## 9.4.1 Свои творения
+## 9.4.1 Your own creations
 
-У каждого игрока своё существо, своя клетка и свой корабль (`mods/coop/creations.cpp`,
-разбор — [docs/re/creations.md](re/creations.md)):
-* своё творение берётся из «Моих творений» игрока (`EditorSaves.package` его профиля): у гостя
-  по умолчанию самое новое, у хоста — вид его мира, корабль — корабль своей империи. В окне F9
-  строка «Моё существо: Kirgle < >» переключает его, выбор хранится в профиле
+Each player has their own creature, cell and ship (`mods/coop/creations.cpp`,
+analysis — [docs/re/creations.md](re/creations.md)):
+* your creation is taken from the player's "My Creations" (`EditorSaves.package` in their profile): for a guest
+  the newest one by default, for the host — the species of their world, the ship — their own empire's ship. In the F9 window
+  the line "My creature: Kirgle < >" switches it; the choice is stored in the profile
   (`Spore/SporeCoop/choices.ini`);
-* записи творения (`bem` + сведения) уходят хосту, хост раздаёт их всем и новым игрокам. На
-  каждой машине творение получает одинаковый новый номер (игрок + хеш содержимого: номера
-  творений в разных профилях совпадают), записывается в маленький пакет и подключается к
-  ресурсам игры на ходу (`DatabasePackedFile` + `RegisterDatabase`). Творения хоста ещё и под
-  исходным номером выше «Моих творений» гостя — так у гостя есть вид мира хоста;
-* копия игрока строится из его творения; свой аватар получает своё существо
-  (`SetSpecies`: здоровье и способности от его частей) — через 3 с после загрузки мира; своя
-  клетка — модель игрока + перестройка уровня (клетка вылупляется заново рядом с напарником);
-* голосование за эволюцию: хост и гости открывают редактор **своего** существа; мир хоста,
-  пришедший, пока гость в редакторе, загружается после выхода из редактора; после редактора
-  отредактированное существо становится своим и уходит остальным.
+* the creation's records (`bem` + metadata) go to the host, which distributes them to everyone, including new players. On
+  every machine the creation gets the same new ID (player + content hash: creation IDs
+  in different profiles collide), is written to a small package and attached to the
+  game's resources on the fly (`DatabasePackedFile` + `RegisterDatabase`). The host's creations are also registered under their
+  original ID above the guest's "My Creations" — that is how the guest gets the host world's species;
+* a player's copy is built from their creation; your own avatar gets your own creature
+  (`SetSpecies`: health and abilities from its parts) — 3 s after the world loads; your own
+  cell — the player's model + a level rebuild (the cell hatches again next to the partner);
+* evolution vote: the host and guests open the editor for **their own** creature; a host world
+  that arrives while the guest is in the editor is loaded after the guest leaves the editor; after the editor
+  the edited creature becomes the player's own and is sent to the others.
 
-Не готово: у гостя кнопка «готово» в редакторе для существа из «Моих творений» не выходит
-из редактора (ДНК ни при чём, отмена работает) — разбирается; корабль игрока виден другим,
-но отдельно не проверен; жители племени и цивилизации — вид мира хоста.
+Not ready: on a guest, the editor's "done" button for a creature from "My Creations" does not leave
+the editor (DNA is not the cause, cancel works) — under investigation; the player's ship is visible to others
+but not tested separately; tribe and civilization members use the host world's species.
 
-## 9.5 Порядок реализации
-1. Голосование за переход, исправление редактора, цвета/подписи владельцев. (все фазы)
-2. Существо: оживление, совместная охота, общее общение.
-3. Племя: отражение жителей хоста у гостей, владельцы, команды гостей через хоста.
-4. Цивилизация: отражение техники, владельцы городов и техники, постройки через хоста.
-5. Клетка: отражение NPC-клеток, связка, спасение.
-6. Космос: общие противники в системе, выстрелы гостей через хоста, общие колонии.
+## 9.5 Implementation order
+1. Transition vote, editor fix, owner colors/labels. (all phases)
+2. Creature: revive, joint hunting, shared socializing.
+3. Tribe: mirroring host members on guests, owners, guest commands via the host.
+4. Civilization: mirroring vehicles, city and vehicle owners, buildings via the host.
+5. Cell: mirroring NPC cells, bond, rescue.
+6. Space: shared enemies in the system, guest shots via the host, shared colonies.
 
-Каждый шаг проверяется автотестом на двух копиях игры. Состояние — в README.
+Each step is verified by an automated test on two game instances. Status is in the README.

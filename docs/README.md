@@ -1,16 +1,16 @@
-# Документация SporeCoop
+# SporeCoop Documentation
 
-1. [Архитектура и загрузка в игру](01-architecture.md) — как код попадает в процесс Spore, жизненный цикл, база символов.
-2. [SporeKit и мод-тулкит](02-modkit.md) — API для модов, консоль, `sporectl`, горячая перезагрузка, скриншоты, ввод.
-3. [Геймплей кооператива](03-gameplay.md) — как это выглядит для игроков, правила общего мира, этапы.
-4. [Сетевой код](04-netcode.md) — протокол, синхронизация, интерполяция, авторитет хоста.
-5. [Реверс-инжиниринг](05-re-notes.md) — методика (REA + перенос адресов ModAPI), найденные функции и структуры.
-6. [Тестирование](06-testing.md) — Bottles, два экземпляра игры, фейковый пир, автотесты.
-7. [Кооп во всех режимах](07-modes.md) — адаптеры режимов, места, общие ресурсы, переходы между фазами.
-8. [Интерфейс](08-ui.md) — пункт «Co-op» в главном меню, окно подключения, лобби, поиск игр в сети (родные окна Spore).
-9. [Совместная игра во всех фазах](09-coop-design.md) — концепция «один мир — одна команда», что сделано, разборы движка в [re/](re/).
+1. [Architecture and loading into the game](01-architecture.md) — how code gets into the Spore process, lifecycle, symbol database.
+2. [SporeKit and the mod toolkit](02-modkit.md) — mod API, console, `sporectl`, hot reload, screenshots, input.
+3. [Co-op gameplay](03-gameplay.md) — what it looks like for players, shared-world rules, stages.
+4. [Netcode](04-netcode.md) — protocol, synchronization, interpolation, host authority.
+5. [Reverse engineering](05-re-notes.md) — methodology (REA + porting ModAPI addresses), discovered functions and structures.
+6. [Testing](06-testing.md) — Bottles, two game instances, fake peer, automated tests.
+7. [Co-op in all modes](07-modes.md) — mode adapters, places, shared resources, phase transitions.
+8. [Interface](08-ui.md) — "Co-op" entry in the main menu, connection window, lobby, LAN game discovery (native Spore windows).
+9. [Playing together in all phases](09-coop-design.md) — the "one world, one team" concept, what's done, engine breakdowns in [re/](re/).
 
-Целевая версия игры: GOG «SPORE Collection», `SporebinEP1/SporeApp.exe`,
-SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`, 24 888 320 байт.
-Эту сборку **не поддерживает** Spore ModAPI (он знает только Disk и Steam March2017),
-поэтому адреса переносятся отдельно — см. раздел 5.
+Target game version: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`,
+SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`, 24,888,320 bytes.
+This build is **not supported** by Spore ModAPI (it only knows Disk and Steam March2017),
+so addresses are ported separately — see section 5.

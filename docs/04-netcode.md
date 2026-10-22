@@ -1,81 +1,81 @@
-# 4. Сетевой код
+# 4. Netcode
 
-## 4.1 Топология
+## 4.1 Topology
 
-Звезда: хост — сервер, гости подключаются к нему по UDP (порт 47810).
-Гости друг с другом не общаются, хост ретранслирует состояния игроков.
+Star: the host is the server, guests connect to it over UDP (port 47810).
+Guests don't talk to each other; the host relays player states.
 
-Сетевой код — переносимый C++ (`mods/coop/net/`), без зависимостей от игры:
-собирается и для Windows-DLL, и **нативно для Linux** (юнит-тесты, `fakepeer`).
+The netcode is portable C++ (`mods/coop/net/`) with no game dependencies:
+it builds both as a Windows DLL and **natively on Linux** (unit tests, `fakepeer`).
 
-## 4.2 Пакет
+## 4.2 Packet
 
 ```
 u32  magic   'SPCO'
-u16  proto   версия протокола
-u16  seq     номер пакета (для ack)
-u16  ack     последний полученный seq
-u32  ackbits битовая маска 32 предыдущих
-u8   count   число сообщений
-[сообщения: u8 type, u8 channel, u16 len, payload]
+u16  proto   protocol version
+u16  seq     packet number (for ack)
+u16  ack     last received seq
+u32  ackbits bitmask of the previous 32
+u8   count   number of messages
+[messages: u8 type, u8 channel, u16 len, payload]
 ```
 
-Надёжность — схема «seq/ack/ackbits»: каждое надёжное сообщение помнит, в каких
-пакетах оно ушло, и повторяется, пока пакет не подтверждён (RTO ≈ 1.5·RTT, мин. 100 мс).
+Reliability uses a "seq/ack/ackbits" scheme: each reliable message remembers which
+packets it was sent in, and is resent until a packet is acknowledged (RTO ≈ 1.5·RTT, min. 100 ms).
 
-Каналы:
-* `UNRELIABLE` — состояния (снимки), последнее значение важнее доставки;
-* `RELIABLE_ORDERED` — события сессии, навыки, урон, чат, куски файлов.
+Channels:
+* `UNRELIABLE` — states (snapshots), where the latest value matters more than delivery;
+* `RELIABLE_ORDERED` — session events, abilities, damage, chat, file chunks.
 
-## 4.3 Сообщения
+## 4.3 Messages
 
-| Тип | Канал | Содержимое |
+| Type | Channel | Contents |
 |---|---|---|
-| `HELLO` | R | версия мода, build-id exe, ник |
-| `WELCOME` | R | id игрока, id мира (хэш сохранения), тик хоста, список игроков |
-| `REJECT` | R | причина (версия, мест нет, другой exe) |
-| `PLAYER_JOIN/LEAVE` | R | id, ник, внешность |
-| `PLAYER_STATE` | U | id, тик, позиция (3×f32), ориентация, скорость, флаги движения, здоровье, вид, **режим** и **место** (протокол v2: марионетка видна только в том же режиме и месте) |
-| `ANIM` | R | анимация, которую проиграло существо игрока (прыжок, атака, социалка); хост ретранслирует |
-| `NPC_SPAWN` | R | net-id, ключ вида (ResourceKey), масштаб, флаги (мёртв / «семья»), позиция, HP |
-| `NPC_STATE` | U | 10 Гц, пачки по ~25: net-id, позиция, ориентация, скорость, HP, флаги |
-| `NPC_DESPAWN` | R | net-id: вышел из радиуса 110 м (+20 м гистерезис) или исчез |
-| `DAMAGE_REQ` | R | гость → хост: мой удар по NPC (net-id, урон, тип) |
-| `DAMAGE` | R | хост → гость: тебя ударил NPC (урон, тип, net-id атакующего) |
-| `DNA` / `DNA_ADD` | R | итог общего ДНК от хоста / прирост, заработанный гостем |
-| `RES` / `RES_ADD` | R | общий ресурс (u8 id: 1 еда племени, 2 деньги цивилизации, 3 деньги империи; f64): итог от хоста / изменение у гостя |
-| `PING_MARK` | R | отметка «смотри сюда»: id автора, точка, режим; хост пересылает остальным |
-| `WORLD_TIME` | U | раз в секунду: кватернион объекта неба (время суток) |
-| `WORLD_OFFER/FILE/CHUNK/DONE` | R | передача сохранения хоста кусками по 1 КБ, не больше 96 сообщений «в полёте» |
-| `CHAT` | R | id, текст UTF-8 |
-| `PING/PONG` | U | метка времени → RTT в статусе |
-| `BYE` | R | причина |
+| `HELLO` | R | mod version, exe build-id, nickname |
+| `WELCOME` | R | player id, world id (save hash), host tick, player list |
+| `REJECT` | R | reason (version, no free slots, different exe) |
+| `PLAYER_JOIN/LEAVE` | R | id, nickname, appearance |
+| `PLAYER_STATE` | U | id, tick, position (3×f32), orientation, velocity, movement flags, health, species, **mode** and **place** (protocol v2: a puppet is visible only in the same mode and place) |
+| `ANIM` | R | animation played by the player's creature (jump, attack, social); the host relays it |
+| `NPC_SPAWN` | R | net-id, species key (ResourceKey), scale, flags (dead / "family"), position, HP |
+| `NPC_STATE` | U | 10 Hz, batches of ~25: net-id, position, orientation, velocity, HP, flags |
+| `NPC_DESPAWN` | R | net-id: left the 110 m radius (+20 m hysteresis) or disappeared |
+| `DAMAGE_REQ` | R | guest → host: my hit on an NPC (net-id, damage, type) |
+| `DAMAGE` | R | host → guest: an NPC hit you (damage, type, attacker net-id) |
+| `DNA` / `DNA_ADD` | R | shared DNA total from the host / gain earned by a guest |
+| `RES` / `RES_ADD` | R | shared resource (u8 id: 1 tribe food, 2 civilization money, 3 empire money; f64): total from the host / change on a guest |
+| `PING_MARK` | R | "look here" marker: author id, point, mode; the host forwards it to the others |
+| `WORLD_TIME` | U | once per second: quaternion of the sky object (time of day) |
+| `WORLD_OFFER/FILE/CHUNK/DONE` | R | transfer of the host's save in 1 KB chunks, at most 96 messages "in flight" |
+| `CHAT` | R | id, UTF-8 text |
+| `PING/PONG` | U | timestamp → RTT in the status |
+| `BYE` | R | reason |
 
-## 4.4 Частоты и сглаживание
+## 4.4 Rates and smoothing
 
-* Отправка состояний: 20 Гц (каждые 50 мс), не чаще кадра.
-* Получатель хранит буфер снимков и рисует марионетку с задержкой **100 мс**
-  (линейная интерполяция позиции, slerp ориентации); при нехватке данных —
-  экстраполяция по скорости до 250 мс, затем «замирание».
-* Расхождение > 8 м → телепорт марионетки, иначе плавное догоняние.
-* Марионетка в игре двигается через систему локомоции (команда «идти к точке»
-  на интерполированную позицию), чтобы игра сама проигрывала анимации шагов;
-  ориентация/позиция корректируются напрямую при малой скорости.
+* State sending: 20 Hz (every 50 ms), no more than once per frame.
+* The receiver keeps a snapshot buffer and renders the puppet with a **100 ms** delay
+  (linear position interpolation, orientation slerp); when data runs short it
+  extrapolates by velocity for up to 250 ms, then "freezes".
+* Divergence > 8 m → the puppet teleports, otherwise it smoothly catches up.
+* In game, the puppet moves through the locomotion system (a "walk to point" command
+  targeting the interpolated position), so the game plays the step animations itself;
+  orientation/position are corrected directly at low speed.
 
-## 4.5 Идентификаторы сущностей
+## 4.5 Entity identifiers
 
-* Игроки: `player_id` 0 = хост, 1..3 = гости.
-* NPC (M2): хост выдаёт `net_id` при первом попадании объекта в радиус интереса
-  любого гостя, хранит карту `объект ↔ net_id`. У гостя собственные NPC отключаются
-  (ИИ не тикает, объекты скрыты), вместо них создаются марионетки по `NPC_SPAWN`.
+* Players: `player_id` 0 = host, 1..3 = guests.
+* NPCs (M2): the host assigns a `net_id` when an object first enters any guest's
+  interest radius, and keeps an `object ↔ net_id` map. On the guest, its own NPCs are disabled
+  (AI doesn't tick, objects are hidden), and puppets are created from `NPC_SPAWN` instead.
 
-## 4.6 Сессия и таймауты
+## 4.6 Session and timeouts
 
-* Рукопожатие: `HELLO` → `WELCOME`/`REJECT`; повтор `HELLO` раз в 500 мс до 10 с.
-* Нет пакетов 5 с → «соединение нестабильно», 15 с → отключение.
-* `coop status` показывает RTT, потери, состояние каждого игрока.
+* Handshake: `HELLO` → `WELCOME`/`REJECT`; `HELLO` is retried every 500 ms for up to 10 s.
+* No packets for 5 s → "connection unstable", 15 s → disconnect.
+* `coop status` shows RTT, packet loss, and each player's state.
 
 ## 4.7 NAT
 
-M1–M3: прямой IP (проброс UDP-порта у хоста или VPN-сеть). Позже — сервер-рандеву
-для UDP hole punching (маленький сервис, можно поднять самим).
+M1–M3: direct IP (UDP port forwarding on the host or a VPN network). Later — a rendezvous server
+for UDP hole punching (a small service you can host yourself).

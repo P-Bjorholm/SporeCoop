@@ -1,67 +1,67 @@
-# 1. Архитектура и загрузка в игру
+# 1. Architecture and loading into the game
 
-## 1.1 Цели
+## 1.1 Goals
 
-* Мод **встраивается** в оригинальный `SporeApp.exe`, ничего в exe не патчится на диске.
-* Игровые функции вызываются по **базе символов** (данные), а не по зашитым в код адресам:
-  поддержка другой версии exe = новый `.sym` файл.
-* Моды — отдельные DLL, их можно **перезагружать без перезапуска игры**.
-* Всё управляется и проверяется извне (консоль по TCP) — для быстрых тестов и RE.
+* The mod is **injected** into the original `SporeApp.exe`; nothing in the exe is patched on disk.
+* Game functions are called through a **symbol database** (data), not addresses hardcoded in code:
+  supporting another exe version = a new `.sym` file.
+* Mods are separate DLLs and can be **reloaded without restarting the game**.
+* Everything is controlled and checked from outside (a TCP console), for fast tests and RE.
 
-## 1.2 Слои
+## 1.2 Layers
 
 ```
- SporeApp.exe (MSVC 2008, 32-бит, без RTTI)
-   │ импортирует steam_api.dll (GOG-шим Steam API, 3 функции)
+ SporeApp.exe (MSVC 2008, 32-bit, no RTTI)
+   │ imports steam_api.dll (GOG Steam API shim, 3 functions)
    ▼
- steam_api.dll  ← НАШ прокси-загрузчик (loader/)
-   │  • пересылает SteamAPI_* в steam_api_orig.dll (оригинал GOG)
-   │  • ставит хук на точку входа exe → после инициализации всех DLL грузит sporekit.dll
+ steam_api.dll  ← OUR proxy loader (loader/)
+   │  • forwards SteamAPI_* to steam_api_orig.dll (the GOG original)
+   │  • hooks the exe entry point → loads sporekit.dll after all DLLs are initialized
    ▼
  sporekit.dll  (sporekit/)
-   │  • лог, конфиг, база символов (data/symbols/*.sym), ребейз адресов
-   │  • движок хуков (MinHook), хуки жизненного цикла игры и D3D9 Present
-   │  • очередь задач главного потока, TCP-консоль (devkit), команды
-   │  • менеджер модов: mods/*.dll, горячая перезагрузка
+   │  • log, config, symbol database (data/symbols/*.sym), address rebasing
+   │  • hook engine (MinHook), game lifecycle hooks and D3D9 Present
+   │  • main-thread task queue, TCP console (devkit), commands
+   │  • mod manager: mods/*.dll, hot reload
    ▼
- mods/coop.dll, mods/<другие>.dll   — C ABI (sdk/include/sporekit.h)
+ mods/coop.dll, mods/<others>.dll   — C ABI (sdk/include/sporekit.h)
 ```
 
-## 1.3 Почему прокси `steam_api.dll`
+## 1.3 Why a `steam_api.dll` proxy
 
-Рассмотренные варианты загрузки:
+Loading options considered:
 
-| Вариант | Плюсы | Минусы | Решение |
+| Option | Pros | Cons | Decision |
 |---|---|---|---|
-| Прокси `steam_api.dll` | DLL лежит в папке игры, Wine грузит её первой без оверрайдов; exe импортирует всего 3 функции | GOG-специфично (Disk-версия не импортирует steam_api) | **выбрано** |
-| Прокси `dinput8.dll` / `winmm.dll` | универсально для всех версий | в Wine нужен `WINEDLLOVERRIDES=dinput8=n,b` | запасной вариант, тот же код loader-а |
-| ModAPI Launcher Kit | экосистема | .NET под Wine, **эта версия exe не поддерживается** | нет |
-| Инжект через `CreateRemoteThread` | без файлов в игре | нужен свой лаунчер, гонки при старте | нет |
+| `steam_api.dll` proxy | the DLL sits in the game folder, Wine loads it first without overrides; the exe imports only 3 functions | GOG-specific (the Disk version doesn't import steam_api) | **chosen** |
+| `dinput8.dll` / `winmm.dll` proxy | universal across all versions | Wine needs `WINEDLLOVERRIDES=dinput8=n,b` | fallback, same loader code |
+| ModAPI Launcher Kit | ecosystem | .NET under Wine, **this exe version is not supported** | no |
+| Injection via `CreateRemoteThread` | no files in the game folder | needs its own launcher, startup races | no |
 
-Loader сам по себе тонкий: его задача — дождаться безопасного момента и загрузить
-`sporekit.dll`. Безопасный момент — **точка входа exe** (`AddressOfEntryPoint`): все DLL
-уже инициализированы, loader lock не держится, игра ещё не начала работу. Loader
-временно заменяет первые 5 байт точки входа на `jmp` в свой stub, stub грузит SporeKit,
-возвращает байты и прыгает в оригинальный entry.
+The loader itself is thin: its job is to wait for a safe moment and load
+`sporekit.dll`. The safe moment is the **exe entry point** (`AddressOfEntryPoint`): all DLLs
+are already initialized, the loader lock is not held, and the game hasn't started running yet. The loader
+temporarily replaces the first 5 bytes of the entry point with a `jmp` to its stub; the stub loads SporeKit,
+restores the bytes and jumps to the original entry.
 
-## 1.4 Жизненный цикл
+## 1.4 Lifecycle
 
-| Событие | Откуда | Для чего модам |
+| Event | Source | What mods use it for |
 |---|---|---|
-| `on_load` | сразу после LoadLibrary мода | регистрация команд, хуков |
-| `on_app_preinit` | хук `App::cAppSystem::PreInit` (после) | ранняя настройка |
-| `on_app_init` | хук `App::cAppSystem::Init` (после) | менеджеры игры созданы: читы, сообщения |
-| `on_post_init` | хук `App::cSporeApp::Init` (после) | всё готово, главное меню |
-| `on_frame(dt)` | хук `IDirect3DDevice9::Present` | вся игровая логика мода, сеть, оверлей |
-| `on_shutdown` | хук `App::cSporeApp::Shutdown` | сохранить состояние |
-| `on_unload` | перед FreeLibrary (горячая перезагрузка) | снять хуки/объекты |
+| `on_load` | right after the mod's LoadLibrary | registering commands, hooks |
+| `on_app_preinit` | hook on `App::cAppSystem::PreInit` (after) | early setup |
+| `on_app_init` | hook on `App::cAppSystem::Init` (after) | game managers are created: cheats, messages |
+| `on_post_init` | hook on `App::cSporeApp::Init` (after) | everything is ready, main menu |
+| `on_frame(dt)` | hook on `IDirect3DDevice9::Present` | all mod game logic, networking, overlay |
+| `on_shutdown` | hook on `App::cSporeApp::Shutdown` | save state |
+| `on_unload` | before FreeLibrary (hot reload) | remove hooks/objects |
 
-Все обращения к объектам игры делаются **только в главном потоке** (в `on_frame` или
-в командах консоли, которые SporeKit выполняет в главном потоке).
+Game objects are accessed **only on the main thread** (in `on_frame` or
+in console commands, which SporeKit runs on the main thread).
 
-## 1.5 База символов
+## 1.5 Symbol database
 
-Файл `mods/sporekit/symbols/<первые 8 hex SHA-256 exe>.sym`:
+File `mods/sporekit/symbols/<first 8 hex chars of the exe SHA-256>.sym`:
 
 ```
 # exe_sha256=922af7c7...
@@ -69,36 +69,36 @@ Simulator::cGameNounManager::Get=0x00B3D3D0 ; high m17=0x00B3D400
 App::cCheatManager::AddCheat=0x0067FC10 ; high m17=0x0067FC10
 ```
 
-* SporeKit при старте считает SHA-256 exe и выбирает файл; если файла нет —
-  моды, требующие символов, отключаются (а не роняют игру).
-* Адреса указаны для базы `0x400000`; при ASLR они ребейзятся (`DYNAMIC_BASE` у exe стоит).
-* Поле `conf` (high/medium/low/verified) — уровень доверия. Функции, которые мод реально
-  вызывает, проверяются вручную через REA и помечаются `verified` в
-  `data/symbols/overrides_<hash>.sym` (переопределяет автоматически перенесённые).
-* Мод объявляет нужные символы списком; отсутствие любого обязательного — мод сообщает
-  об этом в лог и консоль и не включает соответствующую функциональность.
+* On startup SporeKit computes the exe's SHA-256 and picks the file; if there is no file,
+  mods that require symbols are disabled (instead of crashing the game).
+* Addresses are given for base `0x400000`; under ASLR they are rebased (the exe has `DYNAMIC_BASE` set).
+* The `conf` field (high/medium/low/verified) is the confidence level. Functions the mod actually
+  calls are checked manually with REA and marked `verified` in
+  `data/symbols/overrides_<hash>.sym` (overrides the automatically ported ones).
+* A mod declares the symbols it needs as a list; if any required one is missing, the mod reports
+  it to the log and console and doesn't enable the corresponding functionality.
 
-## 1.6 Раскладка файлов в игре
+## 1.6 File layout in the game
 
 ```
 SporebinEP1/
-  SporeApp.exe              (не трогаем)
-  steam_api.dll             ← наш loader
-  steam_api_orig.dll        ← оригинал GOG (переименован при install)
+  SporeApp.exe              (untouched)
+  steam_api.dll             ← our loader
+  steam_api_orig.dll        ← GOG original (renamed on install)
   sporekit.dll
   mods/
-    sporekit.ini            конфиг (порт консоли, список модов, лог)
+    sporekit.ini            config (console port, mod list, log)
     sporekit/symbols/*.sym
     coop.dll
     coop.ini
     logs/sporekit.log
-    .shadow/                теневые копии DLL для горячей перезагрузки
+    .shadow/                shadow copies of DLLs for hot reload
 ```
 
-`tools/spore.sh install|uninstall` делает/откатывает подмену steam_api.dll (с бэкапом).
+`tools/spore.sh install|uninstall` applies/reverts the steam_api.dll swap (with a backup).
 
-## 1.7 Контент (на будущее)
+## 1.7 Content (for the future)
 
-Spore сам подхватывает все `.package` (DBPF) из `Data/`. Если моду понадобятся свои
-UI-лейауты (`.spui`), локализация или prop-файлы, они кладутся отдельным пакетом
-`Data/SporeCoop.package`; код DLL и контент развязаны.
+Spore picks up every `.package` (DBPF) in `Data/` on its own. If the mod ever needs its own
+UI layouts (`.spui`), localization or prop files, they go into a separate package
+`Data/SporeCoop.package`; DLL code and content are decoupled.
