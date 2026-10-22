@@ -31,8 +31,15 @@ def dist(a, b):
 def main():
     host, guest = start('tribe', 'Game0/Cohrach')
     ck = Checks()
-    time.sleep(3)
-    hm, gm = members(host), members(guest)
+    t0 = time.time()
+    while True:  # the guest may still be finishing the load of the host world
+        hm, gm = members(host), members(guest)
+        if (hm and set(hm) == set(gm)) or time.time() - t0 > 60:
+            break
+        time.sleep(2)
+    if not gm:
+        print('  guest state:', guest.call('game.mode')['out'], guest.call('coop.avatar')['out'][:200])
+        print(guest.call('coop.tribe')['out'][:800])
     print('  host :', {k: (v[0], v[3]) for k, v in hm.items()})
     print('  guest:', {k: (v[0], v[3]) for k, v in gm.items()})
     ck(len(hm) > 0 and set(hm) == set(gm), f'guest mirrors every citizen ({len(hm)} host, {len(gm)} guest)')

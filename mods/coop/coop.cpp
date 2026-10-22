@@ -5,7 +5,9 @@
 #include <windows.h>
 #include <iphlpapi.h>
 
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <cstdio>
 #include <deque>
 #include <map>
@@ -474,9 +476,48 @@ void lobby_tick(double now)
         g_disc.update(net::now_ms());
 }
 
+// Network keepalive without frames: a modal game dialog (e.g. "game saved") can stop the frames
+// while the window still pumps messages; the session and the world transfer then keep running
+// from the window procedure, so guests do not time out.
+std::atomic<double> g_last_frame{0};
+std::atomic<bool> g_keepalive_run{false}, g_keepalive_queued{false};
+std::thread g_keepalive;
+
+void keepalive_task(void*)
+{
+    g_keepalive_queued = false;
+    if (H->time_seconds() - g_last_frame < 0.5 || g_sess.role() == net::Role::None)
+        return;
+    g_sess.update();
+    if (g_sess.role() == net::Role::Host)
+        world::tick(g_sess);
+}
+
+void keepalive_start()
+{
+    g_keepalive_run = true;
+    g_keepalive = std::thread([] {
+        while (g_keepalive_run) {
+            Sleep(100);
+            if (!g_keepalive_queued && H->time_seconds() - g_last_frame > 0.5 && g_last_frame > 0) {
+                g_keepalive_queued = true;
+                H->run_outside_frame(keepalive_task, nullptr);
+            }
+        }
+    });
+}
+
+void keepalive_stop()
+{
+    g_keepalive_run = false;
+    if (g_keepalive.joinable())
+        g_keepalive.join();
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
+    g_last_frame = now;
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
@@ -1424,6 +1465,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 
 void on_unload()
 {
+    keepalive_stop();
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
@@ -1433,7 +1475,7 @@ void on_unload()
     g_remotes.clear();
 }
 
-SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.3.0", on_unload};
+SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.4.0", on_unload};
 
 } // namespace
 
@@ -1480,6 +1522,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
+    keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
