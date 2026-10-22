@@ -17,6 +17,7 @@ bool share_now(uint8_t peer, std::string& err);
 bool save_game(std::string& err);
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
+void guest_tick(); // guests: load a world that arrived while in an editor
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();

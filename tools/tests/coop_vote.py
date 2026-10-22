@@ -43,13 +43,21 @@ def main():
     host.call('wait.frames 200 60000')
     ck(hu.state().get('open') == '0', 'the co-op window closed itself after the vote')
     shot(host, 'vote_editor.png')
-    gs = guest.call('coop.uistate 1')['out']
-    time.sleep(2)
-    ck('evolving the species in the editor' in guest.call('coop.uistate')['out'], 'the guest sees the host evolving')
-    guest.call('coop.uistate 0')
+    # every player evolves its own creature: the guest's own editor opened too
+    t0 = time.time()
+    while time.time() - t0 < 30 and mode(guest) == m0:
+        time.sleep(1)
+    print('  guest mode after the vote:', mode(guest))
+    ck(mode(guest) != m0, "the guest's own editor opened")
+    guest.call('wait.frames 200 60000')
+    shot(guest, 'vote_editor_guest.png')
+    g_own = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'])
+    g_own = g_own.group(1) if g_own else None
 
-    # 3. leaving the editor: the evolved species goes to everybody
-    host.call('click 1416 1062')  # the green "done" check of the editor
+    # 3. leaving the editors: the host's species goes to the world, the guest keeps its own
+    # (the guest's "done" does not leave the editor for a creation from My Creations yet: cancel)
+    guest.call('click 1376 1062')  # the red "cancel" cross of the editor
+    host.call('click 1416 1062')   # the green "done" check of the editor
     t0 = time.time()
     while time.time() - t0 < 30 and mode(host) != m0:
         time.sleep(1)
@@ -64,6 +72,13 @@ def main():
     ck('evolved the species' in st, 'everybody is told about the evolution')
     ck(re.search(r"remote 0 'Alice' puppet=[0-9A-F]{8} ", st) and 'puppet=00000000' not in st.split("remote 0")[1][:40],
        'the guest got the evolved world and sees the host again')
+    gav = re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out'])
+    g_now = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'])
+    print(f'  guest own creature {g_own} -> {g_now and g_now.group(1)}, avatar {gav and gav.group(1)}')
+    ck(gav and g_now and gav.group(1) == g_now.group(1), 'after the evolution the guest still plays its own creature')
+    hp = re.search(r"remote 1 'Bob'.*\n.*species=([0-9A-F]{8})", host.call('coop.status')['out'])
+    hk = re.search(r'player 1 creature: ([0-9A-F]{8})', host.call('coop.creations')['out'])
+    ck(hp and hk and hp.group(1) == hk.group(1), 'and the host shows it')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -281,6 +281,7 @@ struct Vote {
     double t0 = 0;
     std::string text;
     int left = 0;
+    uint32_t editor = 0; // the editor the host opens (EditorRequest+0xC); guests open the same for their own creature
 };
 Vote g_vote;
 bool g_vote_bypass = false;
@@ -295,7 +296,7 @@ void start_vote(void* req, const std::string& text)
 {
     if (req)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
-    g_vote = Vote{true, req, H->time_seconds(), text, 60};
+    g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u};
     for (auto& p : g_sess.players())
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
@@ -303,6 +304,27 @@ void start_vote(void* req, const std::string& text)
     notice(text + ": press I'm ready (F9)", -1);
     g_vote_opened_ui = !coop_ui::is_open();
     coop_ui::open(true);
+}
+
+// the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
+bool open_own_editor(uint32_t editor_id)
+{
+    uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
+    void* av = game::avatar();
+    if (!ctor || !submit || !av)
+        return false;
+    // the game's operator new (0xF47240: size, name, 0, 0, 0, 0), as at 0xD42F1E
+    void* req = skg::cdecl_call<void*>(H->rebase(0xF47240), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    skg::thiscall<void*>(ctor, req);
+    skg::field<uint32_t>(req, 0xC) = editor_id ? editor_id : 0x465C50BAu; // CreatureEditorExtraLarge
+    game::Key k = game::species_key(av);
+    skg::field<uint32_t>(req, 0x10) = k.instance;
+    skg::field<uint32_t>(req, 0x14) = k.type;
+    skg::field<uint32_t>(req, 0x18) = k.group;
+    g_vote_bypass = true;
+    bool r = skg::cdecl_call<bool>(submit, req);
+    g_vote_bypass = false;
+    return r;
 }
 
 bool SK_CDECL h_Submit(void* req)
@@ -314,7 +336,7 @@ bool SK_CDECL h_Submit(void* req)
                 start_vote(req, g_name + " wants to evolve (" + modes::mode_name(mode) + ")");
             return false; // runs when the vote is over
         }
-        notice(g_name + " is in the editor: the host's evolution is the one everybody gets", -1);
+        notice(g_name + " evolves its own creature", -1);
         set_ready(true);
     }
     return o_Submit(req);
@@ -350,6 +372,7 @@ void broadcast_vote()
     w.u8(g_vote.active ? 1 : 0);
     w.u8((uint8_t)std::max(0, g_vote.left));
     w.str8(g_vote.text);
+    w.u32(g_vote.editor);
     g_sess.broadcast_reliable(net::MSG_VOTE, w);
 }
 
@@ -530,6 +553,8 @@ void on_frame(void*, int, void*)
     coop_ui::tick();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
+    else
+        world::guest_tick(); // a received world waiting for the player to leave its editor
     npc::tick(now);
     shared::tick(g_sess, game::mode_id(), now);
     if (g_sess.role() == net::Role::Host && game::avatar()) {
@@ -891,7 +916,18 @@ void setup_callbacks()
             std::string text = r.str8();
             if (!r.ok())
                 return;
+            uint32_t editor = r.left() >= 4 ? r.u32() : 0;
             bool started = on && !g_vote.active, ended = !on && g_vote.active;
+            if (on)
+                g_vote.editor = editor;
+            // the evolution starts: everybody evolves its own creature in its own editor
+            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local)
+                H->run_outside_frame( // editors create D3D resources: outside the frame
+                    [](void* id) {
+                        bool ok = open_own_editor((uint32_t)(uintptr_t)id);
+                        LOG("own editor %s", ok ? "opened" : "not opened");
+                    },
+                    (void*)(uintptr_t)g_vote.editor);
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;
@@ -1612,14 +1648,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
                            start_vote(nullptr, g_name + " wants to evolve (test)");
                        } else if (argc > 1 && !strcmp(argv[1], "editor")) {
-                           // open the creature editor like ModAPI mods do (EditorRequest + Submit)
+                           // a request through the vote (the hook), like the game's own editor entry
                            uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
                            void* av = game::avatar();
                            if (!ctor || !submit || !av) {
                                SAY("not possible here");
                                return 1;
                            }
-                           // the game's operator new (0xF47240: size, name, 0, 0, 0, 0), as at 0xD42F1E
                            void* req = skg::cdecl_call<void*>(H->rebase(0xF47240), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
                            skg::thiscall<void*>(ctor, req);
                            skg::field<uint32_t>(req, 0xC) = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0x465C50BAu;

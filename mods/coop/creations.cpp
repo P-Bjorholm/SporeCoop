@@ -455,6 +455,8 @@ static void share_own(double now)
 // ---- the own avatar takes the own creature ----
 static void* g_swapped_avatar;
 static Key g_swapped_key;
+static void* g_seen_avatar; // a new avatar (a world was loaded): wait until the world has settled
+static double g_seen_since;
 
 // the key this machine uses for its own creation of a kind
 static Key own_key_here(Kind kind)
@@ -514,6 +516,15 @@ static void apply_own_avatar()
     Key k = own_key_here(kCreature);
     if (!av || !k.instance)
         return;
+    // SetSpecies while a world is still loading crashed (a null call inside the game): only on an
+    // avatar that has lived for a few seconds
+    double now = H->time_seconds();
+    if (av != g_seen_avatar) {
+        g_seen_avatar = av;
+        g_seen_since = now;
+    }
+    if (now - g_seen_since < 3.0)
+        return;
     if (av == g_swapped_avatar && k == g_swapped_key)
         return;
     Key cur = avatar_species_key();
@@ -546,9 +557,36 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
+// back from an editor: the edited creature (a new creation in My Creations) is the own one now
+// (the avatar appears a moment after the mode changes: wait for it)
+static uint32_t g_prev_mode;
+static double g_adopt_until;
+static bool adopt_after_editor(double now)
+{
+    uint32_t m = game::mode_id();
+    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && m == modes::kCreature)
+        g_adopt_until = now + 30;
+    g_prev_mode = m;
+    if (now > g_adopt_until)
+        return false;
+    Key a = avatar_species_key();
+    if (!a.instance)
+        return true; // not yet: do not apply the old one meanwhile
+    g_adopt_until = 0;
+    if (!(a == mine(kCreature).key)) {
+        g_opts_read = -100;
+        refresh_options(now);
+        choose(kCreature, a);
+        H->log(M, SK_INFO, "creations: back from the editor, own creature %08X", a.instance);
+    }
+    return false;
+}
+
 void tick(double now)
 {
     if (!C.sess || !C.sess->connected())
+        return;
+    if (adopt_after_editor(now))
         return;
     if (now - g_last_check > 2.0) {
         g_last_check = now;

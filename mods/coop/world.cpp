@@ -264,8 +264,45 @@ bool share_now(uint8_t peer, std::string& err)
     return true;
 }
 
+struct Deferred {
+    bool on = false;
+    std::wstring slot;
+    std::string planet, host;
+    double back_since = 0;
+};
+static Deferred g_deferred;
+
+// a received world waits while the player is in an editor; loaded 2 s after it is back in a stage
+static void deferred_tick()
+{
+    if (!g_deferred.on)
+        return;
+    uint32_t mode = game::mode_id();
+    double now = H->time_seconds();
+    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad) {
+        g_deferred.back_since = 0;
+        return;
+    }
+    if (!g_deferred.back_since) {
+        g_deferred.back_since = now;
+        return;
+    }
+    if (now - g_deferred.back_since < 2.0)
+        return;
+    Deferred d = g_deferred;
+    g_deferred = Deferred{};
+    std::string err;
+    if (load_slot(d.slot, d.planet, err))
+        g_feed("loading the world of " + d.host + "...");
+    else
+        g_feed("the world of " + d.host + " could not be loaded: " + err);
+}
+
+void guest_tick() { deferred_tick(); }
+
 void tick(net::Session& s)
 {
+    deferred_tick();
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
@@ -551,6 +588,14 @@ static void finish(const std::string& host_name)
     if (planet == "snapshot.spo") {
         planet.clear();
         err = "the host has not saved its game yet";
+    }
+    // a player in its own editor (everybody evolves its own creature) loads it when it is back:
+    // loading a world under an open editor crashed the game
+    uint32_t mode = game::mode_id();
+    if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit)) {
+        g_deferred = Deferred{true, slot, planet, host_name, 0};
+        g_feed("the world of " + host_name + " is loaded when you leave the editor");
+        return;
     }
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err)) {
         g_feed("loading the world of " + host_name + "...");

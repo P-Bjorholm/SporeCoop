@@ -21,6 +21,8 @@ add space_coop "python3 tools/tests/coop_space.py"
 add vote       "python3 tools/tests/coop_vote.py"
 add notify     "python3 tools/tests/coop_notify.py"
 add sync       "python3 tools/tests/coop_sync.py"
+add creations  "python3 tools/tests/coop_creations.py"
+add creations_cell "python3 tools/tests/coop_creations_cell.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}
