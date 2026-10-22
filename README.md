@@ -1,5 +1,12 @@
 # SporeCoop
 
+<!-- support:top:start -->
+<p align="center">
+  <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-chamomilewoods-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+</p>
+<p align="center"><b>☕ Нравится проект? <a href="https://buymeacoffee.com/chamomilewoods">Поддержите автора на Buy Me a Coffee</a></b></p>
+<!-- support:top:end -->
+
 Кооперативный мод для **Spore + Galactic Adventures (GOG)** и фреймворк **SporeKit**,
 через который мод встраивается в игру. Всё собирается на Linux (llvm-mingw) и
 тестируется в Bottles (Wine).
@@ -67,3 +74,13 @@ python3 tools/tests/coop_ui.py                                           # те�
 `coop join <ip>`, `coop status`, `coop say <текст>`, `coop ping`, `coop leave`.
 В Приключениях каждый запускает то же приключение сам. Через интернет порт UDP 47810 у хоста
 должен быть доступен (проброс порта на роутере или VPN вроде ZeroTier / Radmin VPN / Tailscale).
+
+<!-- support:bottom:start -->
+## ☕ Поддержать автора
+
+Если проект оказался полезным, вы можете поддержать автора — это очень помогает продолжать работу:
+
+**https://buymeacoffee.com/chamomilewoods**
+
+<a href="https://buymeacoffee.com/chamomilewoods"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="50"></a>
+<!-- support:bottom:end -->
