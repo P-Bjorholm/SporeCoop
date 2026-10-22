@@ -306,6 +306,31 @@ void start_vote(void* req, const std::string& text)
     coop_ui::open(true);
 }
 
+// Selecting a creature in the creature stage: for a member of the player's pack (+0xB58 bit 1) the
+// game opens the pack panel with data from +0xE84, which our puppets and proxies do not have (the
+// game crashed reading (+0xE84)->+0x32C). Such a creature is not a pack member while selected.
+typedef void(SK_CDECL* SelectUI_t)(void*, void*, void*, uint32_t, float);
+SelectUI_t o_SelectUI;
+unsigned g_select_guards; // selections that needed the guard (tests)
+void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
+{
+    uint32_t* flags = nullptr;
+    void* obj = sel && !IsBadReadPtr(sel, 8) ? *(void**)((uint8_t*)sel + 4) : nullptr;
+    void* cr = obj ? skg::vcall<void*>(obj, 0xC / 4, 0xD0036E08u) : nullptr; // cCreatureAnimal
+    if (cr && !IsBadReadPtr((uint8_t*)cr + 0xE84, 4) && *(void**)((uint8_t*)cr + 0xE84) == nullptr) {
+        flags = (uint32_t*)((uint8_t*)cr + 0xB58);
+        if (!(*flags & 1))
+            flags = nullptr;
+    }
+    if (flags) {
+        *flags &= ~1u;
+        g_select_guards++;
+    }
+    o_SelectUI(sel, a2, a3, a4, a5);
+    if (flags)
+        *flags |= 1u;
+}
+
 // the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
 bool open_own_editor(uint32_t editor_id)
 {
@@ -1454,6 +1479,21 @@ std::vector<std::pair<std::string, net::Vec3>> partners()
 
 int c_team(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "point")) { // tests: where the first partner is on the screen
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet && !r.echo) {
+                net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+                float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
+                int ok = H->world_to_screen(w, sc);
+                uint8_t* cr = (uint8_t*)r.puppet;
+                SAY("point %d %d %d flags=%08X e84=%p guards=%u", ok, (int)sc[0], (int)sc[1],
+                    g_mode == modes::kCreature ? *(uint32_t*)(cr + 0xB58) : 0u,
+                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards);
+                return 0;
+            }
+        SAY("no partner");
+        return 1;
+    }
     if (argc > 2 && !strcmp(argv[1], "hp") && g_local && g_mode == modes::kCreature) { // tests
         game::set_health(g_local, (float)atof(argv[2]));
         SAY("hp set");
@@ -1641,6 +1681,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.notice = [](const std::string& t) { notice(t, -1); };
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
+    if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
+        H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",

@@ -23,6 +23,7 @@ add notify     "python3 tools/tests/coop_notify.py"
 add sync       "python3 tools/tests/coop_sync.py"
 add creations  "python3 tools/tests/coop_creations.py"
 add creations_cell "python3 tools/tests/coop_creations_cell.py"
+add select     "python3 tools/tests/coop_select.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}

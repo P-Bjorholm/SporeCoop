@@ -100,3 +100,4 @@ Resource::DatabasePackedFile::ctor=0x008DA290 ; verified thiscall(db, const char
 Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (RegisterDatabase vt+0x50 (bool add, db, priority) ret 0xC)
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
 Simulator::Cell::PreloadModel=0x00E624C0 ; cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
+Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
