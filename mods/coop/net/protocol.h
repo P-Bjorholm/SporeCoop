@@ -60,6 +60,8 @@ enum MsgType : uint8_t {
     MSG_UFO_HIT = 41,     // guest -> host: u16 ship id, f32 damage, i32 type, vec3 dir
     MSG_UFO_DAMAGE = 42,  // host -> guest: f32 damage, i32 type, vec3 dir, u16 attacker ship id
     MSG_VOTE = 43,        // host -> guests: u8 active, u8 seconds left, str8 text (evolution vote)
+    MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
+                          // u8 tenths of a second left, u8 revive progress 0..255
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port

@@ -203,6 +203,25 @@ uint8_t* cell_at(uint32_t idx)
     return *(uint32_t*)c == idx ? c : nullptr;
 }
 
+void cell_move(uint8_t* c, const net::Vec3& p)
+{
+    auto* pos = (float*)(c + 0x4C);
+    float d[3] = {p.x - pos[0], p.y - pos[1], p.z - pos[2]};
+    int n = *(int*)(c + 0x250);
+    uint8_t* g = cell_game();
+    uint8_t* parts = g ? *(uint8_t**)(g + 0x4108) : nullptr;
+    if (*(uint32_t*)(c + 0x248) && parts && n > 1 && n <= 80)
+        for (int i = 0; i < n; i++) {
+            auto* q = (float*)(parts + 0x4654 + 12 * (size_t)*(uint32_t*)(c + 0x254 + 4 * i));
+            q[0] += d[0]; q[1] += d[1]; q[2] += d[2];
+        }
+    pos[0] = p.x; pos[1] = p.y; pos[2] = p.z;
+    auto* prev = (float*)(c + 0x84);
+    prev[0] = p.x; prev[1] = p.y; prev[2] = p.z;
+    *(uint16_t*)(c + 0x48) |= 4; // offset dirty
+    (*(uint16_t*)(c + 0x4A))++;
+}
+
 static std::unordered_map<void*, uint32_t> g_cell_ids; // puppet -> its pool index
 
 static void* cell_local()
@@ -261,6 +280,8 @@ static void cell_fill(void* cp, net::PlayerState& st)
     net::Vec3 d{tgt[0] - pos[0], tgt[1] - pos[1], tgt[2] - pos[2]};
     if (!*(bool*)(c + 4) && drive::speed(d) > 0.05f)
         st.flags |= net::PF_MOVING;
+    auto* vel = (float*)(c + 0x90);
+    st.vel = {vel[0], vel[1], vel[2]};
     st.health = (float)*(int*)(c + 0x244);
     st.max_health = 6;
     if (st.health <= 0)
@@ -354,23 +375,27 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
         return nullptr;
     g_cell_ids[c] = idx;
     *(bool*)(c + 0x111) = true; // invulnerable: nobody eats a friend
+    *(uint8_t*)(c + 0x354) = 1; // we own the lifetime: not removed outside the local active area
     return c;
 }
 
 static void cell_drive(void* cp, const net::PlayerState& s, drive::State&, double)
 {
     uint8_t* c = (uint8_t*)cp;
-    auto* pos = (float*)(c + 0x4C);
-    net::Vec3 cur{pos[0], pos[1], pos[2]};
-    // the cell game moves cells itself (our write lands after its update): swim towards the remote
-    // position like the player's own cell does (mTargetPosition + not idle), snap when far behind
-    if (net::dist(cur, s.pos) > 4.f) {
-        pos[0] = s.pos.x; pos[1] = s.pos.y; pos[2] = s.pos.z;
-    }
+    // exactly where the remote cell is (interpolated), every frame; the target ahead along its
+    // velocity keeps the swimming animation going between our writes
+    cell_move(c, s.pos);
+    bool moving = (s.flags & net::PF_MOVING) != 0;
     auto* tgt = (float*)(c + 0x08);
-    tgt[0] = s.pos.x; tgt[1] = s.pos.y; tgt[2] = s.pos.z;
-    *(bool*)(c + 4) = net::dist(cur, s.pos) < 0.2f;
+    tgt[0] = s.pos.x + (moving ? s.vel.x * 0.3f : 0.f);
+    tgt[1] = s.pos.y + (moving ? s.vel.y * 0.3f : 0.f);
+    tgt[2] = s.pos.z;
+    *(bool*)(c + 4) = !moving;
+    // facing: the rotation itself, not only the target the game turns towards
+    quat_to_mat(s.rot, (float*)(c + 0x5C));
+    *(uint16_t*)(c + 0x48) |= 2; // rotation dirty
     skg::field<skg::Quaternion>(c, 0x14) = {s.rot.x, s.rot.y, s.rot.z, s.rot.w}; // mTargetOrientation
+    *(uint8_t*)(c + 0x354) = 1;
     float size;
     memcpy(&size, &s.species, 4);
     if (size > 0.01f && size < 1000.f) {

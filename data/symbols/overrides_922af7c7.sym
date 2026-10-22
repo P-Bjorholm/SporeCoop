@@ -86,3 +86,5 @@ Simulator::GetAllUFOs=0x00AD48B0 ; verified (docs/re/space.md) thiscall(nounMgr)
 Simulator::cGameDataUFO::TakeDamage=0x00C3CEA0 ; verified thiscall(ufo+0x508, dmg, pol, type, const Vector3* dir, attacker) ret 0x14
 Simulator::cToolManager::FireTool=0x01050080 ; verified thiscall(toolMgr, tool, owner spatial, aim, dmgPoint, a5, target, bool) ret 0x1C
 Simulator::DestroyUFO=0x0102C350 ; verified cdecl(ufo, bool)
+FNV_hash=0x00932E50 ; verified cdecl(const char* name, u32 seed 0x811C9DC5, int 1) -> u32 effect id
+Simulator::Cell::cCellGFX::InstanceEffectOnCell=0x00E66850 ; verified cdecl(cell*, u32 effect id) -> IVisualEffect* (one-shot, caller may ignore)

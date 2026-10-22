@@ -18,7 +18,7 @@ static SkMod* M;
 static Ctx C;
 static bool g_ok;
 static uintptr_t a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
-    a_RefCreate, a_Serializer, a_S;
+    a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
 constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C, kSize = 0x58, kRot = 0x5C,
@@ -155,18 +155,9 @@ static float revive_dist(uint8_t* a)
 // moving it means moving the particles too; +0x1C4 is the body velocity added to them.
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
-    net::Vec3 old = pos_of(c);
-    float d[3] = {p.x - old.x, p.y - old.y, p.z - old.z};
-    int n = F<int>(c, 0x250);
-    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
-    if (F<uint32_t>(c, 0x248) && parts && n > 1 && n <= 80)
-        for (int i = 0; i < n; i++) {
-            auto* q = (float*)(parts + 0x4654 + 12 * (size_t)F<uint32_t>(c, 0x254 + 4 * i));
-            q[0] += d[0]; q[1] += d[1]; q[2] += d[2];
-        }
+    modes::cell_move(c, p);
     auto* bv = (float*)(c + 0x1C4);
     bv[0] = bv[1] = bv[2] = 0;
-    set_pos(c, p);
     auto* t = (float*)(c + kTarget);
     t[0] = p.x; t[1] = p.y; t[2] = p.z;
     auto* v = (float*)(c + kVel);
@@ -188,6 +179,74 @@ static void set_body(uint8_t* a, float factor)
     g_body_size = want;
 }
 
+// ---- what everybody sees ----
+enum : uint8_t { KO_UP = 0, KO_OUT = 1, KO_REVIVED = 2, KO_RESPAWNED = 3 };
+struct Ko {
+    uint8_t state = KO_UP;
+    float left = 0, hold = 0;
+    double since = 0, fx_at = 0;
+};
+static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
+static double g_ko_sent;
+constexpr float kKoOpacity = 0.35f;
+constexpr uintptr_t kOpacity = 0xA4;
+
+// a one-shot game effect on a cell (names from the game: cell_death_oneshot, cell_hatch_ice, ...)
+static void effect(uint8_t* c, const char* name)
+{
+    if (!c || !a_Fnv || !a_Effect || !F<uint32_t>(c, 0x248))
+        return;
+    uint32_t id = skg::cdecl_call<uint32_t>(a_Fnv, name, 0x811C9DC5u, 1);
+    skg::cdecl_call<void*>(a_Effect, c, id);
+}
+
+static void send_ko(uint8_t state, float left, float hold)
+{
+    if (!C.sess || !C.sess->connected())
+        return;
+    net::Writer w;
+    w.u8((uint8_t)C.sess->my_id());
+    w.u8(state);
+    w.u8((uint8_t)std::max(0.f, std::min(left * 10.f, 255.f)));
+    w.u8((uint8_t)std::max(0.f, std::min(hold * 255.f, 255.f)));
+    if (C.sess->role() == net::Role::Host)
+        C.sess->broadcast_reliable(net::MSG_CELL_KO, w);
+    else
+        C.sess->send_reliable_to(0, net::MSG_CELL_KO, w);
+    g_ko_sent = H->time_seconds();
+}
+
+static uint8_t* puppet_cell(int id)
+{
+    if (!C.puppets)
+        return nullptr;
+    for (auto& p : C.puppets())
+        if (p.id == id)
+            return (uint8_t*)p.cell;
+    return nullptr;
+}
+
+static void on_ko(int id, uint8_t state, float left, float hold)
+{
+    Ko& k = g_ko[id];
+    uint8_t prev = k.state;
+    k.left = left;
+    k.hold = hold;
+    if (state == prev)
+        return;
+    k.state = state;
+    k.since = H->time_seconds();
+    uint8_t* c = puppet_cell(id);
+    if (state == KO_OUT)
+        effect(c, "cell_death_oneshot");
+    else if (state == KO_REVIVED)
+        effect(c, "cell_hatch_ice");
+    else if (state == KO_RESPAWNED)
+        k.fx_at = k.since + 0.4; // after the puppet has moved next to its partner
+    if (state != KO_OUT && c)
+        F<float>(c, kOpacity) = 1.f;
+}
+
 static bool go_down(uint8_t* c)
 {
     if (!c || c != avatar() || !C.sess || !C.sess->connected())
@@ -199,6 +258,8 @@ static bool go_down(uint8_t* c)
         g_down_since = H->time_seconds();
         g_hold = 0;
         g_down_pos = pos_of(c);
+        effect(c, "cell_death_oneshot");
+        send_ko(KO_OUT, (float)kDownTime, 0);
         if (C.notice)
             C.notice(C.my_name() + " is knocked out: swim right next to them within 10 s");
     }
@@ -219,15 +280,21 @@ static void downed_tick(uint8_t* a, double now, double dt)
     }
     F<int>(a, kHp) = 1;
     F<uint8_t>(a, kInvuln) = 1;
+    F<float>(a, kOpacity) = kKoOpacity;
     stop_at(a, g_down_pos);
     float d = 0;
     std::string helper = nearest_partner(revive_dist(a), nullptr, &d);
     g_hold = helper.empty() ? 0 : g_hold + dt;
+    if (now - g_ko_sent > 0.25)
+        send_ko(KO_OUT, (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold));
     if (!helper.empty() && g_hold >= kReviveHold) { // revived by the partner
         g_downed = false;
         F<int>(a, kHp) = 3;
+        F<float>(a, kOpacity) = 1.f;
         g_invuln_until = now + 2.0;
         g_revives++;
+        effect(a, "cell_hatch_ice");
+        send_ko(KO_REVIVED, 0, 1);
         if (C.notice)
             C.notice(helper + " revived " + C.my_name());
         return;
@@ -243,7 +310,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
     F<int>(a, kHp) = 6;
     g_invuln_until = now + 3.0;
     set_body(a, kSmall);
+    F<float>(a, kOpacity) = 1.f;
     g_respawns++;
+    effect(a, "cell_egg_L0_autohatch");
+    send_ko(KO_RESPAWNED, 0, 0);
     if (C.notice)
         C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
 }
@@ -356,6 +426,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     M = mod;
     C = std::move(ctx);
     a_DamageCell = H->sym("Simulator::Cell::DamageCell");
+    a_Fnv = H->sym("FNV_hash");
+    a_Effect = H->sym("Simulator::Cell::cCellGFX::InstanceEffectOnCell");
     a_KillCell = H->sym("Simulator::Cell::KillCell");
     a_Break = H->sym("Simulator::Cell::BreakOrSwallow");
     a_Destroy = H->sym("Simulator::Cell::DestroyCell");
@@ -564,6 +636,15 @@ static void symbiosis_tick(double now)
         return;
     if (g_body < 1.f && std::fabs(F<float>(a, kTargetSize) - g_body_size) > g_body_size * 0.01f)
         g_body = 1.f; // the game resized the avatar (level change): full size again
+    for (auto& [id, k] : g_ko) {
+        uint8_t* c = k.state == KO_OUT || k.fx_at > 0 ? puppet_cell(id) : nullptr;
+        if (k.state == KO_OUT && c)
+            F<float>(c, kOpacity) = kKoOpacity;
+        if (k.fx_at > 0 && now >= k.fx_at) {
+            k.fx_at = 0;
+            effect(c, "cell_egg_L0_autohatch");
+        }
+    }
     if (g_downed) {
         downed_tick(a, now, dt);
         return;
@@ -622,6 +703,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             hurt_avatar(dmg, t);
         return;
     }
+    if (type == net::MSG_CELL_KO) {
+        uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
+        if (!r.ok())
+            return;
+        if (is_host() && from != 0) { // relay to the other guests
+            net::Writer w;
+            w.u8(id); w.u8(state); w.u8(left); w.u8(hold);
+            C.sess->broadcast_reliable(net::MSG_CELL_KO, w, from);
+        }
+        if (id != C.sess->my_id())
+            on_ko(id, state, left / 10.f, hold / 255.f);
+        return;
+    }
     if (type == net::MSG_CELL_STATE && is_guest()) {
         guest_state(r);
     } else if (type == net::MSG_CELL_HIT && is_host()) {
@@ -668,6 +762,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_ko.clear();
     if (g_downed) {
         g_downed = false;
         if (uint8_t* a = in_cell() ? avatar() : nullptr)
@@ -679,6 +774,72 @@ void on_session_end()
     g_mirrors.clear();
     g_host_of.clear();
     g_food_sent = g_plant_sent = -1;
+}
+
+// ---- overlay: knockout countdown, revive progress, arrows to knocked out partners ----
+static std::string bar(float f)
+{
+    int n = (int)(std::max(0.f, std::min(f, 1.f)) * 8.f + 0.5f);
+    std::string s;
+    for (int i = 0; i < 8; i++)
+        s += i < n ? "\u25A0" : "\u25A1"; // filled / empty square
+    return s;
+}
+
+static int text_w(const std::string& s) { return (int)s.size() * 9; }
+
+static void draw_ko(uint8_t* c, const std::string& name, float left, float hold, double now, int sw, int sh)
+{
+    if (!c)
+        return;
+    net::Vec3 p = pos_of(c);
+    float size = std::max(F<float>(c, kSize), 0.3f);
+    float w[3] = {p.x, p.y + size * 2.2f + 1.f, p.z}, sc[2];
+    bool blink = std::fmod(now, 0.8) < 0.5;
+    char t[64];
+    snprintf(t, sizeof t, "KO %d", (int)std::ceil(std::max(0.f, left)));
+    uint32_t red = blink ? 0xFFFF4040 : 0xFFB02020;
+    bool on = H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh;
+    if (on) {
+        H->overlay_text((int)sc[0] - text_w(t) / 2, (int)sc[1] - 34, red, t);
+        if (hold > 0.01f) {
+            std::string b = bar(hold);
+            H->overlay_text((int)sc[0] - 40, (int)sc[1] + 18, 0xFF60FF60, b.c_str());
+        }
+        return;
+    }
+    if (name.empty() || sw <= 0)
+        return;
+    // off screen: an arrow on the screen edge towards it
+    float cx = sw / 2.f, cy = sh / 2.f;
+    if (!H->world_to_screen(w, sc)) // behind: never happens in the flat cell world, keep a fallback
+        sc[0] = cx, sc[1] = sh + 100.f;
+    float dx = sc[0] - cx, dy = sc[1] - cy;
+    float k = std::min(std::fabs(dx) > 1 ? (cx - 70) / std::fabs(dx) : 1e9f, std::fabs(dy) > 1 ? (cy - 50) / std::fabs(dy) : 1e9f);
+    int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+    const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
+    std::string s = std::string(arrow) + " " + name + " " + t;
+    H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
+}
+
+void draw_overlay()
+{
+    if (!in_cell() || !C.sess || !C.sess->connected())
+        return;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    double now = H->time_seconds();
+    if (g_downed)
+        draw_ko(avatar(), "", (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
+                sw, sh);
+    if (!C.puppets)
+        return;
+    for (auto& p : C.puppets()) {
+        auto it = g_ko.find(p.id);
+        if (it == g_ko.end() || it->second.state != KO_OUT)
+            continue;
+        draw_ko((uint8_t*)p.cell, p.name, it->second.left, it->second.hold, now, sw, sh);
+    }
 }
 
 // ---- debug (tests) ----
@@ -714,6 +875,15 @@ std::string debug(const std::vector<std::string>& a)
         F<int>(av, kHp) = atoi(a[1].c_str());
         return "hp set";
     }
+    if (a.size() >= 3 && a[0] == "goto") { // swim to <dx dy> from where we are (like a mouse click)
+        net::Vec3 p = pos_of(av);
+        auto* t = (float*)(av + kTarget);
+        t[0] = p.x + (float)atof(a[1].c_str());
+        t[1] = p.y + (float)atof(a[2].c_str());
+        t[2] = p.z;
+        F<uint8_t>(av, 0x04) = 0;
+        return "swimming";
+    }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner
         net::Vec3 at;
         if (nearest_partner(1e9f, &at).empty())
@@ -734,12 +904,22 @@ std::string debug(const std::vector<std::string>& a)
     for_each_cell([&](uint8_t*, uint32_t) { local++; });
     float pd = 0;
     nearest_partner(1e9f, nullptr, &pd);
+    std::string ko;
+    for (auto& [id, k] : g_ko) {
+        uint8_t* pc = puppet_cell(id);
+        char kb[96];
+        snprintf(kb, sizeof kb, "ko[%d]=%d left=%.1f hold=%.2f op=%.2f\n", id, k.state, k.left, k.hold,
+                 pc ? F<float>(pc, kOpacity) : -1.f);
+        ko += kb;
+    }
     snprintf(b, sizeof b,
              "avatar hp=%d pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d\n",
              F<int>(av, kHp), pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local);
-    return b + status();
+    char ob[48];
+    snprintf(ob, sizeof ob, "avatar_opacity=%.2f\n", F<float>(av, kOpacity));
+    return b + std::string(ob) + ko + status();
 }
 
 std::string status()

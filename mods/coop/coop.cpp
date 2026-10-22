@@ -696,6 +696,7 @@ void on_overlay(void*, int, void*)
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     draw_marks();
+    cellsync::draw_overlay();
     draw_owner_tags();
     draw_civ_tags();
     // name tags above remote players
@@ -971,7 +972,7 @@ void setup_callbacks()
             civ::on_message(type, from, r);
             return;
         }
-        if (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) {
+        if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO) {
             cellsync::on_message(type, from, r);
             return;
         }
@@ -1144,7 +1145,14 @@ int c_status(void*, int, const char* const*, SkOut* out)
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
         if (r.puppet) {
             net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
-            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f\n", p.x, p.y, p.z, net::dist(p, s.pos));
+            float rot_err = -1;
+            if (g_mode == modes::kCell) { // facing error in degrees
+                net::Quat q;
+                modes::mat_to_quat((float*)((uint8_t*)r.puppet + 0x5C), q);
+                float dot = std::fabs(q.x * s.rot.x + q.y * s.rot.y + q.z * s.rot.z + q.w * s.rot.w);
+                rot_err = 2.f * std::acos(std::min(1.f, dot)) * 57.2958f;
+            }
+            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f\n", p.x, p.y, p.z, net::dist(p, s.pos), rot_err);
         }
     }
     return 0;
@@ -1590,6 +1598,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             if (r.puppet == cell && !r.echo)
                 return id;
         return -1;
+    };
+    cc.puppets = [] {
+        std::vector<cellsync::Ctx::Puppet> v;
+        if (g_mode != modes::kCell)
+            return v;
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet && !r.echo)
+                v.push_back({id, r.name, r.puppet});
+        return v;
     };
     cellsync::init(H, M, std::move(cc));
     H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
