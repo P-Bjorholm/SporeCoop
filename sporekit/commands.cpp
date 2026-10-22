@@ -496,6 +496,15 @@ void register_builtin_commands()
     command_add(k, "help", "list commands [filter]", c_help, nullptr, A);
     command_add(k, "ping", "liveness check (any thread)", c_ping, nullptr, A);
     command_add(k, "info", "versions, exe hash, frame, mode, mods", c_info, nullptr, M);
+    command_add(k, "frame.limit", "frame.limit <ms>|auto - frame time cap (33 = the game's 30 fps, 0 = none)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc < 2)
+                        return 1;
+                    set_frame_limit(strcmp(argv[1], "auto") == 0 ? -1 : atoi(argv[1]));
+                    outf(out, "frame limit set");
+                    return 0;
+                },
+                nullptr, A);
     command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
     command_add(k, "wait.frames", "wait.frames <n> [timeout_ms]", c_wait_frames, nullptr, A);
     command_add(k, "log", "log [n] - last log lines", c_log, nullptr, A);

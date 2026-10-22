@@ -318,8 +318,11 @@ void tick(net::Session& s)
             o.header_sent = true;
         }
         // flow control: keep a bounded number of reliable messages in flight
-        int budget = 48;
-        while (budget-- > 0 && s.pending_to(o.peer) < 96 && !o.done) {
+        // a LAN / local peer (short round trip) gets a much bigger window
+        int rtt = s.rtt_of(o.peer);
+        size_t window = rtt >= 0 && rtt < 40 ? 600 : 160;
+        int budget = 300;
+        while (budget-- > 0 && s.pending_to(o.peer) < window && !o.done) {
             if (o.fi >= o.files.size()) {
                 net::Writer w;
                 w.u32(o.world_id);

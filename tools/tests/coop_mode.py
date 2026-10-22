@@ -22,6 +22,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
+from twoinst import wait_guest_in  # noqa: E402
 from sporectl import Console, recompress_png  # noqa: E402
 
 APPDATA = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users/'
@@ -167,12 +168,10 @@ def main():
         time.sleep(1)
     guest.call('wait.frames 700 60000')
     print(out(guest, f'cheat coop join 127.0.0.1:{a.port} Bob'))
-    time.sleep(1.5)
     dx, dy = map(int, a.dialog.split(','))
-    host.call(f'click {dx} {dy}')  # host saved before sharing: close the confirmation box
     t0 = time.time()
-    while time.time() - t0 < 300 and not guest.call('coop.avatar')['ok']:
-        time.sleep(2)
+    # host saved before sharing: close the confirmation box whenever it stops the host's frames
+    wait_guest_in(host, guest, 300, close=lambda h: h.call(f'click {dx} {dy}'))
     gav = guest.call('coop.avatar')
     print(f'guest after {time.time() - t0:.0f}s:', gav['out'].splitlines()[0] if gav['out'] else '?')
     ok = gav['ok'] and gav['out'].split(':')[0] == mode

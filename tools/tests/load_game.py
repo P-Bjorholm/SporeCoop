@@ -22,7 +22,7 @@ def main():
         if 'GalaxyGameEntry' in c.call('game.mode')['out']:
             break
         time.sleep(1)
-    c.call('wait.frames 700 60000')
+    c.call('wait.frames 200 60000')
     w, h = 1440, 1080
 
     def click(f, frames=150):

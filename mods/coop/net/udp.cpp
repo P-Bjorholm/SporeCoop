@@ -104,6 +104,10 @@ bool UdpSocket::open(uint16_t port, std::string* err)
 #else
     fcntl((int)s, F_SETFL, fcntl((int)s, F_GETFL) | O_NONBLOCK);
 #endif
+    // big buffers: a world transfer keeps hundreds of datagrams in flight
+    int buf = 4 << 20;
+    setsockopt((decltype(socket(0, 0, 0)))s, SOL_SOCKET, SO_RCVBUF, (const char*)&buf, sizeof buf);
+    setsockopt((decltype(socket(0, 0, 0)))s, SOL_SOCKET, SO_SNDBUF, (const char*)&buf, sizeof buf);
     fd_ = s;
     return true;
 }

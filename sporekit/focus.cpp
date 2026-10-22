@@ -95,6 +95,48 @@ void focus_install_hooks()
                 (void**)&o_GetCursorPos);
 }
 
+// The game caps itself at 30 fps (33 ms per frame, slept away in the main loop). Test runs use
+// short frames while the game is in its menu when [sporekit] test_frame_ms is set (off by default:
+// UI tests and frame-counted waits expect 30 fps). In a game the cap is the game's own again: the
+// cell physics, for example, steps per frame and drifts at other frame rates. 0 = no limit;
+// frame_ms forces a value everywhere; console: frame.limit <ms> (forced) / frame.limit auto.
+static int g_forced = -2; // -2: not read yet, -1: automatic
+static int g_menu_ms = -1;
+static int g_game_ms = 33; // the game's own value, read before the first change
+
+void set_frame_limit(int ms)
+{
+    g_forced = ms;
+    SKLOG(SK_INFO, "frame limit: %d ms%s", ms, ms < 0 ? " (automatic)" : "");
+    apply_frame_limit();
+}
+
+void apply_frame_limit()
+{
+    if (g_forced == -2) {
+        std::wstring ini = mods_dirw() + L"\\sporekit.ini";
+        g_forced = ini_int(ini, "sporekit", "frame_ms", -1);
+        g_menu_ms = g_test_run ? ini_int(ini, "sporekit", "test_frame_ms", -1) : -1;
+        if (g_menu_ms >= 0)
+            SKLOG(SK_INFO, "frame limit: %d ms in the menus (test run)", g_menu_ms);
+    }
+    uintptr_t p = sym("App::FrameLimit_ptr");
+    uint8_t* app = p ? *(uint8_t**)p : nullptr;
+    uint8_t* cfg = app ? *(uint8_t**)(app + 0x3C) : nullptr;
+    if (!cfg)
+        return;
+    static bool read_own;
+    if (!read_own) {
+        g_game_ms = *(int*)(cfg + 0xB0);
+        read_own = true;
+    }
+    uint32_t mode = game_mode_id();
+    bool menu = mode == 0 || mode == 0x2CCD1D2; // startup / GalaxyGameEntry
+    int want = g_forced >= 0 ? g_forced : (menu && g_menu_ms >= 0 ? g_menu_ms : g_game_ms);
+    if (*(int*)(cfg + 0xB0) != want)
+        *(int*)(cfg + 0xB0) = want;
+}
+
 // called once the game window is known (device creation)
 void focus_attach_window(void* hwnd)
 {

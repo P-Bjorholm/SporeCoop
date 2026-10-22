@@ -66,7 +66,8 @@ def main():
     chat = host.call('coop.status')['out']
     ck('saved Bob' in chat, 'everybody sees "Alice saved Bob from death"')
 
-    # pack regeneration while the partner is close
+    # pack regeneration while the partner is close (a lethal hit can throw the guest away)
+    print(' ', guest.call('coop.team come')['out'])
     time.sleep(4)
     h2, _ = hp(guest)
     ck(h2 is not None and h1 is not None and h2 > h1, f'pack regen: hp {h1} -> {h2}')

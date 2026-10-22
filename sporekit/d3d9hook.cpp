@@ -174,6 +174,8 @@ static void on_frame_begin_present()
     // the game sizes/centers its window around device resets: place test windows afterwards
     if (g_frame == 2 || g_frame == 120 || g_frame == 600)
         run_outside_frame(place_test_window);
+    if (g_frame % 10 == 1)
+        apply_frame_limit();
 
     vcursor_tick();
     cheats_flush_pending();
