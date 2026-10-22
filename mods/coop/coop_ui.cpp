@@ -167,6 +167,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
+    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr;
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -379,8 +380,20 @@ static void build_dialog()
         D.row_ready[i] = add_label(L, {620, y, 720, y + 26}, "", kWhite);
     }
     D.world = add_label(L, {40, 284, 720, 310}, "", kYellow);
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 4; i++)
         D.chat_lines[i] = add_label(L, {40, 316.f + i * 23, 720, 338.f + i * 23}, "", kWhite);
+    // the own creation of this stage: "My creature: Kirgle  < >"
+    D.creation = add_label(L, {40, 408, 560, 434}, "", kGold);
+    D.creation_prev = add_button(L, "cprev", {570, 404, 640, 434}, "<", [] {
+        if (A.creation_cycle)
+            A.creation_cycle(-1);
+        g_dirty = true;
+    });
+    D.creation_next = add_button(L, "cnext", {650, 404, 720, 434}, ">", [] {
+        if (A.creation_cycle)
+            A.creation_cycle(1);
+        g_dirty = true;
+    });
     D.chat_edit = add_edit(L, "chatedit", {40, 438, 560, 470}, "", 120);
     D.send_btn = add_button(L, "send", {570, 434, 720, 474}, T("Send", "Отправить"), do_send_chat);
     D.ready_btn = add_button(L, "ready", {40, 488, 240, 528}, "", [] {
@@ -478,9 +491,21 @@ static void refresh_lobby()
     std::string wl = A.world_line ? A.world_line() : "";
     text(D.world, wl.empty() ? g_status : wl);
     auto chat = A.chat ? A.chat() : std::vector<std::string>{};
-    size_t first = chat.size() > 5 ? chat.size() - 5 : 0;
-    for (int i = 0; i < 5; i++)
+    size_t first = chat.size() > 4 ? chat.size() - 4 : 0;
+    for (int i = 0; i < 4; i++)
         text(D.chat_lines[i], first + i < chat.size() ? chat[first + i] : "");
+    int ck = 0, cown = 0;
+    std::string cname, cl;
+    if (A.creation && A.creation(ck, cname, cown)) {
+        cl = ck == 1 ? T("My cell: ", "Моя клетка: ") : ck == 2 ? T("My ship: ", "Мой корабль: ") : T("My creature: ", "Моё существо: ");
+        cl += cname.empty() ? T("the world's own", "из мира хоста") : cname;
+        if (ck != 2 && cown > 0)
+            cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
+    }
+    text(D.creation, cl);
+    bool can = !cl.empty() && ck != 2 && cown > 0;
+    show(D.creation_prev, can);
+    show(D.creation_next, can);
     bool host = A.role() == 1;
     text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
     show(D.share_btn, host);
@@ -618,6 +643,8 @@ std::string debug_state()
         s += "session '" + sui::caption(D.session) + "'\n";
     if (D.world)
         s += "world '" + sui::caption(D.world) + "'\n";
+    if (D.creation)
+        s += "creation '" + sui::caption(D.creation) + "'\n";
     if (D.lan_hdr)
         s += "lan '" + sui::caption(D.lan_hdr) + "'\n";
     s += "status '" + g_status + "'\n";

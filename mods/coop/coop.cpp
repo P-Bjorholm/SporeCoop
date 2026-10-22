@@ -1161,7 +1161,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
             }
             SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f species=%08X\n", p.x, p.y, p.z,
                 net::dist(p, s.pos), rot_err,
-                g_mode == modes::kCreature ? game::species_key(r.puppet).instance : 0u);
+                g_mode == modes::kCreature ? game::species_key(r.puppet).instance
+                : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
+                                           : 0u);
         }
     }
     return 0;
@@ -1455,6 +1457,23 @@ void init_ui()
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
     a.connected = [] { return g_sess.connected(); };
     a.session_line = ui_session_line;
+    a.creation = [](int& kind, std::string& name, int& own) {
+        if (!g_sess.connected())
+            return false;
+        creations::Kind k = g_mode == modes::kCell ? creations::kCell
+                            : g_mode == modes::kSpace ? creations::kUfo : creations::kCreature;
+        creations::Option o = creations::mine(k);
+        kind = k;
+        name = o.name;
+        own = (int)creations::options(k).size();
+        return true;
+    };
+    a.creation_cycle = [](int dir) {
+        creations::Kind k = g_mode == modes::kCell ? creations::kCell : creations::kCreature;
+        if (g_mode == modes::kSpace)
+            return; // the ship is the one of the own empire
+        creations::cycle(k, dir);
+    };
     a.players = ui_players;
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
@@ -1625,6 +1644,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     crc.sess = &g_sess;
     crc.feed = feed;
     crc.name_of = [](uint8_t id) { return g_sess.name_of(id); };
+    crc.cell_rebuilt = [] { cellsync::join_partner(); };
     crc.appearance_changed = [](uint8_t id) { // rebuild that player's puppet with its own look
         auto it = g_remotes.find(id);
         if (it != g_remotes.end())

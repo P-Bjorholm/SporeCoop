@@ -66,6 +66,8 @@ def start(fixture='creature', planet=None, load_args=()):
     sh('deploy')
     sh('fixture', 'restore', fixture, 'test')
     subprocess.run(['rm', '-rf', APPDATA + '/SporeKit-inst2/Spore/Games', APPDATA + '/SporeKit-inst2/Spore/Games-sporecoop-backup'])
+    for prof in ('SporeKit-test', 'SporeKit-inst2'):  # own-creation choices: back to the defaults
+        subprocess.run(['rm', '-f', APPDATA + f'/{prof}/Spore/SporeCoop/choices.ini'])
     t_start = time.time()
     sh('run', '-i', '2')
     time.sleep(2)  # two sandboxes starting at the very same moment can race on the bottle

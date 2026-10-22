@@ -129,6 +129,17 @@ static bool find_paths()
     g_es_path = p;
     g_dir = p.substr(0, p.find_last_of(L"\\/")) + L"\\SporeCoop";
     CreateDirectoryW(g_dir.c_str(), nullptr);
+    // the choices belong to this profile (creation ids are per profile): SporeCoop\choices.ini
+    for (int k = 0; k < kKinds; k++) {
+        wchar_t buf[32] = {};
+        GetPrivateProfileStringW(L"creations", std::wstring(kInfo[k].name, kInfo[k].name + strlen(kInfo[k].name)).c_str(),
+                                 L"-", buf, 32, (g_dir + L"\\choices.ini").c_str());
+        if (buf[0] != L'-') {
+            g_chosen[k] = true;
+            uint32_t inst = (uint32_t)wcstoul(buf, nullptr, 16);
+            g_choice[k] = inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{};
+        }
+    }
     H->log(M, SK_INFO, "creations: My Creations %ls", g_es_path.c_str());
     return true;
 }
@@ -215,7 +226,7 @@ static Key avatar_species_key()
 
 Option mine(Kind k)
 {
-    if (g_chosen[k]) {
+    if (g_chosen[k] && k != kUfo) { // the ship is always the own empire's
         for (auto& o : g_opts[k])
             if (o.key == g_choice[k])
                 return o;
@@ -461,12 +472,22 @@ static Key own_key_here(Kind kind)
 
 // the own cell: the player's cell model, then the level is rebuilt (the cell hatches again)
 static Key g_cell_set;
+static bool g_cell_rebuilding;
 static void apply_own_cell()
 {
     uint8_t* s = cell_S();
     uint8_t* g = modes::cell_game();
     if (!s || !g)
         return;
+    if (g_cell_rebuilding) { // wait for the new avatar with the new model, then join the partner
+        uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
+        if (av && *(uint32_t*)(av + 0xFC) == g_cell_set.instance && *(uint8_t*)(g + 0x51D8) == 0) {
+            g_cell_rebuilding = false;
+            if (C.cell_rebuilt)
+                C.cell_rebuilt();
+        }
+        return;
+    }
     Key k = own_key_here(kCell);
     if (!k.instance || k == cell_key() || k == g_cell_set || !key_exists(k))
         return;
@@ -476,6 +497,7 @@ static void apply_own_cell()
     if (a_CellPreload)
         cdecl_call<void>(a_CellPreload, k.instance, k.type, k.group); // preload set (as the editor does)
     *(uint8_t*)(g + 0x51D8) = 1; // RebuildLevel on the next cell frame
+    g_cell_rebuilding = true;
     g_swaps++;
     H->log(M, SK_INFO, "creations: own cell is now %08X (level rebuilt)", k.instance);
 }
@@ -521,14 +543,6 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetSpecies = H->sym("Simulator::cCreatureAnimal::SetSpecies");
     a_GetEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_CellPreload = H->sym("Simulator::Cell::PreloadModel");
-    for (int k = 0; k < kKinds; k++) {
-        char buf[32] = {};
-        H->config_str(M, "creations", kInfo[k].name, "", buf, sizeof buf);
-        if (buf[0]) {
-            g_chosen[k] = true;
-            g_choice[k] = {(uint32_t)strtoul(buf, nullptr, 16), kInfo[k].type, kInfo[k].group};
-        }
-    }
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
@@ -628,7 +642,13 @@ void choose(Kind k, const Key& key)
 {
     g_chosen[k] = true;
     g_choice[k] = key;
-    H->config_set_str(M, "creations", kInfo[k].name, key.instance ? hex(key.instance).c_str() : "");
+    if (find_paths()) {
+        std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
+        wchar_t hx[16];
+        swprintf(hx, 16, L"%08X", key.instance);
+        WritePrivateProfileStringW(L"creations", std::wstring(kInfo[k].name, kInfo[k].name + strlen(kInfo[k].name)).c_str(),
+                                   hx, (g_dir + L"\\choices.ini").c_str());
+    }
     g_last_check = 0; // share now
 }
 
@@ -653,6 +673,13 @@ std::string status()
     snprintf(b, sizeof b, "creations: in=%u out=%u registered=%u avatar_swaps=%u%s%s\n", g_bundles_in, g_bundles_out,
              g_registered, g_swaps, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
+    if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
+        uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
+        Key ck = cell_key();
+        snprintf(b, sizeof b, "  cell: player model %08X, avatar model %08X\n", ck.instance,
+                 av ? *(uint32_t*)(av + 0xFC) : 0u);
+        s += b;
+    }
     for (int k = 0; k < kKinds; k++) {
         Option o = mine((Kind)k);
         snprintf(b, sizeof b, "  mine %s: %08X '%s' (%u own)\n", kInfo[k].name, o.key.instance, o.name.c_str(),

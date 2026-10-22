@@ -962,4 +962,12 @@ std::vector<syncdbg::Entry> sync_entries()
     return v;
 }
 
+void join_partner()
+{
+    uint8_t* a = in_cell() ? avatar() : nullptr;
+    net::Vec3 at;
+    if (a && !nearest_partner(1e9f, &at).empty())
+        stop_at(a, {at.x + 2.5f, at.y + 1.f, 0.f});
+}
+
 } // namespace cellsync

@@ -37,7 +37,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
-void draw_overlay(); // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
+void draw_overlay();
+void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string debug(const std::vector<std::string>& args);

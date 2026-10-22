@@ -4,6 +4,7 @@ its profile), the host keeps its world's species; each sees the other with the o
 import re
 import time
 
+from coop_ui import Ui
 from twoinst import Checks, shot, start
 
 
@@ -41,6 +42,32 @@ def main():
     ck(hp == g_key_on_host, 'the host shows the guest with the guest creature')
     ck(gp is not None and gp != av, f'the guest shows the host with the host creature ({gp})')
     ck(h_av == gp, f'the host plays its world species and the guest sees it ({h_av})')
+
+    # the co-op window: "My creature: Kirgle  < >", the next own creature replaces it everywhere
+    gu = Ui(guest, 'guest')
+    guest.call('coop.uistate 1')
+    st = gu.wait(lambda s: s['open'] == '1' and s.get('creation'), 15, 'the creation row')
+    print('  window:', st and st.get('creation'))
+    ck(st and g_name and g_name in st.get('creation', ''), 'the co-op window shows the own creature')
+    gu.click('cnext')
+    t0 = time.time()
+    new = None
+    while time.time() - t0 < 30:
+        gc2 = guest.call('coop.creations')['out']
+        new = field(gc2, r"mine creature: ([0-9A-F]{8})")
+        av2 = field(guest.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
+        hk2 = field(host.call('coop.creations')['out'], r'player 1 creature: ([0-9A-F]{8})')
+        hp2 = field(host.call('coop.status')['out'], r"remote 1 'Bob'.*\n.*species=([0-9A-F]{8})")
+        if new != g_mine and av2 == new and hk2 != g_key_on_host and hp2 == hk2:
+            break
+        time.sleep(2)
+    print(f'  after >: mine {new}, guest avatar {av2}, host key {hk2}, host puppet {hp2}')
+    ck(new and new != g_mine, 'the next own creature is chosen')
+    ck(av2 == new, 'the guest plays it at once')
+    ck(hk2 != g_key_on_host and hp2 == hk2, 'the host shows the guest with the new creature')
+    st = gu.state()
+    print('  window:', st.get('creation'))
+    guest.call('coop.uistate 0')
     time.sleep(8)  # a new creature is baked the first time it is shown
     shot(host, 'creations_host.png')
     shot(guest, 'creations_guest.png')
