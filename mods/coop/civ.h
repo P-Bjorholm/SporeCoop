@@ -23,7 +23,12 @@ namespace civ {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
+    std::function<void(const std::string&)> notice; // shown to every player
 };
+// own vehicles selected now, else 1 if an own city's menu was opened last (the "give" button)
+int own_selected(bool* city = nullptr);
+// give them to another player (the host applies it); returns how many
+int give_selected(uint8_t to);
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);

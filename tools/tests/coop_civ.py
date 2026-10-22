@@ -95,6 +95,19 @@ def main():
     ck(gc[city]['buildings'] == b1g + 1, f'guest city got the host building ({b1g} -> {gc[city]["buildings"]})')
     print(' ', host.call('coop.status')['out'].split('civ(host)')[1].splitlines()[0])
     print(' ', guest.call('coop.status')['out'].split('civ(guest)')[1].splitlines()[0])
+    # a gift: the guest gives its vehicle to the host
+    _, hv = civ(host)
+    gifts = [i for i, v in hv.items() if v['owner'] == 1]
+    if gifts:
+        _, gv = civ(guest)
+        for i in gv:
+            guest.call(f'coop.civ select {i} 0')
+        guest.call(f'coop.civ select {gifts[0]} 1')
+        print(' ', guest.call('coop.give')['out'])
+        time.sleep(2)
+        _, hv = civ(host)
+        ck(hv[gifts[0]]['owner'] == 0, f'the host owns the gifted vehicle #{gifts[0]} now')
+        ck('gave 1 vehicle' in host.call('coop.status')['out'], 'everybody is told about the gift')
     shot(host, 'civ_host.png')
     shot(guest, 'civ_guest.png')
     ck.faults(host=host, guest=guest)

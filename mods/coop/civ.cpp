@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "game.h"
+#include "shared.h"
 #include "modes.h"
 #include "net/interp.h"
 #include "sporekit_game.hpp"
@@ -87,6 +88,9 @@ static net::Quat veh_rot(void* v)
 // ---------------- ownership ----------------
 static std::unordered_map<void*, uint8_t> g_city_owner; // both: player city -> player id
 static std::vector<void*> g_host_cities;                // host: snapshot order; guest: host index -> local
+static std::unordered_set<void*> g_city_gifted;         // host: cities given away keep their owner
+static void* g_ui_city;                                 // the city whose menu was opened last
+static uint32_t g_gifts;
 
 // ---------------- host ----------------
 struct HV {
@@ -230,7 +234,7 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3 };
+enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4 };
 
 static void send_cmd(net::Writer& w)
 {
@@ -294,6 +298,8 @@ static int SK_THISCALL h_UIMessage(void* self, void* win, const uint8_t* msg)
     if (active() && msg && F<uint32_t>((void*)msg, 8) == kMsgActivated) {
         uint32_t id = F<uint32_t>((void*)msg, 0xC);
         int loco = id == kBtnLand ? 0 : id == kBtnWater ? 1 : id == kBtnAir ? 2 : -1;
+        if (void* c0 = F<void*>(self, 0xA8))
+            g_ui_city = c0;
         if (loco >= 0 || id == kBtnPlanner) {
             void* city = F<void*>(self, 0xA8);
             uint8_t owner = owner_of_city(city);
@@ -477,12 +483,51 @@ static void host_assign_cities(const std::vector<uint8_t>& players)
     for (size_t i = 0; i < cities.size(); i++) {
         if (!resplit && g_city_owner.count(cities[i]))
             continue;
+        if (g_city_gifted.count(cities[i]) && g_city_owner.count(cities[i]) &&
+            std::find(players.begin(), players.end(), g_city_owner[cities[i]]) != players.end())
+            continue; // a gift stays with its new owner while that player is here
         g_city_owner[cities[i]] = i == 0 ? (shared ? kShared : 0) : players[(1 + k++) % players.size()];
     }
 }
 
+// Trade between the players: every pair of cities of two different players trades, the shared
+// treasury earns kTradePerPair every kTradePeriod seconds (a player alone earns nothing extra)
+constexpr double kTradePeriod = 30.0;
+constexpr int kTradePerPair = 20;
+static double g_last_trade;
+static int g_trade_total, g_trade_pairs, g_trade_payouts;
+
+static void trade_tick(double now)
+{
+    if (now - g_last_trade < kTradePeriod)
+        return;
+    g_last_trade = now;
+    std::vector<std::pair<void*, uint8_t>> owned;
+    for (auto& [city, o] : g_city_owner)
+        if (o != kShared && o != 0xFF)
+            owned.push_back({city, o});
+    int pairs = 0;
+    for (size_t i = 0; i < owned.size(); i++)
+        for (size_t j = i + 1; j < owned.size(); j++)
+            if (owned[i].second != owned[j].second)
+                pairs++;
+    pairs = std::min(pairs, 8);
+    g_trade_pairs = pairs;
+    if (!pairs)
+        return;
+    std::string err;
+    int gain = pairs * kTradePerPair;
+    if (!shared::debug_add("money", gain, err))
+        return;
+    g_trade_total += gain;
+    if (g_trade_payouts++ % 6 == 0 && C.notice) // now and then, not every payout
+        C.notice("trade between the players' cities: +" + std::to_string(gain) + " every 30 s (" +
+                 std::to_string(g_trade_total) + " so far)");
+}
+
 static void host_tick(double now)
 {
+    trade_tick(now);
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
@@ -624,6 +669,35 @@ static void host_command(uint8_t from, net::Reader& r)
             return nullptr;
         return it->second;
     };
+    if (kind == CMD_GIVE) {
+        uint8_t what = r.u8(), to = r.u8(), n = r.u8();
+        int given = 0;
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint16_t id = r.u16();
+            if (what == 0) {
+                if (void* v = own_vehicle(id)) {
+                    g_hv[v].owner = to;
+                    given++;
+                }
+            } else if (id < g_host_cities.size()) {
+                void* city = g_host_cities[id];
+                if (owner_of_city(city) == from) {
+                    g_city_owner[city] = to;
+                    g_city_gifted.insert(city);
+                    given++;
+                }
+            }
+        }
+        g_gifts += given;
+        if (given && C.notice)
+            C.notice(C.sess->name_of(from) + " gave " +
+                     (what == 0 ? std::to_string(given) + (given == 1 ? " vehicle" : " vehicles") : std::string("a city")) +
+                     " to " + C.sess->name_of(to));
+        if (!given)
+            return reject();
+        g_cmds_done++;
+        return;
+    }
     if (kind == CMD_ORDER) {
         uint16_t id = r.u16();
         int type = (int)r.u32(), flag = (int)r.u32();
@@ -897,9 +971,11 @@ std::string status()
 {
     char b[256];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u\n",
+        snprintf(b, sizeof b,
+                 "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
+                 "trade_pairs=%d trade_total=%d\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
-                 g_cmds_rejected, g_builds_sent);
+                 g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total);
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u\n",
@@ -1026,6 +1102,66 @@ std::vector<syncdbg::Entry> sync_entries()
                 v.push_back({"v" + std::to_string(id), veh_pos(g.v), veh_rot(g.v)});
     }
     return v;
+}
+
+// own selected vehicles (ids as the host knows them); none: the own city whose menu was opened
+static void own_selection(std::vector<uint16_t>& vehicles, int& city)
+{
+    uint8_t me = C.sess->my_id();
+    city = -1;
+    if (C.sess->role() == net::Role::Host) {
+        for (auto& [v, h] : g_hv)
+            if (h.owner == me && F<uint8_t>(v, kVSelected))
+                vehicles.push_back(h.id);
+    } else
+        for (auto& [id, g] : g_gv)
+            if (g.v && g.owner == me && F<uint8_t>(g.v, kVSelected))
+                vehicles.push_back(id);
+    if (vehicles.empty() && g_ui_city && owner_of_city(g_ui_city) == me)
+        city = host_index_of_city(g_ui_city);
+}
+
+int own_selected(bool* is_city)
+{
+    if (!active())
+        return 0;
+    std::vector<uint16_t> v;
+    int city;
+    own_selection(v, city);
+    if (is_city)
+        *is_city = v.empty() && city >= 0;
+    return v.empty() ? (city >= 0 ? 1 : 0) : (int)v.size();
+}
+
+int give_selected(uint8_t to)
+{
+    if (!active() || to == C.sess->my_id())
+        return 0;
+    std::vector<uint16_t> v;
+    int city;
+    own_selection(v, city);
+    if (v.empty() && city < 0)
+        return 0;
+    net::Writer w;
+    w.u8(CMD_GIVE);
+    w.u8(v.empty() ? 1 : 0);
+    w.u8(to);
+    if (v.empty()) {
+        w.u8(1);
+        w.u16((uint16_t)city);
+    } else {
+        w.u8((uint8_t)std::min<size_t>(v.size(), 64));
+        for (size_t i = 0; i < v.size() && i < 64; i++)
+            w.u16(v[i]);
+    }
+    if (C.sess->role() == net::Role::Host) {
+        net::Reader r(w.data.data(), w.data.size());
+        host_command(C.sess->my_id(), r);
+    } else
+        send_cmd(w);
+    if (v.empty())
+        g_ui_city = nullptr;
+    return v.empty() ? 1 : (int)v.size();
 }
 
 } // namespace civ

@@ -94,6 +94,7 @@ static std::vector<uint8_t> g_split_for; // player ids the player tribe was spli
 static double g_last_send;
 static uint16_t g_cycle;
 static uint32_t g_cmds_done, g_cmds_rejected;
+static uint32_t g_gifts;
 
 // ---------------- guest ----------------
 struct GMember {
@@ -192,7 +193,7 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2 };
 
 static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
@@ -367,6 +368,25 @@ static void* resolve_target(const Target& t)
     return nullptr;
 }
 
+// host: members of `from` change hands (a gift); owners travel with the snapshots
+static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& ids)
+{
+    void* pt = player_tribe();
+    int n = 0;
+    for (uint16_t id : ids) {
+        auto it = g_hm_by_id.find(id);
+        auto hm = it == g_hm_by_id.end() ? g_hm.end() : g_hm.find(it->second);
+        if (hm == g_hm.end() || hm->second.owner != from || F<void*>(hm->first, kOwnerTribeOff) != pt)
+            continue;
+        hm->second.owner = to;
+        n++;
+    }
+    g_gifts += n;
+    if (n && C.notice)
+        C.notice(C.sess->name_of(from) + " gave " + std::to_string(n) + (n == 1 ? " tribe member to " : " tribe members to ") +
+                 C.sess->name_of(to));
+}
+
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -379,6 +399,10 @@ static void host_command(uint8_t from, net::Reader& r)
     pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
     if (!r.ok())
         return;
+    if (kind == CMD_GIVE) {
+        give_on_host(from, (uint8_t)action, ids);
+        return;
+    }
     void* pt = player_tribe();
     void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
@@ -614,8 +638,8 @@ std::string status()
 {
     char b[256];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u\n", (unsigned)g_hm.size(), g_cmds_done,
-                 g_cmds_rejected);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u\n", (unsigned)g_hm.size(),
+                 g_cmds_done, g_cmds_rejected, g_gifts);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
@@ -718,6 +742,43 @@ std::vector<syncdbg::Entry> sync_entries()
                 v.push_back({"t" + std::to_string(id), game::position(g.c), game::orientation(g.c)});
     }
     return v;
+}
+
+int own_selected()
+{
+    if (!C.sess || !C.sess->connected() || game::mode_id() != modes::kTribe)
+        return 0;
+    int n = 0;
+    uint8_t me = C.sess->my_id();
+    if (C.sess->role() == net::Role::Host) {
+        for (auto& [c, hm] : g_hm)
+            if (hm.owner == me && F<uint8_t>(c, kSelectedOff))
+                n++;
+    } else
+        for (auto& [id, m] : g_gm)
+            if (m.c && m.owner == me && F<uint8_t>(m.c, kSelectedOff))
+                n++;
+    return n;
+}
+
+int give_selected(uint8_t to)
+{
+    if (!C.sess || !C.sess->connected() || game::mode_id() != modes::kTribe || to == C.sess->my_id())
+        return 0;
+    uint8_t me = C.sess->my_id();
+    std::vector<uint16_t> ids;
+    if (C.sess->role() == net::Role::Host) {
+        for (auto& [c, hm] : g_hm)
+            if (hm.owner == me && F<uint8_t>(c, kSelectedOff))
+                ids.push_back(hm.id);
+        give_on_host(me, to, ids);
+    } else {
+        for (auto& [id, m] : g_gm)
+            if (m.c && m.owner == me && F<uint8_t>(m.c, kSelectedOff))
+                ids.push_back(id);
+        send_cmd(CMD_GIVE, ids, to, {}, {});
+    }
+    return (int)ids.size();
 }
 
 } // namespace tribe

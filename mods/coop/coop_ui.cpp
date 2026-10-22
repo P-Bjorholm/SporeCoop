@@ -167,7 +167,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
-    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr;
+    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr;
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -389,6 +389,11 @@ static void build_dialog()
             A.creation_cycle(-1);
         g_dirty = true;
     });
+    D.give_btn = add_button(L, "give", {570, 404, 720, 434}, "", [] {
+        if (A.give_do)
+            A.give_do();
+        g_dirty = true;
+    });
     D.creation_next = add_button(L, "cnext", {650, 404, 720, 434}, ">", [] {
         if (A.creation_cycle)
             A.creation_cycle(1);
@@ -502,8 +507,20 @@ static void refresh_lobby()
         if (ck != 2 && cown > 0)
             cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
     }
+    std::string gwhat, gto;
+    int gn = A.give ? A.give(gwhat, gto) : 0;
+    bool giving = A.give && !gto.empty() && cl.empty();
+    if (giving) {
+        const char* w = gwhat == "city" ? T("the city whose menu you opened", "город, меню которого открыто")
+                        : gwhat == "vehicle" ? T("selected vehicles: ", "выбрано машин: ")
+                                             : T("selected tribe members: ", "выбрано жителей: ");
+        cl = gn ? std::string(w) + (gwhat == "city" ? "" : std::to_string(gn))
+                : T("Select your units to give them to a partner", "Выделите свои юниты, чтобы отдать напарнику");
+    }
     text(D.creation, cl);
-    bool can = !cl.empty() && ck != 2 && cown > 0;
+    show(D.give_btn, giving && gn > 0);
+    text(D.give_btn, std::string(T("Give to ", "Отдать ")) + gto);
+    bool can = !cl.empty() && !giving && ck != 2 && cown > 0;
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;

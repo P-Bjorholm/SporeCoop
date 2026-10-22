@@ -45,6 +45,10 @@ struct Api {
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;
     std::function<void(int)> creation_cycle;
+    // tribe / civilization: how many own units are selected (what: "member", "vehicle", "city"),
+    // the partner they would go to; give_do gives them
+    std::function<int(std::string& what, std::string& to)> give;
+    std::function<void()> give_do;
     std::function<void(const std::string&)> say;
     std::function<std::vector<std::string>()> chat;
     std::function<std::vector<LanGame>()> lan_games;

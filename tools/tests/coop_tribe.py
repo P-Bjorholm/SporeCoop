@@ -101,6 +101,20 @@ def main():
         m1 = re.search(r'cmds_done=(\d+)', st)
         ck(m0 and m1 and int(m1.group(1)) > int(m0.group(1)),
            'host found the animal and executed the hunt: ' + re.search(r'tribe\(host\).*', st).group(0))
+    # a gift: the guest gives one of its selected members to the host
+    gm = members(guest)
+    mine = [i for i, v in gm.items() if v[0] == 1 and v[3] == 'player']
+    if mine:
+        for i in gm:
+            guest.call(f'coop.tribe select {i} 0')
+        guest.call(f'coop.tribe select {mine[0]} 1')
+        print(' ', guest.call('coop.give')['out'])
+        time.sleep(2)
+        hm = members(host)
+        ck(hm.get(mine[0], (None,))[0] == 0, f'the host owns the gifted member #{mine[0]} now')
+        time.sleep(1)
+        ck(members(guest).get(mine[0], (None,))[0] == 0, 'the guest sees the new owner')
+        ck('gave 1 tribe member' in host.call('coop.status')['out'], 'everybody is told about the gift')
     shot(host, 'tribe_host.png')
     shot(guest, 'tribe_guest.png')
     ck.faults(host=host, guest=guest)

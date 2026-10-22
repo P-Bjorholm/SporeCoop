@@ -673,24 +673,38 @@ void on_frame(void*, int, void*)
 
 int text_width(const std::string& s) { return (int)s.size() * 9; } // Arial 18 bold, approx.
 
-// "look here" marks (coop ping): shown for a few seconds at a world point
+// world marks: "look here" pings and beacons of the stage modules (a city under attack, a
+// partner's ship ...): a label at the world point, an arrow on the screen edge when it is off screen
 struct Mark {
-    std::string who;
+    std::string text;
     net::Vec3 pos;
     uint32_t mode;
     double until;
+    uint32_t argb;
 };
 std::vector<Mark> g_marks;
 
 void add_mark(uint8_t from, const net::Vec3& p, uint32_t mode)
 {
-    g_marks.push_back({g_sess.name_of(from), p, mode, H->time_seconds() + 6.0});
+    g_marks.push_back({"[ ! ] " + g_sess.name_of(from), p, mode, H->time_seconds() + 6.0, 0xFFFFD040});
     feed(g_sess.name_of(from) + " pings a place");
+}
+
+void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uint32_t argb)
+{
+    for (auto& m : g_marks) // the same place again: refresh it
+        if (m.text == text && net::dist(m.pos, p) < 1.f) {
+            m.until = H->time_seconds() + seconds;
+            return;
+        }
+    g_marks.push_back({text, p, g_mode, H->time_seconds() + seconds, argb});
 }
 
 void draw_marks()
 {
     double now = H->time_seconds();
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
     for (size_t i = 0; i < g_marks.size();) {
         if (g_marks[i].until < now) {
             g_marks.erase(g_marks.begin() + i);
@@ -699,12 +713,27 @@ void draw_marks()
         const Mark& m = g_marks[i++];
         if (m.mode != g_mode)
             continue;
-        float w[3] = {m.pos.x, m.pos.y, m.pos.z}, sc[2];
-        if (H->world_to_screen(w, sc)) {
-            bool blink = ((int)(now * 4)) & 1;
-            std::string t = "[ ! ] " + m.who;
-            H->overlay_text((int)sc[0] - text_width(t) / 2, (int)sc[1] - 10, blink ? 0xFFFFD040 : 0xFFFF8020, t.c_str());
+        float w[3] = {m.pos.x, m.pos.y, m.pos.z}, sc[2] = {0, 0};
+        bool blink = ((int)(now * 4)) & 1;
+        uint32_t col = blink ? m.argb : (m.argb & 0xFF000000) | ((m.argb >> 1) & 0x7F7F7F);
+        bool front = H->world_to_screen(w, sc) != 0;
+        if (front && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh) {
+            H->overlay_text((int)sc[0] - text_width(m.text) / 2, (int)sc[1] - 10, col, m.text.c_str());
+            continue;
         }
+        if (sw <= 0)
+            continue;
+        // off screen: an arrow on the edge towards it (behind the camera: at the bottom)
+        float cx = sw / 2.f, cy = sh / 2.f;
+        float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
+        float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
+                           std::fabs(dy) > 0.5f ? (cy - 60) / std::fabs(dy) : 1e9f);
+        if (!front)
+            k = cy - 60;
+        int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+        const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
+        std::string t = std::string(arrow) + " " + m.text;
+        H->overlay_text(x - text_width(t) / 2, y - 10, col, t.c_str());
     }
 }
 
@@ -1522,6 +1551,26 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// the stage action of the co-op window: give the selected own units to a partner
+uint8_t give_target()
+{
+    for (auto& p : g_sess.players())
+        if (p.id != g_sess.my_id())
+            return p.id;
+    return 0xFF;
+}
+
+int give_selected_to(uint8_t to)
+{
+    if (to == 0xFF)
+        return 0;
+    if (g_mode == modes::kTribe)
+        return tribe::give_selected(to);
+    if (g_mode == modes::kCiv)
+        return civ::give_selected(to);
+    return 0;
+}
+
 void init_ui()
 {
     coop_ui::Api a;
@@ -1533,8 +1582,25 @@ void init_ui()
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
     a.connected = [] { return g_sess.connected(); };
     a.session_line = ui_session_line;
+    a.give = [](std::string& what, std::string& to) {
+        uint8_t t = give_target();
+        if (!g_sess.connected() || t == 0xFF)
+            return 0;
+        to = g_sess.name_of(t);
+        int n = 0;
+        if (g_mode == modes::kTribe) {
+            n = tribe::own_selected();
+            what = "member";
+        } else if (g_mode == modes::kCiv) {
+            bool city = false;
+            n = civ::own_selected(&city);
+            what = city ? "city" : "vehicle";
+        }
+        return n;
+    };
+    a.give_do = [] { give_selected_to(give_target()); };
     a.creation = [](int& kind, std::string& name, int& own) {
-        if (!g_sess.connected())
+        if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace))
             return false;
         creations::Kind k = g_mode == modes::kCell ? creations::kCell
                             : g_mode == modes::kSpace ? creations::kUfo : creations::kCreature;
@@ -1715,6 +1781,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tribe::Ctx trc;
     trc.sess = &g_sess;
     trc.feed = feed;
+    trc.notice = [](const std::string& t) { notice(t, -1); };
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
@@ -1734,6 +1801,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         key[0] = k.instance; key[1] = k.type; key[2] = k.group;
         return k.instance != 0;
     };
+    H->command_add(M, "coop.give", "coop.give [player id] - give the selected own tribe members / vehicles (or the opened city)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       uint8_t to = argc > 1 ? (uint8_t)atoi(argv[1]) : give_target();
+                       SAY("given: %d", give_selected_to(to));
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.creations", "coop.creations [list | next|prev <creature|cell|ufo> | choose <kind> <hex>]",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", creations::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
@@ -1805,6 +1879,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     civ::Ctx cvc;
     cvc.sess = &g_sess;
     cvc.feed = feed;
+    cvc.notice = [](const std::string& t) { notice(t, -1); };
     civ::init(H, M, std::move(cvc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;

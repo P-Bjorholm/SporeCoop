@@ -20,9 +20,14 @@ namespace tribe {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
+    std::function<void(const std::string&)> notice; // shown to every player
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
+// own members selected now (the "give" button of the co-op window)
+int own_selected();
+// give the selected own members to another player (the host applies it); returns how many
+int give_selected(uint8_t to);
 void tick(double now);                               // every frame
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
