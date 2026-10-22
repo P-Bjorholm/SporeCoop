@@ -49,6 +49,9 @@ struct Api {
     // the partner they would go to; give_do gives them
     std::function<int(std::string& what, std::string& to)> give;
     std::function<void()> give_do;
+    // civilization: the own role (0 none, 1 military, 2 economic, 3 religious); role_cycle(+1/-1)
+    std::function<int()> civ_role;
+    std::function<void(int)> civ_role_cycle;
     std::function<void(const std::string&)> say;
     std::function<std::vector<std::string>()> chat;
     std::function<std::vector<LanGame>()> lan_games;

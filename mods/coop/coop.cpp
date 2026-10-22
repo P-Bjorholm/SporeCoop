@@ -107,6 +107,7 @@ void feed(const std::string& s)
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
 std::map<uint8_t, bool> g_ready;   // by player id (the host keeps the truth)
+std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host keeps the truth)
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
 bool g_lobby_dirty = false;
 double g_last_lobby = 0;
@@ -505,6 +506,8 @@ void send_lobby()
         int rtt = p.id == 0 ? 0 : g_sess.rtt_of(p.id);
         w.u16((uint16_t)(rtt < 0 ? 0xFFFF : rtt));
     }
+    for (auto& p : pl) // roles after the main table (older guests stop reading before them)
+        w.u8(g_roles[p.id]);
     for (auto& p : pl)
         if (p.id != 0)
             g_sess.send_reliable_to(p.id, net::MSG_LOBBY, w);
@@ -1008,6 +1011,14 @@ void setup_callbacks()
             }
             return;
         }
+        if (type == net::MSG_ROLE && g_sess.role() == net::Role::Host) {
+            uint8_t role = r.u8();
+            if (r.ok() && role < 4) {
+                g_roles[from] = role;
+                g_lobby_dirty = true;
+            }
+            return;
+        }
         if (type == net::MSG_READY && g_sess.role() == net::Role::Host) {
             uint8_t on = r.u8();
             if (r.ok()) {
@@ -1031,6 +1042,12 @@ void setup_callbacks()
                 g_ready = ready;
                 g_ready[g_sess.my_id()] = mine; // our own flag is ours until the host confirms it
                 g_lobby_rtt = rtt;
+                if (r.left() >= ready.size()) {
+                    uint8_t my_role = g_roles[g_sess.my_id()];
+                    for (auto& [id, on] : ready)
+                        g_roles[id] = r.u8();
+                    g_roles[g_sess.my_id()] = my_role;
+                }
             }
             return;
         }
@@ -1146,6 +1163,23 @@ void do_leave()
         despawn(r);
     g_remotes.clear();
     reset_lobby();
+}
+
+const char* role_name(uint8_t r)
+{
+    return r == 1 ? "military" : r == 2 ? "economic" : r == 3 ? "religious" : "none";
+}
+
+void set_role(uint8_t role)
+{
+    g_roles[g_sess.my_id()] = role;
+    if (g_sess.role() == net::Role::Client) {
+        net::Writer w;
+        w.u8(role);
+        g_sess.send_reliable_to(0, net::MSG_ROLE, w);
+    } else
+        g_lobby_dirty = true;
+    notice(g_name + " governs as " + std::string(role_name(role)) + " now", -1);
 }
 
 void set_ready(bool on)
@@ -1599,6 +1633,8 @@ void init_ui()
         return n;
     };
     a.give_do = [] { give_selected_to(give_target()); };
+    a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
+    a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
         if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace))
             return false;
@@ -1801,6 +1837,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         key[0] = k.instance; key[1] = k.type; key[2] = k.group;
         return k.instance != 0;
     };
+    H->command_add(M, "coop.role", "coop.role [0-3] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1)
+                           set_role((uint8_t)(atoi(argv[1]) & 3));
+                       for (auto& p : g_sess.players())
+                           SAY("role %u %s %s\n", p.id, p.name.c_str(), role_name(g_roles[p.id]));
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.give", "coop.give [player id] - give the selected own tribe members / vehicles (or the opened city)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        uint8_t to = argc > 1 ? (uint8_t)atoi(argv[1]) : give_target();
@@ -1880,6 +1925,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     cvc.sess = &g_sess;
     cvc.feed = feed;
     cvc.notice = [](const std::string& t) { notice(t, -1); };
+    cvc.role_of = [](uint8_t id) { return g_roles.count(id) ? g_roles[id] : (uint8_t)0; };
     civ::init(H, M, std::move(cvc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;

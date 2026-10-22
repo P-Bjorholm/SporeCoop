@@ -95,6 +95,12 @@ def main():
     ck(gc[city]['buildings'] == b1g + 1, f'guest city got the host building ({b1g} -> {gc[city]["buildings"]})')
     print(' ', host.call('coop.status')['out'].split('civ(host)')[1].splitlines()[0])
     print(' ', guest.call('coop.status')['out'].split('civ(guest)')[1].splitlines()[0])
+    # roles: the guest governs as economic, everybody knows it
+    guest.call('coop.role 2')
+    time.sleep(2.5)
+    ck(re.search(r'role 1 Bob economic', host.call('coop.role')['out']), 'the host knows the guest role (economic)')
+    ck('governs as economic' in host.call('coop.status')['out'], 'everybody is told about the role')
+
     # a gift: the guest gives its vehicle to the host
     _, hv = civ(host)
     gifts = [i for i, v in hv.items() if v['owner'] == 1]

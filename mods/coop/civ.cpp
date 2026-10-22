@@ -506,17 +506,19 @@ static void trade_tick(double now)
     for (auto& [city, o] : g_city_owner)
         if (o != kShared && o != 0xFF)
             owned.push_back({city, o});
-    int pairs = 0;
+    int pairs = 0, gain = 0;
+    auto economic = [](uint8_t p) { return C.role_of && C.role_of(p) == 2; };
     for (size_t i = 0; i < owned.size(); i++)
-        for (size_t j = i + 1; j < owned.size(); j++)
-            if (owned[i].second != owned[j].second)
+        for (size_t j = i + 1; j < owned.size() && pairs < 8; j++)
+            if (owned[i].second != owned[j].second) {
                 pairs++;
-    pairs = std::min(pairs, 8);
+                // an economic governor at either end doubles the pair (both: triple)
+                gain += kTradePerPair * (1 + economic(owned[i].second) + economic(owned[j].second));
+            }
     g_trade_pairs = pairs;
     if (!pairs)
         return;
     std::string err;
-    int gain = pairs * kTradePerPair;
     if (!shared::debug_add("money", gain, err))
         return;
     g_trade_total += gain;

@@ -385,7 +385,9 @@ static void build_dialog()
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 408, 560, 434}, "", kGold);
     D.creation_prev = add_button(L, "cprev", {570, 404, 640, 434}, "<", [] {
-        if (A.creation_cycle)
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+            A.civ_role_cycle(-1);
+        else if (A.creation_cycle)
             A.creation_cycle(-1);
         g_dirty = true;
     });
@@ -395,7 +397,9 @@ static void build_dialog()
         g_dirty = true;
     });
     D.creation_next = add_button(L, "cnext", {650, 404, 720, 434}, ">", [] {
-        if (A.creation_cycle)
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+            A.civ_role_cycle(1);
+        else if (A.creation_cycle)
             A.creation_cycle(1);
         g_dirty = true;
     });
@@ -517,10 +521,18 @@ static void refresh_lobby()
         cl = gn ? std::string(w) + (gwhat == "city" ? "" : std::to_string(gn))
                 : T("Select your units to give them to a partner", "Выделите свои юниты, чтобы отдать напарнику");
     }
+    bool roles = giving && gn == 0 && A.civ_role && A.mode && A.mode() == 0x1654C04; // civ, nothing selected
+    if (roles) {
+        int r = A.civ_role();
+        const char* rn[4] = {T("none - pick one", "нет - выберите"), T("military (stronger vehicles)", "военная (сильнее машины)"),
+                             T("economic (trade earns more)", "торговая (выгоднее торговля)"),
+                             T("religious (faster conversion)", "религиозная (быстрее обращение)")};
+        cl = std::string(T("My role: ", "Моя роль: ")) + rn[r & 3];
+    }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
     text(D.give_btn, std::string(T("Give to ", "Отдать ")) + gto);
-    bool can = !cl.empty() && !giving && ck != 2 && cown > 0;
+    bool can = (!cl.empty() && !giving && ck != 2 && cown > 0) || roles;
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;
