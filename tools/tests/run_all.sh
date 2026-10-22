@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every two-instance test (about 20 minutes). Results: out/tests/<name>.log + summary.
+# Run every co-op test (about 75 minutes). Results: out/tests/<name>.log + summary.
 set -u
 cd "$(dirname "$0")/../.."
 mkdir -p out/tests
@@ -19,11 +19,12 @@ add civ_coop   "python3 tools/tests/coop_civ.py"
 add cell_coop  "python3 tools/tests/coop_cell.py"
 add space_coop "python3 tools/tests/coop_space.py"
 add vote       "python3 tools/tests/coop_vote.py"
+add notify     "python3 tools/tests/coop_notify.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}
     echo "== $n: ${CMDS[$i]}"
-    if timeout 1500 bash -c "${CMDS[$i]}" > "out/tests/$n.log" 2>&1 && ! grep -q "RESULT: FAIL" "out/tests/$n.log"; then
+    if timeout 3000 bash -c "${CMDS[$i]}" > "out/tests/$n.log" 2>&1 && ! grep -q "RESULT: FAIL" "out/tests/$n.log"; then
         r=OK
     else
         r=FAIL

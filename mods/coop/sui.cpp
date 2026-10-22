@@ -373,6 +373,15 @@ void set_edit_text(Win w, const std::string& t)
 }
 
 // ---------------- images / drawables ----------------
+Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y)
+{
+    uintptr_t a = H->sym("UTFWin::IImageDrawable::AddImageWindow");
+    if (!a || !parent)
+        return nullptr;
+    uint32_t key[3] = {instance, 0x2F7D0004, group};
+    return skg::cdecl_call<Win>(a, key, x, y, parent);
+}
+
 void* image(uint32_t instance, uint32_t type, uint32_t group)
 {
     uint32_t key[3] = {instance, type, group};

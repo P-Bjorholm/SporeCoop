@@ -12,6 +12,8 @@
 
 namespace coop_ui {
 
+static uint32_t g_text_font;
+
 using sui::Rect;
 using sui::Win;
 
@@ -308,6 +310,8 @@ static void build_dialog()
     sui::set_ids(root, kIdDialog, 0);
     Win text_win = sui::find(root, 0x0451D381), login = sui::find(root, 0x0519E168);
     D.font_body = sui::font(text_win);
+    g_text_font = D.font_body;
+    H->log(M, SK_DEBUG, "ui: dialog font %08X", D.font_body);
     D.like_button = login;
     D.font_button = sui::font(login);
     // keep the frame, glow, logo and close button; hide the account dialog's own content
@@ -619,5 +623,7 @@ std::string debug_state()
     s += "status '" + g_status + "'\n";
     return s;
 }
+
+uint32_t text_font() { return g_text_font; }
 
 } // namespace coop_ui

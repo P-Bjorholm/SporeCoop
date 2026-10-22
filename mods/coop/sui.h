@@ -93,6 +93,8 @@ void set_edit_text(Win edit, const std::string& text);
 // ---- images and button looks ----
 // Image* from a package (png), nullptr if missing. The caller owns one reference.
 void* image(uint32_t instance, uint32_t type, uint32_t group);
+// a window showing a png from a package at its own size (IImageDrawable::AddImageWindow)
+Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y);
 // a new SporeStdDrawable copying `src` (a SporeStdDrawable) with another icon image
 void* std_drawable_with_icon(void* src, void* icon);
 void set_drawable(Win w, void* drawable);

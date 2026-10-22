@@ -29,6 +29,7 @@
 #include "net/discovery.h"
 #include "net/interp.h"
 #include "net/session.h"
+#include "notify.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 
@@ -98,6 +99,7 @@ void feed(const std::string& s)
     while (g_feed.size() > 8)
         g_feed.pop_front();
     LOG("%s", s.c_str());
+    notify::show(s); // a notification panel; the full history is in the co-op window
 }
 
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
@@ -518,6 +520,7 @@ void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
     g_last_frame = now;
+    notify::tick(now);
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
@@ -758,14 +761,7 @@ void on_overlay(void*, int, void*)
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
         y += 20;
     }
-    double now = H->time_seconds();
-    y += 8;
-    for (auto& [t, s] : g_feed) {
-        if (now - t > 12)
-            continue;
-        H->overlay_text(x, y, 0xFFB0E0FF, s.c_str());
-        y += 20;
-    }
+    // notices are notification panels now (notify.cpp); the history is in the co-op window
 }
 
 void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool to_target)
@@ -1130,6 +1126,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", npc::status().c_str());
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
+    SAY("%s", notify::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
@@ -1407,6 +1404,23 @@ std::vector<std::pair<std::string, net::Vec3>> partners()
 
 int c_team(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "come")) { // tests: our creature next to the first partner
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet && g_local && g_mode == modes::kCreature) {
+                net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+                net::Vec3 me = modes::entity_pos(g_adapter, g_local);
+                float d = net::dist(p, me);
+                // 3 m from the partner, on our side of it
+                net::Vec3 at = d > 0.1f ? net::Vec3{p.x + (me.x - p.x) * 3.f / d, p.y + (me.y - p.y) * 3.f / d,
+                                                    p.z + (me.z - p.z) * 3.f / d}
+                                        : p;
+                game::teleport(g_local, at, net::Quat{0, 0, 0, 1});
+                SAY("moved next to %s (%.1f m away before)", r.name.c_str(), d);
+                return 0;
+            }
+        SAY("no partner");
+        return 1;
+    }
     if (argc > 1)
         teamplay::set_enabled(strcmp(argv[1], "off") != 0);
     SAY("teamplay %s\n%s", teamplay::enabled() ? "on" : "off", teamplay::status().c_str());
@@ -1474,6 +1488,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 void on_unload()
 {
     keepalive_stop();
+    notify::shutdown();
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
@@ -1588,6 +1603,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.sess = &g_sess;
     trc.feed = feed;
     tribe::init(H, M, std::move(trc));
+    notify::init(H, M, [] { return coop_ui::text_font(); });
+    H->command_add(M, "coop.notify", "coop.notify <text> - show a co-op notification (game event log)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string t;
+                       for (int i = 1; i < argc; i++)
+                           t += (i > 1 ? " " : "") + std::string(argv[i]);
+                       feed(t);
+                       SAY("%s", notify::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     cellsync::Ctx cc;
     cc.sess = &g_sess;
     cc.partners = partners;

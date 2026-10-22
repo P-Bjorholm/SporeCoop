@@ -88,3 +88,10 @@ Simulator::cToolManager::FireTool=0x01050080 ; verified thiscall(toolMgr, tool, 
 Simulator::DestroyUFO=0x0102C350 ; verified cdecl(ufo, bool)
 FNV_hash=0x00932E50 ; verified cdecl(const char* name, u32 seed 0x811C9DC5, int 1) -> u32 effect id
 Simulator::Cell::cCellGFX::InstanceEffectOnCell=0x00E66850 ; verified cdecl(cell*, u32 effect id) -> IVisualEffect* (one-shot, caller may ignore)
+App::FrameLimit_ptr=0x015FE910 ; verified: [[ptr]+0x3C]+0xB0 = frame time limit in ms (33 = 30 fps cap; main loop 0xF477D0 sleeps the rest of the frame)
+Simulator::cUIEventLog::Get=0x00B3D4B0 ; verified cdecl -> *0x167FB04
+Simulator::cUIEventLog::ShowEvent=0x00DD8640 ; verified thiscall(log, instance, group, int, Vector3*, bool, int) ret 0x18 -> event id
+Simulator::cUIEventLog::SetDescription=0x00DD6DF0 ; verified thiscall(log, event id, const char16_t*) ret 8
+Simulator::cUIEventLog::HideEvent=0x00DD6D10 ; verified thiscall(log, event id, bool) ret 8
+Simulator::Cell::SimUpdate=0x00E7F3A0 ; verified cdecl(float dt): one cell world step (moves, turns, physics); GFX update runs after it
+UTFWin::IImageDrawable::AddImageWindow=0x008078E0 ; verified cdecl(const ResourceKey* {instance,type,group} (png), float x, float y, IWindow* parent) -> IWindow* sized to the image

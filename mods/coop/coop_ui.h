@@ -58,4 +58,7 @@ void shutdown(); // mod unload: hide our windows
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 
+// the dialog text font (0 until the co-op window was built once)
+uint32_t text_font();
+
 } // namespace coop_ui
