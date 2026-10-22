@@ -16,6 +16,7 @@ static std::function<uint32_t()> g_font;
 static std::mutex g_mu;
 static std::deque<std::string> g_queue; // waiting to be built (outside the frame)
 static bool g_build_queued, g_anim_queued;
+static double g_last_frame; // UI is touched only while frames run (not under a modal game box)
 static unsigned g_shown, g_failed;
 
 constexpr float kW = 560, kH = 58, kGap = 8, kMargin = 24;
@@ -92,14 +93,18 @@ static void remove(Toast& t)
     t.w = nullptr;
 }
 
+static bool frames_running() { return H->time_seconds() - g_last_frame < 0.25; }
+
 // outside the frame: build the queued panels
 static void build(void*)
 {
     std::deque<std::string> q;
     {
         std::lock_guard<std::mutex> lk(g_mu);
-        q.swap(g_queue);
         g_build_queued = false;
+        if (!frames_running()) // a modal box (e.g. "game saved") holds the frames: later (tick)
+            return;
+        q.swap(g_queue);
     }
     sui::Win root = sui::main_window();
     if (root != g_root) { // another main window (should not happen): forget the old panels
@@ -151,7 +156,7 @@ static void build(void*)
 static void animate(void*)
 {
     g_anim_queued = false;
-    if (!g_root || g_toasts.empty())
+    if (!g_root || g_toasts.empty() || !frames_running())
         return;
     float sw, sh;
     screen(sw, sh);
@@ -194,14 +199,22 @@ void show(const std::string& text)
     g_queue.push_back(text);
     while (g_queue.size() > kMaxVisible)
         g_queue.pop_front();
-    if (!g_build_queued) {
+    if (!g_build_queued && frames_running()) {
         g_build_queued = true;
         H->run_outside_frame(build, nullptr); // UI windows are never built inside Present
     }
 }
 
-void tick(double)
+void tick(double now)
 {
+    g_last_frame = now;
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        if (!g_queue.empty() && !g_build_queued) {
+            g_build_queued = true;
+            H->run_outside_frame(build, nullptr);
+        }
+    }
     if (!g_toasts.empty() && !g_anim_queued) {
         g_anim_queued = true;
         H->run_outside_frame(animate, nullptr);

@@ -1404,6 +1404,11 @@ std::vector<std::pair<std::string, net::Vec3>> partners()
 
 int c_team(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "hp") && g_local && g_mode == modes::kCreature) { // tests
+        game::set_health(g_local, (float)atof(argv[2]));
+        SAY("hp set");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "come")) { // tests: our creature next to the first partner
         for (auto& [id, r] : g_remotes)
             if (r.puppet && g_local && g_mode == modes::kCreature) {
