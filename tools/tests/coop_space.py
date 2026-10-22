@@ -17,7 +17,7 @@ def ships(con):
 
 
 def num(con, key):
-    m = re.search(key + r'=(\d+)', con.call('coop.status')['out'])
+    m = re.search(r'space\(\w+\):.*?' + key + r'=(\d+)', con.call('coop.status')['out'])
     return int(m.group(1)) if m else -1
 
 

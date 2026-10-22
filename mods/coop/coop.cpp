@@ -28,6 +28,7 @@
 #include "net/interp.h"
 #include "net/session.h"
 #include "sporekit.h"
+#include "sporekit_game.hpp"
 
 static const SkHost* H;
 static SkMod* M;
@@ -266,6 +267,96 @@ void notice(const std::string& text, int from); // feed + chat log on every play
 uint32_t g_last_stage = 0;  // last stage the local player played
 bool g_was_in_editor = false;
 
+// ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
+// until every player is ready (or 60 s / "Start now"), then the game goes on ----
+struct Vote {
+    bool active = false;
+    void* request = nullptr; // Editors::EditorRequest*, one reference held
+    double t0 = 0;
+    std::string text;
+    int left = 0;
+};
+Vote g_vote;
+bool g_vote_bypass = false;
+double g_vote_last_send = 0;
+using Submit_t = bool(SK_CDECL*)(void*);
+Submit_t o_Submit;
+void broadcast_vote();
+void set_ready(bool on);
+
+bool SK_CDECL h_Submit(void* req)
+{
+    uint32_t mode = game::mode_id();
+    if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
+        if (g_sess.role() == net::Role::Host) {
+            if (!g_vote.active) {
+                skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
+                g_vote = Vote{true, req, H->time_seconds(), g_name + " wants to evolve (" + modes::mode_name(mode) + ")", 60};
+                for (auto& p : g_sess.players())
+                    g_ready[p.id] = p.id == 0;
+                g_lobby_dirty = true;
+                broadcast_vote();
+                notice(g_vote.text + ": press I'm ready (F9)", -1);
+                coop_ui::open(true);
+            }
+            return false; // runs when the vote is over
+        }
+        notice(g_name + " is in the editor: the host's evolution is the one everybody gets", -1);
+        set_ready(true);
+    }
+    return o_Submit(req);
+}
+
+void finish_vote(const char* why)
+{
+    if (!g_vote.active)
+        return;
+    void* req = g_vote.request;
+    g_vote.active = false;
+    broadcast_vote();
+    notice(std::string("evolution starts (") + why + ")", -1);
+    if (req) // editors create D3D resources: outside the frame
+        H->run_outside_frame(
+            [](void* r) {
+                g_vote_bypass = true;
+                o_Submit(r);
+                g_vote_bypass = false;
+                skg::vcall<int>(r, 2); // Release
+            },
+            req);
+}
+
+void broadcast_vote()
+{
+    if (g_sess.role() != net::Role::Host)
+        return;
+    net::Writer w;
+    w.u8(g_vote.active ? 1 : 0);
+    w.u8((uint8_t)std::max(0, g_vote.left));
+    w.str8(g_vote.text);
+    g_sess.broadcast_reliable(net::MSG_VOTE, w);
+}
+
+void vote_tick(double now)
+{
+    if (!g_vote.active || g_sess.role() != net::Role::Host)
+        return;
+    g_vote.left = (int)(60 - (now - g_vote.t0));
+    bool all = true;
+    for (auto& p : g_sess.players())
+        all &= g_ready.count(p.id) && g_ready[p.id];
+    if (all)
+        finish_vote("everybody is ready");
+    else if (g_vote.left <= 0)
+        finish_vote("time is up");
+    else if (g_sess.players().size() <= 1)
+        finish_vote("alone");
+    else if (now - g_vote_last_send > 1.0) {
+        g_vote_last_send = now;
+        broadcast_vote();
+    }
+}
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
     bool editor = to == modes::kEdit || to == modes::kEditor;
@@ -378,6 +469,7 @@ void on_frame(void*, int, void*)
     double now = H->time_seconds();
     g_sess.update();
     lobby_tick(now);
+    vote_tick(now);
     coop_ui::tick();
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
@@ -738,6 +830,22 @@ void setup_callbacks()
             q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
             if (r.ok() && game::avatar())
                 game::set_time_of_day(q);
+            return;
+        }
+        if (type == net::MSG_VOTE && g_sess.role() == net::Role::Client) {
+            bool on = r.u8() != 0;
+            int left = r.u8();
+            std::string text = r.str8();
+            if (!r.ok())
+                return;
+            bool started = on && !g_vote.active;
+            g_vote.active = on;
+            g_vote.left = left;
+            g_vote.text = text;
+            if (started) {
+                g_ready[g_sess.my_id()] = false;
+                coop_ui::open(true);
+            }
             return;
         }
         if (type == net::MSG_NOTICE) {
@@ -1190,6 +1298,16 @@ std::string ui_session_line()
 
 std::string ui_world_line()
 {
+    if (g_vote.active) {
+        int ready = 0, n = 0;
+        for (auto& p : g_sess.players()) {
+            n++;
+            ready += g_ready.count(p.id) && g_ready[p.id];
+        }
+        char b[200];
+        snprintf(b, sizeof b, "%s - ready %d/%d - %d s", g_vote.text.c_str(), ready, n, g_vote.left);
+        return b;
+    }
     uint32_t got = 0, total = 0;
     if (g_sess.role() == net::Role::Client && world::progress(got, total) && total > 0) {
         char b[160];
@@ -1241,7 +1359,13 @@ void init_ui()
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
     a.set_ready = set_ready;
-    a.share_world = [] { share_all(); };
+    a.share_world = [] {
+        if (g_vote.active)
+            finish_vote("the host started it");
+        else
+            share_all();
+    };
+    a.vote_active = [] { return g_vote.active; };
     a.say = [](const std::string& t) {
         if (g_sess.connected())
             g_sess.send_chat(t);
@@ -1359,6 +1483,41 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.notice = [](const std::string& t) { notice(t, -1); };
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
+    if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
+        H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
+                           g_vote = Vote{true, nullptr, H->time_seconds(), g_name + " wants to evolve (test)", 60};
+                           for (auto& p : g_sess.players())
+                               g_ready[p.id] = p.id == 0;
+                           g_lobby_dirty = true;
+                           broadcast_vote();
+                           coop_ui::open(true);
+                       } else if (argc > 1 && !strcmp(argv[1], "editor")) {
+                           // open the creature editor like ModAPI mods do (EditorRequest + Submit)
+                           uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
+                           void* av = game::avatar();
+                           if (!ctor || !submit || !av) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           // the game's operator new (0xF47240: size, name, 0, 0, 0, 0), as at 0xD42F1E
+                           void* req = skg::cdecl_call<void*>(H->rebase(0xF47240), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+                           skg::thiscall<void*>(ctor, req);
+                           skg::field<uint32_t>(req, 0xC) = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0x465C50BAu;
+                           game::Key k = game::species_key(av);
+                           skg::field<uint32_t>(req, 0x10) = k.instance;
+                           skg::field<uint32_t>(req, 0x14) = k.type;
+                           skg::field<uint32_t>(req, 0x18) = k.group;
+                           bool r = skg::cdecl_call<bool>(submit, req);
+                           SAY("editor request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "go"))
+                           finish_vote("the host started it");
+                       SAY("vote %s: %s (%d s)", g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left);
+                       return 0;
+                   },
+                   nullptr, MT);
     tribe::Ctx trc;
     trc.sess = &g_sess;
     trc.feed = feed;

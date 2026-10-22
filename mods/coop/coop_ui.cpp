@@ -480,6 +480,7 @@ static void refresh_lobby()
     bool host = A.role() == 1;
     text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
     show(D.share_btn, host);
+    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
     text(D.leave_btn, host ? T("Stop hosting", "Закрыть игру") : T("Leave", "Выйти"));
 }
 
@@ -611,6 +612,8 @@ std::string debug_state()
             s += "chat '" + sui::caption(D.chat_lines[i]) + "'\n";
     if (D.session)
         s += "session '" + sui::caption(D.session) + "'\n";
+    if (D.world)
+        s += "world '" + sui::caption(D.world) + "'\n";
     if (D.lan_hdr)
         s += "lan '" + sui::caption(D.lan_hdr) + "'\n";
     s += "status '" + g_status + "'\n";

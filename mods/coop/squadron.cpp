@@ -442,8 +442,8 @@ std::string debug(const std::vector<std::string>& a)
                      dir, (uint8_t*)me + kCombat);
         return "shot";
     }
-    if (a.size() >= 2 && a[0] == "spawn") { // spawn <type>: a ship of our empire next to us (tests)
-        uint32_t pol = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
+    if (a.size() >= 2 && a[0] == "spawn") { // spawn <type>: a ship without an empire (pirate) next to us
+        uint32_t pol = 0xFFFFFFFFu;
         void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol, (void*)&F<uint32_t>(me, kModel));
         if (!u)
             return "spawn failed";

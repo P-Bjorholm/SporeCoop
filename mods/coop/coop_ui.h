@@ -39,7 +39,8 @@ struct Api {
     std::function<std::string()> world_line; // transfer progress / hints, "" if nothing
     std::function<bool()> ready;
     std::function<void(bool)> set_ready;
-    std::function<void()> share_world; // host
+    std::function<void()> share_world; // host (during a vote: start the evolution now)
+    std::function<bool()> vote_active;
     std::function<void(const std::string&)> say;
     std::function<std::vector<std::string>()> chat;
     std::function<std::vector<LanGame>()> lan_games;

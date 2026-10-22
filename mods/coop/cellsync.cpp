@@ -37,7 +37,13 @@ static uint8_t* G() { return modes::cell_game(); }
 static uint32_t avatar_idx() { return G() ? F<uint32_t>(G(), 0x411C) : 0; }
 static uint8_t* avatar() { return G() ? modes::cell_at(avatar_idx()) : nullptr; }
 static void* fg_query() { return G() ? F<void*>(G(), 0x40FC) : nullptr; }
-static uint8_t* S() { return a_S ? *(uint8_t**)a_S : nullptr; }
+// cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer)
+static uint8_t* S()
+{
+    uint8_t* g = G();
+    uint8_t* s = g ? F<uint8_t*>(g, 0x5190) : nullptr;
+    return s ? s : (a_S ? *(uint8_t**)a_S : nullptr);
+}
 
 // every live foreground cell (gameplay layer), avatar excluded
 template <typename Fn>

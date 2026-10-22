@@ -13,6 +13,12 @@ add civ        "python3 tools/tests/coop_mode.py --fixture civ --planet Game0/Ag
 add space      "python3 tools/tests/coop_mode.py --fixture space --planet Game0/Maraya"
 add phase      "python3 tools/tests/coop_phase.py"
 add ui         "python3 tools/tests/coop_ui.py"
+add team       "python3 tools/tests/coop_team.py"
+add tribe_coop "python3 tools/tests/coop_tribe.py"
+add civ_coop   "python3 tools/tests/coop_civ.py"
+add cell_coop  "python3 tools/tests/coop_cell.py"
+add space_coop "python3 tools/tests/coop_space.py"
+add vote       "python3 tools/tests/coop_vote.py"
 summary=""
 for i in "${!NAMES[@]}"; do
     n=${NAMES[$i]}

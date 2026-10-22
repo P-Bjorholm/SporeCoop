@@ -71,7 +71,7 @@ class Ui:
                 st['rows'].append([p for p in rest.split("'")[1::2]])
             elif key == 'chat':
                 st['chat'].append(rest.strip("'"))
-            elif key in ('session', 'lan', 'status'):
+            elif key in ('session', 'lan', 'status', 'world'):
                 st[key] = rest.strip("'")
             else:
                 f = rest.split(' ', 5)

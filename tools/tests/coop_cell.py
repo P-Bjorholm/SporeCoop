@@ -8,7 +8,7 @@ from twoinst import Checks, shot, start
 
 
 def pool(con):
-    out = con.call('coop.pool')['out']
+    out = con.call('coop.pool')['out']  # avatar line + the cell(...) status line only
     d = {}
     for k in ('hp', 'local_gameplay_cells', 'food', 'mirrors', 'hits_in', 'hits_sent', 'rescues', 'purged'):
         m = re.search(k + r'=(-?\d+)', out)
