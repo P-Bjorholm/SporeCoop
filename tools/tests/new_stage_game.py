@@ -2,10 +2,14 @@
 """Start a new game at any stage from the galaxy menu via the stage chooser (cheat levels -unlock).
 
 Coordinates are for the 1440x1080 windowed test profile. Usage:
-  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y]
+  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y | --slot N]
+The planet slot is found in the galaxy menu by itself: every slot ring has a 48x48 UI window
+with id 0x02E5A4A8 (coop.ui tree); --slot N takes the N-th of them, --slot X,Y a screen point.
+Use a profile without saves (an empty Games folder): a slot with a save would load that save.
 """
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -31,11 +35,38 @@ STEPS = {
 }
 
 
+SLOT_WINDOW = "0x02E5A4A8"  # the hotspot over a planet slot ring in the galaxy menu
+
+
+def slot_centers(c):
+    """screen centers of the planet slots in the galaxy menu (placed ones only)"""
+    out = []
+    for line in c.cmd("coop.ui tree 3").splitlines():
+        m = re.search(r"id=" + SLOT_WINDOW + r" .*?\[(-?\d+) (-?\d+) (-?\d+) (-?\d+)\]", line)
+        if m:
+            x0, y0, x1, y1 = map(int, m.groups())
+            if x0 > 0 and y0 > 0:  # one hotspot waits unplaced at [0 0 48 48]
+                out.append(((x0 + x1) // 2, (y0 + y1) // 2))
+    return out
+
+
+def find_slot(c, index):
+    """the index-th slot once the galaxy stopped moving (two equal reads)"""
+    last = None
+    for _ in range(60):
+        cur = slot_centers(c)
+        if cur and cur == last and len(cur) > index:
+            return cur[index]
+        last = cur
+        c.cmd("wait.frames 30 20000")
+    raise SystemExit(f"no planet slot in the galaxy menu (got {last})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=sorted(STAGE_ICON))
     ap.add_argument("-i", type=int, default=lane.HOST)
-    ap.add_argument("--slot", default="480,290", help="empty planet slot in the galaxy menu")
+    ap.add_argument("--slot", default="0", help="planet slot: its index in the galaxy menu or a point X,Y")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
     a = ap.parse_args()
     for _ in range(120):  # the game is up (its console answers)
@@ -52,7 +83,11 @@ def main():
         time.sleep(1)
     c.cmd("wait.frames 600 120000")  # a fresh profile flies into the galaxy first (~15 s)
     c.cmd("cheat levels -unlock")
-    sx, sy = map(int, a.slot.split(","))
+    if "," in a.slot:
+        sx, sy = map(int, a.slot.split(","))
+    else:
+        sx, sy = find_slot(c, int(a.slot))
+    print("planet slot at", sx, sy)
     c.cmd(f"click {sx} {sy}")
     c.cmd("wait.frames 150 60000")
     x, y = STAGE_ICON[a.stage]
