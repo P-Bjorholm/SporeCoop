@@ -35,7 +35,7 @@ from twoinst import Checks, Monitor, shot, start
 
 SOCIAL_BTN, ATTACK_BTN = (725, 1030), (795, 1030)  # tribe UI interaction mode (1440x1080)
 MINIMAP = (110, 980)                               # a point inside the minimap
-PLAN = ['gather', 'hunt', 'raid', 'gather', 'social', 'gather', 'raid', 'hunt']
+PLAN = ['gather', 'hunt', 'raid', 'gather', 'social', 'hunt', 'gather', 'raid']
 
 
 def tribe_state(con):
@@ -233,7 +233,10 @@ class Game:
         self.rejected0 = counter(status(host), 'rejected')
         self.attacked = {}
         self.both_attacked = 0
-        self.plan_i, self.plan_until = 0, 0
+        self.plan_i, self.plan_until = -1, 0
+        self.maxhp = {}
+        self.dead_since = None
+        self.game_overs = 0
         self.phases = []
         self.pending_gift = None
 
@@ -258,14 +261,22 @@ class Game:
         partner = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] not in (pl.pid, 254, -1)]
         now = time.time()
         idle = [i for i in mine if pl.busy.get(i, 0) < now]
+        for i, v in st.items():
+            self.maxhp[i] = max(self.maxhp.get(i, 0), v['hp'])
+        alive = [i for i, v in st.items() if v['tribe'] == 'p' and v['hp'] > 0]
+        hurt = [i for i in idle if st[i]['hp'] < 0.6 * self.maxhp.get(i, 1)]
         plan = self.plan()
         kind = plan if rng.random() < 0.75 else rng.choice(['gather', 'hunt', 'partner', 'camera', 'give', 'walk'])
-        if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk') and not idle:
+        if kind in ('raid', 'epic') and (len(alive) < 4 or len(idle) < 2):
+            kind = 'gather'  # too few to fight: friends gather first
+        if hurt and rng.random() < 0.7:
+            kind, idle = 'heal', hurt
+        if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk', 'heal') and not idle:
             kind = rng.choice(['partner', 'camera', 'wait', 'wait'])
         pl.note(kind)
         centres = tribe_centres(self.host)  # where the tribes live (a player sees them on the minimap)
         enemies = [t for t in centres if t != 'p']
-        if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk'):
+        if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk', 'heal'):
             group = kind in ('raid', 'epic') or (kind == 'hunt' and rng.random() < 0.5)
             sel = self.select_idle(pl, st, idle, group)
             if not self.check_sel(pl, sel, st):
@@ -292,7 +303,7 @@ class Game:
                 hits[pl.pid] = time.time()
                 if len([t for t in hits.values() if time.time() - t < 10]) >= 2:
                     self.both_attacked += 1
-            self.click_order(pl, kind, sel, rng.choice(tg), busy={'gather': 40, 'hunt': 25}.get(kind, 30))
+            self.click_order(pl, kind, sel, rng.choice(tg), busy={'gather': 40, 'hunt': 25, 'heal': 30}.get(kind, 30))
         elif kind == 'partner':  # real clicks on the partner's members: they must never get selected
             pm = [o for o in pl.on_screen(screen(pl.con)) if o[0].startswith('member') and int(o[0][6:]) in partner]
             if not pm and partner:
@@ -326,9 +337,11 @@ class Game:
                 pl.do(f'key {k} down')
                 time.sleep(rng.uniform(0.2, 0.6))
                 pl.do(f'key {k} up')
-            else:
+            else:  # the minimap turns with the view: look where it points again
                 x = rng.randint(400, self.w - 400)
                 pl.do(f'drag {x} 600 {x + rng.choice([-200, 200])} 600 right')
+                time.sleep(0.8)
+                pl.calibrate()
         elif kind == 'give' and len(mine) > 2:  # one own member to the partner: select, F9, give
             sel = self.select_idle(pl, st, mine, False)
             if len(sel) == 1:
@@ -361,6 +374,8 @@ class Game:
         """(world point to look at, which screen object to right-click)"""
         if kind == 'gather':
             return centres.get('p'), lambda o: o[0] in ('tree', 'o2C9CC91')
+        if kind == 'heal':  # eat at the own food mat (CitizenAction 0): hurt members heal there
+            return centres.get('p'), lambda o: o[0] == 'o629BAFE'
         if kind in ('raid', 'social'):
             if not enemies:
                 return None, None
@@ -449,6 +464,22 @@ class Game:
                 self.food_rises += 1
             self.food.append((time.time(), fh, fg))
         hs, gs = tribe_state(self.host), tribe_state(self.guest)
+        # the tribe died out: the game shows "Alas! Your population has fallen below the minimum..."
+        # and waits for OK, which bounces back to the last save (the host's world; the guest follows)
+        if not [i for i, v in hs.items() if v['tribe'] == 'p' and v['hp'] > 0]:
+            self.dead_since = self.dead_since or time.time()
+            if time.time() - self.dead_since > 15:
+                self.log.append(f'{time.strftime("%H:%M:%S")} host: key enter (game over: bounce back)')
+                self.host.call('key enter')
+                self.game_overs += 1
+                self.dead_since = None
+                time.sleep(12)
+                for p in self.p:
+                    p.cur = None
+                    p.busy.clear()
+                hs, gs = tribe_state(self.host), tribe_state(self.guest)
+        else:
+            self.dead_since = None
 
         def roster(s):
             return {i: v['owner'] for i, v in s.items() if v['tribe'] == 'p'}
@@ -532,7 +563,7 @@ def main():
     for p in g.p:
         g.check_orders(p, final=True)
     st1, gst = status(host), status(guest)
-    print(f'  played {played / 60:.1f} min, {n} actions; plan: '
+    print(f'  played {played / 60:.1f} min, {n} actions, game overs {g.game_overs}; plan: '
           + ' '.join(f'{(t - t0) / 60:.1f}:{k}' for t, k in g.phases), flush=True)
     for p in g.p:
         print(f'  {p.name}: ' + ' '.join(f'{k}={v}' for k, v in sorted(p.count.items())), flush=True)
