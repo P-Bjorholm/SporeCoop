@@ -51,8 +51,9 @@ pirates, 14 on: the final bot). Earlier sessions (seeds 1-9) found bug 1 and sha
 | 16 | 12 | 267 s | 0.3 / 2.1 / 4.9 m | 224 (0), 3 | 25 / 6 | 0 | 1 | 0 / 0 | 0 | 0 |
 | 17 | 12 | 432 s | 0.4 / 2.8 / 412 m (one sample) | 222 (0), 0 | 270 / 209 | 141 | 1 | 6 / 6 | 6 / 2 | 0 |
 | 18 | 12 | 406 s | 0.2 / 2.2 / 4.7 m | 224 (0), 2 | 80 / 24 | 0 | 0 | 0 / 0 | 0 | 0 |
+| 19 | 12 | 211 s | 0.4 / 3.5 / 5.5 m | 225 (0), 2 | 148 / 63 | 52 | 4 | 2 / 2 | 2 / 0 | 0 |
 
-In all: ~2 hours of play, 0 faults, 0 freezes or crashes, 0 money differences, every death
+In all: ~2 hours 10 minutes of play, 0 faults, 0 freezes or crashes, 0 money differences, every death
 respawned (1-6 s after OK on the death caption), every disabled ship either repaired by the partner
 or lost after 20 s and respawned.
 
