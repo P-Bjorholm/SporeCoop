@@ -47,8 +47,8 @@ anything new, write it down in the same change.**
   changes), single tests by name. Lanes are independent copies of the game + bottle
   (`tools/spore.sh lane create N`); `SPORE_LANE=N` selects one for manual runs.
 * The dev loop without restarting the games: `tools/lab.py reload` (build + hot reload of coop.dll).
-* Tests must not touch the player's own Spore profile (only the test profiles), run muted and on
-  the second monitor.
+* Tests must not touch the player's own Spore profile (only the test profiles), run muted and on their own
+  workspace (agent-ws project `sporecoop`, see docs/06-testing.md).
 * Pitfalls: `pkill -f <pattern>` from a shell whose own command line contains the pattern kills
   that shell; quitting one Wine instance kills every instance in the same bottle (lanes have own
   bottles); a deadlocked Wine process can keep its port — `spore.sh kill` SIGKILLs it.
@@ -61,6 +61,8 @@ anything new, write it down in the same change.**
 * Small commits after each logical step, English messages and comments; a pull request per branch
   with the lab summary (`out/lab/<run>/summary.md`).
 * Everything published (README, docs, release notes) is in English.
+* No em dash (U+2014) in any text: code comments, commits, docs, README, release notes, UI. Use a
+  colon, comma, parentheses, a period or a plain hyphen.
 * Merge locally (`git merge --ff-only` or a local merge commit) and push `main`; do not use GitHub's
   merge button: it writes the account's e-mail into the merge commit. Commits use the GitHub
   no-reply address.

@@ -105,6 +105,13 @@ open(p, 'w').write('\n'.join(out) + '\n')
 PY
 }
 
+# a [sporekit] setting in the lane's mods/sporekit.ini (created by deploy)
+sk_ini_set() {
+    local f="$MODS/sporekit.ini"
+    [[ -f "$f" ]] || return 0
+    if grep -q "^$1=" "$f"; then sed -i "s/^$1=.*/$1=$2/" "$f"; else sed -i "/^\[sporekit\]/a $1=$2" "$f"; fi
+}
+
 cmd_run() {
     local inst=1 profile=""
     while [[ $# -gt 0 ]]; do
@@ -126,6 +133,12 @@ cmd_run() {
     [[ -f "$BIN/SporeApp.exe" ]] || { echo "no game at $BIN (lane $LANE: spore.sh lane create $LANE)" >&2; exit 1; }
     nohup flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
         -e "$BIN/SporeApp.exe" -- "${args[@]}" > "$ROOT/out/run.$inst.log" 2>&1 &
+    if command -v agent-ws >/dev/null; then
+        # the game windows go to the "sporecoop" project's own workspace (agent-ws): Bottles drops
+        # the environment that agent-ws launch would mark them with, so find them by process
+        sk_ini_set test_monitor off
+        nohup "$ROOT/tools/assign_windows.py" sporecoop "$(basename "$GAME")" "${args[*]:-}" > /dev/null 2>&1 &
+    fi
     echo "started instance $inst ${profile:+profile $profile }(bottles log: out/run.$inst.log)"
 }
 

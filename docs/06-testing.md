@@ -35,12 +35,16 @@ tools/sporectl.py coop.load Game0 Planet   # load a profile save directly from t
 ```
 
 Test runs don't get in the way of whoever is at the computer:
-* **muted** — `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
+* **muted**: `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
   profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
   the mute by application name and apply it to normal play too);
-* **on the second monitor** — in test runs SporeKit moves the game window to a non-primary
-  monitor (instance 1 to the left edge, the rest to the right) without stealing focus.
-  `[sporekit] test_monitor = auto|primary|off` in `mods/sporekit.ini`; command `window [x y|test]`.
+* **on their own workspace**: on a desktop with the agent-ws GNOME extension (agent-ws on the
+  developer's machine), `spore.sh run` moves every test game window into the agent-ws project
+  `sporecoop` (its own workspace) through `tools/assign_windows.py`. Bottles drops the environment
+  marker of `agent-ws launch`, so the window is found by its Wine process (lane folder and
+  arguments in the command line); the player's own game is never touched. SporeKit's own placement
+  is then off (`[sporekit] test_monitor = off`); without agent-ws it moves test windows to a
+  non-primary monitor (`test_monitor = auto|primary|off`, command `window [x y|test]`).
 
 ## 6.3 Development loop
 
