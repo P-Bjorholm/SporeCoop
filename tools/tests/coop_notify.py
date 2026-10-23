@@ -10,8 +10,9 @@ import subprocess
 import sys
 import time
 
-from twoinst import Checks, ROOT, shot, wait_up
+from twoinst import Checks, shot, wait_up
 from sporectl import Console
+import lane
 
 FIXTURES = {  # stage -> (fixture, planet)
     'cell': ('cell', 'Game0/Karke'),
@@ -20,21 +21,20 @@ FIXTURES = {  # stage -> (fixture, planet)
     'civ': ('civ', 'Game0/Agrauel'),
     'space': ('space', 'Game0/Maraya'),
 }
-SPORE = os.path.join(ROOT, 'tools', 'spore.sh')
 
 
 def sh(*a):
-    subprocess.run([SPORE, *a], check=True, stdout=subprocess.DEVNULL)
+    lane.sh(*a)
 
 
 def start(fixture, planet):
     sh('kill')
     time.sleep(2)
     sh('deploy')
-    sh('fixture', 'restore', fixture, 'test')
-    sh('run', '-p', 'test')
-    assert wait_up(1), 'the game did not start'
-    c = Console(1)
+    sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
+    lane.run_host()
+    assert wait_up(lane.HOST), 'the game did not start'
+    c = Console(lane.HOST)
     if planet:
         for _ in range(180):
             if 'GalaxyGameEntry' in c.call('game.mode')['out']:
@@ -44,8 +44,8 @@ def start(fixture, planet):
         slot, name = planet.split('/')
         c.call(f'coop.load {slot} {name}')
     else:
-        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), 'load_game.py'), '-i', '1'],
-                       capture_output=True, text=True, timeout=600)
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), 'load_game.py'),
+                        '-i', str(lane.HOST)], capture_output=True, text=True, timeout=600)
     t0 = time.time()
     while time.time() - t0 < 240 and not c.call('coop.avatar')['ok'] and 'Galaxy' in c.call('game.mode')['out']:
         time.sleep(2)

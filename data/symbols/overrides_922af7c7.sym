@@ -20,15 +20,15 @@ SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified REA (cTimeOfDay::SetTimeOfD
 SporeCoop::TimeOfDay_Apply=0x01021630 ; verified REA: cdecl(object), called after SetOrientation in SetTimeOfDay
 SporeCoop::TimeOfDay_Unavailable=0x01020F30 ; verified REA: SetTimeOfDay does nothing when it returns non-zero
 Simulator::cGamePersistenceManager::LoadGameByName=0x00B27FF0 ; verified probe+asm: thiscall(mgr, const char16_t* planetFile e.g. u"Scalinus.spo"), sets current/pending name, SetActiveMode(kLoadGameMode); called by GGE Play
-Simulator::cGamePersistenceManager::ReloadCurrentGame=0x00B27120 ; verified runtime: pending = current name, SetActiveMode(kLoadGameMode)
+Simulator::cGamePersistenceManager::ReloadCurrentGame=0x00B27120 ; verified runtime: pending = current name, SetActiveMode(kLoadGameMode); crashes when called in Space (null active star, docs/re/space.md 8.1)
 Resource::GetDatabaseByID=0x006B1F20 ; verified runtime: cdecl(id) -> IDatabase; id 0x4729A47 = DatabaseDirectoryFiles of the current save folder
 Simulator::cStarManager::ReadStarsFromSaveDB=0x00BB8C60 ; verified ftrace+probe: thiscall(starMgr), reads stars.db from the save DB (0x4729A47) location; run on entering the galaxy menu
 SporeCoop::CurrentGameName=0x0167EF40 ; verified asm+runtime: eastl::string16 with the current save planet file (u"Scalinus.spo"), set by LoadGameByName
 Simulator::SpacePlayerData::ptr=0x016DEA6C ; verified asm of GetActiveStar (mov eax,[0x16DEA6C]; mov eax,[eax+8]); ModAPI m17 0x16DDA8C
-Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; most used global in cell code (1122 refs), m17 0x16B3C04
-Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; m17 0x16B3C08
-Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; m17 0x16B3C0C
-App::cScenarioMode::ptr=0x016C8A84 ; runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4
+Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; verified runtime (cellsync, every cell test); most used global in cell code (1122 refs), m17 0x16B3C04
+Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; verified runtime (cell tests); m17 0x16B3C08
+Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; verified runtime (cell tests); m17 0x16B3C0C
+App::cScenarioMode::ptr=0x016C8A84 ; verified runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4
 UTFWin::SporeStdDrawable::SporeStdDrawable=0x008309B0 ; verified asm: writes vtables 0141B2D0/0141B2B8/0141B278, size 0x160
 UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x00830870 ; verified asm: called for SporeStdDrawable::mCurrentInfo (+0x7C)
 UTFWin::UILayout::UILayout=0x00810050 ; verified asm: vtable 01418CA8, zeroes +4..+0x14
@@ -99,7 +99,7 @@ Memory::operator_new_named=0x009262B0 ; verified cdecl(size, const char* name, 0
 Resource::DatabasePackedFile::ctor=0x008DA290 ; verified thiscall(db, const char16_t* path, ICoreAllocator*) ret 8
 Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (RegisterDatabase vt+0x50 (bool add, db, priority) ret 0xC)
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
-Simulator::Cell::PreloadModel=0x00E624C0 ; cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
+Simulator::Cell::PreloadModel=0x00E624C0 ; verified runtime (coop_creations_cell.py): cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
 Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
 Simulator::cCity::AddCaptureDamage=0x00BE9C50 ; verified cdecl(planetCtx, city, city+0x2F0 meter, ownerPol, float dmg, attackerPol, bool) caller add esp,0x1C; +0x748 += dmg*0.1, max 100 (docs/re/civ.md co-op A)
 Simulator::cCity::SetCaptureProgress=0x00BD7E40 ; verified thiscall(attackerPol, float pct) ret 8: +0x74C/+0x748 + meter
@@ -226,3 +226,15 @@ SporeCoop::PlanetModelCleanup=0x00B7D650 ; verified thiscall([0x167FADC], cPlane
 SporeCoop::PlanetModelMgr_ptr=0x0167FADC ; verified global, `this` of PlanetModelCleanup
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; likely thiscall(mode) ret: Respawn's landing, enters the active planet (context 0 via 0x1003530)
 SporeCoop::GetPlayerHomePlanetRecord=0x01021220 ; verified cdecl() -> cPlanetRecord* (docs/re/space.md 7.1)
+# leaving a stage / loading a save while one runs (docs/re/space.md 8)
+App::IMessageManager::Get=0x0067DC80 ; verified cdecl() -> message manager (runtime: MessagePost vt 0x18 with kMsgSaveGame 0x1CD20F0 and the quit message 0x4715068)
+SporeCoop::SimulatorModeMgr_ptr=0x0167FACC ; verified global (getter 0xB3D3F0): simulator game-mode switcher, +0x20 current mode, +0x28 switch pending
+SporeCoop::SimulatorModeMgr_SetMode=0x00B1E320 ; verified thiscall([0x167FACC], modeId) ret 4: called by LoadGameByName with kLoadGameMode 0x1654C08; sends the mode-change message
+SporeCoop::Simulator_HandleMessage=0x00B63610 ; verified thiscall(this, msgId, data) ret 8: msg 0x4715068 = save and quit to the galaxy menu (leaves a space planet first, re-posts itself while a mode switch is pending)
+SporeCoop::cAppModeSpace_OnModeChange=0x00FDCED0 ; verified decompile + crash stack: thiscall(mode, oldMode, newMode) ret 8; from Space: LoadGame -> LeaveContext+Teardown, menu -> ExitToMenu
+SporeCoop::cAppModeSpace_LeaveContext=0x00FDA9E0 ; verified decompile + crash stack: thiscall(mode) ret; by GetCurrentContext: planet 0x100A800, system Space_LeaveSolarSystem(GetActiveStar()), galaxy 0x10034C0; then SetCurrentContext(-1)
+SporeCoop::Space_LeaveSolarSystem=0x01003860 ; likely thiscall(?, cStar*) ret 4: leaves the star's system, calls cStar::GetSolarSystem without a null check (the space -> load crash)
+SporeCoop::cAppModeSpace_Teardown=0x00FDC140 ; likely thiscall(mode) ret: if +0x158 (space game loaded): LeaveContext, release +0x140/+0x160/+0x15C (cSimulatorSpaceGame)
+SporeCoop::cAppModeSpace_ExitToMenu=0x00FDC970 ; likely thiscall(mode) ret: space -> galaxy menu: LeaveContext, 0xB3D420, 0xB8C1D0, Teardown
+Simulator::Cell::UpdateCellPhysics=0x00E7C080 ; likely cdecl(cell*, res* (no movement when res+0xB4 cellType == 0), float dt) - soft-body part verified (disassembly + runtime 2026-10-22): soft body (+0x248 && +0x250>1): particle velocities += +0x1C4*dt, then +0x4C/+0x90 = 0xE553B0 average; else vel/pos integration; destroys cells outside the active tiles unless +0x354 (docs/re/cell.md §2, §6)
+Simulator::Cell::AverageParticles=0x00E553B0 ; verified (disassembly + runtime 2026-10-22) custom: ECX = Vec3* outPos, EAX = Vec3* outVel (cell+0x90), stack (int n, u32* indices), caller pops 8; pos = mean of *(G+0x4108)+4+12*i, vel = mean of +0x4654+12*i

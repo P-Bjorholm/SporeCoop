@@ -1,5 +1,8 @@
 # 6. Testing
 
+> Running the tests in parallel (lanes, `tools/lab.py`, warm resets, chaos bot, bad network):
+> [10-dev-pipeline.md](10-dev-pipeline.md). This page covers the single-lane basics.
+
 ## 6.1 Environment
 
 * The game is installed in the Bottles bottle **Games** (runner `caffe-10.0`, DXVK); the Spore registry entries are already there.
@@ -48,7 +51,9 @@ python3 tools/tests/load_game.py                 # up to the Creature stage
 make coop && tools/spore.sh deploy && tools/sporectl.py mod.reload coop
 tools/sporectl.py shot                           # look at the screen
 tools/sporectl.py exc                            # caught exceptions (address + symbol)
-tools/sporectl.py hangdump                       # main thread stack to the log
+tools/sporectl.py hangdump                       # main thread stack to the log (can hang under Wine)
+tools/sporectl.py stack.here 300 all            # main thread call chain, read ON the main thread
+tools/sporectl.py stack.scan 300                 # exe return addresses on the main stack, no suspend
 tools/spore.sh logs                              # tail of sporekit.log
 ```
 
@@ -68,8 +73,10 @@ tools/spore.sh logs                              # tail of sporekit.log
 The two-instance test is ready for checks in about 40 s (it used to take about 90):
 * both instances start right away (2 s apart), without waiting for the first one;
 * instead of long frame-count waits after loading, a readiness check plus a 4 s pause;
-* the host's "game saved" dialog (the host saves before sending the world) is closed
-  as soon as the host's frames stall, rather than after a fixed delay;
+* the host's "game saved" box (the host saves before sending the world) is confirmed by the
+  mod once it is visible (docs/08-ui.md); `twoinst` also presses Enter when the host's frames
+  stall. A box left open pauses the host's game without stopping its frames: the host's cell
+  does not move (coop_cell checks that no box is left);
 * over LAN/localhost the world is sent with a large window (600 messages in flight at ping
   < 40 ms, 4 MB socket buffers): 3.8 MB in ~2.5 s instead of 7.5 s.
 
@@ -89,11 +96,39 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 
 ## 6.6 Known Wine quirks
 
+* **Flatpak document portal.** Every Bottles launch bind-mounts `/run/user/<uid>/doc/by-app/com.usebottles.bottles`
+  (FUSE of `xdg-document-portal`). It vanishes now and then while many Bottles sandboxes exit at once (seen every 10–20 min during lab runs on 2026-10-22; systemd then shows the portal restarted), and every start fails with
+  `bwrap: Can't find source path …` in `out/run.<inst>.log`. `systemctl --user restart xdg-document-portal`
+  brings it back; `tools/lab.py` checks it before every test and retries such starts (not counted as flaky).
+
 * MinHook must not freeze threads (`VirtualProtect` may hang).
 * In the second process of the same wineserver, blocking sockets/`select()` and starting new threads
   sometimes hang — the console runs on non-blocking sockets in a single thread.
 * Spore stops rendering without focus; test runs enable SporeKit's "background mode".
 * **Exiting one instance kills all instances in the bottle** (that's how launching through
   bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
+* **Stack of a frozen game.** `stack` and `hangdump` suspend the main thread; under Wine that hung
+  the console for good (2026-10-22). When frames stop but the console still answers `game.mode`,
+  the main thread is pumping messages in some nested loop: `stack.here 300 all` runs on the main
+  thread itself and lists every return address from its own frame up (modules and offsets; coop.dll
+  offsets: `llvm-symbolizer --obj=build/coop.dll 0x1000_0000+offset`). `stack.scan` reads the stack
+  from the TEB without suspending (stale values mixed in). Filter exe values to real return
+  addresses (a call instruction before them) — UTF-16 text looks like code addresses. `winedbg`
+  attach from `flatpak enter <wineserver pid>` failed with error 5.
 * A hung Wine process can be left half-dead (a zombie leader with live threads)
   and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.
+
+## 6.7 Reading console output in tests
+
+* Tests parse `coop.status` with regular expressions that span lines, e.g. coop_cell / coop_creations
+  / coop_vote expect the `puppet pos=… species=…` line **right after** the `remote <id> '<name>'`
+  line. New per-remote lines go after the puppet line (the `together <id> <0|1>` line that
+  `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
+  inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
+  partner cell was there and exact — it looked like a missing puppet / timing bug.
+* Cross-check before hunting a "missing puppet": the `remote … puppet=<ptr>` value, and in the cell
+  stage `local_gameplay_cells` (counts every foreground cell except the own avatar) = mirrors + 1
+  when the partner's cell exists.
+* A real missing partner (`partner_dist=-1` on the guest, no puppet, bites and food still work)
+  was the host's "game saved" box left open (fixed 2026-10-22): look at the host screenshot
+  first. A host that "moves" 0.00 m in the sync samples is paused the same way.

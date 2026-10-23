@@ -600,3 +600,60 @@ on the receiver; all safe in any context (no planet needed).
 * Whether `TravelToStarSystem` is safe during comm screens / cinematics; FE0E00 details.
 * Mission state 0/4 meaning; how the UI picks the tracked mission.
 * Political ids identical across two saves of the same galaxy (needed for shared relationships).
+
+## 8. Loading a save while a stage runs (leaving space)
+
+Found while fixing "loading a Cell save from the Space stage crashes" (branch fix/stage-switch-load,
+2026-10-22; test `tools/tests/coop_stage_switch.py`).
+
+### 8.1 The crash (✔ runtime + decompile)
+* `cGamePersistenceManager::LoadGameByName` 0xB27FF0 → `SimulatorModeMgr_SetMode` 0xB1E320
+  (`thiscall([0x167FACC], modeId)`, +0x20 current mode, +0x28 "switch pending") with kLoadGameMode
+  0x1654C08 → the space app mode reacts in `cAppModeSpace_OnModeChange` 0xFDCED0
+  (`thiscall(mode, oldMode, newMode) ret 8`; only does work when oldMode is Space 0x1654C05):
+  * new = LoadGame → `cAppModeSpace_LeaveContext` 0xFDA9E0 then `cAppModeSpace_Teardown` 0xFDC140;
+  * new = galaxy menu 0x2CCD1D2 → `cAppModeSpace_ExitToMenu` 0xFDC970 (LeaveContext, 0xB3D420,
+    0xB8C1D0, Teardown), then the mode reset 0xB3D300(0xEBB801);
+  * new = editor 0xDBDBA1 / 0x1654C06 / adventure 0x1654C10: own branches.
+* LeaveContext switches on `GetCurrentContext` (SpacePlayerData+0x10): 0 planet → 0x100A800,
+  1 system → 0x1009310(0,0,1) + `Space_LeaveSolarSystem` 0x1003860(`GetActiveStar()` 0x10210E0),
+  2 galaxy → 0x1009310 + 0x10034C0, −1 → nothing; then `SetCurrentContext(-1)` + 0x10218A0(0,0).
+  `Space_LeaveSolarSystem` (`thiscall(?, cStar*) ret 4`) calls `cStar::GetSolarSystem` 0xC8B8F0 on
+  the star without a null check.
+* On the way to kLoadGameMode SpacePlayerData+0x04 (planet) and +0x08 (star) are already 0 while
+  +0x10 is still 1 → `GetSolarSystem(null)` AV at 0xC8B8F3 (data 0x40), then
+  `cStar::IsStarOrBinaryStar` 0xC8B980 faults every frame (data 0x48) and the game hangs in
+  LoadGame. The game's own `ReloadCurrentGame` 0xB27120 from Space crashes the same way (✔ runtime,
+  no mod code involved). `ReadStarsFromSaveDB` while in space does **not** clear the active star
+  (✔ runtime, negative result). Who clears +0x04/+0x08 before the handler: not found (?).
+* Stack signature: `GetSolarSystem+0x3` ← 0x10038A6 ← 0xFDAA2F ← 0xFDD0CF, with 01654C08 01654C05
+  (new, old mode) on the stack.
+* It does not depend on the stage of the save: Space → Space crashes the same way (nightly chaos
+  run, lane 1: a guest in Space left, joined again and loaded the re-sent world in game; reproduced
+  on lane 5 with the pre-fix build by `coop_stage_switch.py --steps space,rejoin`). Both runs were in
+  a solar system (context 1). Host `coop.load` space → space in warm resets did not crash in the lab;
+  why is open (?) — perhaps another context (planet/galaxy) at that moment; `ReloadCurrentGame` in a
+  system crashed (✔).
+
+### 8.2 The native way out: quit message 0x4715068 (✔)
+* `Simulator_HandleMessage` 0xB63610 (`thiscall(this, msgId, data) ret 8`), message 0x4715068:
+  if a mode switch is pending ([0x167FACC]+0x28) it re-posts itself; otherwise, in Space on a planet
+  (context 0) it first leaves the planet (`LeavePlanet` 0xFDE3D0), posts 0x689C9B9, calls
+  `IStateManager::Get()`→vt 0x40 and sets +0x28/+0x29. Result: the game **saves** (a `GameN.old`
+  backup appears) and goes to the galaxy menu (GalaxyGameEntry) in ~1 s from any stage. Posted with
+  `MessagePost` (IMessageManager vt 0x18, 4 arguments) like `kMsgSaveGame`.
+* From the menu, `world::load_now` (Close/SetLocation/Open of DB 0x4729A47, `ReadStarsFromSaveDB`,
+  `LoadGameByName`) works for every stage. SporeCoop loads every save requested while a stage runs
+  this way (`world.cpp load_slot`): host `coop.load`, guest received world (also Space → Space).
+  A host reload of the same stage sends no world (coop.cpp `on_mode_change`: not a new stage); the
+  guest keeps its own copy until it rejoins. Timing: menu after
+  ~1 s, 3 s settle, host in the target stage ~5–6 s after the request, guest together ~16–18 s.
+* Other in-game loads seen to go wrong (all avoided by the menu route): a guest in Cell loading a
+  world in game crashed in `modes::cell_fill` (cell pool freed under the cached local cell, coop.dll);
+  a Space save loaded in game from Cell kept `CurrentGameName` = "Karke.spo", so the next save wrote
+  `Karke.spo` into the space slot and the guest got the wrong planet; tribe → civ in game worked.
+* Loading 3 s after the menu came up from on_frame (inside Present): the guest twice got a
+  first-chance AV in `cTerrainStateMgr_GetTemperatureScore` 0xFB89D0 (ecx 0; caller 0xF9E5EC
+  `[esi+0xC]->vt 0x10()` returns a null terrain state, a planet render), once at the very load call
+  with 1 s settle, once 1 s into the load; the game survived it. Not seen in 14 switches since the
+  load runs outside the frame (`run_outside_frame`).

@@ -101,6 +101,7 @@ static void show(Win w, bool on)
 // ---------------- main menu item ----------------
 static Win g_menu_btn, g_menu_parent;
 static void* g_menu_drawable;
+static Win g_menu_drawable_for; // the menu window the drawable was made for
 
 static void on_menu_click() { open(true); }
 
@@ -123,10 +124,21 @@ static void ensure_menu_button()
     Rect a = sui::area(share);
     float dy = 95; // below "Galactic Adventures"
     Rect r{a.x1, a.y1 + dy, a.x2, a.y2 + dy};
-    Win b = sui::button_like(menu, share, r, T("Co-op", "Кооператив"));
+    // built detached and added to the menu last: changing the drawable of a window that is already
+    // in the galaxy menu made the game render its planet view synchronously from here (outside the
+    // frame), and DXVK deadlocked the main thread right after a stage was left (frames stopped)
+    Win b = sui::button_like(nullptr, share, r, T("Co-op", "Кооператив"));
     if (!b)
         return;
     sui::set_ids(b, kIdMenuButton, kIdMenuButton);
+    // a fresh drawable for every galaxy menu: it is a copy of the "Share" button's drawable (its
+    // images and current state), and the copy from an earlier menu, set on the new button after a
+    // few stage switches, hung the main thread inside SetDrawable (a render from the planet view
+    // waiting in DXVK, docs/known-issues.md history). The old one stays with the old button.
+    if (g_menu_drawable_for != menu) {
+        g_menu_drawable = nullptr;
+        g_menu_drawable_for = menu;
+    }
     if (!g_menu_drawable) {
         void* icon = sui::image(sui::fnv("coop_icon"), 0x2F7D0004, sui::fnv("sporecoop"));
         g_menu_drawable = sui::std_drawable_with_icon(sui::drawable(share), icon);
@@ -135,6 +147,7 @@ static void ensure_menu_button()
     }
     if (g_menu_drawable)
         sui::set_drawable(b, g_menu_drawable);
+    sui::add_child(menu, b);
     sui::add_handler(b, [](Win, const sui::Msg& m) {
         if (g_log_msgs && m.type != 8 && m.type != 0xC && m.type != 0xD)
             H->log(M, SK_DEBUG, "ui msg 0x%X src=%p %08X %08X %08X %08X", m.type, m.source, m.a, m.b, m.c, m.d);

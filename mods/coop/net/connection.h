@@ -17,6 +17,27 @@ inline bool seq_greater(uint16_t a, uint16_t b)
     return ((a > b) && (a - b <= 32768)) || ((a < b) && (b - a > 32768));
 }
 
+// which of the 128 packets before the latest one arrived: bit k = sequence latest - (k + 1)
+struct AckBits {
+    uint64_t lo = 0, hi = 0;
+    void clear() { lo = hi = 0; }
+    void shift(unsigned s) // a newer packet arrived s sequence numbers later
+    {
+        if (s >= 128) {
+            lo = hi = 0;
+        } else if (s >= 64) {
+            hi = s == 64 ? lo : lo << (s - 64);
+            lo = 0;
+        } else if (s > 0) {
+            hi = (hi << s) | (lo >> (64 - s));
+            lo <<= s;
+        }
+    }
+    void set(unsigned k) { (k < 64 ? lo : hi) |= 1ull << (k & 63); }
+    bool test(unsigned k) const { return k < 128 && (((k < 64 ? lo : hi) >> (k & 63)) & 1); }
+};
+constexpr unsigned kAckWindow = 128;
+
 struct ConnStats {
     uint32_t packets_sent = 0, packets_recv = 0, resends = 0, acked = 0;
 };
@@ -32,7 +53,8 @@ public:
     ConnStats stats;
 
     void send_reliable(uint8_t type, const Writer& w);
-    void send_unreliable(uint8_t type, const Writer& w);
+    // first: ahead of what is queued (the player state must not wait behind a big snapshot)
+    void send_unreliable(uint8_t type, const Writer& w, bool first = false);
     size_t pending_reliable() const { return rel_out_.size(); }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
@@ -61,7 +83,7 @@ private:
 
     uint16_t local_seq_ = 0;
     uint16_t remote_seq_ = 0;
-    uint32_t recv_bits_ = 0;
+    AckBits recv_bits_;
     bool have_remote_ = false;
     bool ack_pending_ = false;
     uint32_t last_send_ms_ = 0;

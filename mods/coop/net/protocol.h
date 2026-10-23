@@ -11,7 +11,7 @@
 namespace net {
 
 constexpr uint32_t kMagic = 0x4F435053; // 'SPCO'
-constexpr uint16_t kProtoVersion = 4; // 3: shared resources, ping marks; 4: lobby, LAN discovery
+constexpr uint16_t kProtoVersion = 5; // 3: shared resources, ping marks; 4: lobby, LAN discovery; 5: 128-packet acks
 constexpr uint16_t kDefaultPort = 47810;
 constexpr int kMaxPlayers = 4; // host + 3 guests (Spore pack size)
 constexpr size_t kMaxPacket = 1200;
@@ -71,7 +71,7 @@ enum MsgType : uint8_t {
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
 constexpr uint32_t kDiscoverQuery = 0x51435053; // 'SPCQ'
 constexpr uint32_t kDiscoverReply = 0x52435053; // 'SPCR'
-constexpr uint16_t kDiscoverPorts = 4;          // kDefaultPort .. kDefaultPort + 3
+constexpr uint16_t kDiscoverPorts = 10;         // kDefaultPort .. +9: test lanes 1..5 host on +2(N-1)
 
 struct DiscoverReply {
     uint16_t proto = kProtoVersion;

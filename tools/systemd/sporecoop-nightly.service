@@ -1,0 +1,8 @@
+[Unit]
+Description=SporeCoop nightly game tests (tools/lab.py run nightly)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Games/Modding/SPORE/SporeCoop
+ExecStart=%h/Games/Modding/SPORE/SporeCoop/tools/nightly.sh
+TimeoutStartSec=4h

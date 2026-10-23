@@ -11,6 +11,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 import subprocess  # noqa: E402
 
 STAGE_ICON = {"cell": (720, 392), "creature": (800, 428), "tribe": (848, 496), "civ": (848, 578),
@@ -33,12 +34,23 @@ STEPS = {
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=sorted(STAGE_ICON))
-    ap.add_argument("-i", type=int, default=1)
+    ap.add_argument("-i", type=int, default=lane.HOST)
     ap.add_argument("--slot", default="480,290", help="empty planet slot in the galaxy menu")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
     a = ap.parse_args()
+    for _ in range(120):  # the game is up (its console answers)
+        try:
+            if Console(a.i, timeout=5).call("ping")["ok"]:
+                break
+        except OSError:
+            time.sleep(1)
     c = Console(a.i)
     c.cmd = lambda line, timeout=None: c.call(line).get("out", "")
+    for _ in range(180):  # the galaxy menu, settled (the intro may still run)
+        if "GalaxyGameEntry" in c.cmd("game.mode"):
+            break
+        time.sleep(1)
+    c.cmd("wait.frames 600 120000")  # a fresh profile flies into the galaxy first (~15 s)
     c.cmd("cheat levels -unlock")
     sx, sy = map(int, a.slot.split(","))
     c.cmd(f"click {sx} {sy}")
@@ -50,8 +62,9 @@ def main():
         c.cmd(f"click {x} {y}")
         c.cmd("wait.frames 80 60000")
         if a.shots:
+            path = os.path.join(lane.out_dir("shots"), f"wiz_{a.stage}_{n}.png")
             subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "sporectl.py"), "-i",
-                            str(a.i), "shot", f"out/shots/wiz_{a.stage}_{n}.png", "--scale", "0.4"],
+                            str(a.i), "shot", path, "--scale", "0.4"],
                            stdout=subprocess.DEVNULL)
     t0 = time.time()
     while time.time() - t0 < 300:

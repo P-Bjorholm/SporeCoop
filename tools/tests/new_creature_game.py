@@ -11,13 +11,14 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 
 # empty save-slot planets on the galaxy menu (fractions of the screen)
 SLOTS = [(0.737, 0.403), (0.289, 0.750), (0.508, 0.665)]
 
 
 def main():
-    inst = 1
+    inst = lane.HOST
     slot = 0
     a = sys.argv[1:]
     if '-i' in a:
@@ -31,7 +32,7 @@ def main():
         time.sleep(1)
     if '--panel-open' not in a:
         c.call('wait.frames 700 60000')  # galaxy intro animation must finish
-    tmp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'out', 'shots', 'menu.png')
+    tmp = os.path.join(lane.out_dir('shots'), 'menu.png')
     shot = c.call('shot ' + os.path.abspath(tmp))
     w, h = map(int, shot['out'].split()[-1].split('x'))
 

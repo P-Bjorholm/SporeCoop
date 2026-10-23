@@ -10,13 +10,14 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 
 SLOT = (0.896, 0.530)   # saved planet on the galaxy menu
 PLAY = (0.643, 0.500)   # play button in the planet panel
 
 
 def main():
-    inst = int(sys.argv[sys.argv.index('-i') + 1]) if '-i' in sys.argv else 1
+    inst = int(sys.argv[sys.argv.index('-i') + 1]) if '-i' in sys.argv else lane.HOST
     c = Console(inst)
     for _ in range(180):
         if 'GalaxyGameEntry' in c.call('game.mode')['out']:

@@ -12,10 +12,11 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 
 
 def main():
-    inst = int(sys.argv[sys.argv.index('-i') + 1]) if '-i' in sys.argv else 1
+    inst = int(sys.argv[sys.argv.index('-i') + 1]) if '-i' in sys.argv else lane.HOST
     r = subprocess.run([sys.executable, os.path.join(HERE, 'new_stage_game.py'), 'space', '-i', str(inst)])
     if r.returncode:
         return 1

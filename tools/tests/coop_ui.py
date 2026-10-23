@@ -22,12 +22,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console, recompress_png  # noqa: E402
+import lane  # noqa: E402
 
 VK_END, VK_BACK, VK_RETURN, VK_F9 = 'end', 'back', 'enter', 'f9'  # devkit key names
 
 
 def sh(*args):
-    subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), *args], check=True, stdout=subprocess.DEVNULL)
+    lane.sh(*args)
 
 
 def wait_up(inst, t=120):
@@ -43,7 +44,7 @@ def wait_up(inst, t=120):
 
 
 def shot(con, name):
-    path = os.path.join(ROOT, 'out', 'shots', name)
+    path = os.path.join(lane.out_dir('shots'), name)
     if con.call('shot ' + path)['ok']:
         recompress_png(path, 0.5)
     return path
@@ -122,17 +123,14 @@ def main():
         sh('kill')
         time.sleep(2)
         sh('deploy')
-        sh('fixture', 'restore', 'creature', 'test')
-        appdata = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/'
-                                     'drive_c/users/' + os.environ['USER'] + '/AppData/Roaming')
-        subprocess.run(['rm', '-rf', appdata + '/SporeKit-inst2/Spore/Games',
-                        appdata + '/SporeKit-inst2/Spore/Games-sporecoop-backup'])
-        sh('run', '-i', '2')
-        assert wait_up(2), 'instance 2 did not start'
+        sh('fixture', 'restore', 'creature', lane.HOST_PROFILE)
+        subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
+        lane.run_guest()
+        assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
         time.sleep(5)
-        sh('run', '-p', 'test')
-        assert wait_up(1), 'instance 1 did not start'
-    hc, gc = Console(1), Console(2)
+        lane.run_host()
+        assert wait_up(lane.HOST), f'instance {lane.HOST} did not start'
+    hc, gc = Console(lane.HOST), Console(lane.GUEST)
     host, guest = Ui(hc, 'host'), Ui(gc, 'guest')
     ok = True
 
@@ -166,7 +164,7 @@ def main():
 
     # guest: discovery + join
     guest.type_into('name', 'Bob')
-    st = guest.wait(lambda s: s['lan0']['vis'] and 'Alice' in s['lan0']['text'], 30, 'LAN game')
+    st = guest.wait(lambda s: s['lan0']['vis'] and 'Alice' in s['lan0']['text'] and f':{lane.PORT}' in s['lan0']['text'], 30, 'LAN game')
     check(st is not None, f'guest: host found on the network: {st["lan0"]["text"] if st else None}')
     shot(gc, 'ui_guest_lan.png')
     guest.click('lan0')
@@ -174,7 +172,7 @@ def main():
     check(st is not None, f'guest: joined, lobby {st["rows"] if st else None}')
 
     # host loads its game; the guest gets the world and loads it
-    r = subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', '1'], capture_output=True,
+    r = subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', str(lane.HOST)], capture_output=True,
                        text=True, timeout=600)
     check(hc.call('coop.avatar')['ok'], 'host: game loaded')
     t0 = time.time()

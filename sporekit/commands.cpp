@@ -356,6 +356,15 @@ static int c_click(void*, int argc, const char* const* argv, SkOut* o)
     return ok ? 0 : 1;
 }
 
+static int c_drag(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(5, "drag <x1> <y1> <x2> <y2> [left|right]");
+    int b = argc > 5 && !strcmp(argv[5], "right") ? 1 : 0;
+    bool ok = input_drag(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), b);
+    outf(o, ok ? "dragged" : "failed");
+    return ok ? 0 : 1;
+}
+
 static int c_move(void*, int argc, const char* const* argv, SkOut* o)
 {
     NEED(3, "move <x> <y>");
@@ -429,6 +438,71 @@ static int c_stack(void*, int argc, const char* const* argv, SkOut* o)
     }
     ResumeThread(t);
     CloseHandle(t);
+    return 0;
+}
+
+// stack.scan: return addresses into the exe on the main thread's stack, read from its TEB stack
+// range WITHOUT suspending the thread (suspending it under Wine can hang the console when the
+// thread sits in a wineserver call). Lists from the stack base (outermost frames) down; values
+// below the current esp are stale leftovers, so trust the outer part most.
+static int c_stack_scan(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int depth = argc > 1 ? atoi(argv[1]) : 60;
+    typedef LONG(WINAPI * NtQIT)(HANDLE, int, void*, ULONG, ULONG*);
+    auto q = (NtQIT)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread");
+    HANDLE t = OpenThread(THREAD_QUERY_INFORMATION, FALSE, main_thread_id());
+    if (!q || !t) { outf(o, "cannot query the main thread"); return 1; }
+    struct { LONG status; void* teb; uintptr_t pid, tid; uintptr_t mask; LONG prio, base; } bi{};
+    LONG st = q(t, 0 /* ThreadBasicInformation */, &bi, sizeof bi, nullptr);
+    CloseHandle(t);
+    if (st < 0 || !bi.teb) { outf(o, "NtQueryInformationThread failed 0x%08lX", st); return 1; }
+    uint32_t* hi = *(uint32_t**)((uint8_t*)bi.teb + 4); // NT_TIB StackBase
+    uint32_t* lo = *(uint32_t**)((uint8_t*)bi.teb + 8); // NT_TIB StackLimit
+    outf(o, "main thread stack %p..%p (scan from the base down)\n", lo, hi);
+    uintptr_t ilo = image_base(), ihi = image_base() + 0x1000000;
+    int found = 0;
+    for (uint32_t* p = hi - 1; p >= lo && found < depth; p--) {
+        if (!skg::readable(p, 4)) break;
+        uint32_t v = *p;
+        if (v > ilo && v < ihi) {
+            outf(o, "  [%p] 0x%08X %s\n", (void*)p, v, symbols_reverse(v).c_str());
+            found++;
+        }
+    }
+    return 0;
+}
+
+// stack.here: runs ON the main thread (from its message loop or the frame) and lists the return
+// addresses into the exe from its own esp up to the stack base: the real call chain of whatever
+// the main thread is doing while it still pumps messages (a nested loop, a modal wait).
+static int c_stack_here(void*, int argc, const char* const* argv, SkOut* o)
+{
+    int depth = argc > 1 ? atoi(argv[1]) : 80;
+    uint8_t* teb = (uint8_t*)NtCurrentTeb();
+    uint32_t* hi = *(uint32_t**)(teb + 4);
+    volatile uint32_t marker = 0;
+    uint32_t* p = (uint32_t*)&marker;
+    uintptr_t ilo = image_base(), ihi = image_base() + 0x1000000;
+    bool all = argc > 2 && !strcmp(argv[2], "all"); // also other modules (user32 dispatch, ntdll)
+    int found = 0;
+    for (; p < hi && found < depth; p++) {
+        uint32_t v = *p;
+        if (v > ilo && v < ihi) {
+            outf(o, "  [%p] 0x%08X %s\n", (void*)p, v, symbols_reverse(v).c_str());
+            found++;
+        } else if (all && v > 0x10000) {
+            MEMORY_BASIC_INFORMATION mbi;
+            if (VirtualQuery((void*)(uintptr_t)v, &mbi, sizeof mbi) && mbi.Type == MEM_IMAGE &&
+                (mbi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_EXECUTE_READWRITE))) {
+                wchar_t name[MAX_PATH] = L"?";
+                GetModuleFileNameW((HMODULE)mbi.AllocationBase, name, MAX_PATH);
+                const wchar_t* b = wcsrchr(name, L'\\');
+                outf(o, "  [%p] 0x%08X %ls+0x%X\n", (void*)p, v, b ? b + 1 : name,
+                     (unsigned)(v - (uintptr_t)mbi.AllocationBase));
+                found++;
+            }
+        }
+    }
     return 0;
 }
 
@@ -523,6 +597,7 @@ void register_builtin_commands()
                 SK_CMD_OUTSIDE_FRAME);
     command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
     command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
+    command_add(k, "drag", "drag <x1> <y1> <x2> <y2> [left|right] - press, move, release", c_drag, nullptr, A);
     command_add(k, "wheel", "wheel <x> <y> <notches> - mouse wheel (+ zooms in)", c_wheel, nullptr, A);
     command_add(k, "mods", "list mods", c_mods, nullptr, M);
     command_add(k, "mod.reload", "mod.reload <name> - hot reload", c_mod_op, (void*)0, M);
@@ -539,6 +614,10 @@ void register_builtin_commands()
     command_add(k, "ftrace", "ftrace [substring] - log file opens (with callers) whose path contains it", c_ftrace,
                 nullptr, M);
     command_add(k, "probe.clear", "remove all probes", c_probe_clear, nullptr, M);
+    command_add(k, "stack.scan", "stack.scan [n] - main thread return addresses without suspending it", c_stack_scan,
+                nullptr, A);
+    command_add(k, "stack.here", "stack.here [n] [all] - main thread call chain, read on the main thread itself",
+                c_stack_here, nullptr, M);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
 }
 

@@ -1319,6 +1319,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         bool have = r.buf.sample(now, s);
         SAY("remote %u '%s' puppet=%p state=%s age=%.2fs pos=(%.1f %.1f %.1f)\n", id, r.name.c_str(),
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
+        // tests parse the "puppet pos" line as the one right after the "remote" line: keep it there
         if (r.puppet) {
             net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
             float rot_err = -1;
@@ -1334,6 +1335,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
         }
+        // tests: both players are in the same world and place right now
+        SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
     }
     return 0;
 }
@@ -1652,6 +1655,37 @@ int give_selected_to(uint8_t to)
     return 0;
 }
 
+// tests (chaos bot): what can be clicked right now: "kind id owner sx sy" per visible unit
+std::string targets()
+{
+    std::string out;
+    char b[96];
+    auto add = [&](const char* kind, int id, int owner, const net::Vec3& p) {
+        float w[3] = {p.x, p.y, p.z}, sc[2];
+        if (!H->world_to_screen(w, sc))
+            return;
+        snprintf(b, sizeof b, "%s %d %d %d %d\n", kind, id, owner, (int)sc[0], (int)sc[1]);
+        out += b;
+    };
+    for (auto& [id, r] : g_remotes)
+        if (r.puppet && r.puppet_adapter)
+            add("player", id, id, modes::entity_pos(r.puppet_adapter, r.puppet));
+    if (g_local && g_adapter)
+        add("me", g_sess.my_id(), g_sess.my_id(), modes::entity_pos(g_adapter, g_local));
+    struct U {
+        std::string* out;
+        decltype(add)* f;
+    } u{&out, &add};
+    tribe::for_each_owned(
+        [](void* c, uint8_t owner, void* p) { (*((U*)p)->f)("member", -1, owner, game::position(c)); }, &u);
+    civ::for_each_owned(
+        [](void*, const net::Vec3& pos, uint8_t owner, bool city, void* p) {
+            (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
+        },
+        &u);
+    return out;
+}
+
 void init_ui()
 {
     coop_ui::Api a;
@@ -1828,6 +1862,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.targets", "coop.targets - clickable units on screen: kind id owner x y (tests)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", targets().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
     H->command_add(M, "coop.name", "coop.name <nick>", c_name, nullptr, MT);
     H->command_add(M, "coop.say", "coop.say <text> - chat", c_say, nullptr, MT);

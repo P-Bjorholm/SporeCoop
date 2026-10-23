@@ -1,0 +1,34 @@
+# Build and unit tests on every push and pull request. The game tests need Spore and run on the
+# developer's machine (tools/lab.py, docs/10-dev-pipeline.md): never on GitHub runners.
+name: build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_MINGW: ${{ github.workspace }}/llvm-mingw
+      LLVM_MINGW_VERSION: "20261006"
+    steps:
+      - uses: actions/checkout@v4
+      - name: llvm-mingw toolchain
+        run: |
+          n=llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64
+          curl -sSL -o t.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/$n.tar.xz
+          tar -xf t.tar.xz && mv $n llvm-mingw
+      - name: build (loader, SporeKit, coop, resources)
+        run: make -j4 LLVM_MINGW=$LLVM_MINGW
+      - name: unit tests + knowledge check
+        run: make test HOSTCXX=clang++
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sporecoop-build
+          path: |
+            build/*.dll
+            build/SporeCoop.package

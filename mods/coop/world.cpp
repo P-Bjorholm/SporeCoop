@@ -14,6 +14,7 @@
 #include "game.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
+#include "sui.h"
 
 namespace world {
 
@@ -179,6 +180,58 @@ static std::wstring current_slot(std::string& planet)
     return best;
 }
 
+// The game confirms every save with a native box "The game on planet <name> is saved." (UTFWin
+// window, control id 0x06318E78, OK button; closed boxes stay in the tree without the visible
+// flag). While it is up the simulation is paused (a cell does not move), and sometimes the box
+// also holds the frames. It used to be confirmed with one Enter posted 2.5 s after our save: under
+// CPU load the box came later, stayed open and the host's game stood still - its frames too, so
+// the guest got no host state (no partner cell). Now the box is watched for after each save and
+// confirmed once it is visible (UI reads outside the frame); the world is shared when it was seen.
+constexpr uint32_t kSavedBoxId = 0x06318E78;
+static uint64_t g_saved_at, g_box_watch_until, g_box_seen_at, g_box_next_check, g_box_last_enter;
+static bool g_box_task;
+
+static bool any_visible(sui::Win w, uint32_t id, int depth = 0)
+{
+    if (!w || depth > 12 || !sui::visible(w))
+        return false;
+    if (sui::control_id(w) == id)
+        return true;
+    for (sui::Win c : sui::children(w))
+        if (any_visible(c, id, depth + 1))
+            return true;
+    return false;
+}
+
+static void box_task(void*)
+{
+    g_box_task = false;
+    if (!any_visible(sui::main_window(), kSavedBoxId))
+        return;
+    uint64_t now = GetTickCount64();
+    if (!g_box_seen_at)
+        H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
+               (unsigned long long)(now - g_saved_at));
+    g_box_seen_at = now;
+    if (now - g_box_last_enter < 400)
+        return;
+    g_box_last_enter = now;
+    if (HWND w = (HWND)H->game_window()) {
+        PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
+        PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
+    }
+}
+
+static void box_tick()
+{
+    uint64_t now = GetTickCount64();
+    if (now >= g_box_watch_until || g_box_task || now < g_box_next_check)
+        return;
+    g_box_next_check = now + 200;
+    g_box_task = true;
+    H->run_outside_frame(box_task, nullptr);
+}
+
 bool save_game(std::string& err)
 {
     using namespace skg;
@@ -201,13 +254,17 @@ bool save_game(std::string& err)
     // in the game's own message processing. A synchronous MessageSend from our frame hook (inside
     // Present) deadlocked DXVK threads.
     vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
+    g_saved_at = GetTickCount64();
+    g_box_seen_at = 0;
+    g_box_watch_until = g_saved_at + 30000;
     return true;
 }
 
 struct PendingShare {
     uint8_t peer;
-    uint64_t at;   // share at this tick count (files are written asynchronously after a save)
+    uint64_t at;   // share from this tick count (files are written asynchronously after a save)
     bool need_save;
+    uint64_t latest = 0; // ... once the saved box was seen, or at this tick count without it
     uint64_t next_try = 0;
     bool told = false;
 };
@@ -264,6 +321,53 @@ bool share_now(uint8_t peer, std::string& err)
     return true;
 }
 
+// A load requested while a stage runs goes through the galaxy menu (see load_slot)
+struct ViaMenu {
+    bool on = false;
+    std::wstring slot;
+    std::string planet;
+    double since = 0, menu_since = 0;
+};
+static ViaMenu g_via_menu;
+static const double kMenuSettle = 3.0;
+static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err);
+
+static void via_menu_tick()
+{
+    if (!g_via_menu.on)
+        return;
+    double now = H->time_seconds();
+    if (game::mode_id() == modes::kMenu) {
+        // the galaxy menu reads the stars of its slot and shows its planet when it opens: let it
+        // settle first (switching the slot under it right away faulted in its planet view)
+        if (!g_via_menu.menu_since) {
+            g_via_menu.menu_since = now;
+            H->log(M, SK_INFO, "world: in the galaxy menu %.1f s after leaving the stage", now - g_via_menu.since);
+        }
+        if (now - g_via_menu.menu_since < kMenuSettle)
+            return;
+        // switching the save folder and starting the load reads files and builds UI: outside the
+        // frame (this tick also runs inside Present)
+        static ViaMenu v;
+        v = g_via_menu;
+        g_via_menu = ViaMenu{};
+        H->run_outside_frame(
+            [](void*) {
+                std::string err;
+                if (!load_now(v.slot, v.planet, err))
+                    g_feed("the world could not be loaded: " + err);
+            },
+            nullptr);
+        return;
+    }
+    g_via_menu.menu_since = 0;
+    if (now - g_via_menu.since > 30.0) {
+        g_via_menu = ViaMenu{};
+        H->log(M, SK_WARN, "world: the game did not go to the galaxy menu, load cancelled");
+        g_feed("the world could not be loaded: the game did not go to the galaxy menu");
+    }
+}
+
 struct Deferred {
     bool on = false;
     std::wstring slot;
@@ -298,11 +402,18 @@ static void deferred_tick()
         g_feed("the world of " + d.host + " could not be loaded: " + err);
 }
 
-void guest_tick() { deferred_tick(); }
+void guest_tick()
+{
+    via_menu_tick();
+    deferred_tick();
+    box_tick();
+}
 
 void tick(net::Session& s)
 {
+    via_menu_tick();
     deferred_tick();
+    box_tick();
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
@@ -312,6 +423,7 @@ void tick(net::Session& s)
                 if (save_game(why)) {
                     p.need_save = false;
                     p.at = now + 2500;
+                    p.latest = now + 10000;
                 } else {
                     p.next_try = now + 2000;
                     if (!p.told)
@@ -322,15 +434,14 @@ void tick(net::Session& s)
             i++;
             continue;
         }
-        if (now < p.at) {
+        // the save is complete when its box shows up (box_tick confirms it)
+        if (now < p.at || (p.latest && now < p.latest && g_box_seen_at < g_saved_at)) {
             i++;
             continue;
         }
-        // our save opened the "game saved" box, which pauses the game: confirm it with Enter
-        if (HWND w = (HWND)H->game_window()) {
-            PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
-            PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
-        }
+        if (p.latest && g_box_seen_at < g_saved_at)
+            H->log(M, SK_INFO, "world: no saved box %llu ms after the save: sharing anyway",
+                   (unsigned long long)(now - g_saved_at));
         std::string err;
         if (!share_now(g_pending[i].peer, err))
             g_feed("cannot share the world: " + err);
@@ -488,7 +599,45 @@ static std::wstring pick_slot(uint32_t world_id, const std::string& planet_spo)
 // the way the galaxy menu's Play button does (see docs/05-re-notes.md).
 void set_auto_load(bool on) { g_auto_load = on; }
 
+static bool in_stage(uint32_t m)
+{
+    return m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv ||
+           m == modes::kSpace;
+}
+
+// A save is loaded from the galaxy menu, the way the game itself does it, never straight from a
+// running stage (docs/re/space.md "Loading a save while a stage runs"): from Space that crashed
+// (also the game's own ReloadCurrentGame: kLoadGameMode is entered with the active star already
+// cleared and the space mode's exit 0xFDCED0 -> 0xFDA9E0 leaves the solar system of a null cStar),
+// from Cell the cell pool was freed under our adapter, and a space save loaded from Cell kept the
+// old CurrentGameName ("Karke.spo"), so the next save wrote the wrong planet. The game's quit
+// message 0x4715068 (handled by 0xB63610) saves the game and leaves any stage for the galaxy menu
+// (in space: the planet first); the save is loaded once the menu is up (~1 s + kMenuSettle).
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err)
+{
+    if (g_via_menu.on || in_stage(game::mode_id())) {
+        bool posted = g_via_menu.on;
+        if (!posted) {
+            uintptr_t get = H->sym("App::IMessageManager::Get");
+            void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+            if (!mm) {
+                err = "no message manager";
+                return false;
+            }
+            // MessagePost (4 arguments, as save_game): handled in the game's own message
+            // processing, outside our frame hook
+            skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0);
+            H->log(M, SK_INFO, "world: leaving the stage to the galaxy menu before loading %s",
+                   planet_file.c_str());
+        }
+        double since = posted ? g_via_menu.since : H->time_seconds();
+        g_via_menu = ViaMenu{true, slot, planet_file, since, 0}; // the newest request wins
+        return true;
+    }
+    return load_now(slot, planet_file, err);
+}
+
+static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err)
 {
     uintptr_t getdb = H->sym("Resource::GetDatabaseByID");
     uintptr_t getmgr = H->sym("Simulator::cGamePersistenceManager::Get");

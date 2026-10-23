@@ -1,0 +1,9 @@
+[Unit]
+Description=SporeCoop nightly game tests at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -24,6 +24,9 @@ def main():
     host, guest = start('cell', 'Game0/Karke')
     ck = Checks()
     time.sleep(5)
+    # the host saved before sending the world: the game's "saved" box (pauses the game) is confirmed
+    boxes = re.findall(r'id=0x06318E78 cmd=\S+ fl=0x([0-9A-F]+)', host.call('coop.ui tree 3')['out'])
+    ck(not any(int(f, 16) & 1 for f in boxes), f'no "game saved" box left open on the host ({boxes})')
     h, ho = pool(host)
     g, go = pool(guest)
     print(' ', ho.strip().replace('\n', ' | '))
@@ -50,6 +53,11 @@ def main():
                 shot(host, 'cell_sync_host.png')
     print(f'  samples {len(errs)}: puppet vs remote state max {max(errs or [0]):.2f}, facing max {max(rots or [0]):.1f} deg, '
           f'vs the real host cell avg {sum(lags) / max(1, len(lags)):.2f} max {max(lags or [0]):.2f}')
+    if len(errs) < 20:  # what the guest knows about the host (docs/known-issues.md)
+        for name, con in (('guest', guest), ('host', host)):
+            st = con.call('coop.status')['out']
+            print(f'  {name} status:', ' | '.join(l.strip() for l in st.splitlines()
+                                               if re.match(r'\s*(\[\d\]|remote |together |puppet |mode=|host |client|guest )', l)))
     ck(len(errs) >= 20, 'sync samples taken')
     ck(max(errs or [9]) < 0.3, f'the partner cell is exactly where its state says (max {max(errs or [9]):.2f})')
     r90 = sorted(rots)[int(len(rots) * 0.9) - 1] if rots else 999
@@ -118,22 +126,34 @@ def main():
     time.sleep(3)
     g6, _ = pool(guest)
     ck(g6['downed'] == 1 and g6['respawns'] == 0, 'still knocked out after 6 s')
-    time.sleep(8)
-    g7, go7 = pool(guest)
+    # the pool lives on after the respawn: the small cell drifts, gets pushed and eats what floats by
+    # (seen: 23 m away and body 0.62 four seconds later), so the respawn is checked on the first sample
+    for _ in range(40):
+        g7, go7 = pool(guest)
+        if g7['respawns']:
+            break
+        time.sleep(0.25)
     print(' ', go7.splitlines()[0])
     ck(g7['downed'] == 0 and g7['respawns'] == 1 and g7['hp'] == 6, f'respawn after 10 s (respawns {g7["respawns"]}, hp {g7["hp"]})')
     ck(g7['partner_dist'] is not None and 0 <= g7['partner_dist'] < 6, f'next to the partner (distance {g7["partner_dist"]})')
     ck(g7['body'] == 0.5 and g7['target'] < size0 * 0.6, f'small again (target size {size0} -> {g7["target"]})')
+    for _ in range(16):  # the game smooths the size towards the target
+        if g7['size'] is not None and g7['size'] < size0 * 0.75:
+            break
+        time.sleep(0.25)
+        g7, _ = pool(guest)
     ck(g7['size'] < size0 * 0.75, f'the body really shrank (size {g7["size"]})')
     ck('respawned small' in host.call('coop.status')['out'], 'everybody sees the respawn')
     shot(guest, 'cell_small.png')
     shot(host, 'cell_small_host.png')
     hk = host.call('coop.pool')['out']
     ck(re.search(r'ko\[1\]=3 .* op=1.00', hk) is not None, 'the host sees it up again (opaque)')
+    b0 = pool(guest)[0]['body'] or 0  # it may have eaten something on its own already
     guest.call('coop.pool food 20')
     time.sleep(1)
     g8, _ = pool(guest)
-    ck(g8['body'] is not None and 0.65 < g8['body'] < 0.75, f'eating grows it back (body {g8["body"]})')
+    grew = (g8['body'] or 0) - b0
+    ck(0.15 < grew < 0.3 or g8['body'] == 1.0, f'eating grows it back (body {b0} -> {g8["body"]}, +0.01 per food point)')
 
     guest.call('coop.pool hp 3')
     time.sleep(7)

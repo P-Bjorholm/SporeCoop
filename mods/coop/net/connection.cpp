@@ -1,13 +1,14 @@
 #include "connection.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include "protocol.h"
 
 namespace net {
 
-// header: magic u32, proto u16, seq u16, ack u16, ackbits u32, count u8
-static constexpr size_t kHeader = 4 + 2 + 2 + 2 + 4 + 1;
+// header: magic u32, proto u16, seq u16, ack u16, ackbits 2 x u64 (128 packets), count u8
+static constexpr size_t kHeader = 4 + 2 + 2 + 2 + 16 + 1;
 
 bool Connection::looks_valid(const uint8_t* data, size_t n)
 {
@@ -26,9 +27,12 @@ void Connection::send_reliable(uint8_t type, const Writer& w)
     rel_out_.push_back(std::move(m));
 }
 
-void Connection::send_unreliable(uint8_t type, const Writer& w)
+void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
 {
-    unrel_out_.emplace_back(type, w.data);
+    if (first)
+        unrel_out_.emplace(unrel_out_.begin(), type, w.data);
+    else
+        unrel_out_.emplace_back(type, w.data);
 }
 
 bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
@@ -51,7 +55,9 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     uint16_t seq = local_seq_++;
     w.u16(seq);
     w.u16(remote_seq_);
-    w.u32(have_remote_ ? recv_bits_ : 0);
+    AckBits bits = have_remote_ ? recv_bits_ : AckBits{};
+    w.raw(&bits.lo, 8);
+    w.raw(&bits.hi, 8);
     size_t count_pos = w.size();
     w.u8(0);
     uint8_t count = 0;
@@ -97,7 +103,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     }
     w.data[count_pos] = count;
     sent_.push_back(std::move(sp));
-    while (sent_.size() > 256)
+    while (sent_.size() > 1024)
         sent_.pop_front();
     out = std::move(w.data);
     last_send_ms_ = now;
@@ -131,7 +137,12 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
     r.u16();
     uint16_t seq = r.u16();
     uint16_t ack = r.u16();
-    uint32_t ackbits = r.u32();
+    AckBits ackbits;
+    if (r.left() >= 16) {
+        memcpy(&ackbits.lo, r.cur(), 8);
+        memcpy(&ackbits.hi, r.cur() + 8, 8);
+    }
+    r.skip(16);
     uint8_t count = r.u8();
     if (!r.ok())
         return false;
@@ -144,15 +155,17 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
     if (!have_remote_) {
         have_remote_ = true;
         remote_seq_ = seq;
-        recv_bits_ = 0;
+        recv_bits_.clear();
     } else if (seq_greater(seq, remote_seq_)) {
         uint16_t shift = (uint16_t)(seq - remote_seq_);
-        recv_bits_ = shift >= 32 ? 0 : (recv_bits_ << shift) | (1u << (shift - 1));
+        recv_bits_.shift(shift);
+        if (shift <= kAckWindow)
+            recv_bits_.set(shift - 1u); // the previous latest
         remote_seq_ = seq;
     } else {
         uint16_t diff = (uint16_t)(remote_seq_ - seq);
-        if (diff >= 1 && diff <= 32)
-            recv_bits_ |= 1u << (diff - 1);
+        if (diff >= 1 && diff <= kAckWindow)
+            recv_bits_.set(diff - 1u);
     }
 
     // acks for our packets
@@ -164,7 +177,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
             continue;
         }
         uint16_t diff = (uint16_t)(ack - p.seq);
-        if (diff >= 1 && diff <= 32 && (ackbits & (1u << (diff - 1))))
+        if (diff >= 1 && diff <= kAckWindow && ackbits.test(diff - 1u))
             ack_packet(p, now);
     }
 

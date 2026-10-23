@@ -27,6 +27,12 @@ Channels:
 * `UNRELIABLE` — states (snapshots), where the latest value matters more than delivery;
 * `RELIABLE_ORDERED` — session events, abilities, damage, chat, file chunks.
 
+Each frame a peer gets one flush: unreliable messages first (the own `PLAYER_STATE` at the front),
+then due reliable ones. The ack field covers 128 packets (protocol 5), so a flush sends up to 128
+packets on a short round trip (LAN, < 40 ms) and 42 on the internet - that paces the reliable bulk
+(a 3.8 MB world: ~3 MB/s); while unreliable messages remain it goes on for up to 64 more packets,
+then the rest of the unreliable queue is dropped (stale by the next frame). Big snapshots (cell pool: one ~900-byte chunk per 14 cells) must stay below that.
+
 ## 4.3 Messages
 
 | Type | Channel | Contents |
