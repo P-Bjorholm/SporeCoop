@@ -38,8 +38,19 @@ def main():
     ap.add_argument("--slot", default="480,290", help="empty planet slot in the galaxy menu")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
     a = ap.parse_args()
+    for _ in range(120):  # the game is up (its console answers)
+        try:
+            if Console(a.i, timeout=5).call("ping")["ok"]:
+                break
+        except OSError:
+            time.sleep(1)
     c = Console(a.i)
     c.cmd = lambda line, timeout=None: c.call(line).get("out", "")
+    for _ in range(180):  # the galaxy menu, settled (the intro may still run)
+        if "GalaxyGameEntry" in c.cmd("game.mode"):
+            break
+        time.sleep(1)
+    c.cmd("wait.frames 600 120000")  # a fresh profile flies into the galaxy first (~15 s)
     c.cmd("cheat levels -unlock")
     sx, sy = map(int, a.slot.split(","))
     c.cmd(f"click {sx} {sy}")

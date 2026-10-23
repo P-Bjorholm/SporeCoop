@@ -93,7 +93,7 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 ## 6.6 Known Wine quirks
 
 * **Flatpak document portal.** Every Bottles launch bind-mounts `/run/user/<uid>/doc/by-app/com.usebottles.bottles`
-  (FUSE of `xdg-document-portal`). It vanished for ~5 min on 2026-10-22 and every start failed with
+  (FUSE of `xdg-document-portal`). It vanishes now and then while many Bottles sandboxes exit at once (seen every 10–20 min during lab runs on 2026-10-22; systemd then shows the portal restarted), and every start fails with
   `bwrap: Can't find source path …` in `out/run.<inst>.log`. `systemctl --user restart xdg-document-portal`
   brings it back; `tools/lab.py` checks it before every test and retries such starts (not counted as flaky).
 

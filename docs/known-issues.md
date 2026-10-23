@@ -38,6 +38,13 @@ Fixed entries move to the commit message (and a test).
   ship was not respawned 60 s later. The mod does not change that path; check in a real game
   whether the cinematic waits for input. The rescue timeout uses the same native path.
 
+## Test saves: no Civilization save with NPC cities yet
+
+* The `civ` fixture (Agrauel) has only the player's city, so the joint-siege test hits the player
+  city with a fake attacker. `new_stage_game.py civ` waits for the galaxy menu now, but the empty
+  planet slot it clicks (`--slot 480,290`) is elsewhere on a fresh profile (the galaxy view differs):
+  pass `--slot` from a screenshot, then `make_fixture.py` + an entry in tools/tests/fixtures.py.
+
 ## Not covered by tests yet
 
 * Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the
