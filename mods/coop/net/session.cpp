@@ -455,7 +455,9 @@ void Session::flush(uint32_t now)
 {
     std::vector<uint8_t> pkt;
     for (auto& p : peers_) {
-        for (int i = 0; i < 32 && p->conn.build_packet(now, pkt); i++)
+        // up to the ack window per flush on a short round trip (LAN), a third of it on the internet
+        int burst = p->conn.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+        for (int i = 0; i < burst && p->conn.build_packet(now, pkt); i++)
             sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
     }

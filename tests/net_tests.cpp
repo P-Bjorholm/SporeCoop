@@ -283,12 +283,73 @@ static void test_discovery()
     printf("discovery ok\n");
 }
 
+static void test_ackbits()
+{
+    printf("128-packet ack window\n");
+    AckBits b;
+    b.set(0);
+    b.set(63);
+    b.set(64);
+    b.set(127);
+    CHECK(b.test(0) && b.test(63) && b.test(64) && b.test(127) && !b.test(1) && !b.test(128));
+    b.shift(1);
+    CHECK(b.test(1) && b.test(64) && b.test(65) && !b.test(0) && !b.test(127));
+    b.shift(64);
+    CHECK(b.test(65) && !b.test(1));
+    b.shift(200);
+    CHECK(!b.lo && !b.hi);
+}
+
+// a big reliable transfer (the world sent to a guest) in bursts of a whole ack window, with loss
+static void test_bulk()
+{
+    printf("bulk transfer: 4 MB in bursts of %u packets, 5%% loss\n", kAckWindow);
+    Connection a, b;
+    std::mt19937 rng(7);
+    std::uniform_real_distribution<float> U(0, 1);
+    const int N = 4000; // 1 KB messages
+    uint32_t now = 1000;
+    int queued = 0, got = 0, frames = 0;
+    bool ordered = true;
+    std::vector<uint8_t> pkt;
+    a.rtt_ms = b.rtt_ms = 5;
+    while (got < N && frames < 3000) {
+        frames++;
+        now += 33; // one game frame
+        while (queued < N && a.pending_reliable() < 600) {
+            Writer w;
+            w.u32(queued++);
+            std::vector<uint8_t> pad(1020, 0x55);
+            w.raw(pad.data(), pad.size());
+            a.send_reliable(42, w);
+        }
+        std::vector<std::vector<uint8_t>> a2b, b2a;
+        for (unsigned i = 0; i < kAckWindow && a.build_packet(now, pkt); i++)
+            if (U(rng) > 0.05f) a2b.push_back(pkt);
+        for (auto& p : a2b)
+            b.on_packet(p.data(), p.size(), now, [&](uint8_t type, Reader& r) {
+                if (type == 42 && r.u32() != (uint32_t)got++) ordered = false;
+            });
+        while (b.build_packet(now + 1, pkt))
+            if (U(rng) > 0.05f) b2a.push_back(pkt);
+        for (auto& p : b2a)
+            a.on_packet(p.data(), p.size(), now + 2, [](uint8_t, Reader&) {});
+    }
+    double mbps = got * 1024.0 / (frames * 0.033) / 1e6;
+    printf("  %d/%d in %d frames (%.1f s at 30 fps: %.1f MB/s), resends=%u\n", got, N, frames, frames * 0.033, mbps,
+           a.stats.resends);
+    CHECK(got == N && ordered);
+    CHECK(mbps > 2.5); // the old 32-packet window gave ~1.1 MB/s
+}
+
 int main()
 {
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
     test_reliability();
+    test_ackbits();
+    test_bulk();
     test_session();
     test_interp();
     test_discovery();
