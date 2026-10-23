@@ -24,7 +24,7 @@
    │  • main-thread task queue, TCP console (devkit), commands
    │  • mod manager: mods/*.dll, hot reload
    ▼
- mods/coop.dll, mods/<others>.dll   — C ABI (sdk/include/sporekit.h)
+ mods/coop.dll, mods/<others>.dll   - C ABI (sdk/include/sporekit.h)
 ```
 
 ## 1.3 Why a `steam_api.dll` proxy

@@ -5,7 +5,7 @@ this build. "✔" = verified in this build's disassembly (convention checked at 
 "~" = behaviour inferred from decompilation, "?" = unverified guess.
 
 Globals: `G = *(uint8_t**)0x016B4BE4` (cCellGame, ✔). Serializable data `S = *(uint8_t**)(G+0x5190)`
-(same object as `*(void**)0x016B4DC0` = cCellSerializableData::_ptr, ✔ — ModAPI m17 0x16B3DE0 + 0xFE0).
+(same object as `*(void**)0x016B4DC0` = cCellSerializableData::_ptr, ✔ - ModAPI m17 0x16B3DE0 + 0xFE0).
 cCellUI `*(void**)0x016B4BEC`, cCellGFX `*(void**)0x016B4BE8` (already in overrides).
 
 ## 0. Object pool (cObjectPool, used for cells G+0x1C and the event pool G+0x54) ✔
@@ -19,7 +19,7 @@ dword == its index; free stores the old free-head slot in the first dword.
 | 0xB72220 | `Allocate()` → index, memsets object, writes index to +0 | thiscall(pool) |
 | 0xB72290 | `GetIfNotDeleted(idx)` → ptr/0 | thiscall, `ret 4` |
 | 0xB722D0 | `Get(idx)` (no check) | thiscall, `ret 4` |
-| 0xB72320 | `Free(idx)` (raw — does NOT clean GFX/query, never call for cells) | thiscall, `ret 4` |
+| 0xB72320 | `Free(idx)` (raw - does NOT clean GFX/query, never call for cells) | thiscall, `ret 4` |
 | 0xB722F0 / 0xB721E0 | iterator next (alive test: `(first & 0xFFFF) == slot`) | thiscall |
 
 ## 1. Enumerate and classify cells
@@ -69,7 +69,7 @@ Per-cell fields (cCellObjectData, 0x398) confirmed in this build:
 Resource data (`cCellCellResource`, ModAPI layout matches): get it with
 `void* __cdecl GetData(ref, void** holder)` = **0xE823A0** (✔; 0xE4CC30 is a jmp thunk to it). It
 writes `*holder = ref` and increments `ref+0xC`; release with `--*(int*)(ref+0xC)` (game uses 0xE82130,
-thiscall on &holder). NOTE: symbol `Simulator::Cell::GetData=0xE4CC00` in gog2016 sym is wrong — that
+thiscall on &holder). NOTE: symbol `Simulator::Cell::GetData=0xE4CC00` in gog2016 sym is wrong - that
 is a stdcall string→hash helper.
 Used fields: `+0xB0 flags, +0xB4 cellType, +0xB8 unlockType, +0x2FC friendGroup, +0x300/+0x301
 wontAttackPlayer(/WhenSmall), +0x30C eat.foodValue, +0x310 eat.hpValue`. AI block by difficulty
@@ -86,7 +86,7 @@ Classification recipe:
 - meat chunk / food: no AI (`ai.type == 0`), cellType 2 or 3.
 
 Network identity of a species: `instanceID = *(u32*)*(void**)(c+0x108)` (the .cell file) **plus**
-`modelKey` (+0xFC, 3×u32 — RandomCreature cells pick a random model per spawn) plus level `+0x358`.
+`modelKey` (+0xFC, 3×u32 - RandomCreature cells pick a random model per spawn) plus level `+0x358`.
 Host pool index (`*(u32*)c`) is a stable net id for the cell's lifetime.
 
 ## 2. Per-frame update and how to make a cell passive
@@ -108,16 +108,16 @@ no behaviour); avatar → 0xE6F5B0 (click-target + steering); else switch ai.typ
 (0x1001 0xE71300, 0x1003 0xE70650, 0x1004 0xE704B0, 0x1005 0xE702D0, 0x1006 0xE7A0A0, 0x1007 0xE6F990,
 0x1008 0xE78FC0, 0x1009 0xE707D0, 0x100B 0xE6FBB0, 0x100C 0xE6FD70, 0x100D 0xE6FCE0, 0x100E 0xE7A0D0).
 Steering used by behaviours and the avatar: `SwimTowardsTarget` 0xE6EEC0 (`ESI = cell`, stack:
-`float dt, float maxSpeed, float accel(1.0), int, int 0`, caller pops 0x14) — reads +4/+8.
+`float dt, float maxSpeed, float accel(1.0), int, int 0`, caller pops 0x14) - reads +4/+8.
 
 Passive mirror (two options):
 - **A (no code patch, ✔ by static reading):** `byte[c+0x16C] = 1`. Only reader in cell code is
   0xE7A218; no code that clears it was found (all writers set 1). Still runs 0xE76A80 (timers and
   electric/poison AoE 0xE71980 → 0xE71520), anim, physics, collisions.
 - **B (strict):** hook 0xE7A190 with a naked stub (`push eax; push ecx; call is_mirror; …; pop eax`
-  — EAX must be preserved) and `ret` for mirrors.
+  - EAX must be preserved) and `ret` for mirrors.
 Collisions (0xE7F260 → 0xE7F140 → interaction 0xE7E7F0) still run for passive cells: a mirror can
-still bite/zap the local avatar on contact and the local avatar can eat/bite it — handled in §3/§5.
+still bite/zap the local avatar on contact and the local avatar can eat/bite it - handled in §3/§5.
 
 Moving a mirror: set velocity `+0x90` (dead reckoning happens in 0xE7C080), add a correction
 `(target-pos)*k` to it, snap `+0x4C` (and `+0x84`) when far, then `*(u16*)(c+0x48) |= 4;
@@ -146,14 +146,14 @@ Eating (events posted on mouth contact, processed by 0xE7E130):
 - event 0x12 → `EatFood(eaterIdx, foodIdx, foodRef, float)` 0xE7DF40 ✔: OnEat, then the food shrinks one
   level or is destroyed (`DestroyCell(food,1,0,0)`).
 - events 0x13/0x14 → 0xE7DD90 / 0xE7DBD0: eat a chunk of a creature: OnEat + damage + KillIfDead(type 6).
-- `OnEat` 0xE7D760: **ESI = eater, EDI = foodType, stack (ref* food, float)** — avatar → AvatarEat,
+- `OnEat` 0xE7D760: **ESI = eater, EDI = foodType, stack (ref* food, float)** - avatar → AvatarEat,
   NPC → growth 0xE79320.
 - `AvatarEat` 0xE7D070 ✔: **EAX = ref* food**, stack `(int foodType, float)`: heals
   `hp += eat.hpValue` (×2 on easy; +2 if no resource), clamp 6, rollover; points
   `AddFoodPoints(eat.foodValue or 10, isPlant)`; isPlant = cellType==3 (or foodType 3 when flags&1);
   mission/mate-button bookkeeping (`S+0x69`, `S+0x80/0x84`).
 
-Health: max 6. **There is no passive regeneration** — the only writers that raise +0x244 are
+Health: max 6. **There is no passive regeneration** - the only writers that raise +0x244 are
 AvatarEat, CreateCellObject (=6) and the cheat `RefillAvatarHealth` 0xE5C580 (void, sets avatar hp 6).
 
 Avatar death outcome (✔ flow): both PlayerDeath and 0xE72200 end in `RequestRespawn` 0xE50930
@@ -178,7 +178,7 @@ thresholds every 50 points (0,50,100,…).
 
 ## 5. Removing / creating cells
 
-- **`void __cdecl DestroyCell(u32 idx, bool spawnLoot, float, int)` 0xE780A0** ✔ — the game's own
+- **`void __cdecl DestroyCell(u32 idx, bool spawnLoot, float, int)` 0xE780A0** ✔ - the game's own
   removal: clears avatar index if it was the avatar, removes from query (0xE86930) and collision pairs,
   frees GFX (0xE66020), detaches links (+0x370), optional loot/remains (spawnLoot=1 → 0xE67890 + 0xE771D0),
   then pool Free. Use `DestroyCell(idx, 0, 0.f, 0)` for mirrors. Never on the avatar.
@@ -197,7 +197,7 @@ thresholds every 50 points (0,50,100,…).
   0xE7C500** ✔ cdecl `(float prob, int layer, int level, query*, bbox*, markerRef, int)` (recursive).
   Skipping it when `query == *(void**)(G+0x40FC)` suppresses all gameplay-layer spawns (creatures,
   food, parts) while keeping the background. Other spawn sources: loot on death/break (0xE771D0 via
-  DestroyCell(…,1)/KillCell), NPC growth/spawnOutput (behaviours — off for passive cells).
+  DestroyCell(…,1)/KillCell), NPC growth/spawnOutput (behaviours - off for passive cells).
 - Active area: tiles stream around the **local** player's view (`G+0x4128`, bbox 0x16B4C68..7C);
   cells outside it are destroyed unless `+0x354` (0xE7C080) or level −1. ⇒ on the host, NPCs near a
   guest far from the host do not exist.
@@ -210,7 +210,7 @@ thresholds every 50 points (0,50,100,…).
   averages the particles: `+0x4C` = mean **position** `parts + 4 + 12·idx`, `+0x90` = mean
   **velocity** `parts + 0x4654 + 12·idx` (`parts = *(G+0x4108)`, indices `+0x254[i]`, at most 64
   of them up to +0x353; 0x4650 = 1500 × 12 ⇒ 1500 particle slots). Writing `+0x4C` alone is undone
-  the next frame — translate the particle positions by the same delta, and zero the particle
+  the next frame - translate the particle positions by the same delta, and zero the particle
   velocities to stop it (`modes::cell_move(c, p, still)`). Until 2026-10-22 the mod added the
   delta to the velocity array (the old note named +0x4654 as positions): a "teleport" then
   glided there in ~2 s and overshot by 4–6 m, the knockout respawn landed 7–40 m from the
@@ -228,7 +228,7 @@ thresholds every 50 points (0,50,100,…).
   `+0x5C` (flag 2 in `+0x48`) after the original. Rotating the particles instead blows the body up.
 - Teleport (✔ fields): write `+0x4C` pos (z = 0 on the gameplay layer), `+0x08` target = pos,
   `+0x84` = pos, `+0x90` vel = 0, `+0x04` idle = 1, `flags(+0x48) |= 4; ++counter(+0x4A)`; query
-  position is refreshed by 0xE7C080 the same frame. Camera follows the avatar (?) — check for a jump.
+  position is refreshed by 0xE7C080 the same frame. Camera follows the avatar (?) - check for a jump.
 - Respawn-next-to-partner: avoid the vanilla path (RebuildLevel wipes the world):
   hook **KillCell 0xE7A4A0** and **BreakOrSwallow 0xE7AEE0**; when the victim is the avatar and the
   partner is alive → do not call the original; set hp 6, clear `+0x112/+0x113`, teleport next to the
@@ -246,7 +246,7 @@ Host
 1. Each tick enumerate foreground cells (§1) near any player; send per cell: net id (pool index),
    instanceID, modelKey, level, size(+0x58)/targetSize(+0xB4), pos, vel, rot, hp, flags
    (dying +0x113). Creatures at 10–15 Hz, food/parts as spawn/despawn + low-rate position.
-2. Guest puppets (created as now): keep `+0x111 = 1` (NPC bites on them are not applied — the guest
+2. Guest puppets (created as now): keep `+0x111 = 1` (NPC bites on them are not applied - the guest
    applies them locally), set `+0x110 = 1` so damage/kills they cause count as player kills.
 3. On `Damage{netId, amount, type}` from a guest: victim = pool[netId]; set a "forced damage" global,
    call DamageCell(victim, guestPuppet, &dir, type, 0, dt) with a GetDamageAmount hook returning the
@@ -372,7 +372,7 @@ What DamageCell does around a bite besides the hp, and how the co-op path replay
   are `00 00 00 01 00 00 00 02 00 00 00 00`: only ai.type 0x1006 reaches the call.
 
 ## Open questions
-- Who clears `+0x16C`/`+0x178…` locks (none found statically) — confirm at runtime that a live NPC
+- Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC
   with `+0x16C=1` stays passive and nothing resets it.
 - `DamageCell` arg3 (float*, negated "dir") and arg5 meaning; damage type numbers beyond 3 (periodic
   poison/electric), 4 (bite), 5 (0xE7B280), 6 (eat chunk).
@@ -381,4 +381,4 @@ What DamageCell does around a bite besides the hp, and how the co-op path replay
   before CreateCellObject with a forced model key.
 - Camera behaviour after an avatar teleport; whether 0xE6ECB0/0xE6EB60 is the egg/hatch intro.
 - Existing `cell_despawn` in mods/coop/modes.cpp sets hp=0 and opacity 0: that only hides the puppet
-  (cells are removed by DestroyCell or size→0), so puppets may leak — use DestroyCell 0xE780A0.
+  (cells are removed by DestroyCell or size→0), so puppets may leak - use DestroyCell 0xE780A0.

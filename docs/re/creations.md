@@ -31,15 +31,15 @@ DBBF reader with RefPack), `keys.py` (finds serialized creation keys), `meta.py`
 | vehicle | `vcl` 0x24682294 | 0x40646200 | |
 | UFO | `ufo` 0x476A98C7 | 0x40656200 | premade 0x3A948398, 0x0665F6CE |
 | flora | `flr` 0x438F6347 | 0x40666200 | |
-| (adventure assets?) | — | 0x406B6200 | bem only, not researched |
+| (adventure assets?) | - | 0x406B6200 | bem only, not researched |
 
 Record types that hold a creation:
-- `bem` 0x1A99B06B — binary editor model (magic `D3 7E 65 48`), the normal storage form. 2.6–10 KB
+- `bem` 0x1A99B06B - binary editor model (magic `D3 7E 65 48`), the normal storage form. 2.6–10 KB
   for the test creatures. **No self-reference to its own key inside** (✔ searched LE/BE) ⇒ a
   receiver may store it under a different instance id.
-- `crt`/`cll`/`ufo`… as XML `<sporemodel>` (formatversion 18) — Maxis data in Spore_Game and
+- `crt`/`cll`/`ufo`… as XML `<sporemodel>` (formatversion 18) - Maxis data in Spore_Game and
   creations *imported from PNG* (Pollination, tagged `tag:spore.com,2006:ImportedContent`).
-- `creaturedata` 0x0F43029A — derived species data (abilities/stats cache). Read/written by
+- `creaturedata` 0x0F43029A - derived species data (abilities/stats cache). Read/written by
   `cCreatureDataResource` (Read 0x4BF920, Write 0x4BFC60, ported). `cEditor::LoadCreatureData`
   0x4BB4B0 (~) looks it up by `{instance, 0x0F43029A, group}` and **computes a new one when it is
   missing** (alloc 0x128 + 0x46AB00) ⇒ optional for a transfer.
@@ -57,7 +57,7 @@ factory id 0x4FFF05D3 at 0x4BC6F0): supports crt, bld, vcl, ufo, flr, cll, creat
 **a `bem` record may produce a crt/bld/vcl/ufo/flr/cll resource**. The resource manager maps a
 requested type to record types through its type map (`cResourceManager+0x54`, used by FindRecord
 0x8DFC70; SetTypeMapping 0x8E1BF0, GetTypeMapping 0x8DFC30, ported) ⇒ a key `{crt, 0x40626200, X}`
-resolves to a `{bem, 0x40626200, X}` record in any registered database (~ — this is exactly how
+resolves to a `{bem, 0x40626200, X}` record in any registered database (~ - this is exactly how
 EditorSaves.package, which contains only bem, serves crt keys).
 
 ### 1.2 Profile files (test profile `SporeKit-test/Spore`, ✔ listed with the reader)
@@ -84,7 +84,7 @@ Records inside a .spo that reference the player's creations (✔ by scanning, na
   (= cCellSerializableData+0x10, §2.2).
 
 The fixtures were started from Maxis premades (0x065CBE70 creature, 0xE219E5D3 cell,
-0x3A948398 UFO, all in Spore_Content) — those keys resolve on every machine. A real player's own
+0x3A948398 UFO, all in Spore_Content) - those keys resolve on every machine. A real player's own
 creations are 0x29xxxxxx keys from **their** EditorSaves.package and are unknown elsewhere.
 
 **Instance collisions:** creation instance ids are allocated per profile and sequentially
@@ -118,7 +118,7 @@ The editor saves a creation with `cResourceManager::WriteResource` (vt+0x20, 0x8
 | 0x4DA3D0 | `bool KeyExists(const ResourceKey*)` = `RM->GetResource(key,0,0,0,0,0)` (vt+0xC) | ✔ cdecl |
 | 0x4D3E00 | `cSpeciesProfile::ctor(this, const ResourceKey*, 0)` (object 0xA18 bytes, alloc 0xF47240) | ✔ call site |
 | 0x4DF450 | `GetDefaultSpeciesProfile()` = `GetSpeciesProfile(mgr+0xA4)` | ✔ thiscall(mgr), plain `ret` |
-| 0x4DF410 | thiscall(mgr, profile) — called after SetSpeciesProfile for avatar-flagged creatures | ? |
+| 0x4DF410 | thiscall(mgr, profile) - called after SetSpeciesProfile for avatar-flagged creatures | ? |
 
 GetSpeciesProfile ✔: key.instance==0 → default key `mgr+0xA4`; cached? → return; else
 **`KeyExists(key)` through the resource manager; false → return null *without caching*** ;
@@ -137,7 +137,7 @@ each, kind at +4):
 - kind 3 → `{entry+0x10, cll 0x3D97A8E4, *(u32*)0x15A8D0C = 0x40616200}` (fixed cell model);
 - kind 4 → random creature model (0xE655D0);
 - **kind 5 → the player's cell: `S+0x10..+0x18`** where `S = *(u8**)(*(u8**)0x16B4BE4 + 0x5190)`
-  (= cCellSerializableData) — `{instance, type, group}`;
+  (= cCellSerializableData) - `{instance, type, group}`;
 - none → `{0,0,0}` (globals 0x16B4DB4..BC).
 The cell's current model is then `cCellObjectData+0xFC` (cell.md). For the avatar and for
 puppets built from the avatar's resource, kind 5 applies ⇒ `S+0x10` is "the player's cell".
@@ -171,7 +171,7 @@ Details:
 - **Open** ✔ `(AccessFlags acc, CD cd, bool lazy)`: acc 1 = read, 2 = write, 3 = RW; cd 6 =
   default → 3 OpenExisting for read-only, 4 OpenAlways when writing; `lazy=true` only stores the
   flags. Read-only `Open(1, 6, 0)` for a received package. The file stream (0x931900…) opens with
-  share mode READ for read access and READ|WRITE when writing (✔) — so the mod can read the
+  share mode READ for read access and READ|WRITE when writing (✔) - so the mod can read the
   live EditorSaves.package from disk with `FILE_SHARE_READ|FILE_SHARE_WRITE`.
 - **cResourceManager** (vtable 0x14375F8, ✔): +0x00 dtor 0x8E2560, +0x04 Initialize, +0x08 Dispose,
   **+0x0C GetResource 0x8DF6F0** (`(const ResourceKey*, ResourceObject** out, int, Database*,
@@ -198,12 +198,12 @@ Details:
 
 [ModAPI] does the same: `new Resource::DatabasePackedFile(u"path")`,
 `dbpf->Open(IO::AccessFlags::Read, IO::CD::OpenExisting)`, `ResourceManager.RegisterDatabase(true,
-dbpf, priority)`; newer ModAPI wraps it in a DatabaseManager — not present in this build.
+dbpf, priority)`; newer ModAPI wraps it in a DatabaseManager - not present in this build.
 
 Alternatives (not recommended): writing records into the guest's EditorSaves db (pollutes My
 Creations, RW db is flushed by the game); building `cEditorResource` objects and injecting them
 with CacheResource (needs the factory's parse path); importing a Sporepedia PNG (writes an XML
-crt into Pollination as "ImportedContent" — import function not located, ?).
+crt into Pollination as "ImportedContent" - import function not located, ?).
 
 **Package to write on the receiver** (DBPF 3.0, uncompressed is fine): header `"DBPF"`, u32 3,
 u32 0, …, `+0x24` entry count, `+0x2C` index size, `+0x3C` index minor 3, `+0x40` index offset
@@ -254,9 +254,9 @@ the preload set at `G+0x70`, ~), unlocked parts `S+0x34` refresh 0xE4FBA0, then 
 message 0x6579712.
 
 To give the local avatar another cell (~): `S+0x10 = key; 0xE624C0(key)`; then either
-RebuildLevel (wipes all mirrors/puppets on this machine — acceptable right after joining, before
+RebuildLevel (wipes all mirrors/puppets on this machine - acceptable right after joining, before
 mirrors exist) or an in-place swap: write avatar `+0xFC`, free its GFX (0xE66020, `+0x248 = 0`)
-so 0xE78C00 recreates it lazily (?, soft-body particles `+0x250` come from the GFX — needs a
+so 0xE78C00 recreates it lazily (?, soft-body particles `+0x250` come from the GFX - needs a
 runtime test). Remote puppets: already spawned with the forced-model hook on
 GetModelKeyForCellResource; just use the remote key (and call 0xE624C0 first).
 How cell abilities (mouth/weapons/movement) derive from the model parts was not traced (?).
@@ -277,9 +277,9 @@ How cell abilities (mouth/weapons/movement) derive from the model parts was not 
    creature = local avatar `+0xB28` in the player's own game, cell = `S+0x10`, UFO =
    `cEmpire+0xB8`; or let the player pick from My Creations (`GetDatabaseByID(0x11AC199)` →
    GetKeyList, group 0x40626200 / 0x40616200 / 0x40656200, names from pollen_metadata). Keys
-   whose record is in Spore_Content/Spore_Game (Maxis) need no transfer — test with
+   whose record is in Spore_Content/Spore_Game (Maxis) need no transfer - test with
    `RM->FindRecord(&key, &real, 0)` and the database's location (EditorSaves/Pollination ⇒ send).
-2. **Extract** the records: `bem` (+`creaturedata`, metadata, png optional) — either parse
+2. **Extract** the records: `bem` (+`creaturedata`, metadata, png optional) - either parse
    `EditorSaves.package` from disk (share R|W) or `FindRecord` → `db->OpenRecord` (vt+0x34) and
    read the stream. A creature is ~3–10 KB (+ up to 13 KB creaturedata): send in chunks over the
    existing reliable channel together with `{owner, full ResourceKey, content hash}`.

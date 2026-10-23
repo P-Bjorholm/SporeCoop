@@ -52,7 +52,7 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
 * Scheduling: one test per lane at a time, longest first; a lane prefers a test on the save it
   has loaded (warm reset instead of a restart); exclusive tests (LAN discovery) run alone at the end.
 * After a failure the lane restarts cold and the test runs once more: passing then = **flaky**.
-  `out/lab/flaky.json` keeps the history; the summary lists the unstable tests — each one is a
+  `out/lab/flaky.json` keeps the history; the summary lists the unstable tests - each one is a
   bug in the test or in the mod and gets fixed, not ignored.
 * Results: `out/lab/<run>/summary.md`, `results.json`, the test logs and both games' own logs.
 
@@ -68,13 +68,13 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
 
 ## 10.5 Bots
 
-* **Scenario tests** (`coop_*.py`) — one feature each, with checks.
-* **Chaos bot** (`coop_chaos.py`) — both players act at random but validly: clicks on own and
+* **Scenario tests** (`coop_*.py`) - one feature each, with checks.
+* **Chaos bot** (`coop_chaos.py`) - both players act at random but validly: clicks on own and
   partner units (`coop.targets`), selection boxes (`drag`), orders, keys, the co-op window, the
   pause menu, stage actions, rejoins, saves, network outages. Seeded: the printed replay line
   repeats the same actions. Smoke: 2 min of tribe; nightly: every stage, minutes each.
 * **Bad network** (`netem.py`): `SPORE_NET=dsl|mobile|awful|delay=..,jitter=..,loss=..` puts a UDP
-  proxy with delay, jitter, loss, duplicates and outages between guest and host — for any test.
+  proxy with delay, jitter, loss, duplicates and outages between guest and host - for any test.
   The proxy waits on both sockets with `select()` and drains them; until 2026-10-23 it polled each
   socket with a 5 ms timeout and so capped the link at ~200 packets/s (~200 KB/s, plus kernel
   drops of its full receive buffer): every world transfer over it took ~21-24 s whatever the preset.

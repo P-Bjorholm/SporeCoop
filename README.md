@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/banner.svg" alt="SporeCoop — play every stage of Spore together" width="100%">
+  <img src="docs/media/banner.svg" alt="SporeCoop - play every stage of Spore together" width="100%">
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 **SporeCoop** is a multiplayer mod for Spore. Two to four friends evolve **in one world**, from the
 tide pool to the galaxy: everybody plays their own creature, the host's world is shared with the
-guests, and every stage has mechanics that only work together — revive a knocked-out cell, hunt as
+guests, and every stage has mechanics that only work together - revive a knocked-out cell, hunt as
 a pack, besiege a city from two sides, repair your partner's ship before it explodes.
 
 <p align="center">
@@ -61,11 +61,11 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 | Stage | What you do together |
 |---|---|
-| 🦠 **Cell — Symbiosis** | One tide pool. A killing bite only knocks you out for 10 s: a partner who swims right next to you revives you, otherwise you respawn as a small cell next to them. |
-| 🦎 **Creature — Pack** | Hunt the same animals for +25 % damage; when you are about to die near a partner, the pack saves you; partners heal each other. |
-| 🔥 **Tribe — Chiefs** | The tribe's members are split between players, each with their own chief (+20 % aura). Attack a tribe from two sides for +50 % (a *pincer*), perform together to make friends faster, kill the epic creature together for 80 food. |
-| 🏙️ **Civilization — Governors** | Every player governs their own cities and vehicles and picks a role: military, economic or religious. Two players besieging one city take it 50 % faster; a city under attack calls the others; superweapons fire only after a vote. |
-| 🚀 **Space — Squadron** | Fight the same pirates in one system. A destroyed ship is only disabled for 20 s — a partner who flies close repairs it. Jump straight to a partner's star, get alerts about raids on their colonies, terraform a planet together. |
+| 🦠 **Cell: Symbiosis** | One tide pool. A killing bite only knocks you out for 10 s: a partner who swims right next to you revives you, otherwise you respawn as a small cell next to them. |
+| 🦎 **Creature: Pack** | Hunt the same animals for +25 % damage; when you are about to die near a partner, the pack saves you; partners heal each other. |
+| 🔥 **Tribe: Chiefs** | The tribe's members are split between players, each with their own chief (+20 % aura). Attack a tribe from two sides for +50 % (a *pincer*), perform together to make friends faster, kill the epic creature together for 80 food. |
+| 🏙️ **Civilization: Governors** | Every player governs their own cities and vehicles and picks a role: military, economic or religious. Two players besieging one city take it 50 % faster; a city under attack calls the others; superweapons fire only after a vote. |
+| 🚀 **Space: Squadron** | Fight the same pirates in one system. A destroyed ship is only disabled for 20 s - a partner who flies close repairs it. Jump straight to a partner's star, get alerts about raids on their colonies, terraform a planet together. |
 
 <table>
   <tr>
@@ -82,7 +82,7 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
   </tr>
   <tr>
     <td><b>Civilization.</b> A city is under attack: every player gets the alarm and a beacon.</td>
-    <td><b>Space.</b> Bob's ship is disabled — a <i>REPAIR</i> beacon and a 20 s countdown.</td>
+    <td><b>Space.</b> Bob's ship is disabled - a <i>REPAIR</i> beacon and a 20 s countdown.</td>
   </tr>
 </table>
 
@@ -205,7 +205,7 @@ tools/package.sh                      # out/dist/SporeCoop-<version>.zip
 
 Documentation: [architecture](docs/01-architecture.md), [netcode](docs/04-netcode.md),
 [reverse engineering](docs/05-re-notes.md) and [per-stage notes](docs/re/),
-[testing](docs/06-testing.md), [development pipeline](docs/10-dev-pipeline.md) —
+[testing](docs/06-testing.md), [development pipeline](docs/10-dev-pipeline.md):
 all in [docs/](docs/README.md). Contributions are welcome: open an issue first for bigger changes.
 
 ## Credits
@@ -222,7 +222,7 @@ Licensed under the [MIT license](LICENSE).
 <!-- support:bottom:start -->
 ## ☕ Support the author
 
-If this project is useful to you, you can support the author — it really helps to keep working on it:
+If this project is useful to you, you can support the author - it really helps to keep working on it:
 
 **https://buymeacoffee.com/chamomilewoods**
 

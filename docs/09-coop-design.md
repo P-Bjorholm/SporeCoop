@@ -18,28 +18,28 @@ only from working together.
 
 ## 9.2 Phases
 
-### Cell — "Symbiosis"
+### Cell - "Symbiosis"
 * One tide pool: NPC cells, food and predators are shared (simulated by the host, mirrored on guests).
 * **Bond.** If players' cells are close (≤ 6 m), both regenerate health faster.
 * **Knockout and revive.** A lethal hit (if a partner is in the same pool) does not kill but
   stuns the cell for 10 s: it freezes and is invulnerable. A partner who swims right next to it
   (≈ 3 m) and stays there for 1.5 s revives it with half health. If they fail, the
   cell respawns next to the partner but **small** (half size); it
-  grows back by eating (50 food points — full size) or at the next level.
-  Progress (evolution bar, parts) is not lost. Alone in the pool — normal Spore death.
+  grows back by eating (50 food points - full size) or at the next level.
+  Progress (evolution bar, parts) is not lost. Alone in the pool - normal Spore death.
 * **Hunting together.** Damage to a large cell adds up, food is shared by everyone.
 * A shared evolution bar (like DNA).
 
-### Creature — "Pack"
+### Creature - "Pack"
 * Already there: one planet, shared NPCs, fights via the host, shared DNA.
 * **Revive.** If a player dies and a partner is nearby, the partner can pick them up
   (walk up and hold a social action / key), otherwise they respawn at the nest.
 * **Joint hunting.** If two players hit the same target, each one's damage is +25 %.
 * **Joint socializing.** Any player's social actions advance friendship with the same
-  nest (counted by the host) — with several players, befriending is easier.
+  nest (counted by the host) - with several players, befriending is easier.
 * **Epics** are stronger but give more DNA: they are nearly impossible to beat alone.
 
-### Tribe — "Chiefs"
+### Tribe - "Chiefs"
 * One tribe, shared food and huts. **Tribe members are split between players**: the host has their own,
   each guest has their own (equal shares by default; new members go to whoever "bought" them).
 * Everyone selects and leads **their own** members: hunting, gathering, attacking, music.
@@ -54,7 +54,7 @@ only from working together.
   comes to the village: 80 food if both players fought it, 30 otherwise. Members can be given to
   a partner (F9 window or `coop.give`).
 
-### Civilization — "Governors"
+### Civilization - "Governors"
 * One civilization, a shared treasury. **Cities are split between players**: the capital goes to the host,
   the rest are handed out in the lobby, and a captured or bought city goes to the player whose
   vehicles took it.
@@ -63,15 +63,15 @@ only from working together.
 * **Vehicles** belong to the buyer, and only the buyer drives them. Joint attacks: a city
   is captured faster if vehicles of several players storm it.
 * Diplomacy (alliances, trade, religion) is the host's; guests make suggestions via ping and chat.
-* **Roles** (F9 window, `coop.role`): *military* — own vehicles hit buildings 25 % harder;
-  *economic* — trade between players' cities pays more; *religious* — own preachers convert 50 %
+* **Roles** (F9 window, `coop.role`): *military* - own vehicles hit buildings 25 % harder;
+  *economic* - trade between players' cities pays more; *religious* - own preachers convert 50 %
   faster, twice as fast while another player's army besieges the city.
 * **Joint siege:** a city hit by vehicles of two players within 10 s falls 50 % faster.
 * **Alarm:** a player city under attack is marked for everybody (label and edge arrow), and the
   other players' vehicles nearby go 50 % faster for 20 s.
 * **Superweapons** fire only after a vote of all players. Vehicles and cities can be given away.
 
-### Space — "Squadron"
+### Space - "Squadron"
 * One empire, a shared budget, shared colonies. Everyone has their own ship.
 * **Wing.** Ships in the same system: enemies and pirates are shared (simulated by the host),
   guests' shots hit the same targets.
@@ -94,7 +94,7 @@ only from working together.
 ### Adventures
 * Everyone shares one adventure (guests auto-launch the host's adventure), with a party of captains.
 
-## 9.3 Phase transitions — "Vote"
+## 9.3 Phase transitions - "Vote"
 * When the phase's shared progress is complete, **everyone** gets a window "Move to Tribe?
   Ready: Alice ✔, Bob …". The transition starts when everyone is ready or after 60 s.
 * The host goes through the editor and the cutscene, then the world is sent to guests automatically.
@@ -106,7 +106,7 @@ only from working together.
 | Phase | Done | Module | Test |
 |---|---|---|---|
 | All | Evolution vote: the host's request to enter an editor (new phase or evolution within a phase) waits until everyone presses "I'm ready", 60 s, or "Start now"; once the host returns from the editor or enters the new phase, the world is immediately sent to everyone ("evolving together"); a guest's editor session is not interrupted | `coop.cpp` (`h_Submit`, `on_mode_change`) | `coop_vote.py` |
-| Cell | One pool: the host's NPCs and food appear on the guest as passive mirrors, the guest has none of its own; guest bites are applied by the host; bites by the host's NPCs on the guest's cell are sent to the guest; shared food counter; "Symbiosis" — a 10 s knockout (visible to all: translucent cell, "KO n", revive bar, off-screen arrow to the partner, game effects), revive by a partner right next to you, otherwise respawn next to them as a small cell (grows by eating); healing near a partner; the partner's cell is exactly in place and faces the same way (pose is set right after the simulation step) | `cellsync.cpp` | `coop_cell.py` |
+| Cell | One pool: the host's NPCs and food appear on the guest as passive mirrors, the guest has none of its own; guest bites are applied by the host; bites by the host's NPCs on the guest's cell are sent to the guest; shared food counter; "Symbiosis" - a 10 s knockout (visible to all: translucent cell, "KO n", revive bar, off-screen arrow to the partner, game effects), revive by a partner right next to you, otherwise respawn next to them as a small cell (grows by eating); healing near a partner; the partner's cell is exactly in place and faces the same way (pose is set right after the simulation step) | `cellsync.cpp` | `coop_cell.py` |
 | Creature | Joint hunting +25 %, "The pack protects" (40 % health instead of death, once a minute), regeneration near a partner; NPCs, fights, DNA shared (existing) | `teamplay.cpp`, `npc.cpp` | `coop_team.py`, `coop_two_instances.py` |
 | Tribe | All members of all tribes are host mirrors; the player tribe's members are split between players; you can select and command only your own; guest orders (move, attack, hunt, gather…) are executed by the host; animals around the tribe are shared; owner labels | `tribe.cpp` | `coop_tribe.py` |
 | Civilization | All vehicles are host mirrors; cities are split (the capital is shared while there are fewer cities than players); a vehicle belongs to its buyer; guest purchases, orders and buildings go through the host; host buildings and captures are replayed on guests; owner labels | `civ.cpp` | `coop_civ.py` |
@@ -121,19 +121,19 @@ on the guest still runs locally (the host's buildings do arrive, though), auto-l
 ## 9.4.1 Your own creations
 
 Each player has their own creature, cell and ship (`mods/coop/creations.cpp`,
-analysis — [docs/re/creations.md](re/creations.md)):
+analysis - [docs/re/creations.md](re/creations.md)):
 * your creation is taken from the player's "My Creations" (`EditorSaves.package` in their profile): for a guest
-  the newest one by default, for the host — the species of their world, the ship — their own empire's ship. In the F9 window
+  the newest one by default, for the host - the species of their world, the ship - their own empire's ship. In the F9 window
   the line "My creature: Kirgle < >" switches it; the choice is stored in the profile
   (`Spore/SporeCoop/choices.ini`);
 * the creation's records (`bem` + metadata) go to the host, which distributes them to everyone, including new players. On
   every machine the creation gets the same new ID (player + content hash: creation IDs
   in different profiles collide), is written to a small package and attached to the
   game's resources on the fly (`DatabasePackedFile` + `RegisterDatabase`). The host's creations are also registered under their
-  original ID above the guest's "My Creations" — that is how the guest gets the host world's species;
+  original ID above the guest's "My Creations" - that is how the guest gets the host world's species;
 * a player's copy is built from their creation; your own avatar gets your own creature
-  (`SetSpecies`: health and abilities from its parts) — 3 s after the world loads; your own
-  cell — the player's model + a level rebuild (the cell hatches again next to the partner);
+  (`SetSpecies`: health and abilities from its parts) - 3 s after the world loads; your own
+  cell - the player's model + a level rebuild (the cell hatches again next to the partner);
 * evolution vote: the host and guests open the editor for **their own** creature; a host world
   that arrives while the guest is in the editor is loaded after the guest leaves the editor; after the editor
   the edited creature becomes the player's own and is sent to the others.

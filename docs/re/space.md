@@ -26,7 +26,7 @@ Vtables written by the ctor 0xC3C9B0 and the dtor 0xC3BAE0 (V):
 | IUnmanagedMessageListener | +0x5E8 | 0x0146C638 (HandleMessage = 0xC3B6A0, ret 8) |
 
 Fields (V unless noted): cGameData `mbIsDestroyed` +0x21 (IsDestroyed 0xB182E0), `mID` +0x24
-(= `++[0x167CE08]` in `cGameNounManager::CreateInstance` 0xB20B80 — per-process counter, unique
+(= `++[0x167CE08]` in `cGameNounManager::CreateInstance` 0xB20B80 - per-process counter, unique
 while the session lives), `mPoliticalID` +0x30; loco pos +0x38, rot +0x44, vel +0x1FC,
 movement controller `loco+0x4CC` = ufo+0x500; combatant max HP +0x534, HP +0x540,
 `mbInvincible` +0x588, `mpTarget` +0x550 (P); `mUFOType` +0x714 (0 = player, see UfoType below),
@@ -44,7 +44,7 @@ UfoType (ModAPI SimulatorEnums): 0 Player, 1 UberTurret, 2 Raider, 3 ?, 4 Bomber
 
 | what | address | signature | conf |
 |---|---|---|---|
-| `GetData<cGameDataUFO>` helper | **0x00AD48B0** | `eastl::vector<cGameDataUFO*>* __thiscall(cGameNounManager*)` — pushes the 5 args below, calls GetData, returns `container+4` (the vector `{begin,end,cap}`), plain `ret` | V |
+| `GetData<cGameDataUFO>` helper | **0x00AD48B0** | `eastl::vector<cGameDataUFO*>* __thiscall(cGameNounManager*)`: pushes the 5 args below, calls GetData, returns `container+4` (the vector `{begin,end,cap}`), plain `ret` | V |
 | `cGameNounManager::GetData` | 0x00B21260 | `tGameDataVectorT* __thiscall(mgr, create, clear, add, filter, nounID)`, `ret 0x14`; rebuilds the cached vector from the noun list (+0x78) only when the container's dirty byte is set | V |
 | callbacks for UFOs | create 0xCD7E80, clear 0xD3D3D0, add 0xAD47B0 (casts to 0xB033B403, AddRef, push_back), filter 0xB1E410 (`obj->GetNounID()==noun`), noun 0x18EBADC | | V |
 | `cGameNounManager::Get` | 0x00B3D3D0 | cdecl () | V (existing) |
@@ -67,7 +67,7 @@ Per-UFO data to replicate:
 | net identity | host keeps `map<cGameDataUFO*, net_id>`; `mID` +0x24 is a convenient stable key on the host only (counter differs per process) |
 | owner | `mPoliticalID` +0x30 (or vtable +0x4C). Empire = `cStarManager::GetEmpire(pol)`; player = `GetPlayerEmpireID()` 0x1020F40 |
 | type | `mUFOType` +0x714 |
-| model | `mDesiredModelKey` +0x780 (12-byte ResourceKey) — pass to SpawnUFO on the mirror |
+| model | `mDesiredModelKey` +0x780 (12-byte ResourceKey) - pass to SpawnUFO on the mirror |
 | pose | loco +0x38 / +0x44 / +0x1FC, plus `mDestination` +0x750, `mZoomAltitude` +0x768 |
 | HP | +0x540 / +0x534; invincible +0x588 |
 | place | same as players: `SpacePlayerData` context (planet id / star id) |
@@ -84,7 +84,7 @@ Recipe (host → guests, 10 Hz like NPC_STATE in the creature stage):
    (cdecl `(UfoType, cEmpire*)`, calls `Initialize`) and return null for non-mod calls while a
    co-op guest is in space (keep a thread-local "mod is spawning" flag), and destroy any
    non-mirror UFO with type ≠ 0 found in the GetData list (callers of SpawnUFO such as raid
-   code must tolerate null — **U**, check each caller before enabling; alternative is
+   code must tolerate null - **U**, check each caller before enabling; alternative is
    spawn-then-destroy next frame). SpawnUFO callers (functions): 0xC5D2C0, 0xD4C150, 0xFF8980,
    0xFF96B0, 0xFFA630, 0x1025200, 0x102B500, 0x102B790; CreateUFO callers at 0xFDAEDA,
    0x1008B3A, 0x1008FF2, 0x100923F, 0x10095C4, 0x100B004, 0x102B204, 0x10387F8, 0x1038B01.
@@ -92,7 +92,7 @@ Recipe (host → guests, 10 Hz like NPC_STATE in the creature stage):
 ## 2. Player weapons → damage
 
 Every space weapon ends in the target combatant's virtual `TakeDamage` (combatant vtable +0x18).
-For UFOs that is **0x00C3CEA0** — the single hook point for both directions.
+For UFOs that is **0x00C3CEA0** - the single hook point for both directions.
 
 ### 2.1 `cGameDataUFO::TakeDamage` 0x00C3CEA0 (V)
 `int __thiscall(cCombatant* this /*ufo+0x508*/, float dmg, uint32 attackerPol, int type,
@@ -100,7 +100,7 @@ const Vector3* dir, cCombatant* attacker)`, `ret 0x14`. **`dir` is a unit knock-
 (explosion → target), not a world position** (stored at combatant+0x74). Order:
 1. `type==10` (heal) → base directly.
 2. Return if invincible (combatant+0x80 = ufo+0x588, via 0xBFC5A0) or `0x1041D20()` (global flag
-   0x23BA1FC, probably god-mode cheat — U); if dead (combatant+0x34 = ufo+0x53C == 2); if
+   0x23BA1FC, probably god-mode cheat - U); if dead (combatant+0x34 = ufo+0x53C == 2); if
    `ufo+0x76C==3 && type!=5`.
 3. Player only (type 0): return if on a planet and `cSimulatorPlayerUFO::Get()+0x24 > 0`
    (invulnerability lock counter, incremented by 0xFFBF50).
@@ -135,10 +135,10 @@ const Vector3* dir, cCombatant* attacker)`, `ret 0x14`. **`dir` is a unit knock-
   configures (vt+0x54 = 0xCB4EB0) min = `(int)(tool+0x1B4 * tool+0x144)`, max =
   `(int)(tool+0x1B8 * tool+0x144)`, radius tool+0x1AC → proj+0x52C/0x530/0x534/0x538.
 * Projectile Update 0xCC2920 (cProjectile sub-object at +0x504), phase byte +0x544:
-  phase 0 `0xCBB970` — on collision sets strike type/target (+0x5D0/+0x5D4) and calls strategy
+  phase 0 `0xCBB970`: on collision sets strike type/target (+0x5D0/+0x5D4) and calls strategy
   **OnHit** (vt+0x30; `cDefaultProjectileWeapon::OnHit` 0x0105B310 → `cToolStrategy::OnHit`
   0x010593B0, `ret 0x10`, only special tools/terraform/relationship effects, posts
-  kMsgToolOnHit 0x56690BB — **no combatant damage here**); phase 1 **0x00CBBEF0** (`thiscall(proj)`,
+  kMsgToolOnHit 0x56690BB - **no combatant damage here**); phase 1 **0x00CBBEF0** (`thiscall(proj)`,
   `ret`) = explosion: radius grows, damage tick every 250 ms, spatial query, each combatant hit
   once (+0x570); same political id skipped unless `kFlagDamagesFriendlies` (tool+0x174 bit 9);
   call `target->TakeDamage(min + rand(max-min), attackerPol, proj+0x538, &dir, attacker)` with
@@ -174,7 +174,7 @@ Guest:
    in every case return without calling the original (host is authoritative).
 2. `this` is the local UFO and the attacker is a mirror / NPC empire and `!g_netApply` → drop.
 3. On `DAMAGE{dmg, type, dir, npc_id}`: `g_netApply=1; orig(localUFO+0x508, dmg, npcPol, type,
-   &dir, mirror ? mirror+0x508 : nullptr); g_netApply=0` — local death/respawn then run natively.
+   &dir, mirror ? mirror+0x508 : nullptr); g_netApply=0` - local death/respawn then run natively.
 4. On `NPC_DEATH`: clear mirror+0x588 and call orig with `(mirror+0x508, 1e6, 0xFFFFFFFF, 0,
    &dir, nullptr)` (explosion + 0x102C350; pol −1 skips relationship/event log) or call
    `0x102C350(mirror, 0)` directly.
@@ -199,14 +199,14 @@ Movement is done by a per-UFO *locomotion controller* object stored at `loco+0x4
 | controller | vtable | ctor | Update (vtbl +0x0C) | installed by |
 |---|---|---|---|---|
 | default UFO controller | 0x0149CB20 | 0x105D1B0 | **0x01062CF0** `thiscall(ctrl, ctx*)`, `ret 4` | `cGameDataUFO` ctor **0x00C3C9B0** (every UFO) and Read 0xC37BD0 |
-| "follow next pose" controller | 0x0149CB10 | 0x105D150 | 0x0105EBA0 `thiscall(ctrl, ctx*)`, `ret 4` — steers straight to mNextPosition/mNextOrientation | 0xC373B0 `thiscall(ufo)` (callers 0x1001807, 0x102C16B, 0x102C2D9, 0xDBEFE2) |
+| "follow next pose" controller | 0x0149CB10 | 0x105D150 | 0x0105EBA0 `thiscall(ctrl, ctx*)`, `ret 4`: steers straight to mNextPosition/mNextOrientation | 0xC373B0 `thiscall(ufo)` (callers 0x1001807, 0x102C16B, 0x102C2D9, 0xDBEFE2) |
 
 `ctx`: +0x00 Vector3 output velocity, +0x10 float dt (s; ×1000 → ms), +0x14 `cLocomotiveObject*`
 (UFO = ptr − 0x34). 0x1062CF0 calls **0x1060E00** (`thiscall(ctrl, ctx, int dtMs)`, `ret 8`) when
 `GetCurrentContext()==0` (planet) and **0x105F2E0** (same signature, `ret 8`) otherwise
 (solar system), then integrates toward `mNextPosition + mOffsetFromPosition`.
 0x1060E00 returns immediately if `byte [ufo+0x691] != 0` (flag set/cleared by AI behaviours,
-meaning unknown — **U**, do not rely on it).
+meaning unknown - **U**, do not rely on it).
 
 Decision AI ("attack", "patrol", "flee"…) is data-driven utility AI: a registry of 16-byte
 entries `{hash, fnA, fnB, fnC}` at 0x0159E640… (e.g. hash 0x5872576 → 0xDC32C0/0xDC0AF0/0xDBFFD0;
@@ -222,7 +222,7 @@ Direct pose control (V):
   `mNextVelocity = 0; mNextPosition = mDestination; mZoomAltitude = |mNextPosition|;
   loco->SetPosition(mNextPosition + mOffsetFromPosition); loco->SetOrientation(mNextOrientation);
   mbAtDestination = 1`. So: write `mDestination` (+0x750) and `mNextOrientation` (+0x730), call
-  0xC37FA0 — the controller then has nothing to do.
+  0xC37FA0 - the controller then has nothing to do.
 * Or the current puppet path: loco vtable SetPosition +0x38 (0xC37B70, also moves the abduct
   beam) / SetOrientation +0x3C / Teleport +0x44, and pin +0x718/+0x724/+0x730/+0x750/+0x74C.
 
@@ -233,7 +233,7 @@ Recipe for mirrors (guest):
    write the received pose (`mDestination`, `mNextOrientation`, `mNextVelocity`) and call
    0xC37FA0, zero `ctx+0..8`, return without calling the original. Otherwise call original.
    (Cheaper alternative without a hook: keep doing what `space_drive` does for puppets.)
-3. Firing / damage: mirrors must not shoot — hook FireTool **0x01050080** and return `al=0`
+3. Firing / damage: mirrors must not shoot - hook FireTool **0x01050080** and return `al=0`
    when `owner == mirror+0x34` (NPC fire comes from `cCombatSimulator::Update` 0xAE7330, §3).
    Drop all local damage to mirrors in the TakeDamage hook (§2); real HP comes from the host
    and is written to +0x540.
@@ -294,7 +294,7 @@ star->SetFlag(0x100,1); SetTechLevel(rec,5); FillPlanetDataForTechLevel(rec,5); 
 * Capture (any player): hook `CreateColony` 0xFF8FB0 (or callback 0x1058C60), send
   `{PlanetID (record+0x184), pos, quat}`; re-entrancy flag so replays are not re-sent.
 * Apply, receiver on the same planet: `0xB268A0()->0xAE4920(0x1058C60, GetPlayerEmpireID(),
-  &pos, 0, 0xFD701F6F, 0, &quat, 0)` — drop animation + full original path. Direct alternative:
+  &pos, 0, 0xFD701F6F, 0, &quat, 0)` - drop animation + full original path. Direct alternative:
   `cStar 0xC8B740(activeStar, pol)` then `GetPlanetHighLOD()->CreateColony(&pos, &quat)`.
 * Apply, receiver elsewhere: `rec = cStarManager::GetPlanetRecord(planetID)` (0xBA6EF0), run the
   record-level sequence above, then `playerEmpire->AddPlanet(rec)` 0xC34FB0. Layout is then
@@ -326,7 +326,7 @@ cMission* parent)`, `ret 0x10`; class from prop 0x874B25B6, 0xA4B0A2DF → raid 
 `(0xA4B0A2DF, colonyRec, empireOwningStar, 0)` → `SetAttackerEmpire(0)` 0xC5B520 (+0x230; 0
 keeps −1 = pirates? U) → `SetTargetPlanet(rec)` 0xC472C0 → `SetNumBombers(rand)` 0xC5B540
 (+0x1F8) → Accept. Variants: 0x100E620 (`ret 0xC`, `(0, rec, numBombers)`, used by the `raid`
-cheat parser 0x1025200: `raid -start N | -stop | -plunder | -repair` — handy for tests);
+cheat parser 0x1025200: `raid -start N | -stop | -plunder | -repair`: handy for tests);
 plunder starter 0x10143E0 (class 0xC4956AA7, factory 0xFEBF90).
 
 Update 0xC5E3E0 ("player present" = target planet is active and context 0):
@@ -346,7 +346,7 @@ Update 0xC5E3E0 ("player present" = target planet is active and context 0):
   `ApplyRelationship` 0xD06280.
 
 ### Recipe: shared raid defence
-* Guests: no own universe events — hook 0x10125D0, 0x10143E0, 0x100E620 → return 0
+* Guests: no own universe events - hook 0x10125D0, 0x10143E0, 0x100E620 → return 0
   (alternative: the cSimulatorUniverse update, slot U: vtable 0x1496280 [4] = 0x1014CD0?).
 * Host start: hook CreateMission (or end of 0x10125D0); if `Cast(0x3960C0A)` succeeds send
   `{missionID, PlanetID, attacker +0x230, bombers +0x1F8, fighters +0x1FC}`.
@@ -359,7 +359,7 @@ Update 0xC5E3E0 ("player present" = target planet is active and context 0):
 * U: whether the manager applies Update's return through SetState; meaning of node+0x38.
 
 ## Open questions (all items)
-* Dispatcher of the UFO utility-AI registry (0x159E640) — not needed if mirrors are pinned and
+* Dispatcher of the UFO utility-AI registry (0x159E640) - not needed if mirrors are pinned and
   FireTool is blocked.
 * Runtime checks needed: SpawnUFO/CreateUFO null-tolerance of callers on guests; host NPC AI
   targeting Defender puppets; `+0x691` semantics; record-level colony replay on later visits.
@@ -521,7 +521,7 @@ thiscall(0xFDD380, mode, dst, /*keepPosse*/ 1);                      // jump to 
 Galaxy-only alternative: `SpaceTeleportTo(dst)` (free, instant), then optionally
 `EnterSolarSystem()`. Partner's star: send `starRecord+0x70` (StarID), resolve with
 `cStarManager::GetStarRecord` 0xBA6EB0 (same galaxy layout → same ids). Run it outside Present
-(SK_CMD_OUTSIDE_FRAME). ? whether FDD380 is safe while a cinematic/comm screen is open — guard on
+(SK_CMD_OUTSIDE_FRAME). ? whether FDD380 is safe while a cinematic/comm screen is open - guard on
 `ufo+0x7F0 == 0` and context ≠ −1.
 
 ### 7.4 Raids and plunder (builds on §6)
@@ -556,7 +556,7 @@ Galaxy-only alternative: `SpaceTeleportTo(dst)` (free, instant), then optionally
   0xC5BC60 (raid) and 0xC5B2E0 / 0xC5B300 (plunder).
 * Co-op: the guest at the raided colony sees host-mirrored raid UFOs (they are normal NPC UFOs with
   `ufo+0x800 == mission`); a guest's colony raid can't be mirrored from the host's save (different
-  colonies) — to let the partner help, the owner of the raided planet stays authoritative and the
+  colonies) - to let the partner help, the owner of the raided planet stays authoritative and the
   helper "jumps" there (§7.3); helper hits on raid UFOs go through the §2 host path only if the owner
   is the host ?.
 
@@ -581,8 +581,8 @@ Feasibility of "a mission taken by one counts for both": missions exist only in 
 (own galaxy save per player), so the partner cannot complete *the same object*. Feasible variant:
 hook `SetState` 0xC47E00 (value 5/6) or OnCompleted, send `{missionID, money +0xA0, tool keys,
 giver pol}` and pay the partner with AddMoney / AddItemByKey (relationship only if political ids
-match across saves — ? same galaxy seed should give the same ids). Objective sharing (e.g. partner
-kills/scans counting) would need per-mission-class hooks — not recommended.
+match across saves - ? same galaxy seed should give the same ids). Objective sharing (e.g. partner
+kills/scans counting) would need per-mission-class hooks - not recommended.
 
 ### 7.6 Terraforming
 
@@ -626,7 +626,7 @@ elsewhere: apply to `GetPlanetRecord(id)+0xB0/+0xB4` directly (not loaded → no
 
 `cSpaceInventoryItem` (size 0x7C, ctor 0xC877E0): +0x0C tool sub-object (vt+0x0C Cast(0x707459F0) →
 `cSpaceToolData*`), **+0x10 count**, **+0x14 item type** (2 tool, 3 empty cargo slot, 4 trading
-object / spice; 0/1/5/6 other cargo — plant/animal/rare ~), +0x18 price, +0x1C non-stackable,
+object / spice; 0/1/5/6 other cargo - plant/animal/rare ~), +0x18 price, +0x1C non-stackable,
 key via vt+0x18 (returns `ResourceKey*`), vt+0x14 SetKey.
 
 Tools (✔): `cPlayerInventory::GetTool(const ResourceKey*)` **0xFF3BF0** (thiscall `ret 4` →
@@ -634,7 +634,7 @@ Tools (✔): `cPlayerInventory::GetTool(const ResourceKey*)` **0xFF3BF0** (thisc
 max, +0x19C use cost, uses-ammo flag `+0x174 bit 5` (0x104CBD0); **AddAmmo(int)** 0x0104CBE0
 (`ret 4`, clamps to max), **ConsumeAmmo(int)** 0x0104CC10 (`ret 4`, −1 = use cost, no clamp).
 New tool: **`cPlayerInventory::AddItemByKey(const ResourceKey*)` 0xFF4490** (`ret 4`, loads via
-`cToolManager::LoadTool` 0x104E350, AddItem(item,0,1), event log 0x15E1A624) — used by mission rewards.
+`cToolManager::LoadTool` 0x104E350, AddItem(item,0,1), event log 0x15E1A624) - used by mission rewards.
 
 Spice (✔ from `space -addCargo` and the colony-collect code 0x103E6F0): spice is a trading object
 (type 4) keyed by the planet's spice key `record+0x198` (getter 0xB8DBB0). Add N:
@@ -689,7 +689,7 @@ Found while fixing "loading a Cell save from the Space stage crashes" (branch fi
   run, lane 1: a guest in Space left, joined again and loaded the re-sent world in game; reproduced
   on lane 5 with the pre-fix build by `coop_stage_switch.py --steps space,rejoin`). Both runs were in
   a solar system (context 1). Host `coop.load` space → space in warm resets did not crash in the lab;
-  why is open (?) — perhaps another context (planet/galaxy) at that moment; `ReloadCurrentGame` in a
+  why is open (?) - perhaps another context (planet/galaxy) at that moment; `ReloadCurrentGame` in a
   system crashed (✔).
 
 ### 8.2 The native way out: quit message 0x4715068 (✔)

@@ -4,7 +4,7 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 (`mods/coop/modes.{h,cpp}`). An adapter answers three questions:
 
 1. What the local player controls (`local`) and how to describe it in `PlayerState`
-   (position, orientation, velocity, health, flags — `fill`).
+   (position, orientation, velocity, health, flags - `fill`).
 2. How to show a remote player (a "puppet": `spawn` / `drive` / `despawn`, `alive`).
 3. Where the player is (`place`): players see each other only when both their **mode** and
    **place** match. By default the place is the current save's name (crc32 of the
@@ -18,13 +18,13 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 
 | Mode | What the player has | Puppet seen by others | Place | Shared progress | Test |
 |---|---|---|---|---|---|
-| Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | — | `coop_mode.py --fixture cell` ✅ |
+| Cell | avatar cell (`cCellGame` pool) | cell with the avatar's model, invulnerable | save | - | `coop_mode.py --fixture cell` ✅ |
 | Creature | avatar creature | creature in the avatar's pack | save | DNA, host-side NPCs, damage via the host | `coop_two_instances.py` ✅ |
 | Tribe | mouse pointer on the planet | name-tagged pointer + `coop ping` marks | save | tribe food | `--fixture tribe` ✅ |
 | Civilization | mouse pointer on the planet | name-tagged pointer + marks | save | civilization money | `--fixture civ` ✅ |
 | Space | player's ship (`cSimulatorPlayerUFO`) | "defender" ship, invulnerable | star (StarID) or planet (PlanetID) | empire money | `--fixture space` ✅ |
-| Adventures | captain (avatar creature) | captain creature | adventure key | — | echo puppet ✅ |
-| Editors, menus | — | puppets hidden | — | — | — |
+| Adventures | captain (avatar creature) | captain creature | adventure key | - | echo puppet ✅ |
+| Editors, menus | - | puppets hidden | - | - | - |
 
 ## 7.2 World, saving and guest join
 
@@ -64,7 +64,7 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   the cell is invulnerable and always has 6 HP. On removal HP = 0 and opacity 0, and the game
   itself cleans the cell up.
 
-## 7.4 Tribe and Civilization — "pointers"
+## 7.4 Tribe and Civilization - "pointers"
 
 The RTS stages have no single avatar, and everyone shares one world (the host's). The tribe,
 cities and citizens therefore already exist on every machine. The mod shows **where each player is
@@ -76,11 +76,11 @@ currently working**:
   the host relays it to the others).
 * Shared resources (`shared.cpp`, `MSG_RES`/`MSG_RES_ADD`). The total lives on the host; guests
   send their changes (earned or spent) and get the total back:
-  * tribe food — sum of the food bundles in the tribe's `cGameBundleContainer` (+0x20C, vector +4,
+  * tribe food - sum of the food bundles in the tribe's `cGameBundleContainer` (+0x20C, vector +4,
     `float` amount per bundle +0x134; verified against `cTribe::GetTotalFood` 0xC8E850);
     `UpdateFoodVisuals` is called after a change;
-  * civilization money — `cCivilization::mWealth` (+0x98) from `GetPlayerCivilization`;
-  * space money — `cEmpire::mEmpireMoney` (+0xD0) from `GetPlayerEmpire`.
+  * civilization money - `cCivilization::mWealth` (+0x98) from `GetPlayerCivilization`;
+  * space money - `cEmpire::mEmpireMoney` (+0xD0) from `GetPlayerEmpire`.
 * Unit commands are not synchronized. Each player controls their own copy of the same tribe or
   civilization; only resources and marks are shared. Full unit sync is a separate large
   milestone (see 7.7).
@@ -105,7 +105,7 @@ currently working**:
 * The host goes through the editor and the transition, then sends the new world to guests on the
   next join or on `coop share`. While players are in different modes, puppets are hidden and the
   panel shows each player's mode (`Bob [Editor]`).
-* Planned: a readiness panel ("Phase complete — ready: Alice ✔, Bob …", 60 s timeout,
+* Planned: a readiness panel ("Phase complete - ready: Alice ✔, Bob …", 60 s timeout,
   `coop next`) and blocking guests from advancing on their own.
 * Space has no phase end. In adventures each player's act ends separately, and players
   meet within the same adventure.

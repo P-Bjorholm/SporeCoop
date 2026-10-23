@@ -289,7 +289,7 @@ static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action,
     g_last_cmd = b;
 }
 
-// cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) — every
+// cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) - every
 // order on an object goes through it; on guests the order goes to the host instead
 using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
 static DoActionForObjects_t o_DoActionForObjects;

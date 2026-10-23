@@ -1,4 +1,4 @@
-# SporeCoop — rules for everyone working here (people, Claude sessions, subagents, test bots)
+# SporeCoop - rules for everyone working here (people, Claude sessions, subagents, test bots)
 
 Co-op mod for Spore (GOG 2016 build, `SporeApp.exe` 24 888 320 bytes) on the SporeKit framework,
 run under Wine/Bottles on Linux. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
@@ -10,24 +10,24 @@ seconds. **Before analysing anything in the game, search what is already known; 
 anything new, write it down in the same change.**
 
 * Where knowledge lives:
-  * `data/symbols/overrides_922af7c7.sym` — every game function / global / vtable we use:
+  * `data/symbols/overrides_922af7c7.sym`: every game function / global / vtable we use:
     `Namespace::Name=0xADDRESS ; <confidence> <calling convention + signature + what it does>`.
     Confidence is one of `verified` (prologue / `ret N` / call sites checked, or seen working at
     runtime), `likely` (role sure, details inferred), `unknown`. `tools/re_lint.py` (in `make test`)
     fails when the code asks for a symbol that is not there or an entry has no confidence word.
-  * `docs/re/<area>.md` (cell, tribe, civ, space, creations, …) — structures, field offsets, how a
+  * `docs/re/<area>.md` (cell, tribe, civ, space, creations, …) - structures, field offsets, how a
     game system works, recipes ("to spawn an epic: …"), with ✔ / ~ / ? marks. One file per game
     area; append a section rather than starting a new file.
-  * `docs/05-re-notes.md` — method and tools of the reverse engineering.
-  * `docs/known-issues.md` — bugs found and not fixed yet (with how to reproduce them).
-  * `docs/06-testing.md` — test tools, fixtures, how long things take, test pitfalls.
+  * `docs/05-re-notes.md`: method and tools of the reverse engineering.
+  * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them).
+  * `docs/06-testing.md`: test tools, fixtures, how long things take, test pitfalls.
 * Code never uses a raw game address: ask SporeKit by name (`H->sym("…")`) and add the name to the
   `.sym` file.
 * Agents and test bots doing analysis or exploration: put the findings into these files (or into
   your report so the caller can), including negative results ("X is not called in tribe mode",
   "field +0x84 is not the state").
 * Findings at runtime count: a crash signature, a function that needs an argument nobody knew, a
-  timing ("a stage switch in game takes 2 s") — write it down where the next person will look.
+  timing ("a stage switch in game takes 2 s") - write it down where the next person will look.
 
 ## 2. Checking before calling game code
 
@@ -51,7 +51,7 @@ anything new, write it down in the same change.**
   (a headless GNOME Shell, tools/headless.sh; see docs/06-testing.md).
 * Pitfalls: `pkill -f <pattern>` from a shell whose own command line contains the pattern kills
   that shell; quitting one Wine instance kills every instance in the same bottle (lanes have own
-  bottles); a deadlocked Wine process can keep its port — `spore.sh kill` SIGKILLs it.
+  bottles); a deadlocked Wine process can keep its port - `spore.sh kill` SIGKILLs it.
 
 ## 4. Git
 

@@ -6,7 +6,7 @@ The **Creature stage** was chosen as the first target because it is the most co-
 by nature: Spore already has a posse mechanic (up to 3 allies near the player, with their
 health shown in the UI), combat, socializing and shared progress through DNA.
 
-Co-op turns **other players into members of your posse**: 2–4 players (host + up to 3 guests —
+Co-op turns **other players into members of your posse**: 2–4 players (host + up to 3 guests:
 exactly as many as the game's posse slots), each controlling their own creature; the world
 and progress are shared, and the world belongs to the host.
 
@@ -39,7 +39,7 @@ Why not the other stages (initially):
 **In game**
 * Each player has a nickname and a health bar above them; guests occupy the host's posse
   slots (their health is visible in the standard posse UI).
-* Chat: `coop say <text>` (later — the Enter key in the overlay), feed in the corner of the screen.
+* Chat: `coop say <text>` (later - the Enter key in the overlay), feed in the corner of the screen.
 * Guest disconnect: their creature "leaves" (dissolves), freeing the posse slot.
 
 ## 3.3 Shared world rules (host is authoritative)
@@ -50,19 +50,19 @@ Why not the other stages (initially):
 | NPC creatures, nests, eggs, fruit, epics | **host** (AI runs only on the host) | puppets on the guest within ~150 m |
 | Guest attack/ability on an NPC | guest sends "ability X on target Y", host computes damage | animation for everyone, target health from the host |
 | Damage to a guest from an NPC | host | guest receives a damage event |
-| Guest death | — | respawns at the host's nest after 10 s |
+| Guest death | - | respawns at the host's nest after 10 s |
 | DNA | host's shared pool: a kill/befriend by any player gives DNA to everyone within 50 m | single progress bar |
-| Body parts (bones, finds) | shared unlocks | — |
+| Body parts (bones, finds) | shared unlocks | - |
 | Mating call → editor | host decides when; guests wait in an "editor lobby" | M4: everyone edits their own creature |
-| Transition to the Tribe stage | session ends cleanly with a message | — |
-| Pause | host: pauses for everyone; guest: local menu only | — |
+| Transition to the Tribe stage | session ends cleanly with a message | - |
+| Pause | host: pauses for everyone; guest: local menu only | - |
 
 Players trust each other (co-op with friends): there is no anti-cheat, the guest reports its own position.
 
 ## 3.4 Guest appearance
 
 * M1: the guest looks like a creature of the **host's species** with a different color/size (the
-  species is guaranteed to exist in both worlds — it's the host's world snapshot).
+  species is guaranteed to exist in both worlds - it's the host's world snapshot).
 * M4: the guest picks their own creature from the Sporepedia; the creation file (`.crt`, a few KB)
   is sent to the host and the other guests and registered in their resource database.
 
@@ -75,7 +75,7 @@ Players trust each other (co-op with friends): there is no anti-cheat, the guest
 | **M2 "Posse"** | guest = posse member on the host; NPCs on the guest are host puppets; ability and damage events | a joint fight with one NPC looks the same for both |
 | **M3 "Shared progress"** | DNA, parts, death and respawn, eggs/nests | the guest can kill an NPC and the host gets DNA |
 | **M4 "Convenience"** | automatic world transfer and loading, guest's own creature, menus instead of cheats, editor | joining a session takes 1 command |
-| **M5 Adventures** | co-op in Galactic Adventures: captains, shared act goals | — |
+| **M5 Adventures** | co-op in Galactic Adventures: captains, shared act goals | - |
 
 ## 3.6 What works already (2026-10-20)
 

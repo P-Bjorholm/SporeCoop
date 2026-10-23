@@ -157,7 +157,7 @@ If there is no Co-op item, see [Troubleshooting](#9-troubleshooting).
 
 The host listens on **UDP port 47810**. Guests need to reach it:
 
-* **Easiest:** all players join the same virtual LAN —
+* **Easiest:** all players join the same virtual LAN:
   [Tailscale](https://tailscale.com), [ZeroTier](https://www.zerotier.com) or
   [Radmin VPN](https://www.radmin-vpn.com). Then join with the host's VPN address
   (the co-op window shows the host's addresses), or pick the host under *Games on your network*.

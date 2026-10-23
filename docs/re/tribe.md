@@ -1,4 +1,4 @@
-# Tribe stage — RE notes (GOG 2016 build, sha256 922af7c7…)
+# Tribe stage - RE notes (GOG 2016 build, sha256 922af7c7…)
 
 Static analysis only (llvm-objdump + local headless Ghidra on windowed PE copies).
 All addresses are VAs in this build. "ret N" = callee pops N bytes (thiscall/stdcall).
@@ -7,7 +7,7 @@ Confidence: **V** = verified by disassembly in this build (signature + ret count
 **U** = unverified / inferred, check at runtime.
 
 ModAPI (March2017) names are used where they match. Several ported symbols in
-`gog2016_922af7c7.sym` are wrong for this area — see "Symbol fixes" at the end.
+`gog2016_922af7c7.sym` are wrong for this area - see "Symbol fixes" at the end.
 
 ---------------------------------------------------------------------------------------------
 ## 1. Player tribe, members, citizen fields
@@ -30,7 +30,7 @@ Layout matches ModAPI `cTribe.h` (checked by the getters):
 | +0x20C | cGameBundleContainer (food) | known |
 | +0x334/+0x338/+0x33C | mbRoboTribe / mRoboPopulationCount / mbVisualized | SpawnMember/AddMember |
 | **+0x340** | `vector<cCreatureCitizen*> mTribeMembers` (begin,+4 end) | vt 0x90 = 0xC8E990 `lea eax,[ecx+0x340]` |
-| **+0x354** | `vector<cSpatialObject*> mSelectableMembers` — holds **citizen+0xC0** (spatial sub-object), adults only | vt 0x94 = 0xC8E710; AddMember pushes `citizen+0xC0` when `GetAge()==1` |
+| **+0x354** | `vector<cSpatialObject*> mSelectableMembers`: holds **citizen+0xC0** (spatial sub-object), adults only | vt 0x94 = 0xC8E710; AddMember pushes `citizen+0xC0` when `GetAge()==1` |
 | +0x368 | `cTribeHut* mpHut` | vt 0xAC/0xB0 = 0xC8F850 |
 | +0x36C | `vector<cTribeTool*> mTools` | vt 0xBC/0xC0 = 0xC8E880 (both return +0x36C here) |
 | +0x380 | social tools vector (types 4,5,6 are also pushed here) | CreateTool |
@@ -81,7 +81,7 @@ Fields (verified in code unless noted):
 | **+0xB4C** | AI/behavior-tree data (action queue list at AI+0x60C) | DoAction, Update |
 | +0xB5E | byte flag (skip locomotion/anim when set) | Update |
 | +0xFC0..+0x1002 | ModAPI fields (FC0=3, FF4 selection group, FF8, FFC handheld item, 1000, 1002) | reset in vt0xCC 0xC243D0 |
-| +0xFF4 | selection group (Ctrl+N) — set 0xC228F0, get 0xC22900 | V |
+| +0xFF4 | selection group (Ctrl+N) - set 0xC228F0, get 0xC22900 | V |
 | +0xFFC | mCurrentHandheldItem | V (writes) |
 | +0x1010 | mpOwnerCity (null in tribe stage → AI runs) | V |
 | **+0x1014** | **mpOwnerTribe** | V (DoAction, Init) |
@@ -101,7 +101,7 @@ Useful citizen helpers: `0xC233F0` IsChieftain (thiscall, P), `0xC0C4A0` cdecl
 ## 2. How the player issues orders (cTribeInputStrategy)
 
 Getting the strategy: `TribeUI = *(void**)0x169C2A8` (getter **0xCD41E0**, cdecl, V);
-`strategy = TribeUI->vt[0x70]()` (used by 0xB1B2F8 and ChooseInputActionID; P — class of
+`strategy = TribeUI->vt[0x70]()` (used by 0xB1B2F8 and ChooseInputActionID; P - class of
 0x169C2A8 not identified, probably the tribe game-mode UI object).
 
 Message handler: **0xCD1D10** = `cTribeInputStrategy::HandleMessage(uint32 msg, IMessage*)`
@@ -137,7 +137,7 @@ WalkSelectedTo 0xCD0400 (ecx unused) (const Vector3* pos) ret 4
    then c->vt[0xF0](4)  // voice
 ```
 
-### cCreatureCitizen::DoAction — **0xC276F0** (V; sym "medium" is correct)
+### cCreatureCitizen::DoAction - **0xC276F0** (V; sym "medium" is correct)
 `ActionRec* __thiscall DoAction(cCreatureCitizen* this, int action, cGameData* target, App::Property* param)` ret 0xC.
 Body: `cur = 0xBCA410(ai)`; `rec = 0xBCB0C0(ai, action, target, 1 /*replace queue*/)` (thiscall ret 0xC);
 copies `param` into rec+0x39 (0x542B80), copies target's position to rec+0x2C, then re-plans.
@@ -170,15 +170,15 @@ CitizenAction 4 = WalkTo (param = Vector3 property), 6 Sleep, 28 ReturnToTribe (
 ---------------------------------------------------------------------------------------------
 ## 3. Executing a command on a given member (host)
 
-* Action on object: `DoAction(c, action, target, nullptr)` — **0xC276F0**, thiscall, 3 stack args.
+* Action on object: `DoAction(c, action, target, nullptr)`: **0xC276F0**, thiscall, 3 stack args.
   Equivalent to what the UI does (0xCCEAE0 just loops this). Alternatively build a vector
   `{c+0xC0}` and call 0xCCEAE0(vec, action, target, 0) (ecx can be anything).
 * Walk: `rec = DoAction(c, 4, nullptr, nullptr); SetValueVector3(rec+0x39, &pos)`
-  (`App::Property::SetValueVector3` 0x6A3570 thiscall(prop, const Vector3*) — sym high).
+  (`App::Property::SetValueVector3` 0x6A3570 thiscall(prop, const Vector3*) - sym high).
   Optional voice: `c->vt[0xF0](4)`. (Simpler alternative, U: pass an App::Property holding the
-  Vector3 as DoAction's 4th arg — DoAction copies it to rec+0x39.)
+  Vector3 as DoAction's 4th arg - DoAction copies it to rec+0x39.)
 * Grab tool: `DoAction(c, 3, tool, nullptr)`; party: `(12, firepit)`; repair `(24, tool|hut)`.
-* WalkSelectedTo's reachability check (0xB830A0 on cPlanetModel 0xB3D420) is skipped this way —
+* WalkSelectedTo's reachability check (0xB830A0 on cPlanetModel 0xB3D420) is skipped this way:
   either run it on the guest before sending (call original logic) or accept.
 
 ---------------------------------------------------------------------------------------------
@@ -189,9 +189,9 @@ Order inside:
 1. return if `!byte[+0x135]` or destroyed;
 2. `this->vt[0x70](dtSec)`;
 3. **AI**: if `ai=[+0xB4C]`, `*ai` and `city([+0x1010])==0`: build flags, then
-   `BehaviorTreeTick` **0xD995C0** — cdecl, 9 dwords (`add esp,0x24`):
+   `BehaviorTreeTick` **0xD995C0** - cdecl, 9 dwords (`add esp,0x24`):
    `(float dt, double time, void* btRoot=*ai, cCreatureBase* self, void* ai+0x1D0, int ai[+0x5E8], uint flags, int x)`;
-4. if `!byte[+0xB5E]`: `vt[0x64]()`, `vt[0x68](dt)` — locomotion/animation update (keep these on mirrors);
+4. if `!byte[+0xB5E]`: `vt[0x64]()`, `vt[0x68](dt)`: locomotion/animation update (keep these on mirrors);
 5. misc (vt 0x58 when swimming, hit-sphere at +0x1030, `0xC214F0`).
 
 0xD995C0 is shared: called from cCreatureAnimal::NPCTickAI (0xC09AE9), AvatarTickAI (0xC0409F),
@@ -200,7 +200,7 @@ citizen Update (0xC24BAB) and 0xD5842C/0xD6073A/0xD60821/0xD60B40 (other creatur
 (Hooking 0xC249F0 and not calling the original would also kill locomotion/animation.)
 
 Positioning a member directly: spatial at `c+0xC0`: SetPosition vt 0x38 `(const Vector3*)`,
-SetOrientation vt 0x3C `(const Quaternion*)`, GetPosition vt 0x2C — same as cCreatureAnimal
+SetOrientation vt 0x3C `(const Quaternion*)`, GetPosition vt 0x2C - same as cCreatureAnimal
 (docs/05-re-notes.md 5.4; MoveTo 0xE0 / StopMovement 0xEC on the locomotive object for smooth
 driving, as npc.cpp does). Animations: `cCreatureBase::PlayAnimation` 0xC12430 (ret 0xC).
 Pending actions are in the AI queue; without BT ticks a queued DoAction is not executed (U).
@@ -233,14 +233,14 @@ is best executed on the host by the original UI path, or by `SpawnMember(0)` + f
   IsSelected = spatial vt 0x50 (0xAD26A0). **SetSelected = spatial vt 0x54; for citizens
   0xC227E0**: thiscall(`spatial = citizen+0xC0`, bool sel) ret 4; plays the "select" voice
   (vt0xF0(0x29B)) on a new selection (V).
-* `cGameTerrainCursor::GetTerrainCursor` **0xB30E80** (cdecl; sym "medium" — V), cursor class
+* `cGameTerrainCursor::GetTerrainCursor` **0xB30E80** (cdecl; sym "medium" - V), cursor class
   vtable 0x1460A98. Candidate list pointer at **cursor+0x164** (`vector<cSpatialObject*>*`, set by
   vt 0x58 = 0xB2FC40 `SetObjects`). vt 0x5C = **0xB310C0 `GetSelectedObjects(vector* out)`**
   (AddRefs via spatial vt 0xBC), vt 0x64 = 0xB2FFA0 deselect all, vt 0x68 count candidates,
   vt 0x74 = 0xB300C0 `UpdateSelectedObjectCount` (+0x15C), vt 0x7C = 0xB31140 box select,
   vt 0x80 = 0xB308F0 apply set, vt 0x9C = 0xB30F90 / vt 0xA0 = 0xB314C0 click select.
   **Every selection change calls spatial vt 0x54 on objects of the candidate list** (V).
-* The tribe candidate list is presumably `&playerTribe->mSelectableMembers` (+0x354) — **U**
+* The tribe candidate list is presumably `&playerTribe->mSelectableMembers` (+0x354) - **U**
   (check at runtime: `*(void**)(cursor+0x164) == tribe+0x354`).
 * Restricting selection: hook 0xC227E0 and drop `sel=true` for citizens not owned by the local
   player (`citizen = this - 0xC0`). Covers click, box and group select.
@@ -253,7 +253,7 @@ is best executed on the host by the original UI path, or by `SpawnMember(0)` + f
   (sym high; it calls `GetToolByType(10)`/`CreateTool(10)` at 0xC9353D). NPC tribe controller:
   `cNpcTribeController::Get` 0xCC8C40 (sym high).
 * Planner AI behaviours are functions referenced from .data (e.g. 0xCE36D0, 0xCE38F0,
-  0xCE3B00 — "fldz; ret" score functions, use CreateTool/SpawnMember) (P).
+  0xCE3B00 - "fldz; ret" score functions, use CreateTool/SpawnMember) (P).
 * Enumerate all tribes: `cGameNounManager::GetData` **0xB21260**, thiscall(nm, create, clear,
   add, filter, uint32 nounID) ret 0x14 (V by ret count; semantics = ModAPI template), with
   nounID 0x18C6D19 and a filter `obj->vt[0x20]() == nounID`. Or walk all citizens with noun
@@ -301,13 +301,13 @@ target, nullptr)` (0xC276F0). On `CmdWalk`: `rec = DoAction(c, 4, 0, 0); SetValu
 command guest members.
 
 **Purchases.** Food is already shared (shared.cpp). Tool/member purchases by a guest:
-first version — forward `CmdBuyTool{type, pos}` → host `tool = tribe->vt[0xB4](type)`,
+first version - forward `CmdBuyTool{type, pos}` → host `tool = tribe->vt[0xB4](type)`,
 `tool->vt[0x64](tribe)`, set position via tool spatial (+0x34) vt 0x38, charge food; the
 placement finalizer (0xD10F90: footprint, purchased bit 0xC8ED60) is skipped → **U, test**.
 Guest gets the tool through a tool snapshot/rebuild. Alternatively keep building host-only.
 
 ---------------------------------------------------------------------------------------------
-## Symbol fixes (proposed lines for overrides_922af7c7.sym — not applied)
+## Symbol fixes (proposed lines for overrides_922af7c7.sym - not applied)
 ```
 Simulator::cGameNounManager::GetPlayerTribe=0x00BFC710 ; verified asm: mov eax,[ecx+0x70]; ret
 Simulator::cTribeInputStrategy::DoActionGeneric=0x00CD0BD0 ; verified: thiscall(hovered) ret 4, switch on ChooseInputActionID (sym 0xCD0400 was wrong)
@@ -332,9 +332,9 @@ Simulator::cTribeUI::Get=0x00CD41E0 ; verified returns [0x169C2A8], class name u
 ```
 
 ## Open questions
-* Which object holds the tribe selection candidate list (cursor+0x164) — runtime check.
+* Which object holds the tribe selection candidate list (cursor+0x164) - runtime check.
 * Food cost / validation path for buying a tool or a baby (UI side) not found.
-* How the held-tool model / gather/eat animations are shown — needed for good-looking mirrors.
+* How the held-tool model / gather/eat animations are shown - needed for good-looking mirrors.
 * Whether mID (+0x24) is identical between host and guest after loading the same save.
 
 ---------------------------------------------------------------------------------------------
@@ -379,7 +379,7 @@ Citizen TakeDamage 0xC26920 details ✔:
   attackerPol, 0x530CF00, 1.0)` (victim tribe gets angry at attacker) ✔.
 * Killed: event-log entries (0x7C5B1068 "you killed …", 0xAF9432AB "member killed"),
   message 0x5C80207 {victim, attackerTribe, attackerHerd} ✔.
-* Base 0xBFCEF0 keeps the last attacker at combatant+0x28 — handy to ask "who hit this enemy".
+* Base 0xBFCEF0 keeps the last attacker at combatant+0x28 - handy to ask "who hit this enemy".
 
 **Pincer recipe (host).** Hook **0xC26920** (thiscall, ret 0x14, same typedef as game.cpp):
 ```
@@ -430,7 +430,7 @@ tick, exit}`; tick = cdecl, **arg1 = the creature**, plain `ret`, returns bool):
 | Node id | tick | Behaviour |
 |---|---|---|
 | **0xB46E8803** | **0xDA2FA0** | social performance with instruments (tool types 4/5/6 pick anims; chief has own anims) |
-| 0x546E8804 | — | NPC side "being socialised" (chooser returns InputAction 0x2D) |
+| 0x546E8804 | - | NPC side "being socialised" (chooser returns InputAction 0x2D) |
 | 0x562C0FB | 0xDB9B20 | heal (section C) |
 | 0x4623E0C | 0xDBC790 | gift food |
 | 0x461300F | 0xDABDE0 | eat |
@@ -440,7 +440,7 @@ The social tick looks up a **session record**: `idx = ai[+0x600][+0x1A8]`,
 `s = SocialSession_Get(idx)` = **0xD9F500** cdecl(int) → record+4 or 0 (pool 0x15945A8/AC,
 stride 0x210) ✔. Session: `+0x04 state` (6 = finished), `+0x08` player tribe, **`+0x0C` target
 NPC tribe** ✔, `+0xE8` mini-game UI object (vtable 0x14823F8; **progress float at +0x68**,
-success when ≥ 1.0 — 0xE31110), `+0xEC` result mode (1/2 → which threshold). On success:
+success when ≥ 1.0 - 0xE31110), `+0xEC` result mode (1/2 → which threshold). On success:
 ApplyRelationship(npcPol, playerPol, 0x530CF07, threshold − current), npcTribe+0x2CC = 0.
 Player orders: social mode (`TribeUI[+0x390] == 0`) + click other tribe's hut → InputAction
 0xE (level < 2) / 0xF (≥ 2, refused with a sound); attack mode (+0x390 == 1) → 0xC → CitizenAction
@@ -452,19 +452,19 @@ Player orders: social mode (`TribeUI[+0x390] == 0`) + click other tribe's hut �
 target: `ApplyRelationship(Get(), target->vt4C(), playerTribe->vt4C(), 0x530CF07, +delta)`
 (raw delta, ~), or speed up the mini-game: `ui = s[+0xE8]; *(float*)(ui+0x68) += x` (~).
 Read back with CalculateRelationship to cap at the threshold. Optional hook instead of polling:
-0xDA2FA0 (cdecl; declare ≥9 dword args and forward all — caller cleans).
+0xDA2FA0 (cdecl; declare ≥9 dword args and forward all - caller cleans).
 
 ### C. Healing (goal: healer bonus)
 
 * Player order: InputAction 0x28 → CitizenAction **5** (only members with tool 9, see §2) ✔.
-* Execution: BT node 0x562C0FB, tick **0xDB9B20** — cdecl, plain `ret`: **arg1 = healer**
+* Execution: BT node 0x562C0FB, tick **0xDB9B20** - cdecl, plain `ret`: **arg1 = healer**
   (citizen), **arg6 = cCreatureBase\*\* target** (patient = `0xD99440(*arg6)`, cdecl
   "valid target" → creature or 0), heal = rate × arg8 ✔ (arg8 ≈ dt, ~).
   Body: plays anim 0x562CFBF on the healer, `AddHealth(patient+0x5A8, amount)`; when the
   patient reaches max HP it increments `TribeUI+0x7C` map[patient mID] (mFullHealsPerPerTribeMember,
   achievement 0x90EC8983) and flags the healer's AI ✔.
 * **cCombatant::AddHealth 0xBFD2C0** thiscall(combatant, float amount) ret 4, clamps to
-  `vt[0x58]()` (max HP) ✔. Also used by eating (0xDABDE0) and sleeping (0xDAF810) — so hooking
+  `vt[0x58]()` (max HP) ✔. Also used by eating (0xDABDE0) and sleeping (0xDAF810) - so hooking
   it alone can't name a healer.
 
 **Healer recipe:** hook **0xDB9B20** (cdecl, forward 9+ args). Before: `pat = 0xD99440(*arg6)`,
@@ -491,7 +491,7 @@ heal just finished) and both are player-tribe citizens with different coop owner
 * Chief look = staff (tool 0xB) + bigger scale; no hat found (accessories are tribe-wide, ?).
 * **Marker for any member** (~, cosmetic, test at runtime): scale up `spatial(c+0xC0)->vt[0x40]
   (c->vt[0x80]() * 1.15f)` (re-apply after age change / load), or give the staff with
-  `SetSpecializedTool(c, 0xB)` — this replaces the member's tool/job and may confuse the UI
+  `SetSpecializedTool(c, 0xB)`: this replaces the member's tool/job and may confuse the UI
   palette counts, so prefer scale. Do **not** call SetChieftain on a second member (it moves the
   single leader slot).
 
@@ -514,9 +514,9 @@ heal just finished) and both are player-tribe citizens with different coop owner
   +0x108 mTerritoryRadius, +0x150 mScaleMultiplier, +0x154 mHitpointOverride, +0x158
   mDamageMultiplier, +0x15C mCreaturePersonality, +0x160 mpNest, **+0x218 mbEnabled**.
   `cHerd::SetEnabled` = **0xC6AE50** thiscall(bool) ret 4 ✔. CreateHerd (0xB238B0) calls
-  SetEnabled(**false**) in creature/tribe mode — the scenario spawner (0xEEE0EC) re-enables it.
+  SetEnabled(**false**) in creature/tribe mode - the scenario spawner (0xEEE0EC) re-enables it.
 
-**Epic spawn recipe (host, ~ — test at runtime):**
+**Epic spawn recipe (host, ~: test at runtime):**
 ```
 prof = cSpeciesManager::GetSpeciesProfile(0x401090(), &speciesKey)   // 0x4DF580, verified
 herd = nm->CreateHerd(&pos, prof, 0, false, 0, false)                  // 0xB238B0
@@ -531,7 +531,7 @@ its profile is what Create got) so the guest has the model. Position: tribe spat
 ### F. Food
 
 * Food = bundles in `cGameBundleContainer` at **tribe+0x20C** (vector begin/end at +4/+8,
-  amount float at bundle+0x134, type at +0x12C) ✔ — what shared.cpp reads.
+  amount float at bundle+0x134, type at +0x12C) ✔ - what shared.cpp reads.
   Total: container `0xCEE4D0` thiscall → float ST0 ✔; cTribe vt 0xA4 = 0xC8E850 → int ✔.
 * **cTribe::AddFood = 0xC8F7E0** thiscall(tribe, **int delta**) ret 4 ✔: `delta>0` →
   `cBundleManager::CreateBundles(Get(), float delta, tribe+0x20C, 0xC8EB10(tribe) /*bundle type*/)`;
@@ -541,13 +541,13 @@ its profile is what Create got) so the guest has the model. Position: tribe spat
   thiscall(bm, float, container*, int type) ret 0xC ✔; RemoveBundles **0xAC7C10**
   thiscall(bm, float, container*, int) ret 0xC → float ST0 ✔.
 * **cTribe::UpdateFoodVisuals 0xC94CD0** thiscall(tribe, float **delta**) ret 4 ✔ only shows
-  the floating "+N/−N food" text above the food mat (0xC94950) and only for the player tribe —
+  the floating "+N/−N food" text above the food mat (0xC94950) and only for the player tribe:
   it does **not** change food. Game callers pass the delta (gift: −amount at 0xDBCF0D; deposit:
   +bundle amount at 0xDBC1F4). ⚠ `shared.cpp s_food()` passes the new **total** → probably shows
   a wrong popup on every sync; pass `v − cur`.
 
 **Bonus food recipe:** `thiscall(0xC8F7E0, playerTribe, n); thiscall(0xC94CD0, playerTribe,
-(float)n);` on the host — shared.cpp then mirrors the total to the guest.
+(float)n);` on the host - shared.cpp then mirrors the total to the guest.
 
 ### Recommended hook points (summary)
 | Goal | Hook / poll | Notes |

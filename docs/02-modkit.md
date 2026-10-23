@@ -14,10 +14,10 @@ SPOREKIT_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host);
 |---|---|
 | log | `log(level, fmt, ...)` → `mods/logs/sporekit.log` + console buffer |
 | symbols | `sym(name)` → rebased address or 0; `sym_require(names[])` |
-| hooks | `hook_create(target, detour, &orig)`, `hook_enable/disable/remove` — tied to the mod and removed on unload |
-| events | `subscribe(event, cb, user)` — preinit / init / post_init / frame / shutdown |
-| commands | `command_add(name, help, fn, flags)` — console commands (and, via coop, in the game's cheat console) |
-| main thread | `run_on_main(fn, user)` — run on the next frame |
+| hooks | `hook_create(target, detour, &orig)`, `hook_enable/disable/remove`: tied to the mod and removed on unload |
+| events | `subscribe(event, cb, user)`: preinit / init / post_init / frame / shutdown |
+| commands | `command_add(name, help, fn, flags)`: console commands (and, via coop, in the game's cheat console) |
+| main thread | `run_on_main(fn, user)`: run on the next frame |
 | config | `config_get(section, key, default)` from `mods/<mod>.ini` |
 | D3D | `d3d_device()`, `overlay` event for drawing on top of the frame |
 

@@ -11,7 +11,7 @@
   as command-line switches (`-sporekit-profile:test`, `-sporekit-instance:2`).
 * Build: llvm-mingw (`~/.local/opt/llvm-mingw-*/bin/i686-w64-mingw32-clang++`), `make`.
 
-## 6.2 Profiles — tests don't touch your saves
+## 6.2 Profiles - tests don't touch your saves
 
 `-sporekit-profile:<name>` redirects Spore's user data to
 `AppData/Roaming/SporeKit-<name>/Spore`. `spore.sh run -p test` creates the profile from a copy of
@@ -152,7 +152,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 
 * MinHook must not freeze threads (`VirtualProtect` may hang).
 * In the second process of the same wineserver, blocking sockets/`select()` and starting new threads
-  sometimes hang — the console runs on non-blocking sockets in a single thread.
+  sometimes hang - the console runs on non-blocking sockets in a single thread.
 * Spore stops rendering without focus; test runs enable SporeKit's "background mode".
 * **A window on a hidden workspace is minimized.** Mutter marks every X11 window on a workspace that
   is not shown as iconic, and Wine then minimizes it (`WM_SYSCOMMAND SC_MINIMIZE`, `IsIconic` = 1).
@@ -169,7 +169,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   thread itself and lists every return address from its own frame up (modules and offsets; coop.dll
   offsets: `llvm-symbolizer --obj=build/coop.dll 0x1000_0000+offset`). `stack.scan` reads the stack
   from the TEB without suspending (stale values mixed in). Filter exe values to real return
-  addresses (a call instruction before them) — UTF-16 text looks like code addresses. `winedbg`
+  addresses (a call instruction before them) - UTF-16 text looks like code addresses. `winedbg`
   attach from `flatpak enter <wineserver pid>` failed with error 5.
 * A hung Wine process can be left half-dead (a zombie leader with live threads)
   and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.
@@ -181,7 +181,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   line. New per-remote lines go after the puppet line (the `together <id> <0|1>` line that
   `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
   inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
-  partner cell was there and exact — it looked like a missing puppet / timing bug.
+  partner cell was there and exact - it looked like a missing puppet / timing bug.
 * `coop_cell.py` reads `coop.pool` keys with `re.search(key + '=(-?\d+)')` (no word boundary): a new
   field whose name ends in an old key (`own_food=` before `food=`) is read instead of it. On
   2026-10-23 that turned "shared food progress" into "0 -> 0"; the field is `own_points=` now.

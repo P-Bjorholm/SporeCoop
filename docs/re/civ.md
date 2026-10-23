@@ -1,4 +1,4 @@
-# Civilization stage — RE notes (GOG 2016 build, sha256 922af7c7…)
+# Civilization stage - RE notes (GOG 2016 build, sha256 922af7c7…)
 
 Static analysis only (llvm-objdump on the full exe + local headless Ghidra on a windowed PE copy
 0xBD0000–0xD20000). All addresses are VAs in this build. "ret N" = callee pops N bytes.
@@ -25,11 +25,11 @@ current mode id; civ code branches on it everywhere).
 
 Noun ids: civ 0x18C816A, city 0x18C43E8, vehicle 0x18C6DE8 (all wrappers push these).
 
-### cCivilization (TYPE 0x901F1362) — matches ModAPI `cCivilization.h`
+### cCivilization (TYPE 0x901F1362) - matches ModAPI `cCivilization.h`
 | Off | Field | Evidence | Conf |
 |---|---|---|---|
 | +0x30 | mPoliticalID (cGameData); vt 0x4C GetPoliticalID | used everywhere | V |
-| +0x6C | cCultureSet (design keys) — `0xBF9890` = `lea ecx,[ecx+0x6C]; jmp 0xBF9820` | V |
+| +0x6C | cCultureSet (design keys) - `0xBF9890` = `lea ecx,[ecx+0x6C]; jmp 0xBF9820` | V |
 | +0x89 | mIsPlayerOwned | GetMoney/SpendMoney | V |
 | +0x98 | mWealth | GetMoney | V |
 | +0x9C | `vector<cCity*> mCities` | AddCity 0xBF4490 | V |
@@ -57,7 +57,7 @@ Civ functions (thiscall on civ):
 (space mode uses another table). Enums: purpose 0 military, 1 cultural(religious),
 2 economic, 3 colony; locomotion 0 land, 1 water, 2 air.
 
-### cCity (TYPE 0xEE9B2232, noun 0x18C43E8) — matches ModAPI `cCity.h`
+### cCity (TYPE 0xEE9B2232, noun 0x18C43E8) - matches ModAPI `cCity.h`
 | Off | Field | Evidence | Conf |
 |---|---|---|---|
 | +0x24 | mID (cGameData) | header only | U |
@@ -88,7 +88,7 @@ City functions (thiscall on city):
 | RemoveBuilding | 0xBE3480 | `(cBuilding*)` | P (ported) |
 | CreateBuilding (auto slot) | 0xBE54E0 | `(uint32 noun, uint32 typeId)` ret 8 → cBuilding*; picks the best free slot (`0xBDB6C0`), used by AI growth | V |
 | CreateBuildingByType | 0xBE74A0 | `(uint32 typeId)` ret 4 (type→noun: 0x1A55E4D→0x1A56ABA ent., 0xECADE42→0x18EA2CC factory, else house 0x18EB106) | V |
-| SetBuildingModel | 0xBDB920 | `(cBuilding*, uint32 typeId)` ret 8 — sets model key from civ culture set | V |
+| SetBuildingModel | 0xBDB920 | `(cBuilding*, uint32 typeId)` ret 8 - sets model key from civ culture set | V |
 | **SnapBuildingToSlot** | 0xBE3630 | `(cBuilding*, bool update)` ret 8 → bool; finds the free slot nearest to the building's current position (`0xAFACC0`), assigns it, sets slot position + orientation facing the city | V |
 | ChangeOwner | 0xBE8A00 | see §6 | V |
 
@@ -130,7 +130,7 @@ civ->SpendMoney(b->vt0x5C GetCost())      // 0xBEF840 (GetCost returns float in 
 Building vtable (house 0x1468220, verified): 0x20 GetNounID, 0x54/0x58 SetOwnerCity, 0x5C GetCost,
 0x84 GetOwnerCity (+0x1F0). Building nouns: house 0x18EB106, factory 0x18EA2CC,
 entertainment 0x1A56ABA, city hall 0x18EA1EB, turret 0x436F342 (turrets use mTurretsLayout,
-turret placement path not traced — **U**).
+turret placement path not traced - **U**).
 
 Sell/destroy: pie command CitySellBuilding (0x37EAF27) in 0xCF3340: refund
 `cf7ba0()*b->GetCost()` via 0xBEFEB0, then `0xBE3510(city, b)` removes it. **P**
@@ -202,7 +202,7 @@ message-listener vtable 0x147924C → HandleMessage **0xCF5690**). Owned by
 | Function | Address | Signature | Conf |
 |---|---|---|---|
 | **Right-click on object** | 0xCF3D40 | thiscall(input, cGameData* target, ?) ret 8; classifies target (creature 0xD0036E08, building ≠ city hall, turret 0x436F315, tribe hut 0xEE02C7, spice node cCommodityNode 0x403DF5F, vehicle) and orders all selected vehicles | V |
-| **Move selected to ground** | 0xCF2670 | thiscall(input) — formation positions, `SetMoveOrder` per vehicle | P |
+| **Move selected to ground** | 0xCF2670 | thiscall(input) - formation positions, `SetMoveOrder` per vehicle | P |
 | **Pie/command handler** | 0xCF3340 | thiscall(input, uint32 cmdId) ret 4; target object at input+0x10C (city via vt0x84), spice node at +0x11C, turret at +0x118 | V |
 | **Group order** | 0xCF3200 | thiscall(input, cGameData* target, Vector3 pos /*by value*/, int type) ret 0x14; uses the vehicles collected in input+0xE8 (begin,+4 end); type 6 → per-vehicle SetMoveOrder, else SetOrder; then `0xC9EFB0(v,0)` | V |
 | **cVehicle::SetOrder** | **0xCAC180** | thiscall(v, cGameData* target, int type, int flag) ret 0xC: clears orders (0xCAAA80), pushes `{target,_,type,polID}`, +0xBC8=flag, 0xC9F940 | V |
@@ -217,7 +217,7 @@ spice node), **2** military attack city (cmd VehicleAttack 0x37E95B9, military v
 **3** religious attack city (cmd CityCultureAttack 0x37E95BA, purpose 1), **5** trade with city
 (cmd CityTradeWithCity 0x37E95BD, economic), **6** move to position, **8** claim free spice
 node / act on tribe hut, **9** create trade route (cmd 0x37E95BC), **11** bribe spice node
-(cmd BribeNode 0x51B40A4). 0, 4, 7, 10 are used only by the civ AI (0xBF5DD0, 0xBF8830…) — **U**.
+(cmd BribeNode 0x51B40A4). 0, 4, 7, 10 are used only by the civ AI (0xBF5DD0, 0xBF8830…) - **U**.
 Command name table (id → name) is registered in 0xCF47B0 (e.g. 0x37E8514 CityBuyVehicle,
 0x37E95BB BuyCity, 0x37EAF27 CitySellBuilding, 0x406D0D8 CityPosseSelect).
 
@@ -335,7 +335,7 @@ slot, noun}, CIV_OWNERSHIP{city→player table}.
 
 Static analysis (llvm-objdump of the full exe), 2026-10-22. Marks in this section:
 **✔** verified (prologue, `ret N`, call sites), **~** likely (role clear, details inferred),
-**?** unknown. All political ids below are civ political ids — in co-op every player shares
+**?** unknown. All political ids below are civ political ids - in co-op every player shares
 the one player civ, so the game itself can never tell *which player* acted: the mod must take
 that from the attacking vehicle (TakeDamage arg 5) or from its own owner tables.
 
@@ -351,7 +351,7 @@ cooldown timer, +0x200/+0x238 hit-effect timers on buildings.
 
 Damage flow (vehicle shot → building combatant, `this` = building+0x120, args
 `(float dmg, uint32 attackerPol, int dmgType, const Vector3* dir, cCombatant* attacker)`
-ret 0x14 — same as the creature/UFO TakeDamage):
+ret 0x14 - same as the creature/UFO TakeDamage):
 
 | Function | Address | Signature / role | Conf |
 |---|---|---|---|
@@ -384,9 +384,9 @@ counters, cleared each 0xBEB800 pass), **+0x750 mConvertPercent**, **+0x754 mCon
 the religious cVehicle).
 
 * `+0x750` is **recomputed every tick** in 0xBE2240:
-  `200·followers[convertID] / (followers[convertID] + followers[owner])`, clamped 0..100 —
+  `200·followers[convertID] / (followers[convertID] + followers[owner])`, clamped 0..100:
   so writing +0x750 has no lasting effect; the state is the followers map. ✔
-* **ConvertCitizens 0xBEB1C0** — thiscall(city, uint32 converterPol, int count) ret 8: moves
+* **ConvertCitizens 0xBEB1C0** - thiscall(city, uint32 converterPol, int count) ret 8: moves
   up to `count` followers from the owner (or from a rival converter) to `converterPol`, sets
   +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
   Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
@@ -414,7 +414,7 @@ exists; GetBuyPrice returns -1 without it), **+0x758 mBuyPercent / +0x75C mBuyID
 | RemoveTradeRoute | 0xBDFA50 | thiscall(city, cCity*) ret 4 (one side, destroys the route object) | ✔ |
 | RemoveTradeRoutesWithCiv | 0xBDFB10 | thiscall(city, uint32 pol) ret 4 → partner; called by ChangeOwner (+0xBE8EE8) | ✔ |
 | GetBuyPrice | 0xBE9380 | thiscall(city, uint32 buyerPol) ret 4 → ST0; -1 if no +0x570 entry (no trade route), else tuning 0xCEECD0(entry, 0xBE6EC0(city, cityCount)) | ✔ |
-| cCivilization::BuyCity | 0xBF0500 | thiscall(civ, cCity*, float price) ret 8: only starts it — civ+0x440 pending city, +0x448 price, cinematic; **FinishBuyCity 0xBF05E0** thiscall(civ, bool ok) ret 4 → `cCity 0xBE9980(city, civPol, price)` | ✔ |
+| cCivilization::BuyCity | 0xBF0500 | thiscall(civ, cCity*, float price) ret 8: only starts it - civ+0x440 pending city, +0x448 price, cinematic; **FinishBuyCity 0xBF05E0** thiscall(civ, bool ok) ret 4 → `cCity 0xBE9980(city, civPol, price)` | ✔ |
 | cCity buy | 0xBE9980 | thiscall(city, uint32 buyerPol, float price /*0 = GetBuyPrice*/) ret 8: SpendMoney if affordable, `Capture(pol, 2, 0, 0, 0)` | ✔ |
 | GetCityCount | 0xBF0300 | thiscall(civ) → `(+0xA0 - +0x9C) / 4` | ✔ |
 
@@ -423,7 +423,7 @@ Pie command BuyCity (0x37E95BB) → `BuyCity(playerCiv, city, GetBuyPrice(city, 
 
 **Trade route between two players' cities.** Both cities are in the same civ, so the native
 "trade with civ" path does not apply. Options:
-1. ~ `AddTradeRoute(cityA, cityB, 0)` 0xBE1470 (host; guests replay it — visual route) and
+1. ~ `AddTradeRoute(cityA, cityB, 0)` 0xBE1470 (host; guests replay it - visual route) and
    order an economic vehicle `SetOrder(v, cityB, 5, 1)`: HasTradeRouteWith(cityB, ownPol) is
    then true, TradeDelivery pays ×1/3 (own-civ), AddBuyProgress returns early. Untested: the
    input strategy may refuse order 5 on an own city, and ChangeOwner removes routes.
@@ -444,17 +444,17 @@ Pie command BuyCity (0x37E95BB) → `BuyCity(playerCiv, city, GetBuyPrice(city, 
   (0xC9EE60 → 0xC41E60: locomotive+0x1E0 = v+0x214). Getters: vt 0xC8 → +0x1E0, vt 0xCC → +0x1E4. ✔
 * **Temporary boost:** save `v+0x218`, write `old·k`, and for an already moving vehicle
   also `(v+0x34)->vt0xC4(newSpeed, 0)` (or re-issue its move order); restore later. RecalcStats
-  (model reload/upgrade) overwrites it — re-apply after. Mirrors on guests do not need it
+  (model reload/upgrade) overwrites it - re-apply after. Mirrors on guests do not need it
   (pose comes from the host). ~ (effect on the per-tick locomotion not run-time tested)
 
 ### E. "Your city is under attack"
 
-* **cCity::OnAttacked 0xC00C20** — thiscall(city, int kind, uint32 attackerPol) ret 8. ✔
+* **cCity::OnAttacked 0xC00C20** - thiscall(city, int kind, uint32 attackerPol) ret 8. ✔
   * if the city was **not** attacked (that kind) in the last 20 s (or mode is 0x1654C02):
     sends message **0x30AA01B** through the message manager `0x883910()` (= [0x16524AC],
     vt 0x14 `MessageSend(id, msg, 0)`); payload: `+8 cCity*`, `+0x18 kind`, `+0x20 attackerPol`.
     Handled e.g. by the UI proc 0xE11AB0. ✔ (`0x883910` vs `App::IMessageManager::Get`
-    0x67DC80 ([0x15FE888]) — different globals, which one AddListener must use is **?**)
+    0x67DC80 ([0x15FE888]) - different globals, which one AddListener must use is **?**)
   * stores `now` at city+0x98+8·kind (IsUnderAttack reads it);
   * civ mode, kind ≠ 2, city owner == player pol, cooldown city+0xB0 > 15 s →
     `cCivModeStrategy 0xCF9190(city, 0x38320B95, 0xAA9A8ED7, &pos, …)` = the event-log entry
@@ -503,7 +503,7 @@ always consume local fires (they only mirror the results).
   vehicle: re-assigning is purely the mod's `vehicle_owner` table (+ the SetIsSelected hook
   of §8.1). Orders store the issuer pol (order +0x14) but it is not checked against an owner. ~
 * Moving a vehicle to a *different* civ would need `AddVehicle` 0xBF5750 on the new civ and
-  removal from the old `civ+0xB0`/`+0xD4` (removal function not found — **?**).
+  removal from the old `civ+0xB0`/`+0xD4` (removal function not found - **?**).
 
 ### H. Summary of recommended hook points (host side)
 

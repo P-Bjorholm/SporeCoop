@@ -231,7 +231,7 @@ def cmd_run(a):
     json.dump(hist, open(hist_path, 'w'), indent=1)
     json.dump(dict(run=run_id, tree=tree, head=head, lanes=a.lanes, seconds=round(total), ok=ok, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
-    lines = [f'# lab run {run_id}', '', f'{head} — {len(results)} tests, {a.lanes} lanes, {total / 60:.1f} min, '
+    lines = [f'# lab run {run_id}', '', f'{head} - {len(results)} tests, {a.lanes} lanes, {total / 60:.1f} min, '
              + ('**all passed**' if ok else '**FAILED**'), '', '| test | result | lane | s | start |', '|---|---|---|---|---|']
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
         lines.append(f'| {r["name"]} | {"ok" if r["ok"] else "FAIL"}{" (flaky)" if r.get("flaky") else ""} | {r["lane"]} '

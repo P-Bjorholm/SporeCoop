@@ -8,7 +8,7 @@ Maxis. The repository contains no game files: you need your own copy of the game
 
 ## MinHook
 
-`third_party/minhook/` — MinHook, the minimalistic API hooking library for x64/x86,
+`third_party/minhook/`: MinHook, the minimalistic API hooking library for x64/x86,
 Copyright (C) 2009-2017 Tsuda Kageyu, BSD 2-Clause license (see
 [`third_party/minhook/LICENSE.txt`](third_party/minhook/LICENSE.txt)). It is compiled into
 `sporekit.dll`. The vendored copy keeps thread freezing off (`MH_SetFreezeThreads(FALSE)`) because
