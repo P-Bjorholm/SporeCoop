@@ -17,15 +17,14 @@ Fixed entries move to the commit message (and a test).
   during `coop.tribe epic hit` (monitor: FROZE); not reproduced in 14 more runs. The game logs of
   that run were lost (now kept by lab.py). Hunt: `lab.py run tribe_play,chaos_tribe --repeat 10`.
 
-## Civilization: ruins are whole buildings on the guest during a siege
+## Civilization: single vehicle sync outliers of 20-27 m
 
-* The host's besieged city loses buildings (state 2, ruins: `coop.civ` city line `ruins=`); the
-  guest keeps them whole until the capture, when the host clears the ruins and the guest's
-  building reconcile removes them too. The siege meter is right on both (synced). Reproduce:
-  `play_civ.py` (attack phase), compare `coop.civ` `ruins=` / `hp=` of the target city on host and
-  guest (`civ(guest)` status: `ruins_differ`). Fix idea: the generic combatant damage 0xBFCEF0
-  (docs/re/civ.md 9.4) on the guest's building with the host's hp; check its message handlers with
-  a null attacker first.
+* `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
+  samples was 22-27 m in three sessions (one sample each). Not traced yet: candidates are a guest
+  mirror bound to a nearby local vehicle of the same kind right after a purchase (the 25 m bind
+  radius in guest_state) or the velocity estimate around a capture caption pause. Reproduce:
+  `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 7` and print the outlier keys
+  in `audit()`.
 
 ## Civilization: the host's capture caption stops everybody's game
 

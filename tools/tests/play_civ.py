@@ -267,6 +267,8 @@ class Game:
         self.target_city = None  # the NPC city both players besiege
         self.alarm_city = None
         self.pos_err = []
+        self.outliers = []
+        self.missing = {}
         self.money_checks = 0
         self.joint = False
 
@@ -403,8 +405,10 @@ class Bot(Player):
         if m0 is not None and m1 is not None and m1 >= m0:
             self.g.problem(f'{self.name}: vehicle #{nid} cost nothing (money {m0} -> {m1})')
         me = self.name
-        self.g.expect(5, f'{self.name} sees its new vehicle #{nid}',
-                      lambda c: civ_state(c[me])[1].get(nid, {}).get('owner') == self.id)
+        def sees(c):  # (the host's owner: the vehicle may have been given away or destroyed meanwhile)
+            hv = civ_state(c['host'])[1]
+            return nid not in hv or civ_state(c[me])[1].get(nid, {}).get('owner') == hv[nid]['owner']
+        self.g.expect(5, f'{self.name} sees its new vehicle #{nid}', sees)
         return f'bought #{nid} ({len(new)}) in city {ci}, money {m0} -> {m1}'
 
     def a_move(self):
@@ -684,8 +688,12 @@ def audit(game, hc, gc, final=False):
     for i, c in hcit.items():
         g = gcit.get(i)
         if not g:
-            game.problem(f'city {i} missing on the guest')
+            # a new city appears on each machine a few seconds after the site was chosen
+            game.missing[i] = game.missing.get(i, 0) + 1
+            if game.missing[i] >= 3 or final:
+                game.problem(f'city {i} missing on the guest')
             continue
+        game.missing.pop(i, None)
         if g['pol'] != c['pol'] or g['owner'] != c['owner']:
             time.sleep(1)
             g2 = civ_state(gc)[0].get(i, {})
@@ -715,7 +723,11 @@ def audit(game, hc, gc, final=False):
         h1, g, h2 = sample(hc), sample(gc), sample(hc)
         for k, (gp, _q) in g.items():
             if k.startswith('v') and k in h1 and k in h2:
-                game.pos_err.append(min(dist(gp, h1[k][0]), dist(gp, h2[k][0])))
+                e = min(dist(gp, h1[k][0]), dist(gp, h2[k][0]))
+                game.pos_err.append(e)
+                if e > 10:  # an outlier: which vehicle, where, when
+                    game.outliers.append(f'{time.strftime("%H:%M:%S")} {k} {e:.1f} m host {tuple(round(x) for x in h1[k][0])} '
+                                         f'guest {tuple(round(x) for x in gp)}')
     hn = nodes(hc)
     gn = nodes(gc)
     for p, pol in hn:
@@ -851,6 +863,8 @@ def main():
         p90 = pe[int(len(pe) * 0.9)]
         print(f'  vehicle sync: n={len(pe)} median {pe[len(pe) // 2]:.2f} p90 {p90:.2f} max {pe[-1]:.2f} m', flush=True)
         ck(p90 <= 3.0, f'vehicles in sync: 90% within 3 m (p90 {p90:.2f} m)')
+        for o in game.outliers[:10]:
+            print('    outlier', o, flush=True)
     ck(elapsed >= a.minutes * 60 * 0.95, f'played the whole session ({elapsed / 60:.1f} min)')
     ck(game.count.get('buy_ok', 0) > 0, f'vehicles bought through the city menu ({game.count.get("buy_ok", 0)})')
     ck(game.count.get('checks_ok', 0) > 0, f'orders, purchases, claims and gifts arrived ({game.count.get("checks_ok", 0)} checks)')
