@@ -20,6 +20,8 @@ bool save_game(std::string& err);
 void set_save_blocker(const char* (*probe)());
 // host: a save of ours is still being written (the game's editor waits for it: save_game)
 bool save_busy();
+// host: a share waits for its save (not posted yet)
+bool save_pending();
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 void guest_tick(); // guests: load a world that arrived while in an editor

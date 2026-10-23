@@ -348,6 +348,14 @@ bool save_busy()
     return g_saved_at && now < g_saved_at + 10000 && g_box_seen_at < g_saved_at;
 }
 
+bool save_pending()
+{
+    for (auto& p : g_pending)
+        if (p.need_save)
+            return true;
+    return false;
+}
+
 bool share_now(uint8_t peer, std::string& err)
 {
     std::string cur_planet;

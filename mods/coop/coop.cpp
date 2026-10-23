@@ -523,7 +523,12 @@ bool mode_switch_pending()
 void* g_submit_later = nullptr;
 double g_submit_held_at = 0;
 double g_editor_submitted_at = -100; // the last editor request that reached the game
+bool g_submit_queued = false;        // released, the outside-frame task has not submitted it yet
 unsigned g_submits_held; // tests: editor requests that waited for a save
+
+// a save for a world share is under way or due (a share that waits for its save: the editor lets
+// it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
+bool share_save_due() { return world::save_busy() || world::save_pending(); }
 
 bool submit_now(void* req)
 {
@@ -542,15 +547,17 @@ void hold_submit(void* req)
         skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
     g_submit_later = req;
     g_submit_held_at = H->time_seconds();
-    g_submits_held++;
-    LOG("the editor waits until the world save is written");
+    if (share_save_due()) {
+        g_submits_held++;
+        LOG("the editor waits until the world save is written");
+    }
 }
 
 // the held request goes to the game once the save is written (at most 15 s later), outside the
 // frame: editors create D3D resources
 void submit_tick(double now)
 {
-    if (!g_submit_later || (world::save_busy() && now - g_submit_held_at < 15.0))
+    if (!g_submit_later || (share_save_due() && now - g_submit_held_at < 15.0))
         return;
     void* req = g_submit_later;
     g_submit_later = nullptr;
@@ -559,10 +566,13 @@ void submit_tick(double now)
         skg::vcall<int>(req, 2);
         return;
     }
-    LOG("the save is written: the editor opens (%.1f s later)", now - g_submit_held_at);
+    if (now - g_submit_held_at > 0.05)
+        LOG("the save is written: the editor opens (%.1f s later)", now - g_submit_held_at);
+    g_submit_queued = true; // no save from here until the game has the request (save_blocker)
     H->run_outside_frame(
         [](void* r) {
             submit_now(r);
+            g_submit_queued = false;
             skg::vcall<int>(r, 2); // Release
         },
         req);
@@ -580,7 +590,7 @@ const char* save_blocker()
     // slot that faulted the host's own next load (0xBA7F87, cStarManager) and stayed in LoadGame
     if (!stage_mode(mode) && mode != modes::kScenario)
         return "the game is not in a stage";
-    if (g_submit_later || H->time_seconds() - g_editor_submitted_at < 5.0)
+    if (g_submit_queued || H->time_seconds() - g_editor_submitted_at < 5.0)
         return "an editor is opening";
     if (mode_switch_pending())
         return "the game is switching modes";
@@ -627,7 +637,7 @@ bool SK_CDECL h_Submit(void* req)
         notice(g_name + " evolves its own creature", -1);
         set_ready(true);
     }
-    if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && world::save_busy()) {
+    if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && share_save_due()) {
         hold_submit(req); // the game's own request (alone in the session): after the save
         return false;
     }

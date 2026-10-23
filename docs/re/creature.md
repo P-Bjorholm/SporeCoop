@@ -227,9 +227,13 @@ broken save were kept in `out/vote-load-hang/`, not in git).
   pending (`SimulatorModeMgr_ptr` [0x167FACC]+0x28); a waiting share retries every 2 s (after the
   editor: once the host is back in the stage). Editor requests (the vote's, and the game's own when
   the host is alone) wait while a save of ours is being written (`world::save_busy`: saved for a
-  share and not shared yet, or the saved box not seen within 10 s; at most 15 s), and are dropped
-  if the game left the stage meanwhile. A share whose save saw the game change modes is saved
-  again. `coop.vote` prints "editor held for a save N".
+  share and not shared yet, or the saved box not seen within 10 s) or a share still waits for its
+  save (`world::save_pending`: otherwise, when the vote ended a frame before the share posted its
+  save, the editor opened first, the save was refused and the guest waited in the galaxy menu for
+  the whole editor session; seen once as a `coop_exit_menu.py` part 4 failure "back in the host
+  world" with "together" only after the host's evolution); at most 15 s, dropped if the game
+  left the stage meanwhile. A share whose save saw the game change modes is saved again.
+  `coop.vote` prints "editor held for a save N".
 * Timing seen with the fix: "back to the world: sending it to Bob" at t, the vote ends 0.06 s later,
   the save's box at t+2.0 s, shared at t+2.6 s, the editor opens at t+2.6 s; the guest is back in
   the creature stage 7 s after the vote ended.
