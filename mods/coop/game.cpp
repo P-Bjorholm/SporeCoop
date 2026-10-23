@@ -378,7 +378,22 @@ void* create_herd(const net::Vec3& pos, void* species)
     void* nm = cdecl_call<void*>(a_NounGet);
     Vector3 p{pos.x, pos.y, pos.z};
     // CreateHerd(const Vector3&, cSpeciesProfile*, herdSize, isOwnedByAvatar, personality, createNest)
-    return nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, 0, 0, 0, 0) : nullptr;
+    void* h = nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, 0, 0, 0, 0) : nullptr;
+    herd_quiet(h);
+    return h;
+}
+
+// A herd of our own (puppets, NPC proxies) must not grow: CreateHerd gives it a target size of 5
+// and it was enabled, so the game filled it with 4 clones of the guest's creature on the host
+// (real NPCs, mirrored to the guest too; play_creature.py 2026-10-23, docs/re/creature.md 6).
+void herd_quiet(void* h)
+{
+    if (!h || !skg::readable(h, 0x21C))
+        return;
+    field<int32_t>(h, 0xF4) = 0; // mTargetHerdSize
+    static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
+    if (enable && field<uint8_t>(h, 0x218))
+        thiscall<void>(enable, h, false); // mbEnabled
 }
 
 void* herd_of(void* c) { return field<void*>(c, kHerdOff); }

@@ -37,6 +37,13 @@ def main():
             break
         time.sleep(1)
     ck(nid is not None, f'guest mirrors host NPCs (target #{nid})')
+    # the guest's puppet has a herd of its own species: the game used to fill it with 4 clones of
+    # the guest's creature (real NPCs on the host, mirrored to the guest)
+    gsp = re.search(r'puppet pos=.* species=([0-9A-F]+)', host.call('coop.status')['out'])
+    hsp = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
+    if gsp and hsp and gsp.group(1) != hsp.group(1).zfill(8):
+        clones = host.call('coop.npc list')['out'].count('species=' + gsp.group(1))
+        ck(clones == 0, f'no NPC clones of the guest\'s creature ({clones})')
     print(' ', host.call('coop.team')['out'].splitlines()[-1])
 
     # joint hunt: the guest hits, then the host hits the same NPC within 6 s
