@@ -73,8 +73,10 @@ tools/spore.sh logs                              # tail of sporekit.log
 The two-instance test is ready for checks in about 40 s (it used to take about 90):
 * both instances start right away (2 s apart), without waiting for the first one;
 * instead of long frame-count waits after loading, a readiness check plus a 4 s pause;
-* the host's "game saved" dialog (the host saves before sending the world) is closed
-  as soon as the host's frames stall, rather than after a fixed delay;
+* the host's "game saved" box (the host saves before sending the world) is confirmed by the
+  mod once it is visible (docs/08-ui.md); `twoinst` also presses Enter when the host's frames
+  stall. A box left open pauses the host's game without stopping its frames: the host's cell
+  does not move (coop_cell checks that no box is left);
 * over LAN/localhost the world is sent with a large window (600 messages in flight at ping
   < 40 ms, 4 MB socket buffers): 3.8 MB in ~2.5 s instead of 7.5 s.
 
@@ -115,3 +117,18 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
   attach from `flatpak enter <wineserver pid>` failed with error 5.
 * A hung Wine process can be left half-dead (a zombie leader with live threads)
   and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.
+
+## 6.7 Reading console output in tests
+
+* Tests parse `coop.status` with regular expressions that span lines, e.g. coop_cell / coop_creations
+  / coop_vote expect the `puppet pos=… species=…` line **right after** the `remote <id> '<name>'`
+  line. New per-remote lines go after the puppet line (the `together <id> <0|1>` line that
+  `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
+  inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
+  partner cell was there and exact — it looked like a missing puppet / timing bug.
+* Cross-check before hunting a "missing puppet": the `remote … puppet=<ptr>` value, and in the cell
+  stage `local_gameplay_cells` (counts every foreground cell except the own avatar) = mirrors + 1
+  when the partner's cell exists.
+* A real missing partner (`partner_dist=-1` on the guest, no puppet, bites and food still work)
+  was the host's "game saved" box left open (fixed 2026-10-22): look at the host screenshot
+  first. A host that "moves" 0.00 m in the sync samples is paused the same way.

@@ -29,8 +29,9 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
 ## 7.2 World, saving and guest join
 
 * The guest joins from the main menu (`coop join`). The host **saves the game** (with the same
-  `kMsgSaveGame` 0x1CD20F0 message the menu button uses, via `MessagePost`), waits for the files
-  to be written (2.5 s) and sends the save folder. The guest puts it into a free slot and loads
+  `kMsgSaveGame` 0x1CD20F0 message the menu button uses, via `MessagePost`), waits until the
+  game's "saved" box shows up (the save is complete; at least 2.5 s, at most 10 s), confirms the
+  box (it pauses the game) and sends the save folder. The guest puts it into a free slot and loads
   the planet the host named. One slot can contain several planets.
 * A world (or `coop.load`) that arrives while a stage runs is loaded through the galaxy menu: the
   game's quit message 0x4715068 saves and leaves the stage, the save is loaded ~3 s after the menu

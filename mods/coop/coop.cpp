@@ -1319,8 +1319,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         bool have = r.buf.sample(now, s);
         SAY("remote %u '%s' puppet=%p state=%s age=%.2fs pos=(%.1f %.1f %.1f)\n", id, r.name.c_str(),
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
-        // tests: both players are in the same world and place right now
-        SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
+        // tests parse the "puppet pos" line as the one right after the "remote" line: keep it there
         if (r.puppet) {
             net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
             float rot_err = -1;
@@ -1336,6 +1335,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
         }
+        // tests: both players are in the same world and place right now
+        SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
     }
     return 0;
 }

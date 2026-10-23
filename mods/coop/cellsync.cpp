@@ -150,12 +150,12 @@ static float revive_dist(uint8_t* a)
     return std::max(3.f, size * 3.f);
 }
 
-// A cell with a soft body (the avatar) takes its position from the centroid of its particles
-// (0xE7C080: +0x250 count, +0x254 particle indices into *(G+0x4108)+0x4654, 12 bytes each), so
-// moving it means moving the particles too; +0x1C4 is the body velocity added to them.
+// A cell with a soft body (the avatar) takes its position and velocity from its particles
+// (modes::cell_move moves their positions and, for a stop, clears their velocities);
+// +0x1C4 is the steering acceleration the cell step adds to the particle velocities.
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
-    modes::cell_move(c, p);
+    modes::cell_move(c, p, true);
     auto* bv = (float*)(c + 0x1C4);
     bv[0] = bv[1] = bv[2] = 0;
     auto* t = (float*)(c + kTarget);

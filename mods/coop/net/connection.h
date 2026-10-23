@@ -53,7 +53,8 @@ public:
     ConnStats stats;
 
     void send_reliable(uint8_t type, const Writer& w);
-    void send_unreliable(uint8_t type, const Writer& w);
+    // first: ahead of what is queued (the player state must not wait behind a big snapshot)
+    void send_unreliable(uint8_t type, const Writer& w, bool first = false);
     size_t pending_reliable() const { return rel_out_.size(); }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
