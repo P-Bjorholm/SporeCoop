@@ -33,6 +33,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "social.h"
 #include "world.h"
 #include "net/discovery.h"
 #include "net/interp.h"
@@ -83,8 +84,16 @@ float g_dna_sent = -1;      // host: last broadcast total
 uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 
 // DNA earned locally: the host's total is authoritative
+extern bool g_host_away;
+extern float g_solo_dna;
 bool on_dna(float delta)
 {
+    if (social::drop_guest_dna())
+        return false; // a goal card's reward: the host's card pays it into the shared pool
+    if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
+        g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
+        return true;
+    }
     if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0) {
         net::Writer w;
         w.f32(delta);
@@ -280,6 +289,64 @@ bool stage_mode(uint32_t m)
 }
 
 void notice(const std::string& text, int from); // feed + chat log on every player
+
+// Guest: the host left the stage for the main menu (pause menu "Exit to Main Menu") while we play.
+// The host simulates the NPCs, so the planet was empty and nobody said why (play_creature.py
+// 2026-10-23). While the host is away the guest is told, plays on alone (its own game simulates
+// its NPCs again, npc.cpp) and keeps the DNA it earns; the DNA goes to the host's pool when the
+// host is back (the host's total would otherwise undo it).
+bool g_host_away = false;
+double g_host_away_since = -1;
+float g_solo_dna = 0;
+uint32_t g_host_away_count = 0;
+
+bool host_in_menu()
+{
+    if (g_sess.role() != net::Role::Client || !g_sess.connected() || !stage_mode(g_mode) || !g_local)
+        return false;
+    auto it = g_remotes.find(0);
+    return it != g_remotes.end() && !it->second.buf.empty() && it->second.buf.latest().mode == modes::kMenu;
+}
+
+bool host_here() // the host plays in our world again (not loading it any more)
+{
+    auto it = g_remotes.find(0);
+    if (it == g_remotes.end() || it->second.buf.empty())
+        return false;
+    const auto& ls = it->second.buf.latest();
+    return same_place(ls) && (ls.flags & net::PF_IN_WORLD);
+}
+
+void host_away_tick(double now)
+{
+    // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
+    // with its creature for 1 s (a guest gain sent while the host loads is dropped there)
+    bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
+    if (!change)
+        g_host_away_since = -1;
+    else if (g_host_away_since < 0)
+        g_host_away_since = now;
+    bool away = change && now - g_host_away_since > (g_host_away ? 1.0 : 1.5) ? !g_host_away : g_host_away;
+    if (away == g_host_away)
+        return;
+    g_host_away_since = -1;
+    g_host_away = away;
+    std::string host = g_sess.name_of(0);
+    if (away) {
+        g_host_away_count++;
+        feed(host + " (host) left for the main menu: you play on alone until " + host + " is back");
+        return;
+    }
+    if (g_solo_dna > 0 && g_sess.connected()) {
+        net::Writer w;
+        w.f32(g_solo_dna);
+        g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+        g_dna_fwd++;
+    }
+    feed(host + " (host) is back" + (g_solo_dna >= 1 ? ": your " + std::to_string((int)g_solo_dna) + " DNA go to the pack" : ""));
+    g_solo_dna = 0;
+}
+
 void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uint32_t argb);
 bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
 
@@ -520,6 +587,8 @@ void vote_tick(double now)
 
 void on_mode_change(uint32_t from, uint32_t to)
 {
+    if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
+        feed("the others play on alone until you load a game again (they get its world)");
     bool editor = to == modes::kEdit || to == modes::kEditor;
     if (editor && stage_mode(from))
         g_was_in_editor = true;
@@ -578,6 +647,11 @@ void follow_phase(double now)
         bool left_to_menu = ls.mode == modes::kMenu && r.joined_phase;
         if (left_to_menu)
             behind = true;
+        // the host went to the main menu and loaded another planet of the same stage: the guest
+        // stays on the old planet (same mode, another world) and nothing sent the new one
+        bool other_world = !g_adapter->place && ls.mode == g_mode && ls.world && g_world && ls.world != g_world;
+        if (other_world)
+            behind = true;
         if (!behind) {
             r.other_mode_since = -1;
             if (ls.mode == g_mode)
@@ -593,7 +667,7 @@ void follow_phase(double now)
         r.joined_phase = false;
         std::string err;
         if (world::share_with(id, err, g_save_on_share))
-            feed((left_to_menu ? "back to the world: sending it to " : "next phase: sending the world to ") + r.name);
+            feed((left_to_menu || other_world ? "back to the world: sending it to " : "next phase: sending the world to ") + r.name);
         else
             feed("cannot share the world: " + err);
     }
@@ -673,6 +747,8 @@ void keepalive_stop()
         g_keepalive.join();
 }
 
+void menu_tick(double now);
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
@@ -683,11 +759,13 @@ void on_frame(void*, int, void*)
     lobby_tick(now);
     vote_tick(now);
     coop_ui::tick();
+    menu_tick(now);
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     else
         world::guest_tick(); // a received world waiting for the player to leave its editor
     npc::tick(now);
+    social::tick(now);
     shared::tick(g_sess, game::mode_id(), now);
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
@@ -730,6 +808,7 @@ void on_frame(void*, int, void*)
     }
 
     follow_phase(now);
+    host_away_tick(now);
     tribe::tick(now);
     cellsync::tick(now);
     civ::tick(now);
@@ -887,19 +966,63 @@ void draw_civ_tags()
         nullptr);
 }
 
+// A menu over the game (the pause menu "Options", the co-op window): the world labels (name
+// tags, pings, owner tags) are drawn by the overlay on top of everything, so they were drawn over
+// the menu's buttons (play_creature.py 2026-10-23). The pause menu is one window that stays
+// loaded and is shown / hidden (control id 0x0615B50D, docs/08-ui.md); looked up outside the
+// frame a few times a second.
+constexpr uint32_t kPauseMenuId = 0x0615B50D;
+std::atomic<bool> g_menu_up{false};
+std::atomic<bool> g_menu_check_queued{false};
+double g_menu_checked = 0;
+uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
+
+bool shown_chain(sui::Win w)
+{
+    for (int i = 0; w && i < 32; i++, w = sui::parent(w))
+        if (!sui::visible(w))
+            return false;
+    return true;
+}
+
+void menu_check_task(void*)
+{
+    g_menu_check_queued = false;
+    bool up = coop_ui::is_open();
+    if (!up)
+        if (sui::Win root = sui::main_window())
+            up = shown_chain(sui::find(root, kPauseMenuId));
+    g_menu_up = up;
+}
+
+void menu_tick(double now)
+{
+    if (now - g_menu_checked < 0.2 || g_menu_check_queued)
+        return;
+    g_menu_checked = now;
+    g_menu_check_queued = true;
+    H->run_outside_frame(menu_check_task, nullptr);
+}
+
 void on_overlay(void*, int, void*)
 {
     if (!g_overlay)
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
-    draw_marks();
-    cellsync::draw_overlay();
-    spacecoop::draw_overlay();
-    draw_owner_tags();
-    draw_civ_tags();
+    // world labels stay off while a menu is up (and the co-op window: also right when it opens)
+    bool labels = !g_menu_up && !coop_ui::is_open();
+    if (!labels)
+        g_menu_hidden++;
+    if (labels) {
+        draw_marks();
+        cellsync::draw_overlay();
+        spacecoop::draw_overlay();
+        draw_owner_tags();
+        draw_civ_tags();
+    }
     // name tags above remote players
-    void* av = g_local;
+    void* av = labels ? g_local : nullptr;
     if (g_tag_self && av) {
         net::Vec3 p = modes::entity_pos(g_adapter, av);
         float sc[2] = {0, 0}, w[3] = {p.x, p.y, p.z};
@@ -1009,6 +1132,7 @@ void setup_callbacks()
         g_ready.clear();
         g_lobby_rtt.clear();
         npc::on_session_end();
+        social::on_session_end();
         tribe::on_session_end();
         cellsync::on_session_end();
         creations::on_session_end();
@@ -1056,7 +1180,7 @@ void setup_callbacks()
         }
         if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
             float total = r.f32();
-            if (r.ok() && game::avatar()) {
+            if (r.ok() && game::avatar() && !g_host_away) {
                 float d = total - game::dna();
                 if (d != 0)
                     game::dna_add_raw(d); // through the game so the UI/progress updates
@@ -1213,6 +1337,9 @@ void setup_callbacks()
         case net::MSG_DAMAGE_REQ: case net::MSG_DAMAGE:
             npc::on_message(type, from, r);
             return;
+        case net::MSG_SPECIES: case net::MSG_SOCIAL:
+            social::on_message(type, from, r);
+            return;
         }
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
@@ -1275,6 +1402,7 @@ void do_leave()
 {
     g_sess.leave("user");
     npc::on_session_end();
+    social::on_session_end();
     spacecoop::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
@@ -1374,6 +1502,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s%s", g_sess.status().c_str(), world::status().c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
     SAY("%s", npc::status().c_str());
+    SAY("%s", social::status().c_str());
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
@@ -1387,6 +1516,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
+    SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("labels: menu_up=%d window=%d hidden_frames=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden);
     double now = H->time_seconds();
     for (auto& [id, r] : g_remotes) {
         net::PlayerState s;
@@ -1556,6 +1687,30 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1)
         npc::set_enabled(strcmp(argv[1], "off") != 0);
     SAY("npc sync %s\n%s", npc::enabled() ? "on" : "off", npc::status().c_str());
+    return 0;
+}
+
+int c_social(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "species")) {
+        SAY("%s", social::species_dump().c_str());
+        return 0;
+    }
+    if (argc > 3 && !strcmp(argv[1], "objs")) {
+        SAY("%s", social::debug_objects(strtoul(argv[2], nullptr, 16), strtoul(argv[3], nullptr, 16)).c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "log")) {
+        social::debug_social(0, -1);
+        SAY("toggled");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "act")) {
+        bool ok = social::debug_social((uint16_t)atoi(argv[2]), argc > 3 ? atoi(argv[3]) : 0);
+        SAY(ok ? "social action sent" : "no action (no such proxy, too far, no social ability or cooling down)");
+        return ok ? 0 : 1;
+    }
+    SAY("%s", social::status().c_str());
     return 0;
 }
 
@@ -1910,6 +2065,7 @@ void on_unload()
     lan_scan(false);
     g_sess.leave("mod unload");
     npc::on_session_end();
+    social::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
@@ -1957,9 +2113,20 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return true;
     };
     ctx.feed = feed;
+    ctx.host_away = [] { return g_host_away; };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
+    social::Ctx sc;
+    sc.sess = &g_sess;
+    sc.feed = feed;
+    sc.notice = [](const std::string& t) { notice(t, -1); };
+    sc.puppet_of = [](uint8_t id) -> void* {
+        auto it = g_remotes.find(id);
+        return it == g_remotes.end() ? nullptr : it->second.puppet;
+    };
+    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open(); };
+    social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
@@ -1983,6 +2150,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.avatar", "print local avatar state", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
+    H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [ability]] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,

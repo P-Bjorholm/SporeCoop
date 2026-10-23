@@ -75,6 +75,9 @@ void* species_by_key(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* herd_of(void* c);
 void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it
+constexpr uint32_t kHerdNoun = 0x01BE418E;      // cHerd (runtime: nest herds of the creature stage)
+inline void* herd_species(void* herd) { return *(void**)((uint8_t*)herd + 0xA4); } // cSpeciesProfile*
+inline void* herd_nest(void* herd) { return *(void**)((uint8_t*)herd + 0x160); }    // cNest* (mpNest)
 uint32_t political_id(void* c);
 
 // ---- combat ----
@@ -85,6 +88,13 @@ void set_damage_filter(DamageFilter fn);
 void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
 void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
 void set_health(void* c, float hp);
+// impressed by a social game (+0xB58 bit 0x80, set by the social success 0xD9BC40; docs/re/creature.md 8)
+inline bool impressed(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x80) != 0; }
+inline void set_impressed(void* c, bool on)
+{
+    uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);
+    f = on ? (f | 0x80) : (f & ~0x80u);
+}
 
 // ---- time of day: orientation of the sky object (see docs/05-re-notes.md) ----
 bool time_of_day(net::Quat& q);

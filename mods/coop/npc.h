@@ -22,6 +22,8 @@ struct Ctx {
     // last known world position of player `id`; false if not in the world
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
     std::function<void(const std::string&)> feed;
+    // guest: the host left the stage (main menu): the guest's own game simulates its NPCs meanwhile
+    std::function<bool()> host_away;
     // RTS stages (no avatar): the shared centre (player tribe) all players are near
     std::function<bool(net::Vec3& pos)> stage_center;
 };
@@ -41,6 +43,10 @@ std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
+void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
+int host_id(void* creature);     // host: net id of an NPC, -1
+int proxy_id(void* creature);    // guest: net id of a proxy, -1
+int proxy_id_of_ai(void* ai);    // guest: the proxy whose AI block (+0xB4C) this is, -1
 void set_enabled(bool on);
 bool enabled();
 
