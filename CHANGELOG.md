@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### The current GOG build and Windows
+- The current GOG download of the SPORE Collection (the 2024 update, `SporeApp.exe` 24 895 536
+  bytes, SHA-256 `dc04aee5…`) is supported: it has its own symbol files
+  (`march2017_dc04aee5.sym`, `overrides_dc04aee5.sym`). Before, SporeKit found no symbols for it
+  and the mod turned itself off. Players of one game still need the same build.
+- Windows: every game address was off by the exe's relocation when Windows loaded the exe at
+  another base (ASLR, e.g. 0x410000). SporeKit now reads the exe's preferred base from the file,
+  not from the header in memory, which Windows rewrites. Wine does not move the exe.
+- The last hard-coded game addresses in the mod (vehicle, citizen, tree and drawable vtables, the
+  civ growth and city planner return addresses, the allocator) are symbols now.
+- `tools/build_windows.sh` builds the DLLs on Windows (Git Bash + llvm-mingw, no make).
+
 ## [0.6.0] - 2026-10-23
 
 Installer, updates from GitHub, and a full stability campaign: bots played every stage for hours,

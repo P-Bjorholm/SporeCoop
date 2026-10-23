@@ -8,6 +8,41 @@ exe), `DYNAMIC_BASE`, has `.reloc`. Imports only `SteamApps`, `SteamAPI_Init`,
 build known to Spore ModAPI (Disk: 24 904 192 / 24 909 584; March2017: 24 885 248 /
 24 895 536 / 25 066 744).
 
+### 5.1.1 The GOG 2024 build (dc04aee5)
+
+The current GOG download (an update with PE timestamp 2024-09-30) ships another
+`SporeApp.exe`: 24 895 536 bytes, SHA-256 `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37`,
+image base 0x400000. Its code layout is ModAPI's **March2017**: 2156 of the 2160 high-confidence
+`m17=` addresses of `gog2016_922af7c7.sym` are function starts in it. So:
+
+* `data/symbols/march2017_dc04aee5.sym` is the m17 column of the GOG 2016 file, used as it is.
+* `data/symbols/overrides_dc04aee5.sym` has every symbol the code uses, ported from
+  `overrides_922af7c7.sym` on 2026-10-23 and each checked in the disassembly (prologue, ret N,
+  offsets, constants, callers/callees, vtable slots). Then all five stages were played as host +
+  guest on Windows 11 (two instances on one PC): joining, world transfer, puppets, NPC damage via
+  the host, shared DNA/money/food, civ buy/build/move, tribe orders, ship damage, saving.
+* Deltas GOG 2016 → GOG 2024 are piecewise constant but change often inside one area, so a
+  delta taken from the neighbours was wrong for about 1 in 10 symbols (it landed mid-function or
+  on the function before). Examples: GetAllUFOs +0x80 between neighbours at +0x30/+0x40;
+  cVehicle::Die +0x20 next to SetIsSelected +0x10; BT_HealTick -0x60 next to BT_ValidTarget -0x70.
+* `.data` globals: -0xFE0 around 0x167xxxx..0x16Dxxxx (cell, tribe UI, space, simulator managers),
+  -0xFF8 for the App block at 0x15FExxx (ResourceManager_ptr, FrameLimit_ptr), -0x1000 for the
+  social session pool at 0x1594xxx and the cell static ref table at 0x15A8xxx.
+* `.rdata` vtables: -0xB18 (citizen, species goal), -0xB30 (terrain texture job), -0xB48 (vehicle,
+  cTreeData), -0x958 (SporeStdDrawable). Find a vtable through the constructor that writes it.
+* Some code did not move at all: the city planner (its AddBuilding return address 0xD1419C is the
+  same), TimeOfDay, cell E68xxx..E7Fxxx.
+* Players of different builds cannot play together: the handshake compares the first 4 bytes of
+  the exe hash (REJ_BUILD).
+
+### 5.1.2 Windows relocates the exe
+
+`SporeApp.exe` is `DYNAMIC_BASE`. Windows 11 loads it at 0x410000 (Wine keeps 0x400000) and
+rewrites `OptionalHeader.ImageBase` in the mapped header to the actual base. SporeKit used to read
+the preferred base from that header, so `rebase()` did nothing and every symbol was 0x10000 off;
+it now reads ImageBase from the exe file (`symbols.cpp file_image_base`). The log line
+`base=0x00410000 (preferred 0x00400000)` shows it is right.
+
 ## 5.2 Method
 
 1. **Porting ModAPI addresses (March2017 → GOG 2016)** - `tools/addrport/port_modapi.py`.

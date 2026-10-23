@@ -23,11 +23,12 @@ if not exist SporeApp.exe (
   pause
   exit /b 1
 )
-rem the mod is tested with the GOG 2016 build (INSTALL.txt, section 2)
-set WANT=922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e
+rem supported builds: GOG 2016 (922af7c7...) and GOG 2024 (dc04aee5...), INSTALL.txt section 2
+set WANT1=922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e
+set WANT2=dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37
 for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 SporeApp.exe).Hash.ToLower()" 2^>nul`) do set HAVE=%%h
-if defined HAVE if /i not "%HAVE%"=="%WANT%" (
-  echo Note: this SporeApp.exe is not the GOG build SporeCoop was tested with.
+if defined HAVE if /i not "%HAVE%"=="%WANT1%" if /i not "%HAVE%"=="%WANT2%" (
+  echo Note: this SporeApp.exe is not one of the GOG builds SporeCoop supports.
   echo It has not been tested yet - see INSTALL.txt, section 2.
   echo.
 )
@@ -62,8 +63,8 @@ SporeCoop $VER - co-op for every stage of SPORE (GOG "SPORE Collection" build)
 https://github.com/WoodyWizard/SporeCoop
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
-Tested build: GOG SporebinEP1\\SporeApp.exe, sha256 922af7c7... All players need the same SporeCoop version.
-SporeCoop is tested with the GOG build; other builds have not been tested yet.
+Supported builds: GOG SporebinEP1\\SporeApp.exe 2016 (sha256 922af7c7...) and 2024 (dc04aee5...).
+All players need the same SporeCoop version and the same game build.
 
 Host: main menu -> Co-op -> name -> Host, then load or start a game. The window shows the
 addresses for friends (over the internet forward UDP port 47810 or use a VPN such as

@@ -29,13 +29,16 @@ and `mods\logs\sporekit.log` helps.
 
 ## 2. Check your game build
 
-The tested build is this file:
+SporeCoop has the game addresses for these builds of `SPORE\SporebinEP1\SporeApp.exe`:
 
-| | |
-|---|---|
-| File | `SPORE\SporebinEP1\SporeApp.exe` |
-| Size | 24 888 320 bytes |
-| SHA-256 | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
+| Build | Size | SHA-256 |
+|---|---|---|
+| GOG 2016 (the build SporeCoop was developed on) | 24 888 320 bytes | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
+| GOG 2024 update (the current GOG download) | 24 895 536 bytes | `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37` |
+
+Players of one game must have the same build: the host turns away a guest with another
+`SporeApp.exe`. With any other build the game starts normally but without co-op
+(`mods\logs\sporekit.log` says "no symbol database for this SporeApp.exe build").
 
 Where the game usually is:
 
@@ -55,7 +58,7 @@ Linux:
 sha256sum "SPORE/SporebinEP1/SporeApp.exe"
 ```
 
-`install.bat` checks this too and tells you when your build is not the tested one.
+`install.bat` checks this too and tells you when your build is not one of these.
 
 ## 3. Install on Windows
 

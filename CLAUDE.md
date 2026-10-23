@@ -1,7 +1,8 @@
 # SporeCoop - rules for everyone working here (people, Claude sessions, subagents, test bots)
 
-Co-op mod for Spore (GOG 2016 build, `SporeApp.exe` 24 888 320 bytes) on the SporeKit framework,
-run under Wine/Bottles on Linux. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
+Co-op mod for Spore (GOG 2016 build, `SporeApp.exe` 24 888 320 bytes, and the GOG 2024 build,
+24 895 536 bytes, see docs/05-re-notes.md 5.1.1) on the SporeKit framework, run under Wine/Bottles
+on Linux and on Windows. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
 
 ## 1. Knowledge first: write down what you learn
 
@@ -15,6 +16,8 @@ anything new, write it down in the same change.**
     Confidence is one of `verified` (prologue / `ret N` / call sites checked, or seen working at
     runtime), `likely` (role sure, details inferred), `unknown`. `tools/re_lint.py` (in `make test`)
     fails when the code asks for a symbol that is not there or an entry has no confidence word.
+    A new symbol goes into `overrides_dc04aee5.sym` (GOG 2024 build) too, with that build's
+    address: it is usually not the GOG 2016 address plus the neighbours' shift (05-re-notes 5.1.1).
   * `docs/re/<area>.md` (cell, tribe, civ, space, creations, …) - structures, field offsets, how a
     game system works, recipes ("to spawn an epic: …"), with ✔ / ~ / ? marks. One file per game
     area; append a section rather than starting a new file.
