@@ -217,7 +217,10 @@ class Player(threading.Thread):
                 break
             self.do(f'click {o[1]} {o[2]}')
             self.sleep(0.3, 0.8)
-            self.do('key ' + self.rng.choice('1234'))
+            k = '0x3' + self.rng.choice('1234')  # a player's key press lasts a few frames (the mod polls)
+            self.do(f'key {k} down')
+            self.sleep(0.12, 0.2)
+            self.do(f'key {k} up')
             self.sleep(1.0, 2.5)
 
     def wander(self):
@@ -579,6 +582,14 @@ def main():
             print(f'  last actions of {p.name}:')
             for line in p.log[-15:]:
                 print('   ', line)
+    hs, gs = host.call('coop.social')['out'].strip(), guest.call('coop.social')['out'].strip()
+    print('  social host :', hs)
+    print('  social guest:', gs)
+    table = lambda c: sorted(x for x in re.findall(r'species \S+ relation=-?\d+ x=\d+ impressed=\d+ killed=\d+',  # noqa: E731
+                                                  c.call('coop.social species')['out'])
+                             if not x.endswith('relation=0 x=0 impressed=0 killed=0'))  # an empty record = none
+    time.sleep(1.5)
+    ck(table(host) == table(guest), 'the species table (impressed / killed / ally) is the same on both')
     print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/play_creature.py --minutes {a.minutes} --seed {seed}')
     shot(host, 'play_creature_host.png')
     shot(guest, 'play_creature_guest.png')

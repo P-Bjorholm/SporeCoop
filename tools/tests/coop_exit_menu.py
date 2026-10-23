@@ -3,12 +3,15 @@
 seeing the NPCs (until 2026-10-23 the host forgot every NPC 2 s into its pause, the death caption
 or a cinematic, and the guest lost them all). 2) A guest leaves the host's world through the pause
 menu ("Exit to Main Menu", "Don't Save" twice) and stays in the session: the host sends its world
-again and the guest is back in the game (it used to wait in the galaxy menu forever).
+again and the guest is back in the game (it used to wait in the galaxy menu forever). 3) The host
+leaves to the main menu the same way: the guest is told, plays on alone (its own game runs its NPCs,
+the host's frozen mirrors go, its DNA is kept) and gets the host's NPCs back when the host loads
+the game again (until 2026-10-23 the guest stood on an empty planet without a word).
 Everything through real input: Esc, clicks on the menu buttons (found with coop.ui find)."""
 import re
 import time
 
-from twoinst import Checks, shot, start
+from twoinst import Checks, lane_state, shot, start
 from uifind import press, shown
 
 
@@ -63,6 +66,57 @@ def main():
     ck('spawned=0' not in npc, 'the guest mirrors the host NPCs again')
     shot(host, 'exit_menu_host.png')
     shot(guest, 'exit_menu_guest.png')
+
+    # 3) the host leaves to the main menu
+    for _ in range(3):
+        host.call('key esc')
+        time.sleep(1.5)
+        if shown(host, 'Resume Game'):
+            break
+    ok = press(host, 'Exit to Main Menu')
+    for _ in range(2):  # "Do you want to save" / "Are you sure?" (none right after a save: the world
+        time.sleep(1.5)  # was just saved for the guest)
+        if shown(host, "Don't Save"):
+            press(host, "Don't Save")
+    ck(ok, 'the host leaves through the pause menu ("Exit to Main Menu")')
+    away = None
+    t0 = time.time()
+    while time.time() - t0 < 60:
+        st = guest.call('coop.status')['out']
+        if 'host_away=1' in st:
+            away = time.time() - t0
+            break
+        time.sleep(1)
+    ck(away is not None, f'the guest knows the host is away ({away and round(away)} s)')
+    ck('left for the main menu' in '\n'.join(guest.call('log 60')['out'].splitlines()),
+       'the guest is told ("Alice (host) left for the main menu: you play on alone ...")')
+    time.sleep(2)
+    npc = guest.call('coop.npc')['out']
+    print(' ', npc.strip().splitlines()[-1])
+    ck('proxies=0' in npc and 'host_away=1' in npc, 'the host\'s frozen mirrors are gone, the guest\'s game runs its own')
+    ck(guest.call('coop.avatar')['ok'], 'the guest plays on')
+    guest.call('coop.dna add 5')  # DNA earned alone is kept ...
+    time.sleep(1)
+    solo = float(re.search(r'solo_dna=([\d.]+)', guest.call('coop.status')['out']).group(1))
+    ck(solo >= 5, f'DNA earned alone is kept ({solo})')
+    shot(guest, 'exit_menu_host_away.png')
+    st = lane_state()
+    slot, name = st.get('planet', 'Game0/Scalinus').split('/')
+    if st.get('slot', 9) != 9:
+        slot = f'Game{st["slot"]}'
+    host.call(f'coop.load {slot} {name}')
+    back = None
+    t0 = time.time()
+    while time.time() - t0 < 120:
+        if host.call('coop.avatar')['ok'] and 'host_away=0' in guest.call('coop.status')['out'] and \
+                'spawned=0' not in guest.call('coop.npc')['out']:
+            back = time.time() - t0
+            break
+        time.sleep(1)
+    ck(back is not None, f'the host is back: the guest mirrors its NPCs again ({back and round(back)} s)')
+    time.sleep(3)
+    ck('Bob earned 5 DNA' in host.call('log 80')['out'] and 'solo_dna=0.0' in guest.call('coop.status')['out'],
+       '... and goes to the pack when the host is back')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

@@ -66,28 +66,6 @@ Fixed entries move to the commit message (and a test).
   seconds later worked. The two failures came while the shared headless display was being
   restarted, the five runs after it passed, so the cause is not settled.
 
-## Creature (guest): goal cards of species whose creatures are the host's say "extinct"
-
-* The guest's game removes its own NPCs (the host simulates them, the guest shows mirrors), so its
-  goal card for such a species reads "Hunt: The Kook species is extinct!" while the host's card
-  says "Impress 3 Kook to ally" (play_creature.py, 2026-10-23; screenshot: walk the guest to the
-  Kook nest near the start of the `creature` fixture). Progress itself is shared through the host
-  (DNA, kills), only the guest's cards are wrong. Fix idea: count the proxies as the species'
-  creatures (they are made with `Create` in a herd of the species but not registered where the
-  extinction check looks), or hide the guest's species cards.
-
-## Creature (guest): social actions on NPC mirrors do nothing
-
-* The guest walks up to a mirrored Kook in the social stance and presses 1 (sing) again and again:
-  no social mini-game, no impress progress, no DNA (the mirror has no AI, nothing reaches the host;
-  docs/03-gameplay.md 3.6; play_creature.py 2026-10-23). The host's own socializing works (impress: +10 DNA, shared). Needs a
-  `MSG_SOCIAL` like `MSG_DAMAGE_REQ`: the host runs the guest's social action on the real NPC.
-
-## Creature: nickname labels are drawn over the pause menu and the co-op window
-
-* The partner's name tag (overlay) stays on top of the "Options" pause menu and of the F9 window
-  (cosmetic; screenshots in play_creature runs). Hide the tags while a modal menu is up.
-
 ## Creature: the mating call did not lead to the editor in the bot
 
 * Backspace (Mating Call) at the nest with DNA shows "Mate: Locate your Mate!" and a thought bubble,
@@ -95,15 +73,33 @@ Fixed entries move to the commit message (and a test).
   how a player answers the call is not explored yet (docs/re/creature.md 5). The evolution vote is
   covered by `coop_vote.py` through `coop.vote editor`.
 
-## Creature: the host leaves to the main menu, the guests are told nothing
+## Creature (guest): the social game is simplified
 
-* Host: Esc, "Exit to Main Menu", "Don't Save" twice. The guests stay on the planet with no NPCs
-  (the host simulates them; the guest's own keep being removed) and no message; the overlay list
-  shows "Alice [Galaxy menu]". When the host loads the same save again, the guests get NPCs and the
-  host's creature back without a new world (the guest's copy is the older state). If the host loads
-  another planet of the same stage, nothing resends the world: `follow_phase` only follows a stage
-  change (not reproduced: one creature fixture). Fix idea: a notice on the host's mode change to the
-  menu, and resend the world when a guest of a planet stage is in another `world` for 5 s.
+* Since 2026-10-23 a guest befriends a mirrored NPC (click in the social stance, a social ability
+  key; the host applies the native win, docs/re/creature.md 8.3), but the guest does not see the
+  native social meter and the NPC's ability prompts (they belong to the NPC's behaviour tree, which
+  runs only on the host): any social ability counts as the answer, one press per round. A click on
+  the ability bar instead of a key is not counted (the mod polls the keys 1-4). The host's own
+  game is native. The success message 0x60B4123 (CreatureStageEventHandler) is not posted for a
+  guest's win. Reproduce: `tools/tests/coop_creature_social.py`.
+
+## Creature: while the host is in the main menu the guest's planet fills up slowly
+
+* The host leaves to the main menu: the guests are told and play on alone (their own game runs
+  their NPCs again, `coop.npc` host_away=1), but the game respawns the removed NPCs only a few at a
+  time (`local_alive` 0-1 after 30 s in `coop_exit_menu.py`). Making the mirrors local NPCs
+  instead failed (a mirror with AI leaves its herd and is destroyed, docs/re/creature.md 8.3).
+
+## Creature (guest): a guest in the galaxy menu when an evolution starts hangs in the loading screen
+
+* play_creature.py seed 31, 2026-10-23 (branch fix/creature-social): the host's game asked for the
+  editor (vote "Alice wants to evolve", 06:34:10), the guest left to the main menu during the vote
+  (06:35:04), the vote ended (06:35:10: on the guest "evolution starts" while it was in the galaxy
+  menu), the host sent its world (06:35:12) and the guest's load stayed in `LoadGame` (0x1654C08)
+  for 20+ minutes, frames running, no fault; the next world (after the host's evolution) was
+  cancelled ("the game did not go to the galaxy menu"). Likely the guest's own-editor request of
+  the vote and the world load at the same time. Reproduce: start a vote (`coop.vote test` / the
+  host's mating call), let the guest exit to the main menu before it ends.
 
 ## Not covered by tests yet
 

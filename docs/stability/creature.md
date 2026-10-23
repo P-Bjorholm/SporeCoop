@@ -101,6 +101,36 @@ Each with a regression check (commits on branch `play/creature`):
    after 2 s. A frame without creature updates counts as a pause. Check: `coop_exit_menu.py`
    (host paused 6 s: 21 -> 0 NPCs before, 21 -> 21 after).
 
+Fixed after the sessions (branch `fix/creature-social`, 2026-10-23; docs/re/creature.md 8):
+
+8. **A guest could not befriend anybody.** The social game is the NPC's behaviour tree, a mirror
+   has none: the guest's keys did nothing. The guest's click on a mirror in the social stance
+   engages it (the game's social stimulus, seen in a hook), a social ability key plays the guest's
+   ability and the host applies the native win (the species' impress count, ally at its threshold,
+   the creature's DNA for the pack, the impressed NPC's reaction on both). Check:
+   `coop_creature_social.py`.
+9. **"The Kook species is extinct!" on the guest's card.** The guest's game counted every replayed
+   death of a mirror (again when a dead mirror came back into range) as a kill of the species: three
+   made it extinct there. Relationship events on mirrors are dropped on guests and the host's
+   species table (MSG_SPECIES) is the guests' table; the cards are refreshed when it changes, a
+   card's ally / extinction DNA is paid once by the host, whichever machine's card saw it. Mirrors now live in their species' nest
+   herd (with the archetype tuning). Check: `coop_creature_social.py`.
+10. **Name tags over the pause menu and the co-op window**: hidden while either is up. Check:
+    `coop_creature_social.py`.
+11. **The host left to the main menu, the guests were told nothing** and stood among frozen
+    mirrors. They get a notification, the mirrors go, their own game runs their NPCs, the DNA they
+    earn alone goes to the pack when the host is back; a host that loads another planet of the stage
+    sends it after 5 s. Check: `coop_exit_menu.py` part 3.
+
+Sessions with fixes 8-11 (seed 31, four 10-minute runs, 2026-10-23): no fault, no freeze in any;
+NPC p90 0.30-0.77 m, players p90 1.1-2.2 m, the shared DNA the same in 141-143 of 142-143
+samples, the species table the same on both at the end (after the guest-only records were reset;
+the first run found one, relation 3, the host did not have). Goal card rewards reported by the
+guest's cards and paid once by the host: 0-2 a session. The bot's guest did not socialize in these
+runs (10 % of its choices); `coop_creature_social.py` covers it (impress, ally with the 25 DNA
+reward once). One run hit the open issue "a guest in the galaxy menu when an evolution starts hangs
+in the loading screen" (docs/known-issues.md), one lost a chat line (the known `chat_not_typed`).
+
 Test infrastructure found on the way: the subagents of one session share the scratchpad folder
 (another agent's `up.py` with `start('cell')` ran in this lane); `uifind.py` for menu clicks.
 
@@ -108,11 +138,8 @@ Test infrastructure found on the way: the subagents of one session share the scr
 
 In [docs/known-issues.md](../known-issues.md), with reproductions:
 
-* guest: goal cards of the host's species say "The Kook species is extinct!";
-* guest: social actions on NPC mirrors do nothing (no mini-game, no progress);
-* the host leaves to the main menu: the guests are not told, their planet is empty; another planet
-  of the same stage is not resent;
-* the partner's name tag is drawn over the pause menu and the co-op window;
+* guest: the social game is simplified (no meter, no prompts; any social ability is the answer);
+* while the host is in the main menu the guest's planet fills up with its own NPCs only slowly;
 * the mating call (Backspace) did not lead the bot to the editor (not explored further).
 
 Seen and left alone: hunts that time out on prey that flees (fast animals), the guest's own NPCs

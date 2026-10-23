@@ -82,8 +82,14 @@ Players trust each other (co-op with friends): there is no anti-cheat, the guest
 * Host/guest, nicknames, chat, action animations, transfer of the host's world to the guest.
 * NPCs exist only on the host; the guest sees their reflections within 110 m, guest hits and
   damage from NPCs go through the host. Time of day and shared DNA are synchronized.
-* Not synchronized yet: social mini-games with NPCs (the NPC reflection on the guest doesn't respond),
-  eggs, nests, fruit and body-part finds, guest appearance (host's species).
+* Social games of a guest (2026-10-23): in the social stance the guest clicks a reflection and
+  presses a social ability key (1-4); the guest's creature performs it and the host counts the
+  rounds the native game would ask for (1 for a Kook, 2 for an alpha), then applies the native win
+  (the species counts one more impressed creature, the pack gets the creature's DNA, the NPC is
+  impressed and plays its reaction on both screens). The goal cards (impress / ally / hunt /
+  extinct) come from the host's species table. The native meter and the NPC's ability prompts are
+  not shown on the guest (docs/re/creature.md 8.3).
+* Not synchronized yet: eggs, nests, fruit and body-part finds, guest appearance (host's species).
 
 ## 3.7 Limitations we are upfront about with players
 

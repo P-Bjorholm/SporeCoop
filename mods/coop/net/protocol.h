@@ -66,6 +66,12 @@ enum MsgType : uint8_t {
     MSG_CIV_ALARM = 47,   // host -> guests: u8 city index, u8 kind (0 military, 1 religious), u8 owner
     MSG_SPACE = 48,       // any -> (host relays) -> all: u8 kind, u8 origin, payload (spacecoop.cpp)
     MSG_CELL_BITTEN = 49, // guest -> host: u32 host cell index of the NPC whose mirror bit the guest's cell
+    MSG_SPECIES = 50,     // host -> guests: species relationship table (u16 n, {key[3], i32 relation, u32 x,
+                          // u32 impressed, u32 killed}) of the creature stage (social.cpp)
+    MSG_SOCIAL = 51,      // u8 kind: 0 guest -> host act {u16 npc, u32 ability type}; 1 host -> guest progress
+                          // {u16 npc, u8 done, u8 needed}; 2 host -> all result {u16 npc, u8 player, u8 ok,
+                          // u32 reaction anim, f32 dna}; 3 guest -> host goal reward {u16 0, key[3],
+                          // u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
 };
@@ -222,6 +228,7 @@ struct Chat {
 enum NpcFlags : uint8_t {
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
+    NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
 };
 
 struct NpcSpawn {

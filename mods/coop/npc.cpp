@@ -55,10 +55,20 @@ struct Proxy {
 static std::map<uint16_t, Proxy> g_proxies;
 static std::unordered_map<void*, uint16_t> g_proxy_of;
 static std::map<uint64_t, void*> g_herds; // species instance/group -> herd for proxies
+// guest: the game's own herd of each species (seen on the local NPCs the update filter removes).
+// Proxies go into it: Create then gives them the herd's archetype tuning (+0xE84) like any NPC of
+// the nest (social games, epic flag, DNA worth need it; docs/re/creature.md 8), and the species
+// still has its creatures where the game counts them
+static std::map<uint64_t, void*> g_local_herds;
+static uint32_t g_proxies_in_nest = 0;
+static uint64_t herd_key(const game::Key& k) { return ((uint64_t)k.group << 32) | k.instance; }
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
 static uint32_t g_proxy_lost = 0;
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
+static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
+static uint32_t g_away_proxies = 0;
+static uint32_t g_local_alive = 0; // guest: own NPCs that ran Update last frame (host away: the game's)
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
@@ -73,6 +83,11 @@ static bool update_filter(void* c)
         return true;
     if (game::is_puppet(c) || c == game::avatar())
         return true;
+    if (g_host_away) // the host left the world: the guest plays on alone with its own NPCs
+        return true;
+    if (void* h = game::herd_of(c))
+        if (h != game::avatar_herd())
+            g_local_herds[herd_key(game::species_key(c))] = h;
     g_kill.push_back(c); // a local NPC: the host owns NPCs
     return false;
 }
@@ -93,7 +108,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
     s.health = game::health(c);
-    s.flags = game::is_dead(c) ? net::NF_DEAD : 0;
+    s.flags = (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0);
     return s;
 }
 
@@ -234,7 +249,36 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     if (flags & net::NF_FAMILY)
         if (void* h = game::avatar_herd())
             return h;
-    uint64_t hk = ((uint64_t)k.group << 32) | k.instance;
+    uint64_t hk = herd_key(k);
+    auto lh = g_local_herds.find(hk);
+    if (lh != g_local_herds.end()) {
+        if (game::object_alive(lh->second)) {
+            g_proxies_in_nest++;
+            return lh->second;
+        }
+        g_local_herds.erase(lh);
+    }
+    // not seen on a local NPC yet (proxies made before the game's NPCs ran an update): the nest
+    // herd of the species among the game objects
+    struct Find {
+        void* species;
+        void* found;
+    } f{species, nullptr};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* f = (Find*)u;
+            if (noun != game::kHerdNoun || !game::object_alive(o) || game::herd_species(o) != f->species ||
+                !game::herd_nest(o))
+                return true;
+            f->found = o;
+            return false;
+        },
+        &f);
+    if (f.found) {
+        g_local_herds[hk] = f.found;
+        g_proxies_in_nest++;
+        return f.found;
+    }
     auto it = g_herds.find(hk);
     if (it != g_herds.end())
         return it->second;
@@ -269,6 +313,16 @@ static void guest_tick(double now)
         }
     g_kill.clear();
     if (!av && !rts_stage()) // the tribe stage has no avatar
+        return;
+    // the first frames of a world: the update filter meets the game's own NPCs and learns their
+    // herds (g_local_herds) before the proxies are made
+    static void* s_av = nullptr;
+    static double s_av_t0 = 0;
+    if (av != s_av) {
+        s_av = av;
+        s_av_t0 = now;
+    }
+    if (now - s_av_t0 < 1.0)
         return;
     for (auto& [id, px] : g_proxies) {
         net::PlayerState s;
@@ -317,6 +371,8 @@ static void guest_tick(double now)
             game::apply_damage(px.c, std::max(game::health(px.c), 0.f) + 0.5f, 0, nullptr);
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
+        if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
+            game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
     }
 }
 
@@ -328,8 +384,25 @@ void tick(double now)
         return;
     if (is_host())
         host_tick(now, creatures);
-    else if (is_guest())
-        guest_tick(now);
+    else if (is_guest()) {
+        uint32_t n = 0;
+        for (void* c : creatures)
+            n += !game::is_puppet(c) && c != game::avatar();
+        g_local_alive = n;
+        bool away = C.host_away && C.host_away();
+        if (away && !g_host_away) { // the host's NPCs stand frozen and nothing removes them: go
+            std::vector<uint16_t> ids;
+            for (auto& [id, px] : g_proxies)
+                ids.push_back(id);
+            g_away_proxies += (uint32_t)ids.size();
+            for (uint16_t id : ids)
+                destroy_proxy(id);
+            g_herds.clear();
+        }
+        g_host_away = away;
+        if (!away)
+            guest_tick(now);
+    }
 }
 
 void on_world_change()
@@ -343,6 +416,7 @@ void on_world_change()
     }
     g_proxy_of.clear();
     g_herds.clear();
+    g_local_herds.clear();
     g_kill.clear();
     g_host_npcs.clear();
     g_host_by_id.clear();
@@ -358,6 +432,7 @@ void on_session_end()
     for (uint16_t id : ids)
         destroy_proxy(id);
     g_herds.clear();
+    g_local_herds.clear();
     g_host_npcs.clear();
     g_host_by_id.clear();
     g_known.clear();
@@ -523,7 +598,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
 
 std::string status()
 {
-    char b[256];
+    char b[384];
     if (is_host()) {
         size_t known = 0;
         for (auto& [g, ks] : g_known)
@@ -535,8 +610,10 @@ std::string status()
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
-        snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u\n",
-                 (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost);
+        snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
+                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u\n",
+                 (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
+                 g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size());
     }
     return b;
 }
@@ -555,20 +632,25 @@ std::string list()
         for (auto& [c, hn] : g_host_npcs) {
             if (!g_seen_now.count(c))
                 continue;
-            snprintf(b, sizeof b, "  #%u species=%08X hp=%.1f dist=%.1f%s\n", hn.id, game::species_key(c).instance,
-                     game::health(c), net::dist(game::position(c), ap), game::is_dead(c) ? " DEAD" : "");
+            snprintf(b, sizeof b, "  #%u species=%08X hp=%.1f dist=%.1f%s ptr=%p\n", hn.id, game::species_key(c).instance,
+                     game::health(c), net::dist(game::position(c), ap), game::is_dead(c) ? " DEAD" : "", c);
             out += b;
         }
     } else {
         double now = H->time_seconds();
+        for (auto& [k, h] : g_local_herds) {
+            snprintf(b, sizeof b, "  nest %08X/%08X herd=%p alive=%d noun=%08X\n", (uint32_t)k, (uint32_t)(k >> 32), h,
+                     (int)game::object_alive(h), game::noun_id(h));
+            out += b;
+        }
         for (auto& [id, px] : g_proxies) {
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d\n",
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p\n",
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1);
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr);
             out += b;
         }
     }
@@ -591,6 +673,33 @@ void* proxy(uint16_t id)
 {
     auto it = g_proxies.find(id);
     return it == g_proxies.end() ? nullptr : it->second.c;
+}
+
+void* host_npc(uint16_t id)
+{
+    auto it = g_host_by_id.find(id);
+    return it != g_host_by_id.end() && g_seen_now.count(it->second) && game::object_alive(it->second) ? it->second
+                                                                                                     : nullptr;
+}
+
+int host_id(void* c)
+{
+    auto it = g_host_npcs.find(c);
+    return it == g_host_npcs.end() ? -1 : it->second.id;
+}
+
+int proxy_id(void* c)
+{
+    auto it = g_proxy_of.find(c);
+    return it == g_proxy_of.end() ? -1 : it->second;
+}
+
+int proxy_id_of_ai(void* ai)
+{
+    for (auto& [c, id] : g_proxy_of)
+        if (c && *(void**)((uint8_t*)c + 0xB4C) == ai) // cCreatureAnimal +0xB4C: the AI block
+            return id;
+    return -1;
 }
 
 bool debug_host_hit(uint16_t id, float damage)
