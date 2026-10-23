@@ -381,7 +381,7 @@ static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_Soci
 
 static int rounds_needed(void* npc_c)
 {
-    // the native game: tuning +0x424 rounds, one more for an alpha (+0xB58 bit 1; 0xDA43D0)
+    // the native game: tuning +0x424 rounds, one more for an alpha (+0xB58 bit 0x1; 0xDA43D0)
     void* tuning = field<void*>(npc_c, 0xE84);
     int n = tuning ? (int)field<uint32_t>(tuning, 0x424) : 1;
     n = std::clamp(n, 1, 6);
@@ -407,8 +407,11 @@ static void apply_success(uint8_t player, uint16_t id)
 {
     void* c = npc::host_npc(id);
     void* mgr = rel_mgr();
-    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c))
+    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c)) {
+        g_refused++; // gone, died or impressed by somebody else meanwhile
+        send_result(id, player, false, 0, 0);
         return;
+    }
     void* av = game::avatar();
     void* key = (uint8_t*)c + game::kSpeciesKeyOff;
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;

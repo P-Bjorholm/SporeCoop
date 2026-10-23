@@ -157,7 +157,8 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
   to the NPC's AI (`BT_PostStimulus` 0xBC9940 `thiscall(ai(+0xB4C)+8, maskLo, maskHi, float,
   sender) ret 0x10`). The NPC's behaviour tree answers: node 0x341BD4BE (table at 0x15943A0: start
   0xDA43D0 "SocialPropose", tick 0xDA49C0, end 0xD9F810) builds the session (rounds = tuning +0x424,
-  +1 for an alpha, +0xB58 bit 1), the meter UI (0xE31xxx) and the prompts. The player's ability keys
+  +1 when +0xB58 bit 0x1 is set: ~ the alpha, its card reads "Alpha Kook"; the selection guard in
+  coop.cpp treats the same bit as "pack member"), the meter UI (0xE31xxx) and the prompts. The player's ability keys
   answer it; without such a session the keys do nothing (no animation either).
 * ✔ The win: `CreatureSocialSuccess` 0xD9BC40 `thiscall(session, npc, other) ret 8` (called at
   0xDA4A6B when the meter is full): ApplyEvent 3, DNA = `CreatureDnaWorth` 0xC04260(npc, 1) (Kook:
