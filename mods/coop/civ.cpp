@@ -1153,7 +1153,8 @@ static void host_command(uint8_t from, net::Reader& r)
                      " to " + C.sess->name_of(to));
         if (!given)
             return reject();
-        g_cmds_done++;
+        if (from != C.sess->my_id()) // the host's own gifts are not guest commands
+            g_cmds_done++;
         return;
     }
     if (kind == CMD_ORDER) {

@@ -176,3 +176,22 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
+
+## 6.10 Game bots in the Civilization stage (play_civ.py)
+
+* Find things on screen with `coop.targets` (`city <host index> <owner> x y`, owner -1 = another
+  nation, 253 = shared capital; `vehicle <net id> <owner> x y`), buttons with `coop.ui where <id>`
+  (screen rect + enabled) or `coop.ui at <x> <y>` (every window under a point), building plots with
+  `coop.civ slots <city>`, any object kind with `coop.civ nouns [noun]` (spice nodes: 403DF5C).
+* `coop.targets` / world_to_screen do not know the planet: a point behind it still gets screen
+  coordinates. play_civ.py projects with the `coop.cam` view rows and tests the ray against the
+  planet sphere itself, and pans with W/A/S/D until the point is in a box (`Player.look_at`).
+  Wait until the camera stops before reading screen positions (it glides ~0.5 s after a key).
+* A box selection (`drag`) only works on what is on screen right now; a right click on water or
+  across the sea gives a land vehicle no order (on the host too: compare host and guest rates, do
+  not count it as a lost order). Attacks go through the target city's menu (docs/re/civ.md 9.1).
+* A capture caption stops the host's world until Enter (`coop.civ` status `movie=1`).
+* Console connections are per thread: a bot thread and the audit must not share a `Console`
+  (replies get mixed: a `coop.uistate` answer parsed as `coop.civ`).
+* `update_check.py` restores lane 6 to the original game (no loader); `spore.sh deploy` installs
+  the loader again in such a lane.

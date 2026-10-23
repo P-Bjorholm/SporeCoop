@@ -316,9 +316,12 @@ slot, noun}, CIV_OWNERSHIP{city→player table}.
 
 ---------------------------------------------------------------------------------------------
 ## Open questions / unverified
-* Whole-planet consistency on guests: NPC civs, their vehicles and city growth (AI growth
-  0xBE6010 path via `CreateBuilding` 0xBE54E0) still run on guests; the host would have to
-  mirror or suppress them too (civ AI entry points 0xBF5DD0, 0xBF6930, 0xBF8830, 0xBFB140).
+* Whole-planet consistency on guests: NPC civs, their vehicles and city growth still run on
+  guests. Done (2026-10-23): AI growth (`CreateBuilding` from 0xBE5BAE / 0xBE6169) and new cities
+  (0xAE3A80) are blocked on guests, buildings / spice nodes / capture meter come from the host
+  (§9). Still local: the NPC AI's vehicle spawns (killed by the next snapshot; `SpawnVehicle`
+  callers 0xBE7643 / 0xBFBCF7 do not check for null, so it cannot simply be blocked) and its
+  budgets (civ AI entry points 0xBF5DD0, 0xBF6930, 0xBF8830, 0xBFB140).
 * Exact meaning of SetOrder `flag` (1/2) and of order types 0/4/7/10.
 * Planner commit: where the slot index lives at commit time (Ghidra shows a local slot index
   ≠ -1) and how the editor budget `[editor+0x68]` is settled with civ money.
@@ -514,3 +517,67 @@ always consume local fires (they only mirror the results).
 | Speed buff | write v+0x218 (+ spatial vt 0xC4) | restore after; RecalcStats 0xCA40A0 resets |
 | City alarm | 0xC00C20 OnAttacked (edge via 0xC005E0) | kinds 0 mil, 1 rel |
 | Superweapon vote | 0xBF8B90 FireSuperweapon (ret addrs 0xCF1DC4 / 0xCF68C5) | |
+
+---------------------------------------------------------------------------------------------
+## 9. Found while two bots played the stage (tools/tests/play_civ.py, 2026-10-23)
+
+Runtime findings (✔ = seen working in the game), with what the co-op code does with them.
+
+### 9.1 UI a player (and a bot) uses
+* **Own city menu** (click the city hall): buttons are windows with these control ids (`coop.ui where
+  <id>` gives their screen rect, `enabled=0` when greyed): planner 0x062D5618, land 0x062D6902,
+  sea 0x062D6908, air 0x062D690F. Greyed buy buttons = no vehicle slot left (or no harbour). ✔
+* **Another nation's city menu** (left click on its city): the window ids are the command ids of
+  §4: attack 0x037E95B9 (the crosshair, order type 2 for the selected military vehicles), and a
+  top button 0x051B4174 (gift); religious / trade buttons show for those vehicles. **A right click
+  on a foreign city gives no order at all**: attacks go through the menu. ✔
+* **City planner**: open = window 0x272EB68E (city name, bottom) visible; the green check at
+  (1412, 1054) of a 1440x1080 window closes it. In a new game (civ_npc) the house / factory /
+  entertainment tiles have no design yet (a blue badge): a click on the tile opens the building
+  editor (an editor request: the co-op vote), so placing a building through the planner needs a
+  design first. Not automated yet. ✔
+* **Pause menu**: Esc on the planet opens it (window 0x064C23F8 visible), Esc again closes it. ✔
+* **Camera**: W/A/S/D pan (the camera glides on ~0.5 s after the key is released), the wheel zooms
+  (down to the ground, where the view tilts to the horizon). `coop.cam` rows: view[0] right,
+  view[1] forward, view[2] up, view[3] position; viewWindow = half extents at distance 1, so
+  `x = 720 + (d·right)/(d·fwd)/vw.x·720`, `y = 540 − (d·up)/(d·fwd)/vw.y·540`. ✔
+* **Captions**: a captured city plays a cinematic with a caption ("You've captured this military
+  city by military means...") and a green check; **the host's whole world stands still until OK**
+  (cCinematicManager +0x2C ≠ 0; vehicles keep order 6/12 and do not move). Enter = OK. ✔
+
+### 9.2 Spice nodes (cCommodityNode)
+* Noun 0x403DF5C, TYPE 0x403DF5F, main vtable 0x146A5D8 (vt 0x48 SetPoliticalID 0xBFE080: writes
+  +0x30 and the mine object at +0x288), +0x30 owner political id (-1 free). The serializer names
+  that follow the vtable: mConstructingVehicle, mBuyPoliticalID, mConvertPoliticalID,
+  mCapturePoliticalID, mConstructingPoliticalID, mMineStateTime. ✔
+* SetOwner 0xBFF3F0 thiscall(node, pol, reason) ret 8; **Claim 0xBFF800** thiscall(node, pol) ret 4
+  (SetOwner + model 0xBFE650 + mine state +0x1EC = 3); **Unclaim 0xBFF870** thiscall(node). Claims
+  happen in the vehicle claim behaviour (0xBC012F/0xBC0244). Calling Claim on a guest shows the
+  derrick and costs nothing. ✔ (applied from the host snapshot)
+* A claimed node earns money for the player civ on the host only (no double income from the guest:
+  the guest's money changes only by host totals). ✔
+
+### 9.3 New cities of other nations
+* The planet has fixed city sites; a manager (singleton 0x167B5EC, `0xB268A0` Get, tick 0xAE6190)
+  calls **SpawnNextCity 0xAE3A80** thiscall(mgr, 0, 0) ret 8 → picks the free site with the lowest
+  order (+0x14 records, stride 0x64, +0x30 used), and the city appears a few seconds later
+  (0xB9FAE0 → timed callback 0xB9C6E0 → 0xB999C0 makes the cCity from the record, AddCity
+  0xBF4490). Seen at runtime: 4-6 new cities in 10 minutes on Taldon. ✔
+* Without co-op code the guest's tick founded cities on its own: sometimes the same as the host's,
+  once a city the host never had. Now only the host founds; guests replay SpawnNextCity in the
+  same order (same free site, same new political id). ✔
+
+### 9.4 Buildings in a siege
+* Building combatant at +0x120: **state +0x154 (2 = destroyed / ruin), hp +0x158**. Destroyed
+  buildings stay as ruins while the city is besieged; a capture removes them on the host.
+* **DestroyBuilding 0xBE3510** thiscall(city, building) ret 4 (AddRef, DestroyInstance, RemoveBuilding
+  0xBE3480, Release; the sell path) removes one on a guest. ✔
+* The generic combatant damage 0xBFCEF0 (ret 0x14) is what turns a building into a ruin (hp → 0,
+  state 2, message 0x1622184 with the attacker); not called on guests yet (docs/known-issues.md).
+
+### 9.5 Vehicle orders seen at runtime
+* Order list at v+0xB68 (`coop.civ` prints `order=` = type of the first one): 6 move, 8 claim node,
+  2 attack city, 1 attack unit, **12** seen on the vehicles that took a city while its capture
+  caption was up (meaning **?**).
+* A land vehicle sent onto water or across the sea gets no order (the game ignores the click):
+  ~20-30 % of the bots' random move clicks, on host and guest alike.
