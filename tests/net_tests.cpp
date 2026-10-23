@@ -234,6 +234,37 @@ static void test_session()
     CHECK(why.find("build") != std::string::npos);
 }
 
+// the host's player state and every chunk of a big snapshot (a cell pool of 600 cells = 43
+// chunks of ~900 bytes, more than the 32 packets of one flush) reach the guest in the same frame
+static void test_big_snapshot()
+{
+    printf("player state and a 43-chunk snapshot in one frame\n");
+    Session host, cli;
+    host.build = cli.build = 0x922af7c7;
+    std::string err;
+    CHECK(host.host(0, "host-alice", err));
+    CHECK(cli.join("127.0.0.1:" + std::to_string(host.port()), "guest-bob", err));
+    pump(host, cli, 300);
+    CHECK(cli.my_id() == 1);
+    int chunks = 0, states = 0;
+    cli.cb.player_state = [&](const PlayerState& st) { if (st.id == 0) states++; };
+    cli.cb.custom = [&](uint8_t type, uint8_t, Reader&) { if (type == 33) chunks++; };
+    for (int round = 0; round < 3; round++) {
+        for (int k = 0; k < 43; k++) {
+            Writer w;
+            for (int i = 0; i < 887; i++)
+                w.u8((uint8_t)k);
+            host.send_unreliable_to(1, 33, w);
+        }
+        PlayerState s;
+        host.send_state(s);
+        host.update(); // one frame: one flush
+        pump(host, cli, 40);
+    }
+    CHECK(states == 3);
+    CHECK(chunks == 3 * 43);
+}
+
 static void test_interp()
 {
     printf("snapshot interpolation\n");
@@ -290,6 +321,7 @@ int main()
     test_dbpf();
     test_reliability();
     test_session();
+    test_big_snapshot();
     test_interp();
     test_discovery();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);

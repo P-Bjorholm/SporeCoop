@@ -26,9 +26,12 @@ void Connection::send_reliable(uint8_t type, const Writer& w)
     rel_out_.push_back(std::move(m));
 }
 
-void Connection::send_unreliable(uint8_t type, const Writer& w)
+void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
 {
-    unrel_out_.emplace_back(type, w.data);
+    if (first)
+        unrel_out_.emplace(unrel_out_.begin(), type, w.data);
+    else
+        unrel_out_.emplace_back(type, w.data);
 }
 
 bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)

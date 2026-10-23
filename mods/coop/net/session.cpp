@@ -226,7 +226,7 @@ void Session::send_state(PlayerState st)
     st.write(w);
     for (auto& p : peers_)
         if (p->accepted || role_ == Role::Client)
-            p->conn.send_unreliable(MSG_PLAYER_STATE, w);
+            p->conn.send_unreliable(MSG_PLAYER_STATE, w, true);
 }
 
 void Session::send_chat(const std::string& text)
@@ -455,7 +455,11 @@ void Session::flush(uint32_t now)
 {
     std::vector<uint8_t> pkt;
     for (auto& p : peers_) {
-        for (int i = 0; i < 32 && p->conn.build_packet(now, pkt); i++)
+        // 32 packets per frame pace the reliable bulk (world transfer); unreliable messages are
+        // stale by the next frame, so they all go out (up to 96 packets): a cell pool snapshot is
+        // one ~900-byte chunk per 14 cells and used to push the rest - and the player state
+        // queued after it - past the limit (> 448 cells: the partner vanished at < 10 fps)
+        for (int i = 0; (i < 32 || (i < 96 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt); i++)
             sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
     }
