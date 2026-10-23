@@ -13,6 +13,11 @@ Simulator::cGameNounManager::SetAvatar=0x00B1FC70 ; verified REA (Create isAvata
 Simulator::cGameNounManager::CreateHerd=0x00B238B0 ; verified runtime: thiscall(pos*,species,size,ownedByAvatar,personality,createNest), size 0 -> empty herd; ModAPI m17 0xB23920
 Editors::cSpeciesManager::Get=0x00401090 ; verified REA (Create) + runtime
 Editors::cSpeciesManager::GetSpeciesProfile=0x004DF580 ; verified runtime: avatar species key -> avatar species profile
+Editors::cEditor::GetBlockingErrors=0x0057AC00 ; verified (disassembly + runtime 2026-10-22) thiscall(editor, u32 out[4], cEditorResource*, model, bool) ret 0x10, returns out: 128-bit set of creation errors that block "done"; stored at editor+0x48 when a creation is loaded (0x57F6C0). Bit 5 = a part is not in the editor's part list (editor config prop 0xF5CBE065, check 0x4EF8C0) (docs/re/creations.md 7)
+Editors::cEditor::GetFinishState=0x0057AAA0 ; verified (disassembly + runtime) thiscall(editor) ret: 3 = unchanged, may leave; 4 = unchanged but an error of editor+0x48 is still there (done shows message, stays); 0/1/2 the same after edits
+Editors::cEditor::Exit=0x0058A350 ; verified runtime thiscall(editor, int how (0 commit, 1 accept and leave, 2 cancel), int, int) ret 0xC: done in a creature-stage editor calls (1, 2, 1) -> 0x57E8A0
+Editors::EditorUI::OnExitButton=0x005DF4B0 ; verified runtime thiscall(ui, int command (0x102 = done), int) ret 8: asks GetFinishState, then leaves (0x5DEC50) or shows the first blocking error (0x5DCA40)
+Editors::EditorUI::RunExitCommand=0x005DEC50 ; verified (disassembly + runtime) thiscall(ui, int command 0x100..0x107) ret 4: 0x102 = done -> Exit(1, 2, 1) (or a confirmation dialog when ui+0xEC)
 Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14
 Simulator::cCreatureBase::PlayAnimation=0x00C12430 ; verified REA + ret 0xC (animID, block, disableBlend)
 Simulator::cCreatureBase::PlayAnimationTo=0x00C14AE0 ; verified ret 0x10

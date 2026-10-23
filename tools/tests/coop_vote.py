@@ -54,10 +54,10 @@ def main():
     g_own = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'])
     g_own = g_own.group(1) if g_own else None
 
-    # 3. leaving the editors: the host's species goes to the world, the guest keeps its own
-    # (the guest's "done" does not leave the editor for a creation from My Creations yet: cancel)
-    guest.call('click 1376 1062')  # the red "cancel" cross of the editor
-    host.call('click 1416 1062')   # the green "done" check of the editor
+    # 3. leaving the editors with "done": the host's species goes to the world, the guest keeps
+    # its own (coop_guest_editor.py covers an edited own creature)
+    guest.call('click 1416 1062')  # the green "done" check of the editor
+    host.call('click 1416 1062')
     t0 = time.time()
     while time.time() - t0 < 30 and mode(host) != m0:
         time.sleep(1)

@@ -138,9 +138,12 @@ analysis — [docs/re/creations.md](re/creations.md)):
   that arrives while the guest is in the editor is loaded after the guest leaves the editor; after the editor
   the edited creature becomes the player's own and is sent to the others.
 
-Not ready: on a guest, the editor's "done" button for a creature from "My Creations" does not leave
-the editor (DNA is not the cause, cancel works) — under investigation; the player's ship is visible to others
-but not tested separately; tribe and civilization members use the host world's species.
+In the own editor the parts of the player's own creature are allowed even when the stage editor's
+part list lacks them (Creature Creator parts): otherwise "done" would stay in the editor
+([docs/re/creations.md](re/creations.md) 7).
+
+Not ready: the player's ship is visible to others but not tested separately; tribe and
+civilization members use the host world's species.
 
 ## 9.5 Implementation order
 1. Transition vote, editor fix, owner colors/labels. (all phases)
