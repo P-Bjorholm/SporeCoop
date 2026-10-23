@@ -576,11 +576,43 @@ const char* save_blocker()
         return "an editor is open (the world is sent when the host is back in the stage)";
     if (mode == modes::kLoad)
         return "the game is loading";
+    // a save in the galaxy menu (a share that waited there after the host left its stage) wrote a
+    // slot that faulted the host's own next load (0xBA7F87, cStarManager) and stayed in LoadGame
+    if (!stage_mode(mode) && mode != modes::kScenario)
+        return "the game is not in a stage";
     if (g_submit_later || H->time_seconds() - g_editor_submitted_at < 5.0)
         return "an editor is opening";
     if (mode_switch_pending())
         return "the game is switching modes";
     return nullptr;
+}
+
+// The quit message 0x4715068 (save and leave the stage for the galaxy menu; coop.load and received
+// worlds use it, docs/re/space.md 8.2) saves the game itself. Handled while our save for a world
+// share was still queued or being written (a guest joined as the host left), the two saves broke
+// the host's slot: its next load faulted at 0xBA7F87 (data 0x1188, from 0xB27DA6) and stayed in
+// LoadGame. Like the game does while a mode switch is pending, the message is posted again until
+// our save is written.
+using SimMsg_t = int(SK_THISCALL*)(void*, uint32_t, void*);
+SimMsg_t o_SimMsg;
+unsigned g_quits_delayed; // tests: quit messages that waited for our save
+double g_quit_delay_logged = 0;
+int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
+{
+    if (id == 0x4715068u && world::save_busy()) {
+        uintptr_t get = H->sym("App::IMessageManager::Get");
+        if (void* mm = get ? skg::cdecl_call<void*>(get) : nullptr) {
+            double now = H->time_seconds();
+            if (now - g_quit_delay_logged > 5.0) {
+                g_quit_delay_logged = now;
+                g_quits_delayed++;
+                LOG("leaving the stage waits until the world save is written");
+            }
+            skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+            return 1;
+        }
+    }
+    return o_SimMsg(self, id, data);
 }
 
 bool SK_CDECL h_Submit(void* req)
@@ -1062,6 +1094,27 @@ bool shown_chain(sui::Win w)
     return true;
 }
 
+// a visible window with this control id below w (closed boxes stay in the tree, hidden)
+bool visible_below(sui::Win w, uint32_t id, int depth = 0)
+{
+    if (!w || depth > 12 || !sui::visible(w))
+        return false;
+    if (sui::control_id(w) == id)
+        return true;
+    for (sui::Win c : sui::children(w))
+        if (visible_below(c, id, depth + 1))
+            return true;
+    return false;
+}
+
+// the pause menu or one of the game's message boxes ("Do you want to save your game?", "Are you
+// sure?": container 0x06318E78, like the "game saved" box) is up; outside the frame only
+bool pause_ui_up()
+{
+    sui::Win root = sui::main_window();
+    return root && (shown_chain(sui::find(root, kPauseMenuId)) || visible_below(root, 0x06318E78u));
+}
+
 void menu_check_task(void*)
 {
     g_menu_check_queued = false;
@@ -1297,6 +1350,13 @@ void setup_callbacks()
                         // the player may have left the stage since (pause menu "Exit to Main Menu")
                         if (game::mode_id() != modes::kCreature || mode_switch_pending()) {
                             LOG("own editor not opened: the game left the creature stage");
+                            return;
+                        }
+                        // an editor opened under the pause menu or its "save your game?" boxes: a
+                        // click on "Don't Save" right after left the guest in a black editor for good
+                        if (pause_ui_up()) {
+                            LOG("own editor not opened: the pause menu is open");
+                            feed("evolution: your editor did not open (pause menu); evolve at your nest later");
                             return;
                         }
                         bool ok = open_own_editor((uint32_t)(uintptr_t)id);
@@ -2259,6 +2319,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))
+        H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
         H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
@@ -2284,9 +2346,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
-                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u",
+                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
+                           "quit held for a save %u",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
-                           g_part_list_waivers, g_submits_held);
+                           g_part_list_waivers, g_submits_held, g_quits_delayed);
                        return 0;
                    },
                    nullptr, MT);

@@ -555,7 +555,11 @@ void tick(net::Session& s)
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
         if (p.need_save) {
-            if (now >= p.next_try) {
+            // a stage that just began (loading screen, setup) is saved once the player controls
+            // something, like a share at join (coop.cpp player_join)
+            if (now >= p.next_try && g_playing && !g_playing()) {
+                p.next_try = now + 1000;
+            } else if (now >= p.next_try) {
                 std::string why;
                 if (save_game(why)) {
                     p.need_save = false;
