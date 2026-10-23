@@ -4,6 +4,9 @@ needs something the save does not have fails with that reason. New fixtures come
 tools/tests/make_fixture.py (a base fixture + commands + save), never from the player's saves.
 
 fact = (what, console command, regex that must match its output)
+
+Both players' own creations are fixtures too: out/fixtures/creations-host.package and
+creations-guest.package become the profiles' EditorSaves.package on every cold start.
 """
 
 FIXTURES = {

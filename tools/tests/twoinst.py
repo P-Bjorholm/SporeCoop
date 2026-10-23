@@ -140,6 +140,20 @@ def alive(inst):
         return False
 
 
+def restore_creations():
+    """both players' own creations ("My Creations", EditorSaves.package) are test data too: every
+    lane starts with the same ones (fixtures creations-host / creations-guest)"""
+    import shutil
+    fx = os.path.join(os.path.dirname(os.path.dirname(subprocess.run(
+        ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ROOT, capture_output=True,
+        text=True).stdout.strip())), 'SporeCoop', 'out', 'fixtures')
+    for name, d in (('creations-host', lane.HOST_DIR), ('creations-guest', lane.GUEST_DIR)):
+        src = os.path.join(fx, name + '.package')
+        if os.path.exists(src):
+            os.makedirs(d, exist_ok=True)
+            shutil.copy(src, os.path.join(d, 'EditorSaves.package'))
+
+
 def check_fixture(host, fixture):
     bad = [what for what, ok in fixtures.check(host, fixture) if not ok]
     if bad:
@@ -204,6 +218,7 @@ def start(fixture='creature', planet=None, load_args=()):
     time.sleep(2)
     sh('deploy')
     sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
+    restore_creations()
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
