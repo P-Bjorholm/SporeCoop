@@ -14,7 +14,7 @@ Rules for every contributor and agent: [CLAUDE.md](../CLAUDE.md).
 | guest: menu settles, joins | ~8 s |
 | world to the guest: host save 2.5 s + transfer of 3.8 MB + load 0.6 s | ~8 s |
 | **cold start of a pair** | **~40 s** |
-| **warm reset** (same save: new slot, `coop.load`, guest rejoins) | **5–6 s** |
+| **warm reset** (same save: new slot, `coop.load` via the galaxy menu, guest rejoins) | **~7 s** (5–6 s before loads went through the menu) |
 | stage switch in a running game (`coop.load`: save + quit to the galaxy menu, load) | host in the new stage 5–6 s, guest together 16–18 s |
 | hot reload of coop.dll in running games | ~1 s |
 | memory per game | ~480 MB (12 games ≈ 6 GB) |
