@@ -44,7 +44,7 @@ round on the build with the fixes of the round before:
 | 1 | 3 of 5 | 2 of 5 | tribe setup fault 0xB12D32; "frozen" civ guest (a 14 s world load); the mod answered "Do you want to save your game?" and the host left the game |
 | 2 | 4 of 5 | 5 of 5 | tribe guests lost NPCs after 4 minutes (snapshot chunk over the packet limit) |
 | 3 | 5 of 5 | 4 of 5 | civ guest crashed on a vehicle the game had freed |
-| final nightly | (not part of nightly) | 5 of 5 (10-minute runs) | all play bots passed too |
+| final nightly | (not part of nightly) | 5 of 5 (10-minute runs) | play bots 4 of 5; play_creature passed after its test fix |
 
 After round 2 the tribe 4-player run passed 3 of 3 more times. Typical numbers with 4 players:
 NPC / citizen p90 0.2-1.4 m on every guest, coverage 98-100 %, 500-800 actions and 3-8 rejoins
