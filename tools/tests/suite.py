@@ -47,6 +47,12 @@ add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_death', P + 'coop_space_death.py', minutes=5)
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
+# many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent
+# again while the guest loads, a load right after the galaxy menu came up in fresh games, rejoins at
+# random moments
+add('rejoin_loop', P + 'coop_rejoin_loop.py --rounds 15 --reshare 0:2.5', minutes=5)
+add('menu_load', P + 'coop_rejoin_loop.py --rounds 5 --local-load 0:1.5 --cold', minutes=5)
+add('rejoin_race_long', P + 'coop_rejoin_loop.py --rounds 40 --race 1:9', ('nightly',), minutes=8)
 add('rejoin_awful', 'SPORE_NET=awful ' + P + 'coop_rejoin_net.py', ('nightly',), minutes=8)
 add('update', P + 'update_check.py', minutes=6)  # its own lane 6, one game
 # chaos bot (random real input by both players, network churn); smoke: 2 minutes of tribe
