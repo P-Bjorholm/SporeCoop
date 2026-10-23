@@ -176,8 +176,10 @@ void vcursor_tick()
 }
 
 // Test runs go to a secondary monitor (if there is one) so they do not flash in front of the
-// user: [sporekit] test_monitor = auto (secondary) | primary | off. Instance 1 sits at the left
-// edge, the others at the right edge of that monitor.
+// user: [sporekit] test_monitor = auto (secondary) | primary | off | grid. Instance 1 sits at the
+// left edge, the others at the right edge of that monitor. grid (the headless test display of
+// tools/headless.sh): instance N gets its own cell of a 4-wide grid, so no window covers another
+// (a covered window gets no frames from the compositor and the game stops).
 
 static BOOL CALLBACK monitor_cb(HMONITOR m, HDC, LPRECT, LPARAM lp)
 {
@@ -196,6 +198,17 @@ void place_test_window()
     std::string mode = ini_str(mods_dirw() + L"\\sporekit.ini", "sporekit", "test_monitor", "auto");
     if (mode == "off" || mode == "primary")
         return;
+    if (mode == "grid") {
+        RECT wr;
+        GetWindowRect(w, &wr);
+        int ww = wr.right - wr.left, wh = wr.bottom - wr.top, n = instance_id() - 1;
+        int x = (n % 4) * ww, y = (n / 4) * wh;
+        if (wr.left != x || wr.top != y) {
+            SetWindowPos(w, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            SKLOG(SK_INFO, "test window placed in the grid (%d,%d)", x, y);
+        }
+        return;
+    }
     std::vector<MONITORINFO> mons;
     EnumDisplayMonitors(nullptr, nullptr, monitor_cb, (LPARAM)&mons);
     const MONITORINFO* target = nullptr;

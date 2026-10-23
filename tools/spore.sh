@@ -131,11 +131,21 @@ cmd_run() {
     fi
     mkdir -p "$ROOT/out"
     [[ -f "$BIN/SporeApp.exe" ]] || { echo "no game at $BIN (lane $LANE: spore.sh lane create $LANE)" >&2; exit 1; }
-    nohup flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
+    # test games draw on a headless GNOME Shell (tools/headless.sh): nothing on the user's desktop,
+    # and they keep drawing; SPORE_HEADLESS=0 shows them on the desktop instead
+    local display=()
+    if [[ "${SPORE_HEADLESS:-1}" == 1 ]] && command -v gnome-shell >/dev/null; then
+        local hl
+        hl=$("$ROOT/tools/headless.sh" up) || { echo "the headless test display did not start" >&2; exit 1; }
+        # shellcheck disable=SC2206
+        display=(env -u WAYLAND_DISPLAY $hl)
+        sk_ini_set test_monitor grid
+    fi
+    nohup "${display[@]}" flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
         -e "$BIN/SporeApp.exe" -- "${args[@]}" > "$ROOT/out/run.$inst.log" 2>&1 &
     # opt-in: a window on a hidden workspace gets no frame callbacks from GNOME, DXVK then waits
     # forever and the game stops at frame 1 (seen 2026-10-23); use the headless shell instead
-    if [[ "${SPORE_AGENT_WS:-0}" == 1 ]] && command -v agent-ws >/dev/null; then
+    if [[ "${SPORE_AGENT_WS:-0}" == 1 && "${SPORE_HEADLESS:-1}" != 1 ]] && command -v agent-ws >/dev/null; then
         # the game windows go to the "sporecoop" project's own workspace (agent-ws): Bottles drops
         # the environment that agent-ws launch would mark them with, so find them by process
         sk_ini_set test_monitor off

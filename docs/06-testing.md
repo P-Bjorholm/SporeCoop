@@ -38,13 +38,16 @@ Test runs don't get in the way of whoever is at the computer:
 * **muted**: `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
   profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
   the mute by application name and apply it to normal play too);
-* **on their own workspace**: on a desktop with the agent-ws GNOME extension (agent-ws on the
-  developer's machine), `spore.sh run` moves every test game window into the agent-ws project
-  `sporecoop` (its own workspace) through `tools/assign_windows.py`. Bottles drops the environment
-  marker of `agent-ws launch`, so the window is found by its Wine process (lane folder and
-  arguments in the command line); the player's own game is never touched. SporeKit's own placement
-  is then off (`[sporekit] test_monitor = off`); without agent-ws it moves test windows to a
-  non-primary monitor (`test_monitor = auto|primary|off`, command `window [x y|test]`).
+* **invisible**: `spore.sh run` starts the test games on a headless GNOME Shell
+  (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x3240
+  virtual monitor; its Xwayland display is passed to Bottles). Nothing appears on the user's
+  desktop and the games keep drawing at 30 fps. SporeKit places each window in its own cell of a
+  4-wide grid (`[sporekit] test_monitor = grid`): a covered window gets no frames. Do not move test
+  windows to a hidden workspace of the real desktop: GNOME sends them no frame callbacks, DXVK waits
+  and the game stops at frame 1. `SPORE_HEADLESS=0` shows the games on the desktop (then SporeKit
+  moves them to a non-primary monitor: `test_monitor = auto|primary|off`). `tools/headless.sh down`
+  stops the headless shell. Sharing the real runtime folder with it would unmount the Flatpak
+  document portal, so it never does.
 
 ## 6.3 Development loop
 

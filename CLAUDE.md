@@ -47,8 +47,8 @@ anything new, write it down in the same change.**
   changes), single tests by name. Lanes are independent copies of the game + bottle
   (`tools/spore.sh lane create N`); `SPORE_LANE=N` selects one for manual runs.
 * The dev loop without restarting the games: `tools/lab.py reload` (build + hot reload of coop.dll).
-* Tests must not touch the player's own Spore profile (only the test profiles), run muted and on their own
-  workspace (agent-ws project `sporecoop`, see docs/06-testing.md).
+* Tests must not touch the player's own Spore profile (only the test profiles), run muted and invisible
+  (a headless GNOME Shell, tools/headless.sh; see docs/06-testing.md).
 * Pitfalls: `pkill -f <pattern>` from a shell whose own command line contains the pattern kills
   that shell; quitting one Wine instance kills every instance in the same bottle (lanes have own
   bottles); a deadlocked Wine process can keep its port — `spore.sh kill` SIGKILLs it.
