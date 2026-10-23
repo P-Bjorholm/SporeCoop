@@ -172,3 +172,32 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
+
+## 6.10 Playing the Tribe stage through real input (play_tribe.py)
+
+Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
+* `drag` and `click` return at once; the game sees the press a few frames later and a drag takes
+  ~15 frames: read the selection (`coop.tribe` `sel=1`) ~1.2 s after a `drag`, not right away.
+* Selection boxes are screen rectangles around `coop.targets` points (the feet): a box from
+  `y-55` to `y+25`, `x±35` catches a walking member; boxes that start on the HUD (the roster at
+  the right edge, x > ~1375, the bottom bar y > ~950) do nothing.
+* `coop.targets objs` lists everything on screen: `member <id> <owner>`, `obj t<id>` (citizens of
+  every tribe), `n<id>` (animals), `tree` (fruit trees), `o2C9CC91` (small food plants),
+  `hut<i>[p]` (huts, `p` = the player tribe), `tribe<i>[p]` (tribe centres, also off screen),
+  `o<noun>` for the rest. A right-click on a tree's base point often hits the ground (a walk):
+  not every tree picks.
+* Camera: the arrow keys pan (~30 m/s), the wheel zooms, a right-drag rotates. The Home key does
+  nothing in the tribe stage and **`H` opens the Spore Guide**, which swallows every later click
+  (close it at `click 1338 59`). The minimap is the way to look somewhere: a click there centres
+  the view on that spot. `coop.avatar` prints the planet point under the mouse (`pos=`), so 3
+  clicks calibrate a linear minimap -> world map (~3.7 m per pixel on Cohrach); one correction
+  step lands within 30 m.
+* The tribe UI interaction mode: social at `click 725 1030`, attack at `click 795 1030`;
+  `coop.status` prints `tribe ui mode=0|1`. The tribe palette at the bottom is locked in the
+  fixture ("Conquer or ally with other tribes to progress"): nothing can be bought there.
+* `coop.status` prints `tribe last order:` (guest: what it sent, host: what a guest order became
+  and why it was rejected) and `tribe last local order: #n` (the host's own orders): a click that
+  changes neither gave no order (it missed the target).
+* `coop.tribe spawn <n>` (host) adds adults to the player tribe: test setup only.
+* Agents running in parallel share one scratchpad folder: give helper scripts unique names (one
+  agent's `reload.sh` was overwritten by another's, which then hot-reloaded the wrong lane).
