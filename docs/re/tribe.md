@@ -558,3 +558,68 @@ its profile is what Create got) so the guest has the model. Position: tribe spat
 | Chief marker | SetSpecializedTool 0xC27AE0 / spatial vt 0x40 scale | one real chief only (tribe+0x11C) |
 | Epic | CreateHerd + herd+0x88 = 0xFC811218 + SetEnabled + Create | archetype tuning isEpic |
 | Food | cTribe::AddFood 0xC8F7E0 + UpdateFoodVisuals(delta) | fix shared.cpp delta |
+
+---------------------------------------------------------------------------------------------
+## Trees (fruit trees, gather targets) - runtime RE 2026-10-23 (play_tribe)
+
+What a right-click "gather" names depends on the plant: the small tribal food plants are
+cGameData (noun **0x2C9CC91**, in the noun list, position via the spatial cast ✔), the planet's
+fruit trees are **cTreeData** (noun **0x6ABEE7E** via vt 0x20 = 0xAFFEB0, main vtable
+**0x145D160** / second base 0x145D150, size 0x80) which are **not** cGameData: not in the noun
+list, no cSpatialObject cast, so `game::object_position` / `find_object` cannot see them ✔.
+Before the fix a guest's gather on a tree reached the host as "noun 0x6ABEE7E at (0,0,0)" and was
+rejected.
+
+cTreeData (✔ runtime + asm): +0x00/+0x04 vtables, **+0x08 refcount**, +0x0C/+0x0E u16,
+**+0x10 Vector3 position** (identical on host and guest: same planet data), +0x1C float,
++0x20 transform, +0x48/+0x4C u64 bit mask (fruit slots ~, set from random bits when planted in
+0xB07490), +0x50..+0x58 ids, +0x5C..+0x64 vec3, +0x68 ref-counted model pointer, +0x6C..+0x74
+scale. Ctors: 0xB016A0 (default), 0xB035B0 (copy), 0xB01750 scalar deleting dtor; allocation tags
+"Simulator/cTreeData" (0xB07490, planting), "SP_Simulator/cTreeData/COM" (factory 0xB02020).
+None of these ran while a guest loaded the world (probes: 0 hits): the live trees come another way (?).
+
+Where they live (✔ found with `coop.memfind` from a picked tree up to a global):
+* **flora object = [0x167FB14]**, getter **0xB3D510** (`SporeCoop::Flora_Get`; class name
+  unknown, the getter sits between cTerraformingManager::Get 0xB3D500 and
+  cAnimalSpeciesManager::Get 0xB3D520).
+* flora **+0x1E5F0 / +0x1E5F4** = begin / end of a sorted vector of patches, element stride
+  **0x19A8** = `{u32 key (patch index, sparse 0..~290), u32 0, patch}` (264 patches on Cohrach).
+  0xB07490 compares a lookup result with `flora+0x1E5F4` (the end) ✔.
+* patch: +0x00 Vector3 centre, +0x0C radius (26), three `fixed_vector<intrusive_ptr<cTreeData>,16>`
+  at **+0x44, +0x9C, +0xF4** (begin, end, capacity; 0x58 bytes each) holding the live trees, three
+  by-value `fixed_vector<cTreeData,16>` at +0x158, +0x970, +0x1188 (serializer table at 0x1318390,
+  property ids 0x56690EB/EC/ED, reader 0xB0A240).
+* The hover pick hands DoActionForObjects the live tree pointer (the same pointer as in the patch
+  vector; refcount 3 while hovered and ordered).
+
+Fields near the village of Cohrach (`coop.tribe trees`, ~ from 30 trees): `+0x0C` = 7 for all,
+`+0x0E` 3..0x10, `+0x1C` size (0.7 small, 1.4-1.6 big), **`+0x48` fruit left** (bit per fruit; 0 =
+picked empty: such a tree is no gather target), **`+0x4C` all fruit slots** (0x07 small, 0x1F big),
+`+0x50` patch key (0x7B..0x89, = the patch's key), `+0x54` index in the patch, **`+0x58` plant
+species hash** (0x6D60A1CC small fruit plant, 0x029C388A big fruit tree), `+0x6C` scale.
+
+**Recipe (tribe.cpp):** the guest sends a tree target as `kind 3 + position (+0x10)`; the host walks
+all patches (`for_each_tree`) and takes the tree within 1 m. `coop.targets objs` lists trees on
+screen as `obj fruittree|tree <dist> x y` for game bots (with / without fruit left). A right-click
+right after moving the cursor often hits the ground (a walk): hover ~0.4 s first (docs/06-testing.md 6.10).
+
+---------------------------------------------------------------------------------------------
+## What right-clicks become (runtime, play_tribe.py 2026-10-23, Cohrach fixture)
+
+Recorded from `tribe last local order` / `tribe last order` (the CitizenAction the click gave):
+fruit tree (cTreeData) -> **2** Gather; animal -> **10** Hunt; another tribe's member (attack
+mode) -> **7** Attack; another tribe's hut (attack mode) -> **15** RaidHuts; another tribe's hut
+(social mode, no instruments in this tribe) -> **9** GiftFood; the own food mat (noun 0x629BAFE;
+clicks on 0x55CF865 / 0x18C431C next to it resolve to the mat) -> **0** Eat (hurt members heal
+there, it costs food); the own fire pit (tool noun 0x18C8F0C) -> **12** Party; the own hut ->
+no order. The small plants of noun 0x2C9CC91 near the village gave Gather once in early tries
+but mostly took no order: decoration (~).
+
+Game over: when the player tribe has no member with health left, the game shows "Alas! Your
+population has fallen below the minimum needed to survive... Bounce back in time" with a green OK
+(`key enter`); OK reloads the last save. With co-op the guest follows the host (both had the same
+3 members again, 3 tries). Adding a member while the caption is up faults on OK:
+docs/known-issues.md.
+
+New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 citizens) after
+~8 minutes, on host and guest alike (the guest's own game spawns them too; the positions match).

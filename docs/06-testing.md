@@ -282,3 +282,44 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * The bots run in two threads with their own console connections; the measurement loop uses a
   third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
   deterministic, so the same seed gives a similar, not the same, session).
+
+## 6.13 Playing the Tribe stage through real input (play_tribe.py)
+
+Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
+* `drag` and `click` return at once; the game sees the press a few frames later and a drag takes
+  ~15 frames: read the selection (`coop.tribe` `sel=1`) ~1.2 s after a `drag`, not right away.
+* Selection boxes are screen rectangles around `coop.targets` points (the feet): a box from
+  `y-55` to `y+25`, `x±35` catches a walking member; boxes that start on the HUD (the roster at
+  the right edge, x > ~1375, the bottom bar y > ~950) do nothing.
+* `coop.targets objs` lists everything on screen: `member <id> <owner>`, `obj t<id>` (citizens of
+  every tribe), `n<id>` (animals), `tree` (fruit trees), `o2C9CC91` (small food plants),
+  `hut<i>[p]` (huts, `p` = the player tribe), `tribe<i>[p]` (tribe centres, also off screen),
+  `fruittree` / `tree` (planet trees with / without fruit left), `o<noun>` for the rest.
+* **Hover before a right-click on an object**: the game picks the object under the cursor once per
+  frame; `click` jumps the cursor and presses 3 frames later, which often still hits whatever was
+  under the old cursor position (the ground: a walk order). `move x y`, ~0.4 s, then `click x y
+  right` picked fruit trees 37 of 40 times (base point, 10 and 20 px above it); without the move
+  about 1 in 3. `world_to_screen` also projects points hidden behind hills and the horizon: a
+  bot filters targets by the distance column of `coop.targets objs` (metres from the planet point
+  under the mouse: `move` the mouse to the middle first), e.g. < 90 m for trees around the village.
+  Objects in front (the fire pit, the hut, members) take the click instead: skip targets within
+  ~70 px of them.
+* Camera: the arrow keys pan (~30 m/s), the wheel zooms, a right-drag rotates. The Home key does
+  nothing in the tribe stage and **`H` opens the Spore Guide**, which swallows every later click
+  (close it at `click 1338 59`). The minimap is the way to look somewhere: a click there centres
+  the view on that spot. `coop.avatar` prints the planet point under the mouse (`pos=`), so 3
+  clicks calibrate a linear minimap -> world map (~3.7 m per pixel on Cohrach); one correction
+  step lands within 30 m.
+* The tribe UI interaction mode: social at `click 725 1030`, attack at `click 795 1030`;
+  `coop.status` prints `tribe ui mode=0|1`. The tribe palette at the bottom is locked in the
+  fixture ("Conquer or ally with other tribes to progress"): nothing can be bought there.
+* `coop.status` prints `tribe last order:` (guest: what it sent, host: what a guest order became
+  and why it was rejected) and `tribe last local order: #n` (the host's own orders): a click that
+  changes neither gave no order (it missed the target).
+* `coop.tribe spawn <n>` (host) adds adults to the player tribe: test setup only.
+* `coop.tribe select <id> 1` only sets the member's selected flag: a walk order (`coop.tribe
+  walk`, a right-click on the ground) uses it, but a right-click on an object takes the terrain
+  cursor's selection set, which only a real click / box fills: such clicks then give no order at
+  all. Select by `drag` for real-input tests (play_tribe.py `Game.select_idle`).
+* Agents running in parallel share one scratchpad folder: give helper scripts unique names (one
+  agent's `reload.sh` was overwritten by another's, which then hot-reloaded the wrong lane).

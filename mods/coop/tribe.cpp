@@ -32,6 +32,8 @@ constexpr uintptr_t kOwnerTribeOff = 0x1014; // cCreatureCitizen::mpOwnerTribe
 constexpr uintptr_t kAgeOff = 0xB34;       // 0 baby, 1 adult
 constexpr uintptr_t kSelectedOff = 0x12C;  // spatial+0x6C IsSelected
 constexpr uintptr_t kCitizenVt = 0x0146B818;
+constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit trees), not a cGameData
+constexpr uintptr_t kTreeVt = 0x0145D160;    // cTreeData main vtable
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
     a_SetSelected, a_CreateCitizen, a_AddMember;
@@ -81,6 +83,67 @@ static net::Vec3 tribe_pos(void* t)
     return {p[0], p[1], p[2]};
 }
 
+// ---- planet trees (docs/re/tribe.md, "Trees"): the flora object keeps a sorted vector of patches,
+// each patch has three fixed_vectors of intrusive_ptr<cTreeData>; a tree's position is at +0x10.
+// Gather orders on a fruit tree name a cTreeData, which is no cGameData: it is found by position.
+static bool is_tree(void* t) { return t && !IsBadReadPtr(t, 0x20) && *(uintptr_t*)t == H->rebase(kTreeVt); }
+
+template <typename Fn>
+static void for_each_tree(Fn fn)
+{
+    static uintptr_t get = H->sym("SporeCoop::Flora_Get");
+    uint8_t* fl = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    if (!fl || IsBadReadPtr(fl + 0x1E5F0, 8))
+        return;
+    uint8_t* b = F<uint8_t*>(fl, 0x1E5F0);
+    uint8_t* e = F<uint8_t*>(fl, 0x1E5F4);
+    constexpr size_t kPatch = 0x19A8;
+    if (!b || e < b || (size_t)(e - b) % kPatch || (size_t)(e - b) / kPatch > 20000)
+        return;
+    for (uint8_t* el = b; el < e; el += kPatch) {
+        uint8_t* rec = el + 8;
+        for (uintptr_t vo : {0x44u, 0x9Cu, 0xF4u}) {
+            void** tb = F<void**>(rec, vo);
+            void** te = F<void**>(rec, vo + 4);
+            if (!tb || te < tb || te - tb > 64 || IsBadReadPtr(tb, (te - tb) * 4))
+                continue;
+            for (void** it = tb; it < te; ++it)
+                if (is_tree(*it))
+                    fn(*it, net::Vec3{F<float>(*it, 0x10), F<float>(*it, 0x14), F<float>(*it, 0x18)});
+        }
+    }
+}
+
+static void* find_tree(const net::Vec3& pos, float max_dist)
+{
+    void* best = nullptr;
+    float bd = max_dist;
+    for_each_tree([&](void* t, const net::Vec3& p) {
+        float d = net::dist(p, pos);
+        if (d < bd) {
+            bd = d;
+            best = t;
+        }
+    });
+    return best;
+}
+
+void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& pos, void* user), void* user)
+{
+    if (!g_ok)
+        return;
+    void* pt = player_tribe();
+    auto tribes = all_tribes();
+    for (size_t i = 0; i < tribes.size(); i++)
+        fn("tribe" + std::to_string(i) + (tribes[i] == pt ? "p" : ""), tribe_pos(tribes[i]), user);
+}
+
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user)
+{
+    if (g_ok) // +0x48: the fruit left (bits, +0x4C = all slots ~): a tree without fruit is no gather target
+        for_each_tree([&](void* t, const net::Vec3& p) { fn(p, F<uint32_t>(t, 0x48) != 0, user); });
+}
+
 // ---------------- host ----------------
 struct HMember {
     uint16_t id;
@@ -94,6 +157,9 @@ static std::vector<uint8_t> g_split_for; // player ids the player tribe was spli
 static double g_last_send;
 static uint16_t g_cycle;
 static uint32_t g_cmds_done, g_cmds_rejected;
+static std::string g_last_cmd; // the last order (guest: sent, host: done or why it was rejected), tests
+static std::string g_last_local; // the host's own last order (tests)
+static uint32_t g_local_orders;
 static uint32_t g_gifts;
 
 // ---------------- guest ----------------
@@ -109,6 +175,8 @@ struct GMember {
 static std::unordered_map<uint16_t, GMember> g_gm;
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
+static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
+static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
 static uint16_t g_rx_cycle = 0xFFFF;
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
@@ -152,7 +220,7 @@ static int SK_THISCALL h_SetSelected(void* spatial, int sel)
 }
 
 struct Target {
-    uint8_t kind = 0; // 0 none, 1 citizen id, 2 object by noun + position
+    uint8_t kind = 0; // 0 none, 1 citizen id, 2 object by noun + position, 3 tree by position
     uint16_t id = 0;
     uint32_t noun = 0;
     net::Vec3 pos;
@@ -167,6 +235,12 @@ static Target encode_target(void* t)
     if (it != g_gid_of.end()) {
         r.kind = 1;
         r.id = it->second;
+        return r;
+    }
+    if (is_tree(t)) { // a planet tree: no cGameData, the host finds its own copy by position
+        r.kind = 3;
+        r.noun = kTreeNoun;
+        r.pos = {F<float>(t, 0x10), F<float>(t, 0x14), F<float>(t, 0x18)};
         return r;
     }
     r.kind = 2;
@@ -209,6 +283,10 @@ static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action,
     w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
     C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w);
     g_cmds_sent++;
+    char b[128];
+    snprintf(b, sizeof b, "kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f)", kind, (unsigned)ids.size(), action,
+             tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z);
+    g_last_cmd = b;
 }
 
 // cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) — every
@@ -217,8 +295,16 @@ using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
 static DoActionForObjects_t o_DoActionForObjects;
 static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, void* target, void* prop)
 {
-    if (!is_guest() || game::mode_id() != modes::kTribe)
+    if (!is_guest() || game::mode_id() != modes::kTribe) {
+        if (is_host() && game::mode_id() == modes::kTribe) {
+            char lb[96];
+            snprintf(lb, sizeof lb, "action=%d n=%d obj=%p noun=%X", action,
+                     vec ? (int)(F<void**>(vec, 4) - F<void**>(vec, 0)) : -1, target, target ? game::noun_id(target) : 0);
+            g_last_local = lb;
+            g_local_orders++;
+        }
         return o_DoActionForObjects(self, vec, action, target, prop);
+    }
     std::vector<uint16_t> ids;
     void** b = vec ? F<void**>(vec, 0) : nullptr;
     void** e = vec ? F<void**>(vec, 4) : nullptr;
@@ -228,6 +314,9 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
             ids.push_back(f->second);
     }
     send_cmd(CMD_ACTION, ids, action, encode_target(target), {});
+    char ob[48];
+    snprintf(ob, sizeof ob, " obj=%p", target);
+    g_last_cmd += ob;
     return ids.empty() ? 1 : 0;
 }
 
@@ -236,13 +325,23 @@ using WalkSelected_t = int(SK_THISCALL*)(void*, const float*);
 static WalkSelected_t o_WalkSelected;
 static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 {
-    if (!is_guest() || game::mode_id() != modes::kTribe || !pos)
+    if (!is_guest() || game::mode_id() != modes::kTribe || !pos) {
+        if (is_host() && game::mode_id() == modes::kTribe && pos) {
+            char lb[96];
+            snprintf(lb, sizeof lb, "walk to (%.1f %.1f %.1f)", pos[0], pos[1], pos[2]);
+            g_last_local = lb;
+            g_local_orders++;
+        }
         return o_WalkSelected(self, pos);
+    }
     std::vector<uint16_t> ids;
     for (auto& [id, m] : g_gm)
         if (m.c && F<uint8_t>(m.c, kSelectedOff) && m.owner == C.sess->my_id())
             ids.push_back(id);
     send_cmd(CMD_WALK, ids, 4, {}, {pos[0], pos[1], pos[2]});
+    char b[64];
+    snprintf(b, sizeof b, " to (%.1f %.1f %.1f)", pos[0], pos[1], pos[2]);
+    g_last_cmd += b;
     return 0;
 }
 
@@ -328,9 +427,16 @@ static void host_tick(double now)
         } else
             ++it;
     }
-    // chunks of <= 24 members; every chunk carries the tribe table
+    // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
+    // is dropped by the connection: with 24 members per chunk (fixed until 2026-10-23) the first
+    // chunk (the player tribe first) never arrived once the planet had 24 citizens, and the guest
+    // removed those mirrors at the end of every cycle (play_tribe.py: the guest's tribe emptied)
     g_cycle++;
-    size_t per = 24, chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
+    size_t nt = std::min<size_t>(tribes.size(), 32);
+    constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4;
+    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1;
+    size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
+    size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
         w.u16(g_cycle);
@@ -368,6 +474,8 @@ static void* resolve_target(const Target& t)
     }
     if (t.kind == 2 && t.noun)
         return game::find_object(t.noun, t.pos, 8.f);
+    if (t.kind == 3)
+        return find_tree(t.pos, 1.f);
     return nullptr;
 }
 
@@ -408,8 +516,13 @@ static void host_command(uint8_t from, net::Reader& r)
     }
     void* pt = player_tribe();
     void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
+    char b[160];
+    snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
+             (unsigned)ids.size(), action, tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z, target);
+    g_last_cmd = b;
     if (kind == CMD_ACTION && tgt.kind != 0 && !target) {
         g_cmds_rejected++;
+        g_last_cmd += " rejected: no such target here";
         return; // the object is gone on the host
     }
     for (uint16_t id : ids) {
@@ -489,7 +602,9 @@ static void guest_state(net::Reader& r)
     if (cycle != g_rx_cycle) {
         g_rx_cycle = cycle;
         g_cycle_ids.clear();
+        g_cycle_chunks.clear();
     }
+    g_cycle_chunks.insert(chunk);
     double now = H->time_seconds();
     uint8_t n = r.u8();
     for (int i = 0; i < n && r.ok(); i++) {
@@ -539,6 +654,10 @@ static void guest_state(net::Reader& r)
     }
     if (chunk + 1 < chunks)
         return;
+    if (g_cycle_chunks.size() < chunks) { // a chunk of this cycle was lost or comes late: keep everything
+        g_incomplete++;
+        return;
+    }
     // end of a full snapshot: members the host no longer has go away, and so do local members
     // the host does not know (the guest's tribes are only mirrors)
     for (auto it = g_gm.begin(); it != g_gm.end();) {
@@ -603,6 +722,29 @@ static uint16_t member_id(void* c)
     return it == g_gid_of.end() ? 0 : it->second;
 }
 
+uint16_t id_of(void* c) { return member_id(c); }
+
+// tests (game bots): a readable key for tribe buildings on screen: hut<tribe index>, "p" for the player's
+std::string object_key(void* obj)
+{
+    if (!g_ok || !obj)
+        return "";
+    void* pt = player_tribe();
+    auto tribes = all_tribes();
+    for (size_t i = 0; i < tribes.size(); i++)
+        if (F<void*>(tribes[i], 0x368) == obj) // cTribe::mpHut
+            return "hut" + std::to_string(i) + (tribes[i] == pt ? "p" : "");
+    return "";
+}
+
+// the tribe UI's interaction mode (TribeUI+0x390: 0 social, 1 attack; docs/re/tribe.md B), -1 unknown
+static int ui_mode()
+{
+    uintptr_t get = H->sym("SporeCoop::cTribeUI_Get");
+    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    return ui && !IsBadReadPtr((uint8_t*)ui + 0x390, 4) ? F<uint8_t>(ui, 0x390) : -1;
+}
+
 bool is_chief(void* c)
 {
     for (auto& [o, ch] : g_chief)
@@ -611,7 +753,20 @@ bool is_chief(void* c)
     return false;
 }
 
-// every machine picks the same chiefs (ids and owners come from the host)
+// health as the host has it: guests keep the last snapshot value (a mirror is never set to 0, so a
+// knocked-out member would still look alive there and the machines would pick different chiefs)
+static float host_health(void* c)
+{
+    if (C.sess && C.sess->role() == net::Role::Host)
+        return game::health(c);
+    auto it = g_gid_of.find(c);
+    if (it == g_gid_of.end())
+        return game::health(c);
+    auto g = g_gm.find(it->second);
+    return g == g_gm.end() ? game::health(c) : g->second.hp;
+}
+
+// every machine picks the same chiefs (ids, owners and health come from the host)
 static void chiefs_tick()
 {
     void* pt = player_tribe();
@@ -621,7 +776,8 @@ static void chiefs_tick()
         for (void* c : members(pt)) {
             uint8_t o = owner_of(c);
             uint16_t id = member_id(c);
-            if (o >= 0xFE || !id || F<uint8_t>(c, kAgeOff) != 1 || !game::object_alive(c))
+            // a knocked-out member (the game's chieftain waits for its respawn with 0 health) leads nobody
+            if (o >= 0xFE || !id || F<uint8_t>(c, kAgeOff) != 1 || !game::object_alive(c) || host_health(c) <= 0)
                 continue;
             if (!best.count(o) || id < best[o]) {
                 best[o] = id;
@@ -904,10 +1060,29 @@ static void coop_init()
            a_CreateHerd && a_HerdEnable && a_CreatureCreate ? "on" : "off");
 }
 
+// a member that changed hands (a gift) stayed selected on the giver's machine, so the giver could
+// still order the partner's member (play_tribe.py): drop members of others from the own selection
+static uint32_t g_unselected;
+static void drop_foreign_selection()
+{
+    void* pt = player_tribe();
+    if (!pt)
+        return;
+    uint8_t me = C.sess->my_id();
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        if (o < 0xFE && o != me && F<uint8_t>(c, kSelectedOff)) {
+            vcall<int>((uint8_t*)c + 0xC0, 0x54 / 4, 0); // SetSelected(false)
+            g_unselected++;
+        }
+    }
+}
+
 void tick(double now)
 {
     if (!active())
         return;
+    drop_foreign_selection();
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -973,15 +1148,20 @@ std::string status()
 {
     char b[256];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u\n", (unsigned)g_hm.size(),
-                 g_cmds_done, g_cmds_rejected, g_gifts);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe());
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete);
     std::string out = b;
+    if (!g_last_cmd.empty())
+        out += "tribe last order: " + g_last_cmd + "\n";
+    out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
+    if (!g_last_local.empty())
+        out += "tribe last local order: #" + std::to_string(g_local_orders) + " " + g_last_local + "\n";
     std::string chiefs;
     for (auto& [o, c] : g_chief)
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));
@@ -1062,7 +1242,64 @@ std::string debug(const std::vector<std::string>& a)
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, atoi(a[1].c_str()), t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
     }
-    return "usage: coop.tribe select <id> <0|1> | walk <x> <y> <z> | act <action> <target id>";
+    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
+        void* pt = player_tribe();
+        int n = 0;
+        for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 40; i++) {
+            void* c = spawn_member(pt, 1);
+            if (!c)
+                break;
+            n++;
+        }
+        return "spawned " + std::to_string(n);
+    }
+    if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
+        net::Vec3 at;
+        center(at);
+        std::vector<std::pair<float, std::string>> v;
+        for_each_tree([&](void* t, const net::Vec3& p) {
+            char b[256];
+            float d = net::dist(p, at);
+            snprintf(b, sizeof b, "%p d=%.0f pos=(%.1f %.1f %.1f) c=%04X e=%04X 1c=%.2f 48=%08X 4c=%08X 50=%08X 54=%08X 58=%08X 6c=%.2f 78=%08X 7c=%02X\n",
+                     t, d, p.x, p.y, p.z, F<uint16_t>(t, 0xC), F<uint16_t>(t, 0xE), F<float>(t, 0x1C), F<uint32_t>(t, 0x48),
+                     F<uint32_t>(t, 0x4C), F<uint32_t>(t, 0x50), F<uint32_t>(t, 0x54), F<uint32_t>(t, 0x58), F<float>(t, 0x6C),
+                     F<uint32_t>(t, 0x78), F<uint8_t>(t, 0x7C));
+            v.push_back({d, b});
+        });
+        std::sort(v.begin(), v.end());
+        std::string out;
+        for (size_t i = 0; i < v.size() && i < (a.size() > 1 ? (size_t)atoi(a[1].c_str()) : 25); i++)
+            out += v[i].second;
+        return out;
+    }
+    if (a.size() >= 2 && a[0] == "objs") { // objs <noun hex>: objects of a kind near the village, world positions
+        struct Q {
+            uint32_t noun;
+            net::Vec3 at;
+            std::vector<std::pair<float, std::string>> v;
+        } q{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), {}, {}};
+        center(q.at);
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                net::Vec3 p;
+                if (n == q->noun && game::object_position(o, p)) {
+                    char b[128];
+                    float d = net::dist(p, q->at);
+                    snprintf(b, sizeof b, "%p alive=%d pos=(%.1f %.1f %.1f) dist=%.1f\n", o, (int)game::object_alive(o), p.x,
+                             p.y, p.z, d);
+                    q->v.push_back({d, b});
+                }
+                return true;
+            },
+            &q);
+        std::sort(q.v.begin(), q.v.end());
+        std::string out;
+        for (size_t i = 0; i < q.v.size() && i < 40; i++)
+            out += q.v[i].second;
+        return out + std::to_string(q.v.size()) + " objects";
+    }
+    return "usage: coop.tribe select <id> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
 }
 
 std::string list()

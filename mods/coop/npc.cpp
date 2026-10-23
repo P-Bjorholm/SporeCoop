@@ -362,7 +362,13 @@ static void guest_tick(double now)
             g_proxy_of[px.c] = id;
             game::teleport(px.c, s.pos, s.rot);
         }
-        drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+        if (!px.killed)
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+        else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
+               // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
+            game::teleport(px.c, s.pos, s.rot);
+        }
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
             // play the death locally with a just-lethal hit: the knockback grows with the damage
@@ -629,11 +635,13 @@ std::string list()
     void* av = game::avatar();
     net::Vec3 ap = av ? game::position(av) : net::Vec3{};
     if (is_host()) {
+        double now = H->time_seconds();
         for (auto& [c, hn] : g_host_npcs) {
-            if (!g_seen_now.count(c))
-                continue;
-            snprintf(b, sizeof b, "  #%u species=%08X hp=%.1f dist=%.1f%s ptr=%p\n", hn.id, game::species_key(c).instance,
-                     game::health(c), net::dist(game::position(c), ap), game::is_dead(c) ? " DEAD" : "", c);
+            net::Vec3 p = game::position(c);
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f pos=(%.1f %.1f %.1f)%s%s\n", hn.id, c,
+                     game::species_key(c).instance, game::health(c), net::dist(p, ap), p.x, p.y, p.z,
+                     game::is_dead(c) ? " DEAD" : "",
+                     g_seen_now.count(c) ? "" : (" not updated for " + std::to_string((int)((now - hn.last_seen) * 1000)) + " ms").c_str());
             out += b;
         }
     } else {

@@ -44,6 +44,15 @@ bool center(net::Vec3& pos); // position of the player tribe
 // the epic creature was hit by a creature (host; from the creature damage filter)
 void note_animal_hit(void* animal, void* attacker_creature);
 // a chief of a player (bigger, "★" tag)
+// the member id (as in coop.tribe and coop.sync t<id>), 0 when not a tracked member
+uint16_t id_of(void* citizen);
+// tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
+std::string object_key(void* obj);
+// tests: the position of every planet tree (cTreeData, fruit trees to gather from)
+// tests: every tribe's centre ("tribe<i>[p]", i as in coop.tribe)
+void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& pos, void* user), void* user);
+// (fruit: the tree has fruit slots, ~ docs/re/tribe.md Trees)
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 

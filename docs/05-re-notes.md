@@ -98,6 +98,14 @@ fields: FormatParser* +4, refcount +8, data +0xC.
 * Damage — a hook on `TakeDamage`: a guest's hit on a proxy → `DAMAGE_REQ` → the host applies it to the real
   NPC with the guest's puppet as the attacker; an NPC's hit on a puppet on the host → `DAMAGE` → the guest
   applies it to its avatar. No friendly fire.
+* **A dead proxy flies off the planet.** The guest plays a proxy's death locally (`TakeDamage`
+  1e6 when the host's state says dead). The body then moves away from the planet centre at
+  ~2.5 km/s (measured in the tribe stage, 2026-10-23: the same with damage = health + 1 and with
+  the blow coming from above, so it is no knockback; the locomotive velocity +0x288 reads 0).
+  Driven like a living proxy it was teleported back every frame and stayed ~80 m in the sky.
+  `npc.cpp guest_tick` now pins a killed proxy to the host's corpse (velocity 0 + teleport every
+  frame); coop_tribe.py checks the hunted animal's body (old code: 77.7 m off). Why the body
+  flies (a ragdoll / death physics without the AI that a puppet lacks?) is open.
 
 * **Time of day** — `cTimeOfDay::SetTimeOfDay` computes a quaternion and calls `SetOrientation`
   on the sky object (`0x01021110()`, then `0x01021630(obj)`); the host sends this object's orientation.

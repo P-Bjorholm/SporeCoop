@@ -29,7 +29,7 @@ add('space', P + 'coop_mode.py --fixture space --planet Game0/Maraya', minutes=3
 add('phase', P + 'coop_phase.py', minutes=6)
 add('ui', P + 'coop_ui.py', ('smoke',), exclusive=True, minutes=5)
 add('team', P + 'coop_team.py', ('smoke',), warm=True, minutes=3, fixture='creature')
-add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
+add('tribe_coop', P + 'coop_tribe.py', ('smoke',), warm=True, minutes=4, fixture='tribe')
 add('civ_coop', P + 'coop_civ.py', ('smoke',), warm=True, minutes=3, fixture='civ')
 add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='cell')
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
@@ -68,6 +68,8 @@ for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 
 add('play_cell', P + 'play_cell.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='cell')
 # played like people play (real input, measurements; docs/stability/creature.md)
 add('play_creature', P + 'play_creature.py --minutes 10', ('nightly',), minutes=12)
+# games played by bots through real input for many minutes (docs/stability/<stage>.md)
+add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='tribe')
 # the same tests over a bad network between guest and host (tools/tests/netem.py)
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
