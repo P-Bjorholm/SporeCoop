@@ -258,6 +258,12 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * The host leaving to the main menu (`coop_exit_menu.py` part 3): "Exit to Main Menu" goes straight
   to the menu when nothing changed since the last save (the world was just saved for the guest), so
   the "Don't Save" dialogs may not come.
+* A game that never leaves `LoadGame` (0x1654C08) keeps its frames running: the monitor and
+  `Checks.faults()` see no freeze and no fault, and the watchdog writes no stack. Tests that load
+  worlds check `game.mode` themselves (`coop_exit_menu.py` part 4 fails after 30 s in LoadGame; a
+  normal load leaves it within about 1 s). The race of part 4 (the vote ends on the frame the host
+  saves for the guest) is forced by polling the host's log for "back to the world" and sending
+  `coop.vote go` right then.
 * Several agents on one machine: each one gets its own lane; temp files belong in a folder of
   your own (subagents of one session share the scratchpad folder: another agent's `up.py` there
   started the cell fixture in this lane, 2026-10-23).

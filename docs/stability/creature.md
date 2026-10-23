@@ -121,6 +121,11 @@ Fixed after the sessions (branch `fix/creature-social`, 2026-10-23; docs/re/crea
     mirrors. They get a notification, the mirrors go, their own game runs their NPCs, the DNA they
     earn alone goes to the pack when the host is back; a host that loads another planet of the stage
     sends it after 5 s. Check: `coop_exit_menu.py` part 3.
+12. **A guest that left to the main menu during the evolution vote hung in LoadGame** (20+ min).
+    The host saved its world for that guest on the frame the vote ended; the editor opened while
+    the game wrote the save, and such a save does not load (docs/re/creature.md 9). The host's
+    editor now waits until the save is written and the mod never saves while an editor opens or a
+    mode switch is pending. Check: `coop_exit_menu.py` part 4.
 
 Sessions with fixes 8-11 (seed 31, four 10-minute runs, 2026-10-23): no fault, no freeze in any;
 NPC p90 0.30-0.77 m, players p90 1.1-2.2 m, the shared DNA the same in 141-143 of 142-143
@@ -128,8 +133,8 @@ samples, the species table the same on both at the end (after the guest-only rec
 the first run found one, relation 3, the host did not have). Goal card rewards reported by the
 guest's cards and paid once by the host: 0-2 a session. The bot's guest did not socialize in these
 runs (10 % of its choices); `coop_creature_social.py` covers it (impress, ally with the 25 DNA
-reward once). One run hit the open issue "a guest in the galaxy menu when an evolution starts hangs
-in the loading screen" (docs/known-issues.md), one lost a chat line (the known `chat_not_typed`).
+reward once). One run hit the issue "a guest in the galaxy menu when an evolution starts hangs
+in the loading screen" (fixed since: 12 below), one lost a chat line (the known `chat_not_typed`).
 
 Test infrastructure found on the way: the subagents of one session share the scratchpad folder
 (another agent's `up.py` with `start('cell')` ran in this lane); `uifind.py` for menu clicks.

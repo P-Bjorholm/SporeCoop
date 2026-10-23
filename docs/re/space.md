@@ -695,6 +695,10 @@ Found while fixing "loading a Cell save from the Space stage crashes" (branch fi
   world in game crashed in `modes::cell_fill` (cell pool freed under the cached local cell, coop.dll);
   a Space save loaded in game from Cell kept `CurrentGameName` = "Karke.spo", so the next save wrote
   `Karke.spo` into the space slot and the guest got the wrong planet; tribe → civ in game worked.
+* A save of ours made while the game switches modes does not load at all: the host's share save
+  written while its editor opened (end of an evolution vote) kept every game that loaded it in
+  LoadGame 0x1654C08 forever, frames running, no fault (docs/re/creature.md 9). `save_game` now
+  waits while an editor opens or is open, a load runs or [0x167FACC]+0x28 (switch pending) is set.
 * Loading 3 s after the menu came up from on_frame (inside Present): the guest twice got a
   first-chance AV in `cTerrainStateMgr_GetTemperatureScore` 0xFB89D0 (ecx 0; caller 0xF9E5EC
   `[esi+0xC]->vt 0x10()` returns a null terrain state, a planet render), once at the very load call

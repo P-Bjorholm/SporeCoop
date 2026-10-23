@@ -90,17 +90,6 @@ Fixed entries move to the commit message (and a test).
   time (`local_alive` 0-1 after 30 s in `coop_exit_menu.py`). Making the mirrors local NPCs
   instead failed (a mirror with AI leaves its herd and is destroyed, docs/re/creature.md 8.3).
 
-## Creature (guest): a guest in the galaxy menu when an evolution starts hangs in the loading screen
-
-* play_creature.py seed 31, 2026-10-23 (branch fix/creature-social): the host's game asked for the
-  editor (vote "Alice wants to evolve", 06:34:10), the guest left to the main menu during the vote
-  (06:35:04), the vote ended (06:35:10: on the guest "evolution starts" while it was in the galaxy
-  menu), the host sent its world (06:35:12) and the guest's load stayed in `LoadGame` (0x1654C08)
-  for 20+ minutes, frames running, no fault; the next world (after the host's evolution) was
-  cancelled ("the game did not go to the galaxy menu"). Likely the guest's own-editor request of
-  the vote and the world load at the same time. Reproduce: start a vote (`coop.vote test` / the
-  host's mating call), let the guest exit to the main menu before it ends.
-
 ## Not covered by tests yet
 
 * Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the
