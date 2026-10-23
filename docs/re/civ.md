@@ -514,3 +514,33 @@ always consume local fires (they only mirror the results).
 | Speed buff | write v+0x218 (+ spatial vt 0xC4) | restore after; RecalcStats 0xCA40A0 resets |
 | City alarm | 0xC00C20 OnAttacked (edge via 0xC005E0) | kinds 0 mil, 1 rel |
 | Superweapon vote | 0xBF8B90 FireSuperweapon (ret addrs 0xCF1DC4 / 0xCF68C5) | |
+
+## NPC cities: how the other nations' cities appear (2026-10-23)
+
+A Civilization game started from the stage chooser has only the player city ("soon other cities
+will arise"); `GetAllCities` lists the others only once they appeared. Static analysis
+(disassembly) plus runtime checks on lane 5:
+
+* `cCitySimulator` singleton in **0x167B5EC**, getter **0xB268A0** cdecl() (creates it) ✔.
+  Vtable 0x145C578, slot +0x10 = Update **0xAE6190** (thiscall ret 8), runs once per 1 s of game
+  time. Fields (reflection names): +0x14 `mCityAppearanceInfo` (vector, stride 0x64: +0x2C order,
+  +0x30 hasAppeared, +0x38 owner object, +0x40 instant), +0x28 pending appearances, +0x58
+  `mCityAppearanceTimer`, **+0xAC `mNumCitiesTotal`, +0xB0 `mNumCitiesNotAppearedYet`** (runtime:
+  10 and 9 at the start of a civ game, the player city is entry 0), +0xB4 "blocked" byte ~.
+  Filled at civ start by 0xB9D950 (from 0xBA1D90 for mode 0x1654C04) ~.
+* **ShouldNextCityAppear 0xAE2EC0** thiscall ret 0 ~: false when +0xB4 or no player civ; needs the
+  player flag `{0x521F703, 0, 0xAA9A8ED7}` in `player+0x38` (set when the player claims a spice node,
+  0xBFF3F0, or buys enough vehicles, 0xCF9010: more than 5/3/1 on easy/normal/hard; setter 0xC785A0
+  thiscall(player, const uint32 key[3]) ret 4) and net worth (0xBF2C00) > 9000/7000/0 or income
+  (0xBF70C0) > 2400/1600/0; then the timer: tuning 0x4CDAD7D (20.0 s in prop 0xB6A5C63D) x3 on easy,
+  /24 on hard, x1.5 / /2 by how many appeared. Difficulty = `*(int*)(*(nm+0x74)+0x1248)` ~.
+  Runtime: with an idle vehicle and $3000 nothing appeared in 20 minutes; after claiming a spice
+  geyser the first NPC city came about 5 minutes later, when the money had grown to about $8000 ✔.
+* **AppearNextCity 0xAE3A80** thiscall(cs, **bool instant, void* who**) ret 8 -> bool (al) ✔ runtime:
+  `who` = 0 takes the next city by appearance order, a non-zero `who` is dereferenced (who=1 crashed
+  the game: the argument order is instant first). Decrements +0xB0; the city object (cCity, only
+  factory 0xBD9EA0 cdecl(ptr, int)) is created by the next Update tick; instant=1 skips the visual
+  effect and the camera cinematic "CVG_PRE_NewCityAppears". Three calls gave three NPC cities
+  (political ids 0x21CB..0x21CD) at 400 to 800 m from the player city on a planet of radius ~500, even
+  while the intro text still paused the game. `new_stage_game.py civ --npc-cities N` uses it.
+* No cheat creates or hurries these cities (negative result, cheat strings checked).

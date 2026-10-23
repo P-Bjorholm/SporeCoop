@@ -28,11 +28,30 @@ Fixtures for other modes (`out/fixtures/*.tgz`) are made like this:
 
 ```bash
 python3 tools/tests/new_stage_game.py <cell|creature|tribe|civ|space>  # new game via stage selection
+python3 tools/tests/new_stage_game.py civ --npc-cities 3  # civ with cities of other nations
 python3 tools/tests/space_setup.py      # space: new game, skip tutorial, leave the planet, save
 tools/sporectl.py coop.save             # save (same as the menu button)
 tools/spore.sh fixture save <name> test
 tools/sporectl.py coop.load Game0 Planet   # load a profile save directly from the menu
 ```
+
+`new_stage_game.py` wants a test profile without saves (empty `Games` folder) and the 1440x1080
+window: it finds a free planet slot by itself (each slot ring of the galaxy menu has a 48x48 UI
+window with id 0x02E5A4A8 in `coop.ui tree`; `--slot N` picks the N-th, `--slot X,Y` a point),
+hovers before clicking and checks that "Choose A Stage" opened. The wizard after it clicks fixed
+points; a run that ends with "FAILED: still GalaxyGameEntry" can simply be repeated.
+
+The fixtures (tools/tests/fixtures.py lists planet and checked facts):
+
+| Fixture | Planet | What it has | Made by |
+|---|---|---|---|
+| `creature`, `cell`, `tribe`, `space` | see fixtures.py | a game of that stage | `new_stage_game.py`, `space_setup.py` |
+| `civ` | Game0/Agrauel | the player city only | `new_stage_game.py civ` |
+| `civ_npc` | Game0/Taldon | the player city (with its free vehicle) and three cities of other nations (nearest about 400 m away, the planet radius is about 500), intro text dismissed, $3000 | `new_stage_game.py civ --npc-cities 3`, `coop.save`, `spore.sh fixture save civ_npc test` (2026-10-23) |
+
+A new Civilization game has no other cities at first: they appear one by one when the player has
+claimed spice and has money, after a timer (docs/re/civ.md "NPC cities"; about 18 minutes of play
+in one test). `--npc-cities N` calls `cCitySimulator::AppearNextCity` N times instead.
 
 Test runs don't get in the way of whoever is at the computer:
 * **muted**: `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test

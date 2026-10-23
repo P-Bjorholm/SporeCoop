@@ -36,15 +36,17 @@ Fixed entries move to the commit message (and a test).
   ship was not respawned 60 s later. The mod does not change that path; check in a real game
   whether the cinematic waits for input. The rescue timeout uses the same native path.
 
-## Test saves: no Civilization save with NPC cities yet
+## coop_civ_play: the guest's "I'm ready" click was lost twice
 
-* The `civ` fixture (Agrauel) has only the player's city, so the joint-siege test hits the player
-  city with a fake attacker. `new_stage_game.py civ` waits for the galaxy menu now, but the empty
-  planet slot it clicks (`--slot 480,290`) is elsewhere on a fresh profile (the galaxy view differs):
-  pass `--slot` from a screenshot, then `make_fixture.py` + an entry in tools/tests/fixtures.py.
+* Two of seven cold runs of `coop_civ_play.py` on lane 5 (2026-10-23, fixture `civ_npc`) failed at
+  "it fires when everybody is ready": the vote stayed at "ready 1/2" although the test clicked the
+  guest's visible "I'm ready" button (the lobby had just opened for the vote); a click by hand a few
+  seconds later worked. The two failures came while the shared headless display was being
+  restarted, the five runs after it passed, so the cause is not settled.
 
 ## Not covered by tests yet
 
 * Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the
-  damage function only). Civilization: military / religious roles in real battles. Space: raids and
-  missions (no live mission in the fixture).
+  damage function only). Civilization: military / religious roles in real battles, a siege by real
+  vehicles of both players (coop_civ_play.py besieges an NPC city of `civ_npc` through the capture
+  function). Space: raids and missions (no live mission in the fixture).
