@@ -59,6 +59,24 @@ sha256sum "SPORE/SporebinEP1/SporeApp.exe"
 
 ## 3. Install on Windows
 
+### With the setup (recommended)
+
+1. Download **`SporeCoopSetup.exe`** from the
+   [latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest) and run it.
+2. It finds the game by itself (GOG and EA registry entries, common folders); if not, press
+   **Browse...** and choose the SPORE folder (the one with `SporebinEP1`).
+3. It shows whether your game build is the tested one and which SporeCoop version is installed.
+   Press **Install**. The setup downloads the newest release from GitHub and checks it.
+4. If the game is under `C:\Program Files (x86)`, the setup offers to restart itself as
+   administrator (Windows does not let normal programs write there).
+5. Start SPORE as usual.
+
+The same window updates SporeCoop (**Update to x.y.z**) and removes it (**Uninstall**). Without
+internet, run the `SporeCoopSetup.exe` from the release zip: it installs the update pack
+(`SporeCoop-<version>.pack`) lying next to it.
+
+### With install.bat
+
 1. Download `SporeCoop-<version>.zip` from the
    [latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest).
 2. Open the game folder and go into **`SporebinEP1`** (the folder with `SporeApp.exe`).
@@ -73,7 +91,12 @@ GitHub Actions from that source.
 
 ## 4. Install on Linux (Wine, Bottles, Lutris, Proton)
 
-The files are the same as on Windows. Pick one way to run `install.bat`:
+The files are the same as on Windows. The easiest way: run **`SporeCoopSetup.exe`** in the game's
+Wine prefix (Bottles: *Run Executable...*; Lutris: *Run EXE inside Wine prefix*; plain Wine:
+`WINEPREFIX=~/.wine wine SporeCoopSetup.exe`). If it does not find the game, point **Browse...** at
+the SPORE folder inside the prefix.
+
+Or run `install.bat`, one of these ways:
 
 **Plain Wine** (use your prefix):
 
@@ -146,10 +169,23 @@ Connections across a long distance work (the protocol was tested with 120 ms ± 
 
 ## 8. Update and uninstall
 
-**Update:** extract the new zip into `SporebinEP1` over the old files and run `install.bat`
-again. All players update together.
+**Update in the game:** after the start SporeCoop asks GitHub whether a newer release exists. If so,
+a notification says so and the **Co-op** window shows an **Update** button: the new files are
+downloaded, checked against the release's SHA-256 sums and installed; restart Spore to use them.
+All players update together (the network protocol has to match).
 
-**Uninstall:** run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
+The check sends one request to `api.github.com` per start and nothing else. To turn it off, set
+in `SporebinEP1\mods\coop.ini`:
+
+```ini
+[update]
+check=0
+```
+
+**Update with the setup:** run `SporeCoopSetup.exe` and press **Update to x.y.z**. **By hand:**
+extract the new zip into `SporebinEP1` over the old files and run `install.bat` again.
+
+**Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
 removes `sporekit.dll` and `Data\SporeCoop.package`; delete the `mods` folder too if you like.
 By hand: delete `steam_api.dll`, rename `steam_api_orig.dll` back to `steam_api.dll`, delete
 `sporekit.dll`, `mods\` and `..\Data\SporeCoop.package`.

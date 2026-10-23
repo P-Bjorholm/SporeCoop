@@ -92,13 +92,19 @@ You need **Spore with Galactic Adventures** on Windows or on Linux with Wine (Bo
 Proton). The mod is tested with the **GOG "SPORE Collection"** build. Every player installs the
 same SporeCoop version.
 
-1. Download **`SporeCoop-0.5.0.zip`** from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest).
-2. Extract it into the game's **`SporebinEP1`** folder (next to `SporeApp.exe`).
-3. Run **`install.bat`** (as administrator if the game is under `Program Files`).
-4. Start Spore: the galaxy menu now has a **Co-op** item.
+1. Download **`SporeCoopSetup.exe`** from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest)
+   and run it (on Linux: inside the game's Wine prefix, e.g. Bottles *Run Executable...*).
+2. It finds the game, shows whether your build is the tested one, and **Install** downloads the
+   newest release from GitHub and checks it.
+3. Start Spore: the galaxy menu now has a **Co-op** item.
 
-The full guide — checking your game build, Linux, installing by hand, the internet, updating,
-uninstalling and troubleshooting — is in **[docs/INSTALL.md](docs/INSTALL.md)**.
+**Updates** come from this repository's releases: SporeCoop checks for a new version when the game
+starts, and the *Co-op* window offers an **Update** button (`[update] check=0` in `mods\coop.ini`
+turns the check off). The setup updates and uninstalls too. Prefer files? The release zip has
+`install.bat` / `uninstall.bat`.
+
+The full guide (checking your game build, Linux, installing by hand, the internet, updating,
+uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ## How to play
 
@@ -157,11 +163,12 @@ brought to the host's world.
 is kept as `steam_api_orig.dll` and still used) and adds `sporekit.dll`, a `mods` folder and
 `Data\SporeCoop.package`. `uninstall.bat` restores everything.
 
-**Is it safe?** The whole source is here, and the release zip is built from it by
+**Is it safe?** The whole source is here, and the release files are built from it by
 [GitHub Actions](https://github.com/WoodyWizard/SporeCoop/actions). The mod listens on UDP 47810 only
 while you host; its debug console accepts connections from your own PC only (127.0.0.1). A world
 or creature received from another player is checked before it touches the disk: plain file names
-inside the save slot only, limited sizes.
+inside the save slot only, limited sizes. Updates are downloaded only from this repository's GitHub releases over HTTPS, checked
+against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
@@ -172,7 +179,6 @@ Known issues: [docs/known-issues.md](docs/known-issues.md).
 Next:
 
 - [ ] easier internet play (no VPN or port forwarding)
-- [ ] an installer with updates
 - [ ] tests with the Steam and EA builds
 - [ ] four-player tests, shared galaxy in Space, co-op adventures
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Install and update
+- `SporeCoopSetup.exe`: finds the game, tells whether the build is the tested one, installs,
+  updates and uninstalls with one button; downloads the newest release from GitHub (or uses the
+  update pack next to it, offline).
+- Updates in the game: SporeCoop checks this repository's releases at the start; the Co-op window
+  shows an Update button; files are checked against the release's SHA-256 sums and installed for
+  the next start (`[update] check=0` in `mods\coop.ini` turns the check off).
+- Releases also carry `SporeCoop-<version>.pack` (the update) and `SporeCoopSetup.exe`.
+
 ## [0.5.0] — 2026-10-23
 
 The first public release: co-op in every stage of Spore, with a shared world, everybody's own
