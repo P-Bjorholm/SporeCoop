@@ -44,6 +44,15 @@ Fixed entries move to the commit message (and a test).
   health (e.g. 0.4) and stand. Seen in play_tribe.py (enemy chief `#4 hp=0.0` on the host, `0.4`
   on the guest). The co-op chiefs use the host's health on every machine since 2026-10-23.
 
+## Civilization: the first vehicle snapshot chunk can be too big for a packet (not seen yet)
+
+* The same pattern as the tribe bug fixed on 2026-10-23 (play/tribe): `civ.cpp host_tick` sends
+  24 vehicles per chunk (41 bytes each) and the first chunk also carries up to 48 cities (17
+  bytes each). A message that does not fit `kMaxPacket` (1200) is dropped by the connection for
+  good (`connection.cpp`: "can never fit any packet"), every cycle: with more than ~10 cities
+  and 24+ vehicles the guest would lose the first chunk's vehicles (and the city owners) all the
+  time. Size the chunks from the byte budget like `tribe.cpp host_tick` does now.
+
 ## Test saves: no Civilization save with NPC cities yet
 
 * The `civ` fixture (Agrauel) has only the player's city, so the joint-siege test hits the player

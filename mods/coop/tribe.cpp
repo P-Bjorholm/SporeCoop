@@ -175,6 +175,8 @@ struct GMember {
 static std::unordered_map<uint16_t, GMember> g_gm;
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
+static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
+static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
 static uint16_t g_rx_cycle = 0xFFFF;
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
@@ -425,9 +427,16 @@ static void host_tick(double now)
         } else
             ++it;
     }
-    // chunks of <= 24 members; every chunk carries the tribe table
+    // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
+    // is dropped by the connection: with 24 members per chunk (fixed until 2026-10-23) the first
+    // chunk (the player tribe first) never arrived once the planet had 24 citizens, and the guest
+    // removed those mirrors at the end of every cycle (play_tribe.py: the guest's tribe emptied)
     g_cycle++;
-    size_t per = 24, chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
+    size_t nt = std::min<size_t>(tribes.size(), 32);
+    constexpr size_t kEntry = 2 + 1 + 1 + 1 + 12 + 12 + 16 + 4;
+    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1;
+    size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
+    size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
         w.u16(g_cycle);
@@ -593,7 +602,9 @@ static void guest_state(net::Reader& r)
     if (cycle != g_rx_cycle) {
         g_rx_cycle = cycle;
         g_cycle_ids.clear();
+        g_cycle_chunks.clear();
     }
+    g_cycle_chunks.insert(chunk);
     double now = H->time_seconds();
     uint8_t n = r.u8();
     for (int i = 0; i < n && r.ok(); i++) {
@@ -643,6 +654,10 @@ static void guest_state(net::Reader& r)
     }
     if (chunk + 1 < chunks)
         return;
+    if (g_cycle_chunks.size() < chunks) { // a chunk of this cycle was lost or comes late: keep everything
+        g_incomplete++;
+        return;
+    }
     // end of a full snapshot: members the host no longer has go away, and so do local members
     // the host does not know (the guest's tribes are only mirrors)
     for (auto it = g_gm.begin(); it != g_gm.end();) {
@@ -1138,9 +1153,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected);
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -1230,7 +1245,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
         void* pt = player_tribe();
         int n = 0;
-        for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 16; i++) {
+        for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 40; i++) {
             void* c = spawn_member(pt, 1);
             if (!c)
                 break;

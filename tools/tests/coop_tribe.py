@@ -101,6 +101,56 @@ def main():
         m1 = re.search(r'cmds_done=(\d+)', st)
         ck(m0 and m1 and int(m1.group(1)) > int(m0.group(1)),
            'host found the animal and executed the hunt: ' + re.search(r'tribe\(host\).*', st).group(0))
+    # gathering from a fruit tree by a real right-click: trees are cTreeData (no game object), the
+    # host finds its own tree by position (before 2026-10-23 every such order was rejected)
+    gm = members(guest)
+    mine = [i for i, v in gm.items() if v[0] == 1 and v[3] == 'player']
+    if mine:
+        # a real box selection: object orders take the game's selection set (the console select
+        # only sets the flag, enough for walks but not for orders on objects)
+        import random
+        from play_tribe import Game, Player, tribe_centres, tribe_state
+        for i in members(guest):
+            guest.call(f'coop.tribe select {i} 0')
+        pl = Player('guest', guest, 1, random.Random(1), [], 1440, 1080)
+        pl.calibrate()  # the minimap takes the view to the member, then to the village
+        g = Game.__new__(Game)
+        g.w, g.h = 1440, 1080
+        sel = g.select_idle(pl, tribe_state(guest), mine, False)
+        ck(sel, f'the guest box-selects its member ({sel})')
+        pl.look(tribe_centres(host)['p'])
+        rej0 = int(re.search(r'rejected=(\d+)', host.call('coop.status')['out']).group(1))
+        sent = ''
+        guest.call('move 720 540')  # distances of coop.targets objs: from the point under the mouse
+        time.sleep(0.4)
+        objs = [ln.split() for ln in guest.call('coop.targets objs')['out'].splitlines() if ln.startswith(('obj', 'member'))]
+        # in the open: not behind animals, citizens, the hut or the fire (they would take the click)
+        front = [(int(f[3]), int(f[4])) for f in objs if f[1][0] in 'tnh' and f[1] != 'tree' or f[0] == 'member'
+                 or f[1] in ('o18C8F0C', 'o18C6D19', 'o629BAFE')]
+        trees = sorted((float(f[2]), int(f[3]), int(f[4])) for f in objs if f[1] == 'fruittree' and float(f[2]) < 90
+                       and 150 < int(f[4]) < 900 and all(abs(int(f[3]) - x) + abs(int(f[4]) - y) > 80 for x, y in front))[:8]
+        trees += sorted((float(f[2]), int(f[3]), int(f[4])) for f in objs if f[1] == 'fruittree' and float(f[2]) < 150
+                        and 150 < int(f[4]) < 900)[:8]
+        print(f'  {len(trees)} fruit trees to try')
+        for _, x, y in trees:
+            for dy in (0, -10, -20):
+                guest.call(f'move {x} {y + dy}')  # hover: the game picks under the cursor per frame
+                time.sleep(0.4)
+                guest.call(f'click {x} {y + dy} right')
+                time.sleep(0.8)
+                sent = re.search(r'tribe last order: (.*)', guest.call('coop.status')['out'])
+                sent = sent.group(1) if sent else ''
+                if 'target=3/' in sent:
+                    break
+            if 'target=3/' in sent:
+                break
+        time.sleep(1)
+        st = host.call('coop.status')['out']
+        got = re.search(r'tribe last order: (.*)', st)
+        print('  tree order: guest', sent, '| host', got and got.group(1))
+        ck('target=3/' in sent, 'a right-click on a fruit tree gives a gather order on the tree')
+        ck(int(re.search(r'rejected=(\d+)', st).group(1)) == rej0 and got and 'rejected' not in got.group(1),
+           'the host finds the tree and executes the gather order')
     # a gift: the guest gives one of its selected members to the host
     gm = members(guest)
     mine = [i for i, v in gm.items() if v[0] == 1 and v[3] == 'player']
@@ -117,6 +167,15 @@ def main():
         # the giver must not keep the gifted member selected (it could order the partner's member)
         ck(members(guest).get(mine[0], (0, 1))[1] == 0, 'the gifted member is no longer selected by the giver')
         ck('gave 1 tribe member' in host.call('coop.status')['out'], 'everybody is told about the gift')
+    # a crowded planet: snapshots of more than 24 citizens come in several chunks; the first chunk
+    # did not fit a packet and was dropped, so the guest lost the player tribe (until 2026-10-23)
+    print(' ', host.call('coop.tribe spawn 20')['out'])
+    time.sleep(5)
+    hm, gm = members(host), members(guest)
+    print(f'  {len(hm)} citizens on the host, {len(gm)} on the guest')
+    ck(len(hm) > 24 and set(hm) == set(gm), f'the guest mirrors every citizen of a crowded planet ({len(hm)} / {len(gm)})')
+    hp = {i for i, v in hm.items() if v[3] == 'player'}
+    ck(hp and hp == {i for i, v in gm.items() if v[3] == 'player'}, 'the guest has the whole player tribe')
     shot(host, 'tribe_host.png')
     shot(guest, 'tribe_guest.png')
     ck.faults(host=host, guest=guest)

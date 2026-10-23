@@ -211,5 +211,9 @@ Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
   and why it was rejected) and `tribe last local order: #n` (the host's own orders): a click that
   changes neither gave no order (it missed the target).
 * `coop.tribe spawn <n>` (host) adds adults to the player tribe: test setup only.
+* `coop.tribe select <id> 1` only sets the member's selected flag: a walk order (`coop.tribe
+  walk`, a right-click on the ground) uses it, but a right-click on an object takes the terrain
+  cursor's selection set, which only a real click / box fills: such clicks then give no order at
+  all. Select by `drag` for real-input tests (play_tribe.py `Game.select_idle`).
 * Agents running in parallel share one scratchpad folder: give helper scripts unique names (one
   agent's `reload.sh` was overwritten by another's, which then hot-reloaded the wrong lane).
