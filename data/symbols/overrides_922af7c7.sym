@@ -73,6 +73,7 @@ Simulator::cCivilization::GetDesignKey=0x00BF9890 ; verified thiscall(designId) 
 Simulator::VehicleDesignId=0x00C9E850 ; verified cdecl(purpose, loco)
 Simulator::cCity::SpawnVehicle=0x00BDDED0 ; verified thiscall(purpose, loco, ResourceKey by value, bool space) ret 0x18
 Simulator::cCity::AddBuilding=0x00BE2020 ; verified thiscall(building, int) ret 8
+Simulator::cCity::DestroyBuilding=0x00BE3510 ; likely thiscall(city, building) ret 4: AddRef, DestroyInstance (0xB224F0), RemoveBuilding 0xBE3480, Release; the sell path (CitySellBuilding) uses it; guests remove buildings the host does not have with it
 Simulator::cCity::CreateBuilding=0x00BE54E0 ; verified thiscall(noun, typeId) ret 8 (AI growth, auto slot)
 Simulator::cCity::SetBuildingModel=0x00BDB920 ; verified thiscall(building, typeId) ret 8
 Simulator::cCity::SnapBuildingToSlot=0x00BE3630 ; verified thiscall(building, bool) ret 8
