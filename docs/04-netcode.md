@@ -12,20 +12,32 @@ it builds both as a Windows DLL and **natively on Linux** (unit tests, `fakepeer
 
 ```
 u32  magic   'SPCO'
-u16  proto   protocol version
+u16  proto   protocol version (6)
+u32  conn    connection id: the guest picks a new random one for every join (protocol 6)
 u16  seq     packet number (for ack)
 u16  ack     last received seq
-u32  ackbits bitmask of the previous 32
+u128 ackbits bitmask of the previous 128 (2 x u64, protocol 5)
 u8   count   number of messages
 [messages: u8 type, u8 channel, u16 len, payload]
 ```
 
 Reliability uses a "seq/ack/ackbits" scheme: each reliable message remembers which
 packets it was sent in, and is resent until a packet is acknowledged (RTO ≈ 1.5·RTT, min. 100 ms).
+The receiver buffers reliable messages that arrive ahead of a missing one; the sender never sends a
+message more than `kRelWindow` (2048) past its oldest unacknowledged one, so that buffer cannot
+overflow. (Before 2026-10-23 the buffer held 1024 and silently dropped further messages while still
+acknowledging their packets: after one message was lost a few times in a row on a bad link, the
+dropped ones were never resent and the world transfer stalled for good.)
+
+A packet whose `conn` differs from the connection's own is ignored. The host takes the id of the
+first packet from a new address; a packet from a known address with a new id is a new connection
+(the guest left and joined again through a NAT or proxy that kept the mapping) and replaces the old
+peer, and ids of dropped peers are remembered, so late or duplicated packets of an old connection
+cannot recreate it or mix into the new one.
 
 Channels:
-* `UNRELIABLE` — states (snapshots), where the latest value matters more than delivery;
-* `RELIABLE_ORDERED` — session events, abilities, damage, chat, file chunks.
+* `UNRELIABLE`: states (snapshots), where the latest value matters more than delivery;
+* `RELIABLE_ORDERED`: session events, abilities, damage, chat, file chunks.
 
 Each frame a peer gets one flush: unreliable messages first (the own `PLAYER_STATE` at the front),
 then due reliable ones. The ack field covers 128 packets (protocol 5), so a flush sends up to 128
@@ -52,10 +64,10 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 | `RES` / `RES_ADD` | R | shared resource (u8 id: 1 tribe food, 2 civilization money, 3 empire money; f64): total from the host / change on a guest |
 | `PING_MARK` | R | "look here" marker: author id, point, mode; the host forwards it to the others |
 | `WORLD_TIME` | U | once per second: quaternion of the sky object (time of day) |
-| `WORLD_OFFER/FILE/CHUNK/DONE` | R | transfer of the host's save in 1 KB chunks, at most 96 messages "in flight" |
+| `WORLD_OFFER/FILE/CHUNK/DONE` | R | transfer of the host's save in 1 KB chunks, at most 160 unacknowledged messages (600 when the round trip is under 40 ms) |
 | `CHAT` | R | id, UTF-8 text |
 | `PING/PONG` | U | timestamp → RTT in the status |
-| `BYE` | R | reason |
+| `BYE` | U | reason; sent in three packets on leave (protocol 6: a reliable one waited behind any lost earlier message) |
 
 ## 4.4 Rates and smoothing
 
@@ -77,11 +89,13 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 
 ## 4.6 Session and timeouts
 
-* Handshake: `HELLO` → `WELCOME`/`REJECT`; `HELLO` is retried every 500 ms for up to 10 s.
+* Handshake: `HELLO` → `WELCOME`/`REJECT`; `HELLO` is resent like any reliable message for up to 10 s.
+* Leave: `BYE`; the host drops the peer at once. A lost `BYE` costs nothing on a rejoin (the new
+  connection id replaces the peer), otherwise the peer times out.
 * No packets for 5 s → "connection unstable", 15 s → disconnect.
 * `coop status` shows RTT, packet loss, and each player's state.
 
 ## 4.7 NAT
 
-M1–M3: direct IP (UDP port forwarding on the host or a VPN network). Later — a rendezvous server
+M1–M3: direct IP (UDP port forwarding on the host or a VPN network). Later: a rendezvous server
 for UDP hole punching (a small service you can host yourself).

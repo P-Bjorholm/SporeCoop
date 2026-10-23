@@ -7,8 +7,8 @@
 
 namespace net {
 
-// header: magic u32, proto u16, seq u16, ack u16, ackbits 2 x u64 (128 packets), count u8
-static constexpr size_t kHeader = 4 + 2 + 2 + 2 + 16 + 1;
+// header: magic u32, proto u16, conn u32, seq u16, ack u16, ackbits 2 x u64 (128 packets), count u8
+static constexpr size_t kHeader = 4 + 2 + 4 + 2 + 2 + 16 + 1;
 
 bool Connection::looks_valid(const uint8_t* data, size_t n)
 {
@@ -16,6 +16,14 @@ bool Connection::looks_valid(const uint8_t* data, size_t n)
         return false;
     Reader r(data, n);
     return r.u32() == kMagic && r.u16() == kProtoVersion;
+}
+
+uint32_t Connection::peek_conn(const uint8_t* data, size_t n)
+{
+    uint32_t c = 0;
+    if (n >= 10)
+        memcpy(&c, data + 6, 4);
+    return c;
 }
 
 void Connection::send_reliable(uint8_t type, const Writer& w)
@@ -38,12 +46,19 @@ void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
 bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
 {
     uint32_t rto = (uint32_t)std::max(100.f, rtt_ms * 1.5f + 20.f);
+    uint16_t oldest = rel_out_.empty() ? 0 : rel_out_.front().rel_id; // rel_out_ is in rel_id order
+    auto due = [&](const OutMsg& m) {
+        return (m.sends == 0 || now - m.last_sent >= rto) && (uint16_t)(m.rel_id - oldest) < kRelWindow;
+    };
     bool any_rel_due = false;
-    for (auto& m : rel_out_)
-        if (m.sends == 0 || now - m.last_sent >= rto) {
+    for (auto& m : rel_out_) {
+        if ((uint16_t)(m.rel_id - oldest) >= kRelWindow)
+            break;
+        if (due(m)) {
             any_rel_due = true;
             break;
         }
+    }
     uint32_t since = now - last_send_ms_;
     bool keepalive = since >= 250 || (ack_pending_ && since >= 30);
     if (unrel_out_.empty() && !any_rel_due && !keepalive)
@@ -52,6 +67,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     Writer w;
     w.u32(kMagic);
     w.u16(kProtoVersion);
+    w.u32(conn_id);
     uint16_t seq = local_seq_++;
     w.u16(seq);
     w.u16(remote_seq_);
@@ -85,7 +101,9 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     }
     unrel_out_.erase(unrel_out_.begin(), unrel_out_.begin() + used);
     for (auto& m : rel_out_) {
-        if (!(m.sends == 0 || now - m.last_sent >= rto))
+        if ((uint16_t)(m.rel_id - oldest) >= kRelWindow)
+            break;
+        if (!due(m))
             continue;
         if (w.size() + 6 + m.payload.size() > kMaxPacket || count == 255)
             break;
@@ -135,6 +153,8 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
     Reader r(data, n);
     r.u32();
     r.u16();
+    if (r.u32() != conn_id)
+        return false; // a late packet of an earlier connection from the same address
     uint16_t seq = r.u16();
     uint16_t ack = r.u16();
     AckBits ackbits;
@@ -209,7 +229,8 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
                 next_rel_expected_++;
             }
         } else if (seq_greater(rel_id, next_rel_expected_)) {
-            if (!rel_in_.count(rel_id) && rel_in_.size() < 1024)
+            // the sender keeps within kRelWindow of the oldest message we lack (see build_packet)
+            if ((uint16_t)(rel_id - next_rel_expected_) < kRelWindow && !rel_in_.count(rel_id))
                 rel_in_[rel_id] = {type, std::vector<uint8_t>(p, p + len)};
         }
         // else: duplicate of an already delivered message

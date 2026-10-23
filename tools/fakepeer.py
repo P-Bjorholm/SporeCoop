@@ -10,13 +10,16 @@ Mirrors mods/coop/net (protocol.h, connection.cpp). Run with python3 -I.
 """
 import argparse
 import math
+import os
 import socket
 import struct
 import sys
 import time
 
 MAGIC = 0x4F435053
-PROTO = 3
+PROTO = 6  # 5: 128-packet acks; 6: connection id in the header, unreliable BYE
+HEADER = '<IHIHHQQB'  # magic, proto, conn, seq, ack, ackbits (2 x u64), count
+HEADER_SIZE = struct.calcsize(HEADER)
 HELLO, WELCOME, REJECT, JOIN, LEAVE, STATE, CHAT, PING, PONG, BYE = range(1, 11)
 PF_IN_WORLD, PF_MOVING, PF_RUNNING = 1, 2, 4
 
@@ -30,6 +33,7 @@ class Conn:
 
     def __init__(self, sock, addr):
         self.sock, self.addr = sock, addr
+        self.conn = int.from_bytes(os.urandom(4), 'little') or 1  # a new id for every join
         self.local_seq = 0
         self.remote_seq = 0
         self.recv_bits = 0
@@ -69,8 +73,8 @@ class Conn:
             m[4] += 1
             ids.append(m[0])
             count += 1
-        hdr = struct.pack('<IHHHIB', MAGIC, PROTO, seq, self.remote_seq,
-                          self.recv_bits if self.have_remote else 0, count)
+        bits = self.recv_bits if self.have_remote else 0
+        hdr = struct.pack(HEADER, MAGIC, PROTO, self.conn, seq, self.remote_seq, bits & (2**64 - 1), bits >> 64, count)
         self.sent[seq] = ids
         if len(self.sent) > 256:
             self.sent.pop(next(iter(self.sent)))
@@ -83,27 +87,28 @@ class Conn:
             self.rel_out = [m for m in self.rel_out if m[0] not in ids]
 
     def on_packet(self, data, deliver):
-        if len(data) < 15:
+        if len(data) < HEADER_SIZE:
             return
-        magic, proto, seq, ack, ackbits, count = struct.unpack_from('<IHHHIB', data)
-        if magic != MAGIC or proto != PROTO:
+        magic, proto, conn, seq, ack, lo, hi, count = struct.unpack_from(HEADER, data)
+        if magic != MAGIC or proto != PROTO or conn != self.conn:
             return
+        ackbits = lo | hi << 64
         self.last_recv = time.time()
         if not self.have_remote:
             self.have_remote, self.remote_seq, self.recv_bits = True, seq, 0
         elif seq_greater(seq, self.remote_seq):
             sh = (seq - self.remote_seq) & 0xFFFF
-            self.recv_bits = 0 if sh >= 32 else ((self.recv_bits << sh) | (1 << (sh - 1))) & 0xFFFFFFFF
+            self.recv_bits = 0 if sh > 128 else ((self.recv_bits << sh) | (1 << (sh - 1))) & (2**128 - 1)
             self.remote_seq = seq
         else:
             d = (self.remote_seq - seq) & 0xFFFF
-            if 1 <= d <= 32:
+            if 1 <= d <= 128:
                 self.recv_bits |= 1 << (d - 1)
         for s in list(self.sent):
             d = (ack - s) & 0xFFFF
-            if s == ack or (1 <= d <= 32 and ackbits & (1 << (d - 1))):
+            if s == ack or (1 <= d <= 128 and ackbits & (1 << (d - 1))):
                 self._ack(s)
-        pos = 15
+        pos = HEADER_SIZE
         for _ in range(count):
             typ, flags, ln = struct.unpack_from('<BBH', data, pos)
             pos += 4
@@ -232,8 +237,9 @@ def main():
             return 1
         c.flush(now)
         time.sleep(0.01)
-    c.send_reliable(BYE, b'\0')
-    c.flush(time.time() + 1)
+    for _ in range(3):  # unreliable, a few copies (protocol 6)
+        c.send_unreliable(BYE, b'\0')
+        c.flush(time.time() + 1)
     print('done')
     return 0
 
