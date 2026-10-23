@@ -44,10 +44,14 @@ gave 1920x1080 or overlapping windows).
 | play9 | 8 | 10 | 0 → 517 | 282 / 235 | 3 / 1 | 1 (guest) | 3 (host) | 0.070 / 2.72 | 0.38 / 1.47 | 51 / 27 | OK |
 | play10 | 9 | 22 | 0 → 678 | 294 / 384 | 16 / 1 | 3 (host) | 12 (host) | 0.103 / 2.97 | 0.37 / 23.9 (respawn teleport) | 86 / 34 | OK (the old eats check compared with food eats only, see 1.) |
 | play11 | 10 | 10 | 0 → 574 | 220 / 354 | 4 / 1 | 0 | 4 / 1 | 0.143 / 3.27 | 0.34 / 29.5 (respawn teleport) | 25 / 16 | OK |
+| play12 (final build) | 12 | 10 | 0 → 372 | 228 / 144 | 3 / 0 | 0 | 3 (host) | 0.046 / 3.02 | 0.37 / 2.43 | 18 / 0 | OK |
 | solo1 | 9 | 15 | 0 → 402 (host alone) | 402 | (vanilla) | | | | | 20 | baseline |
 
 Bug-finding runs before the last fixes (same bot): play1-play6 (10 min each, seeds 2-7): food 324-658
 per session, food equal at all 360 checks, no fault, no freeze; cells p90 0.047-0.20 m.
+
+Also on the final build: `coop_cell.py` OK, `coop_sync.py cell` OK (cells p90 0.02 m, players
+0.26 m), `coop_chaos.py --fixture cell --minutes 3 --seed 5` OK.
 
 Throughout: **0 caught faults, 0 freezes, 0 crashes of the games** (two runs were killed from
 outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO error` in
@@ -86,7 +90,7 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
 ## Open issues (docs/known-issues.md)
 
 * **The host's NPCs hunt the host, rarely the guest**: summed over the bot's samples, NPCs chasing
-  the host 1067 / 2680, chasing the guest's cell 36 / 71 (play9 / play10). Damage taken: host 51 / 86
+  the host 1067 / 2680 / 620 / 752, chasing the guest's cell 36 / 71 / 117 / 103 (play9-12). Damage taken: host 51 / 86
   hp, guest 27 / 34 hp; knockouts host 3 / 16, guest 1 / 1. Host-side bites on the guest's puppet
   never arrive (the puppet is not damageable there: no AI, not the avatar; `hurt_fwd` = 0 in every
   run); the guest is only bitten when its cell bumps into a mirror (`hurt_local` 0-16). Playing the
