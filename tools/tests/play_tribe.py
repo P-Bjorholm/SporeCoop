@@ -137,32 +137,39 @@ class Player:
     def calibrate(self):
         x0, y0 = MINIMAP
         o, a, b = self.minimap(x0, y0), self.minimap(x0 + 30, y0), self.minimap(x0, y0 + 20)
-        if o and a and b:
+        if o and a and b and math.dist(o, a) > 20 and math.dist(o, b) > 20:
             self.J = ([(a[i] - o[i]) / 30 for i in range(3)], [(b[i] - o[i]) / 20 for i in range(3)])
-            self.mm = (x0, y0 + 20, b)
+            self.base = (x0, y0, o)
+            self.cur = b
         return self.J is not None
 
+    def solve(self, w, x, y, c):
+        J = self.J
+        d = [w[i] - c[i] for i in range(3)]
+        a11, a22 = sum(v * v for v in J[0]), sum(v * v for v in J[1])
+        a12 = sum(J[0][i] * J[1][i] for i in range(3))
+        b1, b2 = sum(J[0][i] * d[i] for i in range(3)), sum(J[1][i] * d[i] for i in range(3))
+        det = a11 * a22 - a12 * a12 or 1
+        x, y = x + (b1 * a22 - b2 * a12) / det, y + (a11 * b2 - a12 * b1) / det
+        return min(205, max(15, x)), min(1025, max(940, y))
+
     def look(self, w):
-        """centre the view on a world point through the minimap"""
+        """centre the view on a world point through the minimap (a linear map from the calibration,
+        then one correction from where the view went)"""
         if not self.J:
             return False
-        J = self.J
-        x, y, c = self.mm
-        for _ in range(3):
-            d = [w[i] - c[i] for i in range(3)]
-            a11, a22 = sum(v * v for v in J[0]), sum(v * v for v in J[1])
-            a12 = sum(J[0][i] * J[1][i] for i in range(3))
-            b1, b2 = sum(J[0][i] * d[i] for i in range(3)), sum(J[1][i] * d[i] for i in range(3))
-            det = a11 * a22 - a12 * a12 or 1
-            x, y = x + (b1 * a22 - b2 * a12) / det, y + (a11 * b2 - a12 * b1) / det
-            x, y = min(215, max(8, x)), min(1032, max(935, y))
+        if getattr(self, 'cur', None) and math.dist(self.cur, w) < 30:
+            return True
+        x, y = self.solve(w, *self.base)
+        for _ in range(2):
             c = self.minimap(x, y)
             if not c:
                 return False
-            self.mm = (x, y, c)
-            if math.dist(c, w) < 25:
+            self.cur = c
+            if math.dist(c, w) < 30:
                 self.note('look')
                 return True
+            x, y = self.solve(w, x, y, c)
         self.note('look_far')
         return False
 
@@ -177,7 +184,7 @@ class Player:
             box = (min(xs) - 30, min(ys) - 45, max(xs) + 30, max(ys) + 25)
         else:
             _, x, y = self.rng.choice(own)
-            box = (x - 22, y - 40, x + 22, y + 15)
+            box = (x - 35, y - 55, x + 35, y + 25)
         x1, y1, x2, y2 = max(5, box[0]), max(65, box[1]), min(self.w - 65, box[2]), min(self.h - 130, box[3])
         if x2 - x1 < 10 or y2 - y1 < 10:
             return []
@@ -247,81 +254,50 @@ class Game:
     def step(self, pl):
         rng = pl.rng
         st = tribe_state(pl.con)
-        mine = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] == pl.pid]
+        mine = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] == pl.pid and v['hp'] > 0]
         partner = [i for i, v in st.items() if v['tribe'] == 'p' and v['owner'] not in (pl.pid, 254, -1)]
         now = time.time()
-        idle = [i for i in mine if pl.busy.get(i, 0) < now] or (mine if rng.random() < 0.15 else [])
+        idle = [i for i in mine if pl.busy.get(i, 0) < now]
         plan = self.plan()
         kind = plan if rng.random() < 0.75 else rng.choice(['gather', 'hunt', 'partner', 'camera', 'give', 'walk'])
         if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk') and not idle:
-            kind = rng.choice(['partner', 'camera', 'wait'])
+            kind = rng.choice(['partner', 'camera', 'wait', 'wait'])
         pl.note(kind)
         centres = tribe_centres(self.host)  # where the tribes live (a player sees them on the minimap)
         enemies = [t for t in centres if t != 'p']
-        if kind in ('gather', 'hunt', 'walk'):
-            objs = self.home_view(pl, centres)
-            want = {'gather': ('tree', 'o2C9CC91'), 'hunt': ('n',)}.get(kind)
-            vis = pl.on_screen(objs)
-            if want:
-                tg = [o for o in vis if o[0] in want or (want == ('n',) and o[0][0] == 'n' and o[0][1:].isdigit())]
-                if kind == 'gather':  # near the village: the food comes home sooner
-                    hut = [o for o in objs if o[0].startswith('hut') and o[0].endswith('p')]
-                    if hut:
-                        tg.sort(key=lambda o: math.hypot(o[1] - hut[0][1], o[2] - hut[0][2]))
-                        tg = tg[:6]
-                if not tg:
-                    pl.note(kind + '_nothing')
-                    return self.pause(pl)
-            sel = pl.select(idle, objs, group=kind == 'hunt' and rng.random() < 0.5)
+        if kind in ('gather', 'hunt', 'raid', 'social', 'epic', 'walk'):
+            group = kind in ('raid', 'epic') or (kind == 'hunt' and rng.random() < 0.5)
+            sel = self.select_idle(pl, st, idle, group)
             if not self.check_sel(pl, sel, st):
                 return self.pause(pl)
             if kind == 'walk':
                 tgt = ('ground', rng.randint(300, self.w - 300), rng.randint(400, self.h - 300))
-            else:
-                tgt = rng.choice(tg)
-            self.click_order(pl, kind, sel, tgt, busy=35 if kind == 'gather' else 20)
-        elif kind in ('raid', 'social') and enemies:
-            et = enemies[0] if rng.random() < 0.8 else rng.choice(enemies)
-            objs = self.home_view(pl, centres)
-            sel = pl.select(idle, objs, group=rng.random() < 0.6)
-            if not self.check_sel(pl, sel, st):
+                return self.click_order(pl, kind, sel, tgt, busy=10)
+            where, pick = self.target_for(pl, kind, st, centres, enemies)
+            if where is None:
+                pl.note(kind + '_nothing')
                 return self.pause(pl)
-            pl.look(centres[et])
-            objs = pl.on_screen(screen(pl.con))
-            tg = [o for o in objs if (o[0][0] == 't' and o[0][1:].isdigit() and st.get(int(o[0][1:]), {}).get('tribe') == et)
-                  or o[0] == f'hut{et}']
-            if kind == 'social':
-                tg = [o for o in tg if o[0].startswith('hut')] or tg
+            pl.look(where)
+            tg = [o for o in pl.on_screen(screen(pl.con)) if pick(o)]
             if not tg:
                 pl.note(kind + '_nothing')
                 return self.pause(pl)
-            pl.mode(1 if kind == 'raid' else 0)
-            tgt = rng.choice(tg)
+            if kind in ('raid', 'social', 'epic'):
+                pl.mode(0 if kind == 'social' else 1)
+            if kind == 'gather':  # the food plants nearest to the village: the food comes home sooner
+                tg.sort(key=lambda o: math.hypot(o[1] - self.w / 2, o[2] - self.h / 2))
+                tg = tg[:5]
             if kind == 'raid':
-                hits = self.attacked.setdefault(et, {})
+                hits = self.attacked.setdefault(enemies[0], {})
                 hits[pl.pid] = time.time()
                 if len([t for t in hits.values() if time.time() - t < 10]) >= 2:
                     self.both_attacked += 1
-            self.click_order(pl, kind, sel, tgt, busy=30)
-        elif kind == 'epic':
-            ek = epic_key(self.host)
-            hs = sample(self.host).get(ek) if ek else None
-            if not hs:
-                return self.pause(pl)
-            objs = self.home_view(pl, centres)
-            sel = pl.select(idle, objs, group=True)
-            if not self.check_sel(pl, sel, st):
-                return self.pause(pl)
-            pl.look(hs[0])
-            tg = [o for o in pl.on_screen(screen(pl.con)) if o[0] == ek]
-            if not tg:
-                pl.note('epic_nothing')
-                return self.pause(pl)
-            pl.mode(1)
-            self.click_order(pl, 'epic', sel, tg[0], busy=20)
+            self.click_order(pl, kind, sel, rng.choice(tg), busy={'gather': 40, 'hunt': 25}.get(kind, 30))
         elif kind == 'partner':  # real clicks on the partner's members: they must never get selected
-            objs = self.home_view(pl, centres)
-            pm = [o for o in pl.on_screen(objs) if o[0].startswith('member') and int(o[0][6:]) in partner]
+            pm = [o for o in pl.on_screen(screen(pl.con)) if o[0].startswith('member') and int(o[0][6:]) in partner]
+            if not pm and partner:
+                pl.look(st[rng.choice(partner)]['pos'])
+                pm = [o for o in pl.on_screen(screen(pl.con)) if o[0].startswith('member') and int(o[0][6:]) in partner]
             if not pm:
                 return self.pause(pl)
             k, x, y = rng.choice(pm)
@@ -330,8 +306,10 @@ class Game:
                 pl.do(f'click {x} {y}')
             elif how == 'box':
                 pl.do(f'drag {x - 40} {y - 50} {x + 40} {y + 30}')
-            elif pl.select(idle or mine, objs):  # an order with an own member on the partner's member
-                pl.do(f'click {x} {y} right')
+            else:  # an order of an own member on the partner's member
+                own = pl.select(mine, screen(pl.con))
+                if own:
+                    pl.do(f'click {x} {y} right')
             time.sleep(1.3)
             st2 = tribe_state(pl.con)
             bad = [i for i, v in st2.items() if v['sel'] and v['tribe'] == 'p' and v['owner'] != pl.pid]
@@ -340,6 +318,7 @@ class Game:
             pl.note('partner_' + how)
         elif kind == 'camera':
             what = rng.choice(['wheel', 'wheel', 'pan', 'rotate'])
+            pl.cur = None
             if what == 'wheel':
                 pl.do(f'wheel {self.w // 2} {self.h // 2} {rng.choice([-3, -2, 2, 3])}')
             elif what == 'pan':
@@ -350,8 +329,8 @@ class Game:
             else:
                 x = rng.randint(400, self.w - 400)
                 pl.do(f'drag {x} 600 {x + rng.choice([-200, 200])} 600 right')
-        elif kind == 'give' and len(mine) > 1:  # one own member to the partner: select, F9, give
-            sel = pl.select(mine, self.home_view(pl, centres))
+        elif kind == 'give' and len(mine) > 2:  # one own member to the partner: select, F9, give
+            sel = self.select_idle(pl, st, mine, False)
             if len(sel) == 1:
                 pl.do('key 0x78')  # F9: the co-op window
                 time.sleep(1.0)
@@ -363,16 +342,46 @@ class Game:
                 pl.note('gave')
         self.pause(pl)
 
+    def select_idle(self, pl, st, idle, group):
+        """the view on an idle own member (like a click on its card), then a box around it (and the
+        members next to it for a group)"""
+        if not idle:
+            return []
+        m = pl.rng.choice(idle)
+        objs = screen(pl.con)
+        central = [o for o in objs if o[0] == f'member{m}' and 200 < o[1] < self.w - 200 and 150 < o[2] < self.h - 260]
+        if not central:
+            pl.look(st[m]['pos'])
+            objs = screen(pl.con)
+        if group:
+            return pl.select(idle, objs, group=True)
+        return pl.select([m], objs)
+
+    def target_for(self, pl, kind, st, centres, enemies):
+        """(world point to look at, which screen object to right-click)"""
+        if kind == 'gather':
+            return centres.get('p'), lambda o: o[0] in ('tree', 'o2C9CC91')
+        if kind in ('raid', 'social'):
+            if not enemies:
+                return None, None
+            et = enemies[0]
+            want = {f'hut{et}'} if kind == 'social' else {f'hut{et}'} | {f't{i}' for i, v in st.items() if v['tribe'] == et}
+            return centres[et], lambda o: o[0] in want
+        if kind in ('hunt', 'epic'):
+            hs = sample(self.host)
+            home = centres.get('p')
+            if kind == 'epic':
+                key = epic_key(self.host)
+            else:  # one of the animals nearest to the village
+                near = sorted((math.dist(v[0], home), k) for k, v in hs.items() if k[0] == 'n' and home)
+                key = pl.rng.choice(near[:6])[1] if near else None
+            if not key or key not in hs:
+                return None, None
+            return hs[key][0], lambda o, k=key: o[0] == k
+        return None, None
+
     def pause(self, pl):
         time.sleep(pl.rng.expovariate(self.rate))
-
-    def home_view(self, pl, centres):
-        """the view at the own village (where the members are), through the minimap when needed"""
-        objs = screen(pl.con)
-        if not any(o[0].startswith('member') for o in pl.on_screen(objs)) and 'p' in centres:
-            pl.look(centres['p'])
-            objs = screen(pl.con)
-        return objs
 
     def check_sel(self, pl, sel, st):
         if not sel:
@@ -488,9 +497,11 @@ def main():
     print(f'  play_tribe: {a.minutes} min, seed {seed}', flush=True)
     host, guest = start('tribe')
     ck = Checks()
+    # setup: the fixture's tribe has 3 members; 3 more give each player 3 to play with
+    print('  setup:', host.call('coop.tribe spawn 3')['out'], flush=True)
     t0 = time.time()
     while time.time() - t0 < 90:  # the split of the player tribe arrives with the first states
-        if any(v['owner'] == 1 for v in tribe_state(guest).values()):
+        if len([v for v in tribe_state(guest).values() if v['owner'] == 1]) >= 2:
             break
         time.sleep(2)
     g = Game(host, guest, seed, a.rate)
