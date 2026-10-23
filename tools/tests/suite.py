@@ -46,6 +46,8 @@ add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fi
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_death', P + 'coop_space_death.py', minutes=5)
+add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
+add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent
@@ -70,6 +72,8 @@ add('play_creature', P + 'play_creature.py --minutes 10', ('nightly',), minutes=
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
     add(f'{name}_mobile', 'SPORE_NET=mobile ' + P + cmd, ('nightly',), minutes=4)
+# the Space stage played by two bots with real input (docs/stability/space.md)
+add('play_space', P + 'play_space.py --minutes 12', ('nightly',), minutes=14)
 add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe --minutes 5', ('nightly',),
     minutes=6)
 

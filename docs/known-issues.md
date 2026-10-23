@@ -101,9 +101,19 @@ Fixed entries move to the commit message (and a test).
   the vote and the world load at the same time. Reproduce: start a vote (`coop.vote test` / the
   host's mating call), let the guest exit to the main menu before it ends.
 
+## Space: no test save after the tutorial missions
+
+* The `space` fixture starts at the first mission ("Fly to planet Dunoselka"): the ship has no
+  interstellar drive (the galaxy view stays locked; tests add it with `coop.space tool add
+  interstellardrive`), no terraforming tools, the colonies have no spice stored and no other empire
+  has been met. So the game bot (`play_space.py`, docs/stability/space.md) can not collect or sell
+  spice, terraform, take missions or meet raids. A fixture made after the tutorial (scan the wreck,
+  meet a neighbour, a colony with spice) would cover them: play it once, then `make_fixture.py`.
+
 ## Not covered by tests yet
 
 * Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the
   damage function only). Civilization: military / religious roles in real battles, a siege by real
   vehicles of both players (coop_civ_play.py besieges an NPC city of `civ_npc` through the capture
-  function). Space: raids and missions (no live mission in the fixture).
+  function). Space: raids and missions (no live mission in the fixture), spice trading, terraforming
+  with the tools, buying in the city planner (the bot opens and closes it only).

@@ -771,3 +771,79 @@ Found on branch fix/menu-load-crash (test `tools/tests/coop_rejoin_loop.py`).
   Since `load_slot` sends this case through `run_outside_frame` too: 0 faults in 7 sessions.
   Check for a guest with a broken planet: compare `|pos|` of its own avatar with the host's copy
   (`coop.sync`), or `exc`.
+
+## 9. Navigation, tools and what the game frees (✔ runtime, play_space.py, lane 7, 2026-10-23)
+
+Found while writing the game bot `tools/tests/play_space.py` (players fly with real input).
+
+### 9.1 Where things are on the screen
+* **Planets of the current system**: `cStarManager` (`cStarManager::Get` 0xB3D370) **+0x50..+0x54** is
+  the vector of the loaded `cPlanet*` (the list `RecordToPlanet` 0xBB5B20 searches, comparing
+  `planet+0x13C` with the record). `cPlanet` **+0x04** = position (system coordinates; planets orbit,
+  so it changes), +0x10 orientation, +0x13C record (+0x184 PlanetID, +0x194 tech level, 5 = colony),
+  +0xD4 the cGameData base (vtable 0x1473038, GetNounID 0xC70100 returns **0x3275728**; the planets are
+  not in the GetData noun list). In a system the list held 6 planets, one of them of another star
+  (`P01B16013`).
+* **Stars in the galaxy view**: `cStarManager` **+0xC8** = vector of 20-byte sectors whose first dword
+  is an array of `cStarRecord*` (`GetStarRecord` 0xBA6EB0: StarID = sector << 12 | index).
+  `cStarRecord` **+0x3C** position (galaxy coordinates, the player UFO's position in the galaxy view
+  is in the same space; neighbouring stars are ~1 unit apart), +0x54 empire id (the player's political id for own stars), +0x70 StarID.
+* `coop.targets all` prints them (`obj P/C<PlanetID>` in a system, `obj S/H<StarID>` in the galaxy
+  view) and `far player <id> x y` for a partner off the screen (its projected point).
+
+### 9.2 Input (1440x1080 test window)
+* Planet view: W/A/S/D (or the arrows) fly the ship relative to the screen (W = up); a left click on
+  the ground with no tool selected flies there; a click on the minimap flies to that place (a city on
+  the minimap: the ship goes there).
+* Solar system view: the keys barely move the ship; a **click on a planet** flies there and makes it
+  the active planet (`coop.space star` prints `active <PlanetID>`; a moon next to a planet often
+  takes the click). Zooming in (wheel) at the ship lands on the active planet (a short cinematic);
+  zooming out of a planet goes back to the system. Clicks on empty space do nothing.
+* Galaxy view: zooming out of a system (wheel, or the zoom buttons at the bottom left, "Zoom Out"
+  at (18, H-60)) only works with the **interstellar drive**: without it the camera stops at the
+  edge of the system. The space fixture's ship does not have it yet (a new player gets it in the
+  first missions: fly to Dunoselka, scan the wreck).
+* Galaxy view: a click on a star in the drive's range (the circle) flies there at once (no money
+  spent in this save); zooming in enters its system. Neighbouring stars are ~1 galaxy unit apart.
+* Tool palettes (bottom right, anchored to the right edge): category tabs at x = W-426 main, W-387
+  combat, W-347 gear (scan, abduct), W-306 colony, then three terraforming tabs and cargo; y = H-51 while the palette is
+  closed, H-151 while open (a click on a closed tab opens it). Keys 1..9 select the slot of the open
+  palette. Esc deselects the tool; a second Esc opens the pause menu ("Resume Game").
+* Clicking an own city (planet view) opens the city planner (buildings for money, done at the
+  bottom right check button).
+* Captions that wait for OK (6.9 in docs/06-testing.md): also the tutorial captions ("Something is
+  showing up on the ship's radar...") and badges ("title of Commander"); Enter confirms them.
+
+### 9.3 Tools and cheats
+* Tool keys in the inventory are `{FNV-1 hash of the tool file name, 0, 0}`: scan 0x08EF6A62, abduct
+  0xF58C1654, interplanetarydrive 0x4133FE05, **interstellardrive 0x2569FAE8** (not in the fixture).
+  `cPlayerInventory::AddItemByKey` with such a key adds the tool (`coop.space tool add <name>`); the
+  interstellar drive at once unlocks the galaxy view (a badge cinematic and a tutorial caption
+  follow).
+* The release build registers only some cheats: `moreMoney` (+1 000 000) works, the developer
+  cheats `space`, `raid`, `tool` (with their help texts in the exe) do not exist (ProcessLine false).
+
+### 9.4 The game frees NPC UFOs, puppets included
+* Leaving a planet (zoom out to the system) frees the UFOs of the planet, also the mod's Defender
+  puppets of the partners there and the guest's mirrors; it happened ~10 times in 8 minutes of play.
+  Any later use of the pointer is a use after free (the host crashed in `modes::space_drive`, vtable
+  overwritten). Only a pointer still in the UFO noun list (`GetAllUFOs` 0xAD48B0) may be touched
+  (`game::ufo_listed`); a listed pointer can be a new UFO at a reused address (check the type).
+* The partners' ships are Defender UFOs (type 6): their own AI fires at every hostile ship in range
+  (`cCombatSimulator::Update` -> FireTool with the puppet as owner, ~10 calls per second with
+  pirates around). Pirates near a guest's puppet died on the host while the guest never fired; the
+  mod drops FireTool for puppets (`puppet_shots_blocked` in `coop.fleet list`). (~) The player's own
+  ship may also shoot back at an attacker on its own (TakeDamage step 9, auto-retaliation).
+* Pirates spawned with `SpawnUFO`: type 2 (raider) attack the player only around its colonies; on
+  other planets they fly off and vanish after ~30 s without a shot. Type 8 (ambush pirate) attack
+  the player anywhere (✔ runtime, `coop.fleet spawn <type>`).
+* Right after landing the player's ship takes no damage for a few seconds (the planet
+  invulnerability counter `cSimulatorPlayerUFO` +0x24, §7.2) ~.
+
+### 9.5 Rescue in real fights (✔, `coop_space_rescue.py`)
+* NPC hits on a guest arrive as MSG_UFO_DAMAGE (the host's TakeDamage on the guest's puppet). The
+  guest applied them with the original TakeDamage, past the rescue filter: a guest next to its
+  partner was never disabled by pirates, it died. Now the hook applies them (`g_applying`: only the
+  own-ship filter, then the game).
+* The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
+  lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).

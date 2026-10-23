@@ -186,7 +186,28 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
         skg::field<float>(u, kUfoCombat + 0x38) = mh;
 }
 
-static void space_despawn(void* u) { game::destroy_creature(u); } // DestroyInstance works for any cGameData
+// DestroyInstance works for any cGameData; a puppet the game freed already (leaving a planet or a
+// system destroys every NPC UFO, the puppets too) is only forgotten
+static void space_despawn(void* u)
+{
+    if (game::ufo_listed(u)) {
+        game::destroy_creature(u);
+    } else {
+        game::g_ufos_freed++;
+        game::puppet_unregister(u);
+    }
+}
+
+// the game removes NPC UFOs on its own: driving a freed puppet crashed the host (play_space.py,
+// 2026-10-23: AV in space_drive, vtable overwritten)
+// (a listed pointer may be a new UFO at a reused address: it must still be a Defender, type +0x714)
+static bool space_alive(void* u)
+{
+    if (game::ufo_listed(u) && game::object_alive(u) && skg::field<int>(u, 0x714) == 6)
+        return true;
+    game::g_ufos_freed++;
+    return false;
+}
 
 static float space_tag(void*) { return 4.f; }
 
@@ -632,7 +653,7 @@ static const Adapter kAdapters[] = {
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     // adventures are not saves: every player starts the same adventure, puppets meet inside it
     {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
-    {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag},
+    {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 
 net::Vec3 entity_pos(const Adapter* a, void* e)

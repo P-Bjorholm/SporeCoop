@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <iphlpapi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -260,7 +261,8 @@ void drive_puppet(Remote& r, double now)
         LOG("%s hidden: flags=0x%X age=%.1f same_place=%d", r.name.c_str(), (unsigned)s.flags, r.buf.age(now),
             (int)same_place(s));
     if (r.puppet && r.puppet_adapter && r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)) {
-        LOG("%s: its puppet was removed by the game", r.name.c_str());
+        LOG("puppet of %s removed by the game itself (mode %08X, place %08X): shown again", r.name.c_str(), g_mode,
+            g_world);
         r.puppet = nullptr; // removed by the game itself: show it again
         r.puppet_adapter = nullptr;
     }
@@ -1921,6 +1923,17 @@ std::string targets(bool all)
             (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
         },
         &u);
+    if (all) // partners off the screen: where they are projected (bots fly toward them)
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet && r.puppet_adapter) {
+                net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+                float w[3] = {p.x, p.y, p.z}, sc[2] = {-1e9f, -1e9f};
+                if (!H->world_to_screen(w, sc) && sc[0] > -1e8f) {
+                    snprintf(b, sizeof b, "far player %d %d %d\n", id, (int)std::clamp(sc[0], -1e5f, 1e5f),
+                             (int)std::clamp(sc[1], -1e5f, 1e5f));
+                    out += b;
+                }
+            }
     if (all) { // every synchronized object on screen (game bots aim at NPCs, citizens, ships ...)
         net::Vec3 me{};
         if (g_local && g_adapter)
@@ -1934,7 +1947,7 @@ std::string targets(bool all)
         int sw = 0, sh = 0;
         H->screen_size(&sw, &sh);
         for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries, squadron::sync_entries,
-                        cellsync::sync_entries})
+                        cellsync::sync_entries, spacecoop::nav_entries})
             for (auto& e : f()) {
                 float w[3] = {e.pos.x, e.pos.y, e.pos.z}, sc[2];
                 if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
@@ -1990,8 +2003,10 @@ void init_ui()
         H->run_outside_frame(
             [](void*) {
                 std::string e = spacecoop::jump(0xFF);
-                if (!e.empty())
-                    notice("can't jump: " + e, -1);
+                if (!e.empty()) { // only here: the partner does not need to read why we can't jump
+                    feed("can't jump: " + e);
+                    chat_log("* can't jump: " + e);
+                }
             },
             nullptr);
     };
@@ -2378,7 +2393,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player>] - space co-op",
+    H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player> [dmg] | spawn <type>] - space co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", squadron::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;

@@ -261,3 +261,24 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * Several agents on one machine: each one gets its own lane; temp files belong in a folder of
   your own (subagents of one session share the scratchpad folder: another agent's `up.py` there
   started the cell fixture in this lane, 2026-10-23).
+
+## 6.12 Space game bots (play_space.py)
+
+* `coop.targets all` lists what a bot can fly to: in a solar system its planets (`obj P/C<PlanetID>`),
+  on a planet its cities (`obj T<n>` ours, `X<n>` others), in the galaxy view the stars near the ship
+  (`obj S/H<StarID>`), and partners off the screen as `far player <id> x y` (their projected point).
+  `coop.space star` prints `active <PlanetID>`, the planet a click sent the ship to (a moon next to a
+  planet often takes the click). Inputs per view: docs/re/space.md 9.2.
+* The space fixture's ship has no interstellar drive: the galaxy view stays locked. Tests give it
+  with `coop.space tool add interstellardrive` (a badge cinematic and a tutorial caption follow:
+  confirm them with Enter).
+* Just after landing, damage to the player's ship is ignored for a few seconds (`coop.space hit`
+  and relayed NPC hits alike); wait or retry.
+* `coop.space hp` prints `hp <n> max <n> ...` (no `hp=`): a parser that looks for `hp=` gets
+  nothing, and `coop.space hit <-1 - x>` then heals the ship (negative damage).
+* The tool palette's state (open or closed) is read from a screenshot (tab icons on row H-151 or
+  H-51); a blind click on the wrong row fires the selected weapon into the world. Never press Esc
+  twice: the second one opens the pause menu.
+* The bots run in two threads with their own console connections; the measurement loop uses a
+  third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
+  deterministic, so the same seed gives a similar, not the same, session).

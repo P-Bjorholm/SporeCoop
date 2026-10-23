@@ -207,6 +207,21 @@ def warm_reset(host, guest, fixture, planet):
     guest.call(lane.JOIN)
     if not wait_guest_in(host, guest, 120):
         return False
+    # the guest rejoins in its old copy of the same stage, so it is "together" at once; the host's
+    # world arrives a few seconds later and the guest leaves to the galaxy menu to load it (a test
+    # that started meanwhile played ~10 s in the old world, then lost the guest: play_space.py)
+    def left():
+        return any(m in guest.call('game.mode')['out'] for m in ('GalaxyGameEntry', 'Load'))
+
+    t1 = time.time()
+    while time.time() - t1 < 15:
+        if 'receiving world' in guest.call('coop.status')['out'] or left():
+            while time.time() - t1 < 30 and not left():
+                time.sleep(0.2)
+            if not wait_guest_in(host, guest, 120):
+                return False
+            break
+        time.sleep(0.3)
     phases.append(('guest in game', time.time() - t0))
     lane_state(**{**st, 'slot': slot, 'fixture': fixture, 'planet': planet, 'warm_runs': st.get('warm_runs', 0) + 1})
     time.sleep(3)
