@@ -419,7 +419,7 @@ static void* copy_info(void* src, void* icon)
 
 void* std_drawable_with_icon(void* src, void* icon)
 {
-    if (!src || *(uintptr_t*)src != H->rebase(0x0141B2D0)) // must be a SporeStdDrawable
+    if (!src || *(uintptr_t*)src != H->sym("UTFWin::SporeStdDrawable::vftable")) // must be a SporeStdDrawable
         return nullptr;
     uint8_t* d = (uint8_t*)utf_new(0x160);
     thiscall<void*>(a_std_ctor, d);

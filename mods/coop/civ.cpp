@@ -24,7 +24,8 @@ static Ctx C;
 static bool g_ok;
 
 // ---- layout (docs/re/civ.md) ----
-constexpr uintptr_t kVehicleVt = 0x014756D8;
+// game addresses that are not functions (vtable, return addresses): resolved by name in init()
+static uintptr_t a_VehicleVt, a_PlannerAddBuildingRet, a_GrowthRetBudget, a_GrowthRetNew;
 constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
                     kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
                     kVOrders = 0xB68;
@@ -35,7 +36,6 @@ constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uint32_t kMsgActivated = 0x287259F6, kBtnLand = 0x62D6902, kBtnWater = 0x62D6908, kBtnAir = 0x62D690F,
                    kBtnPlanner = 0x62D5618, kBuildingType = 0x0E9CB8BA;
-constexpr uintptr_t kPlannerAddBuildingRet = 0xD1419C;
 
 static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_PlayerCiv, a_GetMoney, a_SpendMoney,
     a_CreateVehicle, a_SlotsLeft, a_VehicleCost, a_DesignKey, a_DesignId, a_SpawnVehicle, a_AddBuilding,
@@ -201,7 +201,7 @@ static int SK_CDECL h_BT(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uin
                          uint32_t a7, uint32_t a8)
 {
     if (agent && is_guest() && game::mode_id() == modes::kCiv && !IsBadReadPtr((void*)agent, 4) &&
-        *(uintptr_t*)agent == H->rebase(kVehicleVt))
+        *(uintptr_t*)agent == a_VehicleVt)
         return 0;
     return o_BT(a0, a1, a2, a3, agent, a5, a6, a7, a8);
 }
@@ -395,7 +395,7 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
     uint32_t noun = game::noun_id(b);
     if (is_host()) {
         broadcast_building(city, noun, pos); // every building the host gets appears on the guests
-    } else if (is_guest() && (uintptr_t)ret == H->rebase(kPlannerAddBuildingRet)) {
+    } else if (is_guest() && (uintptr_t)ret == a_PlannerAddBuildingRet) {
         // the guest placed a building in its city planner: the host builds the same one
         int ci = host_index_of_city(city);
         if (ci >= 0) {
@@ -414,14 +414,14 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
 // without this its cities grew on their own and got the host's buildings on top (NPC cities had
 // more buildings on the guest after a minute). Only the two AI growth callers are blocked;
 // CreateBuildingByType (0xBE74A0, the fill-the-city loop 0xCFB827 waits for the count) is not.
-constexpr uintptr_t kGrowthRetBudget = 0xBE5BB3, kGrowthRetNew = 0xBE616E;
+// return addresses: SporeCoop::CivGrowth_Budget_Ret / CivGrowth_New_Ret
 using CreateBuilding_t = void*(SK_THISCALL*)(void*, uint32_t, uint32_t);
 static CreateBuilding_t o_CreateBuilding;
 static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t type)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv &&
-        (ret == H->rebase(kGrowthRetBudget) || ret == H->rebase(kGrowthRetNew))) {
+        (ret == a_GrowthRetBudget || ret == a_GrowthRetNew)) {
         g_growth_blocked++;
         return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD)
     }
@@ -776,6 +776,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_DestroyBuilding, "Simulator::cCity::DestroyBuilding"},
         {&a_CombatantDamage, "Simulator::cCombatant::TakeDamage"},
         {&a_AddMoney, "Simulator::cCivilization::AddMoney"},
+        {&a_VehicleVt, "Simulator::cVehicle::vftable"},
+        {&a_PlannerAddBuildingRet, "SporeCoop::CityPlanner_AddBuilding_Ret"},
+        {&a_GrowthRetBudget, "SporeCoop::CivGrowth_Budget_Ret"},
+        {&a_GrowthRetNew, "SporeCoop::CivGrowth_New_Ret"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -1766,7 +1770,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "siege" && is_host()) { // siege <city> <player>: capture damage by that player
         size_t ci = (size_t)atoi(a[1].c_str());
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
-        uintptr_t ctxf = H->rebase(0x1021150);
+        uintptr_t ctxf = H->sym("Simulator::GetActivePlanetRecord");
         if (!city)
             return "no such city";
         void* pc = player_civ();

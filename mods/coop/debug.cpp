@@ -254,7 +254,7 @@ int c_savedb(void*, int, const char* const*, SkOut* out)
 int c_loadhook(void*, int, const char* const*, SkOut* out)
 {
     if (!o_LoadGame)
-        H->hook_create(g_self, (void*)H->rebase(0x00B271A0), (void*)h_LoadGame, (void**)&o_LoadGame);
+        H->hook_create(g_self, (void*)H->sym("Simulator::cGamePersistenceManager::LoadGame"), (void*)h_LoadGame, (void**)&o_LoadGame);
     SAY("LoadGame logging hook installed");
     return 0;
 }

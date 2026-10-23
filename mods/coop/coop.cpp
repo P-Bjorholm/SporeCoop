@@ -498,8 +498,8 @@ bool open_own_editor(uint32_t editor_id)
     void* av = game::avatar();
     if (!ctor || !submit || !av)
         return false;
-    // the game's operator new (0xF47240: size, name, 0, 0, 0, 0), as at 0xD42F1E
-    void* req = skg::cdecl_call<void*>(H->rebase(0xF47240), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    // the game's operator new (GeneralAllocator::new_: size, name, 0, 0, 0, 0), as at 0xD42F1E (GOG 2016)
+    void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
     skg::thiscall<void*>(ctor, req);
     skg::field<uint32_t>(req, 0xC) = editor_id ? editor_id : 0x465C50BAu; // CreatureEditorExtraLarge
     game::Key k = game::species_key(av);
@@ -2408,7 +2408,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                SAY("not possible here");
                                return 1;
                            }
-                           void* req = skg::cdecl_call<void*>(H->rebase(0xF47240), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+                           void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
                            skg::thiscall<void*>(ctor, req);
                            skg::field<uint32_t>(req, 0xC) = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0x465C50BAu;
                            game::Key k = game::species_key(av);

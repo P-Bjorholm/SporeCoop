@@ -31,9 +31,9 @@ constexpr uintptr_t kTribePosOff = 0x124;  // cTribe spatial position
 constexpr uintptr_t kOwnerTribeOff = 0x1014; // cCreatureCitizen::mpOwnerTribe
 constexpr uintptr_t kAgeOff = 0xB34;       // 0 baby, 1 adult
 constexpr uintptr_t kSelectedOff = 0x12C;  // spatial+0x6C IsSelected
-constexpr uintptr_t kCitizenVt = 0x0146B818;
+static uintptr_t a_CitizenVt; // Simulator::cCreatureCitizen::vftable
 constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit trees), not a cGameData
-constexpr uintptr_t kTreeVt = 0x0145D160;    // cTreeData main vtable
+static uintptr_t a_TreeVt;    // Simulator::cTreeData::vftable (main vtable)
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
     a_SetSelected, a_CreateCitizen, a_AddMember;
@@ -51,7 +51,7 @@ static void* player_tribe()
     return nm ? thiscall<void*>(a_GetPlayerTribe, nm) : nullptr;
 }
 
-static bool is_citizen(void* c) { return c && !IsBadReadPtr(c, 8) && *(uintptr_t*)c == H->rebase(kCitizenVt); }
+static bool is_citizen(void* c) { return c && !IsBadReadPtr(c, 8) && *(uintptr_t*)c == a_CitizenVt; }
 
 static std::vector<void*> members(void* t)
 {
@@ -86,7 +86,7 @@ static net::Vec3 tribe_pos(void* t)
 // ---- planet trees (docs/re/tribe.md, "Trees"): the flora object keeps a sorted vector of patches,
 // each patch has three fixed_vectors of intrusive_ptr<cTreeData>; a tree's position is at +0x10.
 // Gather orders on a fruit tree name a cTreeData, which is no cGameData: it is found by position.
-static bool is_tree(void* t) { return t && !IsBadReadPtr(t, 0x20) && *(uintptr_t*)t == H->rebase(kTreeVt); }
+static bool is_tree(void* t) { return t && !IsBadReadPtr(t, 0x20) && *(uintptr_t*)t == a_TreeVt; }
 
 template <typename Fn>
 static void for_each_tree(Fn fn)
@@ -361,8 +361,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetSelected = H->sym("Simulator::cCreatureCitizen::SetSelected");
     a_CreateCitizen = H->sym("Simulator::cTribe::CreateCitizen");
     a_AddMember = H->sym("Simulator::cTribe::AddMember");
+    a_CitizenVt = H->sym("Simulator::cCreatureCitizen::vftable");
+    a_TreeVt = H->sym("Simulator::cTreeData::vftable");
     g_ok = a_GetPlayerTribe && a_DoAction && a_SetValueVector3 && a_BTTick && a_DoActionForObjects && a_WalkSelected &&
-           a_SetSelected && a_CreateCitizen && a_AddMember;
+           a_SetSelected && a_CreateCitizen && a_AddMember && a_CitizenVt && a_TreeVt;
     if (!g_ok) {
         H->log(M, SK_WARN, "tribe: symbols missing, tribe co-op disabled");
         return false;
