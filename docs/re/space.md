@@ -628,6 +628,12 @@ Found while fixing "loading a Cell save from the Space stage crashes" (branch fi
   (✔ runtime, negative result). Who clears +0x04/+0x08 before the handler: not found (?).
 * Stack signature: `GetSolarSystem+0x3` ← 0x10038A6 ← 0xFDAA2F ← 0xFDD0CF, with 01654C08 01654C05
   (new, old mode) on the stack.
+* It does not depend on the stage of the save: Space → Space crashes the same way (nightly chaos
+  run, lane 1: a guest in Space left, joined again and loaded the re-sent world in game; reproduced
+  on lane 5 with the pre-fix build by `coop_stage_switch.py --steps space,rejoin`). Both runs were in
+  a solar system (context 1). Host `coop.load` space → space in warm resets did not crash in the lab;
+  why is open (?) — perhaps another context (planet/galaxy) at that moment; `ReloadCurrentGame` in a
+  system crashed (✔).
 
 ### 8.2 The native way out: quit message 0x4715068 (✔)
 * `Simulator_HandleMessage` 0xB63610 (`thiscall(this, msgId, data) ret 8`), message 0x4715068:
@@ -638,7 +644,9 @@ Found while fixing "loading a Cell save from the Space stage crashes" (branch fi
   `MessagePost` (IMessageManager vt 0x18, 4 arguments) like `kMsgSaveGame`.
 * From the menu, `world::load_now` (Close/SetLocation/Open of DB 0x4729A47, `ReadStarsFromSaveDB`,
   `LoadGameByName`) works for every stage. SporeCoop loads every save requested while a stage runs
-  this way (`world.cpp load_slot`): host `coop.load`, guest received world. Timing: menu after
+  this way (`world.cpp load_slot`): host `coop.load`, guest received world (also Space → Space).
+  A host reload of the same stage sends no world (coop.cpp `on_mode_change`: not a new stage); the
+  guest keeps its own copy until it rejoins. Timing: menu after
   ~1 s, 3 s settle, host in the target stage ~5–6 s after the request, guest together ~16–18 s.
 * Other in-game loads seen to go wrong (all avoided by the menu route): a guest in Cell loading a
   world in game crashed in `modes::cell_fill` (cell pool freed under the cached local cell, coop.dll);
