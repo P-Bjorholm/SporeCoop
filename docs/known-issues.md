@@ -36,20 +36,17 @@ Fixed entries move to the commit message (and a test).
   during `coop.tribe epic hit` (monitor: FROZE); not reproduced in 14 more runs. The game logs of
   that run were lost (now kept by lab.py). Hunt: `lab.py run tribe_play,chaos_tribe --repeat 10`.
 
-## Cell: the host's NPCs hunt the host, rarely the guest
+## Cell: a guest far from the host swims in an empty pool
 
-* In `play_cell.py` sessions the host's NPCs chased the host 620-2680 bot samples and the guest's
-  cell 36-117; damage taken host 25-86 hp, guest 16-34 hp; knockouts host 3-16, guest 1 per session
-  (docs/stability/cell.md). The NPC AI picks the avatar (`G+0x411C`) as its prey; the guest's
-  puppet on the host is not damageable there (no AI, not the avatar: IsDamageable 0xE52950), so a
-  host NPC's bite on it never reaches the guest (`hurt_fwd` = 0 in every run). The guest is only
-  bitten when its own cell bumps into a mirror on its machine (`hurt_local`). Playing the guest is
-  safer; a hunted host respawned small can be hunted down again and again (play10: 12 respawns).
-* Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 8` and compare
-  "damage taken" and "host NPCs chasing" at the end.
-* A fix needs the NPC target choice to consider the partner's cell (the chase target `+0x22C` is
-  written in 0xE57692/0xE576CC/0xE70EC6/0xE71EC0 ...) and the host to forward such a bite to its
-  owner (`MSG_CELL_HIT`, already handled by the guest).
+* The host simulates and sends only the cells around its own cell (its active tiles, docs/re/cell.md
+  5; `host_tick` sends cells within 120 m of the host's avatar), the guest spawns none of its own. A
+  guest more than ~100 m away meets no NPCs and no food until it comes back (play_cell seed 9,
+  2026-10-23: partner 211 m away at the end, the guest's 538 local cells were all around the host;
+  the pair was over 60 m apart half the session). Not unfair in itself (no NPC there to hunt either
+  player), but the guest eats less there. A fix needs the host to populate and keep tiles around
+  each partner (PopulateTiles 0xE7D370 around `G+0x4128` is the host's view only).
+* Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 9` and watch
+  `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
 
 ## coop_civ_play: the guest's "I'm ready" click was lost twice
 

@@ -1142,36 +1142,43 @@ static std::string see(int max)
 
 // the NPCs within r of a player: what the game's own target tests say about each player
 // (docs/re/cell.md 9): prey (chase) / threat (flee) and the current chase target
-static std::string prey_report(float r)
+static std::string prey_report(float r, bool rows)
 {
     uint8_t* av = avatar();
     if (!a_TargetParams || !a_IsPrey || !a_IsThreat || !a_GetData)
         return "symbols missing";
-    std::vector<std::pair<std::string, uint8_t*>> players{{"me", av}};
+    struct Pl {
+        std::string name;
+        uint8_t* c;
+        // NPCs within r / in their prey range and IsPrey / in their threat range and IsThreat / chasing it
+        int around = 0, prey = 0, threat = 0, chasing = 0;
+    };
+    std::vector<Pl> players{{"me", av}};
     if (C.puppets)
         for (auto& p : C.puppets())
             if (p.cell)
                 players.push_back({p.name, (uint8_t*)p.cell});
     std::string out;
     char b[256];
-    for (auto& [name, pc] : players) {
+    for (auto& pl : players) {
+        uint8_t* pc = pl.c;
         // scale difference me -> player (2 = same level)
         int sd = a_ScaleDiff ? skg::cdecl_call<int>(a_ScaleDiff, av, pc) : -1;
         snprintf(b, sizeof b, "player %s idx=%u level=%d scale_diff=%d lock189=%d dead=%d invuln=%d size=%.2f pos=(%.1f %.1f)\n",
-                 name.c_str(), F<uint32_t>(pc, 0), F<int>(pc, kLevel), sd, F<uint8_t>(pc, 0x189), F<uint8_t>(pc, kDead),
+                 pl.name.c_str(), F<uint32_t>(pc, 0), F<int>(pc, kLevel), sd, F<uint8_t>(pc, 0x189), F<uint8_t>(pc, kDead),
                  F<uint8_t>(pc, kInvuln), F<float>(pc, kSize), pos_of(pc).x, pos_of(pc).y);
-        out += b;
+        if (rows)
+            out += b;
     }
-    int n = 0;
+    int n = 0, compared = 0, differ = 0; // NPCs whose answers for a partner differ from those for us
     for_each_cell([&](uint8_t* c, uint32_t idx) {
-        if (modes::cell_is_puppet(c) || strcmp(kind_of(c), "creature") != 0 || n >= 40)
+        if (modes::cell_is_puppet(c) || strcmp(kind_of(c), "creature") != 0)
             return;
         float best = 1e9f;
         for (auto& pl : players)
-            best = std::min(best, net::dist(pos_of(c), pos_of(pl.second)));
+            best = std::min(best, net::dist(pos_of(c), pos_of(pl.c)));
         if (best > r)
             return;
-        n++;
         void* holder = nullptr;
         uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
         if (holder)
@@ -1182,16 +1189,36 @@ static std::string prey_report(float r)
         skg::cdecl_call<void>(a_TargetParams, c, res, params);
         snprintf(b, sizeof b, "npc %u level=%d chase=%u flee=%u ranges=%.1f/%.1f", idx, F<int>(c, kLevel),
                  F<uint32_t>(c, kChase), F<uint32_t>(c, kFlee), F<float>(params, 0), F<float>(params, 4));
-        out += b;
-        for (auto& [name, pc] : players) {
-            bool prey = skg::cdecl_call<bool>(a_IsPrey, c, pc, params);
-            bool threat = skg::cdecl_call<bool>(a_IsThreat, c, pc, params);
-            snprintf(b, sizeof b, " | %s d=%.1f prey=%d threat=%d", name.c_str(), net::dist(pos_of(c), pos_of(pc)),
-                     (int)prey, (int)threat);
-            out += b;
+        std::string row = b;
+        int mine = -1;
+        for (auto& pl : players) {
+            bool prey = skg::cdecl_call<bool>(a_IsPrey, c, pl.c, params);
+            bool threat = skg::cdecl_call<bool>(a_IsThreat, c, pl.c, params);
+            int ans = prey * 2 + threat;
+            if (mine < 0)
+                mine = ans;
+            else {
+                compared++;
+                differ += ans != mine;
+            }
+            float d = net::dist(pos_of(c), pos_of(pl.c));
+            pl.around += d <= r;
+            pl.prey += prey && d <= F<float>(params, 0);
+            pl.threat += threat && d <= F<float>(params, 4);
+            pl.chasing += F<uint32_t>(c, kChase) == F<uint32_t>(pl.c, 0);
+            snprintf(b, sizeof b, " | %s d=%.1f prey=%d threat=%d", pl.name.c_str(), d, (int)prey, (int)threat);
+            row += b;
         }
-        out += "\n";
+        if (rows && n++ < 40)
+            out += row + "\n";
     });
+    snprintf(b, sizeof b, "prey_rules compared=%d differ=%d\n", compared, differ);
+    out += b;
+    for (size_t i = 0; i < players.size(); i++) {
+        snprintf(b, sizeof b, "prey_sum %s around=%d prey=%d threat=%d chasing=%d\n", i ? "partner" : "me", players[i].around,
+                 players[i].prey, players[i].threat, players[i].chasing);
+        out += b;
+    }
     return out;
 }
 
@@ -1235,7 +1262,7 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
     if (!a.empty() && a[0] == "prey")
-        return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f);
+        return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f, a.size() < 3 || a[2] != "sum");
     if (!a.empty() && a[0] == "bite") { // our avatar bites the nearest mirror (through DamageCell)
         uint8_t* best = nullptr;
         float bd = 1e9f;
