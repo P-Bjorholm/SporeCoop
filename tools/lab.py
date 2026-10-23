@@ -81,7 +81,23 @@ def save_game_logs(lane, logdir, name):
             shutil.copy(src, os.path.join(logdir, f'{name}.{who}.game.log'))
 
 
+def preflight():
+    """the machine can start games: the Flatpak document portal (its FUSE mount) is needed by every
+    Bottles launch; it vanished once for minutes (2026-10-22) and every start failed"""
+    doc = f'/run/user/{os.getuid()}/doc/by-app/com.usebottles.bottles'
+    if os.path.isdir(doc):
+        return True
+    print('  (environment: the document portal is gone - restarting it)', flush=True)
+    subprocess.run(['systemctl', '--user', 'restart', 'xdg-document-portal'], capture_output=True)
+    for _ in range(20):
+        time.sleep(0.5)
+        if os.path.isdir(doc):
+            return True
+    return False
+
+
 def run_one(t, lane, tree, logdir, warm, suffix=''):
+    preflight()
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1')
     log = os.path.join(logdir, t['name'] + suffix + '.log')
     t0 = time.time()
@@ -98,8 +114,10 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     text = open(log, errors='replace').read()
     has_result = 'RESULT:' in text or t['cmd'].startswith('make')
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result
+    # the machine, not the mod: the game did not even start
+    env = not ok and ('did not start' in text or "bwrap: Can't find" in text)
     m = re.search(r'\((both games ready|warm reset) in (\d+) s', text)
-    return dict(name=t['name'], lane=lane, ok=ok, rc=rc, harness=not has_result or 'Traceback' in text,
+    return dict(name=t['name'], lane=lane, ok=ok, rc=rc, env=env, harness=not has_result or 'Traceback' in text,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
                 fails=[l.strip() for l in text.splitlines() if l.strip().startswith('FAIL')][:8],
                 faults=[l.strip() for l in text.splitlines() if ' faults: ' in l and 'total faults: 0' not in l],
@@ -151,7 +169,14 @@ def cmd_run(a):
             warm_ok = False
         else:
             warm_ok = True
-        if not r['ok'] and a.retry:  # once more on a clean lane: passing then = flaky
+        for k in range(2):  # environment trouble (the game did not start): again, not counted as flaky
+            if r['ok'] or not r.get('env'):
+                break
+            spore(tree, lane, 'kill')
+            time.sleep(5)
+            r = run_one(t, lane, tree, logdir, False, f'.env{k + 1}')
+            r['env_retries'] = k + 1
+        if not r['ok'] and a.retry and not r.get('env'):  # once more on a clean lane: passing = flaky
             r2 = run_one(t, lane, tree, logdir, False, '.retry')
             r2['flaky'] = r2['ok']
             r2['first'] = r['fails'] or ['no RESULT (harness)']
