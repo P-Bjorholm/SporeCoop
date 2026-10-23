@@ -188,6 +188,12 @@ Simulator::cAppModeSpace::LeavePlanet=0x00FDE3D0 ; verified thiscall(mode, bool)
 Simulator::cSimulatorSpaceGame::DestroyNPCUFOs=0x01009310 ; verified thiscall(ssg, bool keepAmbush, bool keepPosse, bool) ret 0xC
 Simulator::cGameDataUFO::PlayerDestroyed=0x00C3C660 ; verified thiscall(ufo) ret: death cinematic, sets +0x7F0, hides ship (called from TakeDamage at HP<=0, type 0)
 Simulator::cGameDataUFO::Respawn=0x00C38420 ; verified thiscall(ufo) ret: travel to nearest owned star, state 0, HP/energy = max
+SporeCoop::cGameDataUFO_HandleMessage=0x00C3B6A0 ; verified thiscall(ufo+0x5E8, msg, data) ret 8: msg 0x44F1189 (cinematic ended) or 0x67B2A95 (own retry) with +0x7F0 set -> Respawn, or re-post 0x67B2A95 while cSimulatorSpaceGame_Busy (runtime 2026-10-22)
+SporeCoop::cSimulatorSpaceGame_Busy=0x00B18D50 ; verified thiscall(spaceGame) -> bool: any bit of [+0x50] set (Respawn waits while true)
+SporeCoop::cSimulatorSpaceGame_HandleMessage=0x0100B730 ; verified thiscall(spaceGame+0x10, msg, data) ret 8; 0x44F1189 with data+8 == id of CVG2SPG_short / CVG2SPG (the respawn caption) -> player UFO +0x6B4/+0x6B8 = 1.0 and [spaceGame+0x54]->0xFF59D0, which faults (AV 0x7CFCC0, data 0x1E4) when +0x54 is null (ship left the planet) (runtime)
+Simulator::cCinematicManager::Get=0x00B3D5A0 ; verified cdecl() -> [0x167FB30]; +0x2C state (0 none, 2 playing, runtime), +0x148 id of the running cinematic, +0x15F cinematics enabled (PlayCinematic returns 0 when 0), +0x140 registry (vt+0x38 name -> id)
+Simulator::cCinematicManager::PlayCinematic=0x00AE0880 ; verified thiscall(mgr, const char* name, int, int, int, int, int) ret 0x18: name -> id, then 0xADFCB0 (start; a cinematic started while another plays does not replace +0x148)
+SporeCoop::cCinematicManager_EndCinematic=0x00ADFF20 ; verified thiscall(mgr) ret: if +0x2C: stop, +0x148 -> 0, posts 0x44F1189 with data+8 = the ended id (MessageSend, IMessageManager vt 0x14); called on msg 0x44EE075 (caption OK button / Enter, runtime)
 Simulator::cCombatant::AddHealth=0x00BFD2C0 ; verified thiscall(combatant, float) ret 4: HP += x (clamped), state(+0x34) := 0, ignores invincible
 Simulator::cCombatant::SetHealth=0x00F92480 ; verified thiscall(combatant, float) ret 4: writes +0x38
 Simulator::cStarManager::GetStarRecord=0x00BA6EB0 ; verified thiscall(starMgr, StarID) ret 4

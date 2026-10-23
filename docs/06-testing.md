@@ -136,3 +136,16 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * A real missing partner (`partner_dist=-1` on the guest, no puppet, bites and food still work)
   was the host's "game saved" box left open (fixed 2026-10-22): look at the host screenshot
   first. A host that "moves" 0.00 m in the sync samples is paused the same way.
+
+## 6.8 Captions that wait for the player
+
+* Some cinematics stop with a caption and a green check button and wait for OK as long as it
+  takes, e.g. the Space death caption ("...you return to your homeworld") and the respawn caption
+  ("We've built you a new ship..."). The ship respawns only after OK. Tests press it with
+  `key enter` (works on an unfocused window in background mode); `coop.space hp` shows `cine=1`
+  while the death caption is up and `movie=1` while any cinematic runs. A test that waits for a
+  respawn without pressing OK waits forever (that was the "respawn never came" of
+  `coop_space_play.py`, 2026-10-22; see docs/re/space.md 7.2.1).
+* The player's ship in a star system can not be moved away from a test: writing its position or
+  calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
+  to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
