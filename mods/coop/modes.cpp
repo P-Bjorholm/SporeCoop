@@ -198,6 +198,9 @@ uint8_t* cell_game()
 
 // cObjectPoolIndex = slot (low 16 bits) | generation (high 16); the object's first field holds
 // its own full index while it lives (cObjectPool::GetIfNotDeleted 0xB72290)
+// particle arrays of the cell soft bodies: positions at +4, velocities at +0x4654 = 4 + 1500*12
+constexpr uint32_t kCellParticles = 1500;
+
 uint8_t* cell_at(uint32_t idx)
 {
     uint8_t* g = cell_game();
@@ -212,17 +215,29 @@ uint8_t* cell_at(uint32_t idx)
     return *(uint32_t*)c == idx ? c : nullptr;
 }
 
-void cell_move(uint8_t* c, const net::Vec3& p)
+// A cell with a soft body (GFX +0x248 set, particle count +0x250 > 1) gets +0x4C and +0x90 back
+// from its particles every cell step (0xE7C080 -> 0xE553B0): particle i = *(u32*)(c+0x254+4i),
+// position at parts+4+12i, velocity at parts+0x4654+12i (parts = *(G+0x4108)). Moving the cell
+// moves the particle positions; `still` also stops them (a teleport). Writing the velocities
+// instead (as this did until 2026-10-22) made the cell glide there and overshoot by metres.
+void cell_move(uint8_t* c, const net::Vec3& p, bool still)
 {
     auto* pos = (float*)(c + 0x4C);
     float d[3] = {p.x - pos[0], p.y - pos[1], p.z - pos[2]};
     int n = *(int*)(c + 0x250);
     uint8_t* g = cell_game();
     uint8_t* parts = g ? *(uint8_t**)(g + 0x4108) : nullptr;
-    if (*(uint32_t*)(c + 0x248) && parts && n > 1 && n <= 80)
+    if (*(uint32_t*)(c + 0x248) && parts && n > 1 && n <= 64) // +0x254..+0x353: at most 64 indices
         for (int i = 0; i < n; i++) {
-            auto* q = (float*)(parts + 0x4654 + 12 * (size_t)*(uint32_t*)(c + 0x254 + 4 * i));
+            uint32_t k = *(uint32_t*)(c + 0x254 + 4 * i);
+            if (k >= kCellParticles)
+                continue;
+            auto* q = (float*)(parts + 4 + 12 * (size_t)k);
             q[0] += d[0]; q[1] += d[1]; q[2] += d[2];
+            if (still) {
+                auto* v = (float*)(parts + 0x4654 + 12 * (size_t)k);
+                v[0] = v[1] = v[2] = 0;
+            }
         }
     pos[0] = p.x; pos[1] = p.y; pos[2] = p.z;
     auto* prev = (float*)(c + 0x84);

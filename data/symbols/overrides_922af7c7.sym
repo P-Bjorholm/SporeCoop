@@ -226,3 +226,5 @@ SporeCoop::PlanetModelCleanup=0x00B7D650 ; verified thiscall([0x167FADC], cPlane
 SporeCoop::PlanetModelMgr_ptr=0x0167FADC ; verified global, `this` of PlanetModelCleanup
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; likely thiscall(mode) ret: Respawn's landing, enters the active planet (context 0 via 0x1003530)
 SporeCoop::GetPlayerHomePlanetRecord=0x01021220 ; verified cdecl() -> cPlanetRecord* (docs/re/space.md 7.1)
+Simulator::Cell::UpdateCellPhysics=0x00E7C080 ; likely cdecl(cell*, res* (no movement when res+0xB4 cellType == 0), float dt) - soft-body part verified (disassembly + runtime 2026-10-22): soft body (+0x248 && +0x250>1): particle velocities += +0x1C4*dt, then +0x4C/+0x90 = 0xE553B0 average; else vel/pos integration; destroys cells outside the active tiles unless +0x354 (docs/re/cell.md §2, §6)
+Simulator::Cell::AverageParticles=0x00E553B0 ; verified (disassembly + runtime 2026-10-22) custom: ECX = Vec3* outPos, EAX = Vec3* outVel (cell+0x90), stack (int n, u32* indices), caller pops 8; pos = mean of *(G+0x4108)+4+12*i, vel = mean of +0x4654+12*i

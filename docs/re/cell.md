@@ -204,10 +204,18 @@ thresholds every 50 points (0,50,100,…).
 
 ## 6. Avatar move / respawn, regen
 
-- **The avatar has a soft body**: 0xE7C080 recomputes its `+0x4C` every frame as the centroid of
-  its particles when `+0x248` (GFX) ≠ 0 and `+0x250` (particle count) > 1: indices `+0x254[i]`
-  into `*(G+0x4108) + 0x4654 + 12*idx` (Vec3), body velocity `+0x1C4` is added to them. Writing
-  `+0x4C` alone is undone the next frame ✔ — translate every particle by the same delta.
+- **The avatar has a soft body** ✔ (disassembly + runtime 2026-10-22): when `+0x248` (GFX) ≠ 0
+  and `+0x250` (particle count) > 1, 0xE7C080 adds `accel(+0x1C4)·dt` to each particle velocity
+  and then `0xE553B0` (custom: `ECX = &outPos, EAX = &cell+0x90`, stack `(int n, u32* idx)`)
+  averages the particles: `+0x4C` = mean **position** `parts + 4 + 12·idx`, `+0x90` = mean
+  **velocity** `parts + 0x4654 + 12·idx` (`parts = *(G+0x4108)`, indices `+0x254[i]`, at most 64
+  of them up to +0x353; 0x4650 = 1500 × 12 ⇒ 1500 particle slots). Writing `+0x4C` alone is undone
+  the next frame — translate the particle positions by the same delta, and zero the particle
+  velocities to stop it (`modes::cell_move(c, p, still)`). Until 2026-10-22 the mod added the
+  delta to the velocity array (the old note named +0x4654 as positions): a "teleport" then
+  glided there in ~2 s and overshot by 4–6 m, the knockout respawn landed 7–40 m from the
+  partner. The particle count changes with the size (4 at size 0.55, 1 at 0.28: then +0x4C is
+  written by plain physics). NPC cells/puppets seen with n = 1 or 4.
 - Size ✔: `SetCellSize` 0xE57190 (EAX = cell index, stack float factor): `+0xB4` target =
   factor·√c·G+0x514C/G+0x5150, `+0xB8` = size²·k (mass), `+0xBC` = c/`+0xB8`; AddFoodPoints calls
   it for the avatar on a level change (factor from the level table 0x14846B0 `+0x0C`); the
