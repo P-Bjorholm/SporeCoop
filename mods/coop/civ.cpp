@@ -25,8 +25,10 @@ static bool g_ok;
 // ---- layout (docs/re/civ.md) ----
 constexpr uintptr_t kVehicleVt = 0x014756D8;
 constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
-                    kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30;
-constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C;
+                    kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
+                    kVOrders = 0xB68;
+constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C,
+                    kCityCapture = 0x748; // + 4: capturing political id
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uint32_t kMsgActivated = 0x287259F6, kBtnLand = 0x62D6902, kBtnWater = 0x62D6908, kBtnAir = 0x62D690F,
@@ -37,7 +39,7 @@ static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_P
     a_CreateVehicle, a_SlotsLeft, a_VehicleCost, a_DesignKey, a_DesignId, a_SpawnVehicle, a_AddBuilding,
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
     a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
-    a_NodeClaim, a_NodeUnclaim;
+    a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -103,7 +105,7 @@ static std::unordered_map<uint16_t, void*> g_hv_by_id;
 static uint16_t g_next_id = 1;
 static double g_last_send;
 static uint16_t g_cycle;
-static uint32_t g_cmds_done, g_cmds_rejected, g_builds_sent;
+static uint32_t g_cmds_done, g_cmds_rejected, g_builds_sent, g_unselected;
 static int g_build_from = -1; // guest whose build is being executed (not echoed back to it)
 static int g_pending_owner = -1; // owner of the vehicle the host is about to spawn for a guest
 static std::vector<uint8_t> g_split_for;
@@ -341,6 +343,10 @@ static uint32_t type_for_noun(uint32_t noun)
 static void broadcast_building(void* city, uint32_t noun, const net::Vec3& pos)
 {
     int ci = host_index_of_city(city);
+    if (ci < 0) { // a city founded this frame (its first buildings come at once): the list is 0.1 s old
+        g_host_cities = all_cities();
+        ci = host_index_of_city(city);
+    }
     if (ci < 0 || !type_for_noun(noun))
         return;
     net::Writer w;
@@ -395,6 +401,32 @@ static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t ty
         return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD)
     }
     return o_CreateBuilding(city, noun, type);
+}
+
+// New cities of other nations appear over time at the planet's city sites (0xAE3A80 picks the next
+// free site, the city materializes a few seconds later through a timed callback, docs/re/civ.md 9).
+// The guest's own planet tick founded cities the host never had (and the host's came without their
+// first buildings): guests only found the cities the host founds, in the same order.
+constexpr uint8_t kNextCitySite = 0xFF; // MSG_CIV_BUILD city index: "found the next city site", noun 0
+using SpawnNextCity_t = bool(SK_THISCALL*)(void*, void*, int);
+static SpawnNextCity_t o_SpawnNextCity;
+static uint32_t g_cities_founded, g_cities_in, g_cities_blocked;
+static bool SK_THISCALL h_SpawnNextCity(void* ex, void* who, int flag)
+{
+    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+        g_cities_blocked++;
+        return false; // both callers ignore the result
+    }
+    bool r = o_SpawnNextCity(ex, who, flag);
+    if (r && is_host() && game::mode_id() == modes::kCiv && !who && !flag) {
+        net::Writer w;
+        w.u8(kNextCitySite);
+        w.u32(0);
+        w.f32(0); w.f32(0); w.f32(0);
+        C.sess->broadcast_reliable(net::MSG_CIV_BUILD, w);
+        g_cities_founded++;
+    }
+    return r;
 }
 
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
@@ -696,6 +728,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_CreateBuilding, "Simulator::cCity::CreateBuilding"},
         {&a_NodeClaim, "Simulator::cCommodityNode::Claim"},
         {&a_NodeUnclaim, "Simulator::cCommodityNode::Unclaim"},
+        {&a_SetCapture, "Simulator::cCity::SetCaptureProgress"},
+        {&a_SpawnNextCity, "Simulator::cCivExpansion::SpawnNextCity"},
+        {&a_ExpansionGet, "Simulator::cCivExpansion::Get"},
+        {&a_CinematicMgr, "Simulator::cCinematicManager::Get"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -713,6 +749,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_AddBuilding, (void*)h_AddBuilding, (void**)&o_AddBuilding);
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
+    H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -823,13 +860,48 @@ static std::vector<std::pair<net::Vec3, uint32_t>> spice_nodes()
 }
 
 static void boost_tick(double now);
+// a vehicle given away (or taken by a capture) stays selected on the giver's screen and its orders
+// went to the game directly on the host: only the owner keeps a vehicle selected
+static void drop_foreign_selection()
+{
+    uint8_t me = C.sess->my_id();
+    for (void* v : all_vehicles())
+        if (F<uint8_t>(v, kVSelected)) {
+            uint8_t o = owner_of_vehicle(v);
+            if (o != 0xFF && o != me) {
+                thiscall<int>(a_SetSelected, (uint8_t*)v + kVSpatial, 0);
+                g_unselected++;
+            }
+        }
+}
+
+// The host's world stands still while one of its cinematics plays (a captured city's caption waits
+// for OK): everybody is told why the vehicles stopped
+static bool g_movie;
+static bool movie_playing()
+{
+    void* cm = a_CinematicMgr ? skg::cdecl_call<void*>(a_CinematicMgr) : nullptr;
+    return cm && F<uint32_t>(cm, 0x2C) != 0;
+}
+static void movie_tick()
+{
+    bool on = movie_playing();
+    if (on == g_movie)
+        return;
+    g_movie = on;
+    if (on && C.notice)
+        C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK");
+}
+
 static void host_tick(double now)
 {
     trade_tick(now);
     boost_tick(now);
+    movie_tick();
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;
+    drop_foreign_selection();
     std::vector<uint8_t> players;
     for (auto& p : C.sess->players())
         players.push_back(p.id);
@@ -880,6 +952,8 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.u32(pol_of(c));
             w.u8(owner_of_city(c));
+            w.f32(F<float>(c, kCityCapture)); // military capture progress (the meter over the city)
+            w.u32(F<uint32_t>(c, kCityCapture + 4));
         }
         size_t from = k * per, to = std::min(vehicles.size(), from + per);
         w.u8((uint8_t)(to - from));
@@ -1102,6 +1176,8 @@ static void guest_state(net::Reader& r)
             p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
             uint32_t pol = r.u32();
             uint8_t owner = r.u8();
+            float capture = r.f32();
+            uint32_t capture_by = r.u32();
             void* c = local_city_near(p);
             g_host_cities[i] = c;
             if (!c)
@@ -1113,6 +1189,14 @@ static void guest_state(net::Reader& r)
                 thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
                 g_applying = false;
                 g_captures_in++;
+            }
+            // the siege meter: the guest's city is never hit (its mirrors do not shoot), so its own
+            // progress stays 0 (and decays): show the host's (SetCaptureProgress updates the meter)
+            if (std::isfinite(capture) && (std::fabs(F<float>(c, kCityCapture) - capture) > 0.5f ||
+                                           F<uint32_t>(c, kCityCapture + 4) != capture_by)) {
+                g_applying = true;
+                thiscall<void>(a_SetCapture, c, capture_by, capture);
+                g_applying = false;
             }
         }
     }
@@ -1216,6 +1300,11 @@ static void guest_state(net::Reader& r)
 
 static void guest_tick(double now)
 {
+    static double last_sel;
+    if (now - last_sel > 0.2) {
+        last_sel = now;
+        drop_foreign_selection();
+    }
     for (auto& [id, g] : g_gv) {
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
             continue;
@@ -1241,6 +1330,15 @@ static void guest_build(net::Reader& r)
     uint32_t noun = r.u32();
     net::Vec3 p;
     p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+    if (r.ok() && ci == kNextCitySite && noun == 0) { // the host's planet grew a new city: the same site here
+        if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet)) {
+            g_applying = true;
+            o_SpawnNextCity(ex, nullptr, 0);
+            g_applying = false;
+            g_cities_in++;
+        }
+        return;
+    }
     void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
     if (!r.ok() || !city)
         return;
@@ -1312,16 +1410,17 @@ std::string status()
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
-                 "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u\n",
+                 "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u boosts=%u "
+                 "cities_founded=%u unselected=%u movie=%d\n",
                  (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
-                 g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size());
+                 g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing());
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
-                 "orders_dropped=%u growth_blocked=%u nodes_in=%u\n",
+                 "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
-                 g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in);
+                 g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing());
     return b;
 }
 
@@ -1357,11 +1456,19 @@ std::string list()
         void* c = cities[i];
         net::Vec3 p = city_pos(c);
         uint8_t o = owner_of_city(c);
+        auto blds = vec_of((uint8_t*)c + 0x340);
+        int ruins = 0; // buildings destroyed (combatant +0x120, state +0x34 == 2; 0x8E8220)
+        float hp = 0;
+        for (void* bl : blds) {
+            ruins += F<int>(bl, 0x120 + 0x34) == 2;
+            hp += F<float>(bl, 0x120 + 0x38);
+        }
         snprintf(b, sizeof b,
-                 "city %d %p pol=%08X%s owner=%d buildings=%u pos=(%.0f %.0f %.0f) capture=%.0f/%08X convert=%.0f buy=%.0f\n",
+                 "city %d %p pol=%08X%s owner=%d buildings=%u pos=(%.0f %.0f %.0f) capture=%.0f/%08X convert=%.0f buy=%.0f "
+                 "ruins=%d hp=%.0f\n",
                  host_index_of_city(c), c, pol_of(c), pc && pol_of(c) == pol_of(pc) ? " (player)" : "",
-                 o == 0xFF ? -1 : (int)o, (unsigned)vec_of((uint8_t*)c + 0x340).size(), p.x, p.y, p.z, F<float>(c, 0x748),
-                 F<uint32_t>(c, 0x74C), F<float>(c, 0x750), F<float>(c, 0x758));
+                 o == 0xFF ? -1 : (int)o, (unsigned)blds.size(), p.x, p.y, p.z, F<float>(c, 0x748),
+                 F<uint32_t>(c, 0x74C), F<float>(c, 0x750), F<float>(c, 0x758), ruins, hp);
         out += b;
     }
     for (void* v : all_vehicles()) {
@@ -1375,9 +1482,14 @@ std::string list()
             id = it == g_gv_of.end() ? 0 : it->second;
         }
         uint8_t o = owner_of_vehicle(v);
-        snprintf(b, sizeof b, "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f)\n", id,
-                 v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
-                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z);
+        // the current order (mOrders +0xB68, element {target, pos, type, issuer}): type, -1 none
+        uint8_t* ob = F<uint8_t*>(v, kVOrders);
+        uint8_t* oe = F<uint8_t*>(v, kVOrders + 4);
+        int otype = ob && oe > ob ? *(int*)(ob + 0x10) : -1;
+        snprintf(b, sizeof b,
+                 "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d\n", id, v,
+                 pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco), F<uint8_t>(v, kVSelected),
+                 F<float>(v, kVHp), p.x, p.y, p.z, otype);
         out += b;
     }
     return out;
@@ -1503,8 +1615,8 @@ std::string debug(const std::vector<std::string>& a)
                 if (!q->h->world_to_screen(w, sc))
                     sc[0] = sc[1] = -1;
                 char line[128];
-                snprintf(line, sizeof line, "obj %p %.0f %.0f %.0f %d %d%s\n", o, p.x, p.y, p.z, (int)sc[0], (int)sc[1],
-                         q->type && !game::cast(o, q->type) ? " (not that type)" : "");
+                snprintf(line, sizeof line, "obj %p %.0f %.0f %.0f %d %d pol=%08X%s\n", o, p.x, p.y, p.z, (int)sc[0],
+                         (int)sc[1], pol_of(o), q->type && !game::cast(o, q->type) ? " (not that type)" : "");
                 q->out += line;
                 return true;
             },

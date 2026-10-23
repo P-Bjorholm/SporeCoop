@@ -81,6 +81,8 @@ Simulator::cCity::Capture=0x00BE9410 ; partly verified thiscall(polID, type, a3,
 Simulator::cCommodityNode::SetOwner=0x00BFF3F0 ; likely thiscall(node, uint32 pol, int reason) ret 8: spice node owner (+0x30 via vt 0x48), clears the buy/convert/capture ids +0x218/+0x21C/+0x220 and progress +0x224..; callers pass -1 (claim/release) or 3 (vehicle capture 0xCB95AD)
 Simulator::cCommodityNode::Claim=0x00BFF800 ; likely thiscall(node, uint32 pol) ret 4: SetOwner(pol, -1), model update 0xBFE650, mine state +0x1EC = 3 (the derrick); called by the claim behaviour 0xBC012F/0xBC0244. Applied on guests from the host snapshot (no money, no event seen at runtime)
 Simulator::cCommodityNode::Unclaim=0x00BFF870 ; likely thiscall(node) plain ret: SetOwner(-1, -1), mine state reset
+Simulator::cCivExpansion::Get=0x00B268A0 ; likely cdecl() -> the planet's city-site manager (singleton 0x167B5EC, size 0xC8, ctor 0xAE5B80; tick 0xAE6190); name is ours
+Simulator::cCivExpansion::SpawnNextCity=0x00AE3A80 ; likely thiscall(obj, bool) ret 8 -> bool: picks the free city site (records at +0x14, stride 0x64, +0x30 used, +0x40 flag) with the lowest order, --(+0xB0), schedules the city (0xB9FAE0 -> timed callback 0xB9C6E0 -> 0xB999C0 creates the cCity from the site record, AddCity). Both callers (tick 0xAE6355, cheat 0xCFDE6C) pass (0, 0) and ignore the result
 Simulator::cVehicle::SetOrder=0x00CAC180 ; verified thiscall(target, type, flag) ret 0xC
 Simulator::cVehicle::SetMoveOrder=0x00CAC260 ; verified thiscall(Vector3 by value, flag) ret 0x10
 Simulator::cVehicle::OrderStamp=0x00C9EFB0 ; partly verified thiscall(v, int) called after orders

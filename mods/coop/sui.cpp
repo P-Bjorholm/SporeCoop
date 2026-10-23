@@ -515,6 +515,24 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "%s", dump(p, 0, false).c_str());
         return 0;
     }
+    if (sub == "at" && argc > 3) { // at <x> <y>: every visible window under a screen point (game bots)
+        float x = (float)atof(argv[2]), y = (float)atof(argv[3]);
+        std::vector<Win> stack{main_window()};
+        while (!stack.empty()) {
+            Win w = stack.back();
+            stack.pop_back();
+            if (!visible(w))
+                continue;
+            Rect r = screen_rect(w);
+            bool layer = r.x1 <= 0 && r.y1 <= 0 && r.x2 - r.x1 >= 1000 && r.y2 - r.y1 >= 700; // full-screen layers
+            if (x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2 && parent(w) && !layer)
+                H->out_printf(out, "%08X %.0f %.0f %.0f %.0f enabled=%d %s '%s'\n", control_id(w), r.x1, r.y1, r.x2, r.y2,
+                              (flags(w) & kFlagEnabled) ? 1 : 0, type_name(w), caption(w).c_str());
+            for (Win c : children(w))
+                stack.push_back(c);
+        }
+        return 0;
+    }
     if (sub == "where" && argc > 2) { // where <hex id>...: screen rect of each visible window (game bots)
         for (int i = 2; i < argc; i++) {
             uint32_t id = (uint32_t)strtoul(argv[i], nullptr, 16);
@@ -590,7 +608,7 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 void register_commands()
 {
     H->command_add(M, "coop.ui",
-                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | layouts | load <inst> [group] | "
+                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
                    "show <win> [0|1] - Spore UI windows",
                    c_ui, nullptr, SK_CMD_OUTSIDE_FRAME);
 }
