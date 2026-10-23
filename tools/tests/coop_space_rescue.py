@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Space: a guest's ship shot down by the host's pirates next to the host is disabled, not destroyed,
+and the host repairs it by flying close (real fight, real input; docs/stability/space.md).
+
+Two bugs made the guest die in every real fight next to its partner (play_space.py, 2026-10-23):
+* the NPC hits the host relays to the guest (MSG_UFO_DAMAGE) went straight to the game's
+  TakeDamage, past the rescue filter that turns a lethal hit into "disabled";
+* a ship whose HP had come down to 1 or less through small hits was not disabled by the next one.
+
+Both land on the home planet, the host spawns a pirate (setup), the guest's ship is left with a few
+HP (setup: one big hit), then the pirate's shots on the guest's puppet reach the guest (the
+relay real fights use; the shots themselves come from the debug command coop.fleet hurt, because
+pirates pick their own targets, mostly the host). Checks: the guest is disabled
+(down=1, state 0), the host is told (partners_down), the host flies to it with the keys and the
+ship is repaired (rescues=1); also with HP 0.5 (the second bug)."""
+import re
+import time
+
+import lane
+from play_space import Player
+from twoinst import Checks, shot, start
+
+
+def sp(con, *a):
+    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
+
+
+def field(text, key):
+    m = re.search(r'\b' + key + (r' ' if key == 'hp' else r'=') + r'([\d.]+)', text)
+    return float(m.group(1)) if m else -1
+
+
+def main():
+    host, guest = start('space')
+    ck = Checks()
+    stats = {}
+    ph = Player('host', lane.HOST, 0, 1, time.time() + 1200, stats)
+    pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1200, stats)
+    ph.partner, pg.partner = pg, ph
+    home = '00B16021'  # Maraya, the fixture's home planet
+    for rnd, left in enumerate((5, 0.5)):
+        pg.end = time.time() + 600
+        while field(sp(guest, 'hp'), 'state') == 2 or field(sp(guest, 'hp'), 'movie') == 1:
+            pg.captions()  # a ship lost between the rounds: confirm its captions, it respawns at home
+        for p in (ph, pg):
+            if p.ctx() == 'system':
+                p.land(home)
+        ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet',
+           f'round {rnd + 1}: both on the home planet ({sp(guest, "dist")})')
+        ph.key_hold(['0x57'], 2.5)  # the host flies off a bit: it has to come back to repair
+        print('  ', sp(guest, 'dist'))
+        r0 = field(sp(guest), 'rescues')
+        # a pirate of the host shoots the guest's ship: its hit on the guest's puppet is relayed to the
+        # guest (MSG_UFO_DAMAGE), the path real fights take (the pirates choose their own targets, so
+        # the shot itself is the debug command coop.fleet hurt <ship> <player> [dmg])
+        host.call('coop.fleet spawn 2')
+        time.sleep(1)
+        ids = re.findall(r'ship #(\d+) \S+ type=2', host.call('coop.fleet list')['out'])
+        # battle damage first (one big relayed hit leaves `left` HP), then the pirate's small hits
+        hp = field(sp(guest, 'hp'), 'hp')
+        print('  ', host.call(f'coop.fleet hurt {ids[-1]} 1 {hp - left:.2f}')['out'])
+        time.sleep(1.5)
+        print('  big hit:', sp(guest, 'hp'))
+        t0, st = time.time(), ''
+        while ids and time.time() - t0 < 20:
+            st = sp(guest, 'hp')
+            if field(st, 'down') == 1 or field(st, 'state') == 2:
+                break
+            host.call(f'coop.fleet hurt {ids[-1]} 1')
+            time.sleep(0.5)
+        print(f'  after {time.time() - t0:.0f} s: {st} | {guest.call("coop.fleet list")["out"].splitlines()[0]}')
+        ck(field(st, 'down') == 1 and field(st, 'state') == 0,
+           f'round {rnd + 1}: the pirate\'s hits disabled the guest with {left} HP left, not destroyed')
+        if field(st, 'down') != 1:
+            continue
+        told = 'partners_down=1' in host.call('coop.status')['out'] or field(sp(guest), 'rescues') > r0
+        ck(told, f'round {rnd + 1}: the host is told')
+        shot(guest, f'space_rescue_down_{rnd + 1}.png')
+        ph.rescue()  # the host flies to the guest with the keys
+        t0 = time.time()
+        while time.time() - t0 < 20 and field(sp(guest), 'rescues') == r0:
+            time.sleep(1)
+        ck(field(sp(guest), 'rescues') == r0 + 1, f'round {rnd + 1}: the host repaired the guest ({sp(guest, "hp")})')
+        if rnd == 0:
+            time.sleep(62)  # the rescue has a 60 s cooldown
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

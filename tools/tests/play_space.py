@@ -74,6 +74,7 @@ class Player(threading.Thread):
         self.last_damage = time.time() - 100
         self.apart_since = None
         self.last_place = (0, 0)
+        self.no_landing = set()
 
     # ---------------- input / state ----------------
     def cmd(self, line):
@@ -258,7 +259,9 @@ class Player(threading.Thread):
         self.act('key 1')
         self.count('fights')
         st = self.hp()
-        if time.time() - self.last_damage > 150 and self.rng.random() < 0.35 and st.get('hp', 0) > 60:
+        near = (self.partner_dist() or 1e9) < 150
+        if time.time() - self.last_damage > 120 and self.rng.random() < (0.6 if near else 0.15) \
+                and st.get('hp', 0) > 60:
             # setup: battle damage, so the next real hits of the pirates are lethal (a real fight to
             # the death takes far longer than a test): next to the partner the ship is disabled and
             # waits for repair, alone it is destroyed (death caption, respawn at a colony)
@@ -309,14 +312,15 @@ class Player(threading.Thread):
 
     def zoom(self, n):
         me, _, _ = self.targets()
-        x, y = me if me else (self.W // 2, self.H // 2)
+        x, y = me if me and 0 <= me[0] < self.W and 0 <= me[1] < self.H else (self.W // 2, self.H // 2)
         self.act(f'wheel {x} {y} {n}')
 
     def land(self, want=None):
         """system: click a planet (the ship flies there), then zoom in until on it"""
         for i in range(6):
             me, _, objs = self.targets()
-            planets = [o for o in objs if o[0][0] in 'PC' and (want is None or o[0][1:] == want)]
+            planets = [o for o in objs if o[0][0] in 'PC' and (want is None or o[0][1:] == want)
+                       and (want or o[0] not in self.no_landing)]
             if planets or i == 5:
                 break
             self.act(f'wheel {self.W // 2} {self.H // 2} -4')  # zoom out to see the system
@@ -354,7 +358,9 @@ class Player(threading.Thread):
                 self.count('landings')
                 self.sleep(2)
                 return True
-        return True
+        self.no_landing.add(k)  # a gas giant (no landing there) or out of reach
+        self.count('landings_failed')
+        return False
 
     def take_off(self):
         for _ in range(10):
@@ -449,7 +455,8 @@ class Player(threading.Thread):
         if self.pid == 0 and c == 'planet' and time.time() - self.last_fight > 40 \
                 and time.time() - self.last_spawn > 40:
             # setup: no pirates came for a while (combat happens on planets)
-            self.cmd('coop.fleet spawn 2')
+            for _ in range(self.rng.choice([1, 2, 3])):
+                self.cmd('coop.fleet spawn 2')
             self.last_spawn = time.time()
             self.count('pirates_spawned')
             return

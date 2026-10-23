@@ -2166,7 +2166,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player>] - space co-op",
+    H->command_add(M, "coop.fleet", "coop.fleet [list | shoot <id> <dmg> | hurt <ship id> <player> [dmg] | spawn <type>] - space co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", squadron::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;

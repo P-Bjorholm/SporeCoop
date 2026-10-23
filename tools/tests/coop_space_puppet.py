@@ -53,6 +53,16 @@ def main():
             time.sleep(1)
         ck(planet & 0x40000000 and pg.place()[0] == planet and together(host, 1) and together(guest, 0),
            f'round {rnd + 1}: both on planet {planet:08X} and see each other')
+        if rnd == 0:
+            # nobody shoots: a pirate next to both must keep its health (the guest's ship on the host is
+            # a Defender UFO whose own AI used to shoot every hostile ship in range)
+            host.call('coop.fleet spawn 2')
+            time.sleep(20)
+            out = host.call('coop.fleet list')['out']
+            hp = [(float(a), float(b)) for a, b in re.findall(r'type=2 pol=\w+ hp=([\d.]+)/([\d.]+)', out)]
+            blocked = re.search(r'puppet_shots_blocked=(\d+)', out)
+            print('  ', out.splitlines()[0], hp)
+            ck(hp and all(a == b for a, b in hp), f'a pirate nobody shoots keeps its health {hp}')
         first, second = (ph, pg) if rnd % 2 == 0 else (pg, ph)
         f0 = freed(host) + freed(guest)
         ck(first.take_off(), f'round {rnd + 1}: the {first.name} took off, the {second.name} stays')

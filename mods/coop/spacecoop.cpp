@@ -129,7 +129,9 @@ float filter_own_damage(void* ufo, float dmg, int type)
         return 0.f;
     float hp = F<float>(ufo, kHp);
     double now = H->time_seconds();
-    if (hp - dmg >= 1.f || hp <= 1.f || F<int>(ufo, kState) == 2 || now - g_last_down < 60)
+    // (a ship whose HP got to 1 or less through small hits is disabled too: `hp <= 1` used to let
+    // the next hit kill it next to the partner, play_space.py 2026-10-23)
+    if (hp - dmg >= 1.f || F<int>(ufo, kState) == 2 || now - g_last_down < 60)
         return dmg;
     auto here = partners_here();
     if (here.empty())
