@@ -93,6 +93,27 @@ static void __fastcall camupd_guard(void* obj, void*)
         g_camupd_orig(obj);
 }
 
+// The end of the respawn caption CVG2SPG(_short) (message 0x44F1189 in the cSimulatorSpaceGame
+// handler 0x100B730, at 0x100C513) calls 0xFF59D0 (thiscall, no arguments: clears the set at +0x1E4
+// that 0xFF5D90, which starts that caption, filled) on [cSimulatorSpaceGame+0x54], the high-LOD planet
+// simulation, without a check. The pointer is null in a star system: a ship that left the planet while
+// the caption played (or died there, or a jump of the partner took it away) faulted at 0x7CFCC0 (data
+// 0x1E4) and the dispatch of that message stopped, so a death caption ended by the same OK never
+// respawned the ship (docs/re/space.md 7.2.1). Without a planet there is nothing to clear: skip it.
+using PlanetClearFn = void(__thiscall*)(void*);
+static PlanetClearFn g_planet_clear_orig;
+static std::atomic<unsigned> g_planet_clear_skipped{0};
+
+static void __fastcall planet_clear_guard(void* sim, void*)
+{
+    if (sim) {
+        g_planet_clear_orig(sim);
+        return;
+    }
+    if (++g_planet_clear_skipped <= 4)
+        H->log(M, SK_WARN, "game fixes: the end of the respawn caption without a planet (cleanup skipped)");
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -120,6 +141,9 @@ void init(const SkHost* host, SkMod* mod)
     bool cam = la && cu && H->hook_create(M, (void*)la, (void*)&lookat_guard, (void**)&g_lookat_orig) == 0 &&
                H->hook_create(M, (void*)cu, (void*)&camupd_guard, (void**)&g_camupd_orig) == 0;
     H->log(M, SK_INFO, "game fixes: tribe camera guard %s", cam ? "on" : "off");
+    uintptr_t pc = H->sym("SporeCoop::cSimPlanetHighLOD_EndRespawnCaption");
+    bool planet = pc && H->hook_create(M, (void*)pc, (void*)&planet_clear_guard, (void**)&g_planet_clear_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: respawn caption guard %s", planet ? "on" : "off");
 }
 
 void shutdown()
@@ -132,7 +156,8 @@ std::string status()
 {
     return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
-           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + "\n";
+           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
+           std::to_string(g_planet_clear_skipped.load()) + "\n";
 }
 
 } // namespace gamefixes

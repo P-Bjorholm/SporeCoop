@@ -9,8 +9,10 @@ Checks:
 2. no jump to another star while the respawn caption plays (leaving the planet then made the end of
    that caption fault in the game and the next death never respawned);
 3. lone death: the ship alone in another star system dies at once (no disabling), OK -> back;
-4. the old jump (forced during the respawn caption) still loses the end of the next death caption:
-   the mod's watchdog respawns the ship the native way (message 0x67B2A95)."""
+4. the old jump (forced during the respawn caption), then a lone death: the end of the respawn
+   caption runs without a planet (the game's null [cSimulatorSpaceGame+0x54], guarded in
+   gamefixes.cpp), OK still respawns the ship (natively or by the watchdog, message 0x67B2A95).
+Any fault caught by either game during the test fails it."""
 import re
 import time
 
@@ -112,8 +114,9 @@ def main():
     ck.faults(host=host, guest=guest)
 
     # 4. what the jump did before: leave the planet while the respawn caption plays, then die alone.
-    # The end of that caption faults in the game (its handler uses [cSimulatorSpaceGame+0x54], gone
-    # with the planet) and the ship never got the end of its death caption: the watchdog respawns it.
+    # The end of that caption used to fault in the game (its handler clears a set of
+    # [cSimulatorSpaceGame+0x54], null without the planet: AV at 0x7CFCC0) and the ship never got
+    # the end of its death caption. Now gamefixes skips that cleanup and the ship respawns.
     hp = sp(guest, 'hp')
     print(f'  forced jump during the respawn caption ({hp}):', sp(guest, 'jumpto', home + 1, 'force'))
     time.sleep(15)
@@ -122,11 +125,13 @@ def main():
     exc = guest.call('exc')['out'].splitlines()
     print(f'  after OK ({t:.0f} s): {hp} | respawns_forced={stat(guest, "respawns_forced")} | guest',
           ' '.join(exc[:2]))
-    ck(field(hp, 'state') == 0, 'the ship respawns even when the end of its death caption is lost')
-    guest.call('exc clear')  # that game fault is expected here
+    ck(field(hp, 'state') == 0, 'the ship respawns after a death that ended the respawn caption off the planet')
+    m = re.search(r'respawn caption without a planet (\d+)', guest.call('coop.status')['out'])
+    print('  guest game fixes:', m.group(0) if m else '(no counter)')
+    ck(m and int(m.group(1)) >= 1, 'the end of the respawn caption off the planet is skipped by the guard')
     ok_until(guest, lambda h: field(h, 'movie') == 0, 60)
 
-    ck.faults(host=host)
+    ck.faults(host=host, guest=guest)
     return ck.result()
 
 
