@@ -42,7 +42,7 @@ add('creations', P + 'coop_creations.py', minutes=4)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
-add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ')
+add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_death', P + 'coop_space_death.py', minutes=5)
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update

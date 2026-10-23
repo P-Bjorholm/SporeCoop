@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Civilization co-op mechanics through the game's own functions (not a real battle):
+"""Civilization co-op mechanics through the game's own functions (not a real battle), on a planet
+with cities of other nations (fixture civ_npc):
 joint siege (capture damage x1.5 when two players attack a city), the alarm for an attacked
 player city (everybody is told, beacons), the superweapon fired by a vote."""
 import re
@@ -11,17 +12,17 @@ from twoinst import Checks, shot, start
 
 
 def main():
-    host, guest = start('civ', 'Game0/Agrauel')
+    host, guest = start('civ_npc')
     ck = Checks()
     time.sleep(4)
     hc, _ = civ(host)
     npc = [k for k, v in hc.items() if not v['player']]
     mine = [k for k, v in hc.items() if v['player']]
     print('  cities: player', mine, 'npc', npc[:6])
-    # an NPC city if the planet has one in reach, else the player city (the capture math is the same)
-    target = npc[0] if npc else (mine[0] if mine else None)
-    if target is not None:
-        c = target
+    # a city of another nation (the fixture has three), besieged by both players
+    ck(npc, f'the planet has cities of other nations: {npc}')
+    if npc:
+        c = npc[0]
         r1 = host.call(f'coop.civ siege {c} 0')['out']
         r2 = host.call(f'coop.civ siege {c} 1')['out']
         print('  host hit:', r1, '| guest hit:', r2)

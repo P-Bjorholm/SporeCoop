@@ -19,6 +19,11 @@ FIXTURES = {
                          ('another tribe exists', 'coop.tribe', r'tribe \d+(?! .*player)')]),
     'civ': dict(planet='Game0/Agrauel', stage='Civ',
                 facts=[('a player city', 'coop.civ', r'city')]),
+    # a new Civilization game (new_stage_game.py civ --npc-cities 3): the player city and three
+    # cities of other nations (the nearest about 400 m away on a planet of radius 500)
+    'civ_npc': dict(planet='Game0/Taldon', stage='Civ',
+                    facts=[('a player city', 'coop.civ', r'city .*\(player\)'),
+                           ('a city of another nation', 'coop.civ', r'city -?\d+ \S+ pol=[0-9A-F]+ owner=')]),
     'space': dict(planet='Game0/Maraya', stage='Space',
                   facts=[('in a star system', 'coop.space star', r'place 8')]),
 }

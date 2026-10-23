@@ -2,10 +2,14 @@
 """Start a new game at any stage from the galaxy menu via the stage chooser (cheat levels -unlock).
 
 Coordinates are for the 1440x1080 windowed test profile. Usage:
-  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y]
+  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y | --slot N] [--npc-cities N]
+The planet slot is found in the galaxy menu by itself: every slot ring has a 48x48 UI window
+with id 0x02E5A4A8 (coop.ui tree); --slot N takes the N-th of them, --slot X,Y a screen point.
+Use a profile without saves (an empty Games folder): a slot with a save would load that save.
 """
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -31,11 +35,77 @@ STEPS = {
 }
 
 
+SLOT_WINDOW = "0x02E5A4A8"  # the hotspot over a planet slot ring in the galaxy menu
+
+
+def slot_centers(c):
+    """screen centers of the planet slots in the galaxy menu (placed ones only)"""
+    out = []
+    for line in c.cmd("coop.ui tree 3").splitlines():
+        m = re.search(r"id=" + SLOT_WINDOW + r" .*?\[(-?\d+) (-?\d+) (-?\d+) (-?\d+)\]", line)
+        if m:
+            x0, y0, x1, y1 = map(int, m.groups())
+            if x0 > 0 and y0 > 0:  # one hotspot waits unplaced at [0 0 48 48]
+                out.append(((x0 + x1) // 2, (y0 + y1) // 2))
+    return out
+
+
+def find_slot(c, index):
+    """the index-th slot once the galaxy stopped moving (two equal reads)"""
+    last = None
+    for _ in range(60):
+        cur = slot_centers(c)
+        if cur and cur == last and len(cur) > index:
+            return cur[index]
+        last = cur
+        c.cmd("wait.frames 30 20000")
+    raise SystemExit(f"no planet slot in the galaxy menu (got {last})")
+
+
+def city_count(c):
+    return sum(1 for line in c.cmd("coop.civ").splitlines() if line.startswith("city "))
+
+
+def intro_up(c):
+    """the civ intro text box is shown (UI flag bit 0 = visible)"""
+    m = re.search(r"fl=0x([0-9A-Fa-f]+)", c.cmd('coop.ui find "age of technology"'))
+    return bool(m and int(m.group(1), 16) & 1)
+
+
+def npc_cities(c, n):
+    """A new Civilization game has only the player city; the others appear one by one through the
+    cCitySimulator once the player claimed spice and has money (docs/re/civ.md "NPC cities").
+    AppearNextCity(instant) skips that wait; each city comes with the next 1 s simulator tick."""
+    # the intro text ("... soon other cities will arise ..."): its OK button unpauses the game
+    for _ in range(60):
+        if intro_up(c):
+            c.cmd("click 1410 1044")
+            c.cmd("wait.frames 60 20000")
+            if not intro_up(c):
+                break
+        c.cmd("wait.frames 30 20000")
+    m = re.search(r"eax=(0x[0-9A-Fa-f]+)", c.cmd("call Simulator::cCitySimulator::Get cdecl"))
+    if not m or int(m.group(1), 16) == 0:
+        print("FAILED: no city simulator")
+        return 1
+    cs = m.group(1)
+    before = city_count(c)
+    for _ in range(n):
+        print("  appear:", c.cmd(f"call Simulator::cCitySimulator::AppearNextCity thiscall {cs} 1 0").strip())
+        c.cmd("wait.frames 90 30000")
+    c.cmd("wait.frames 150 30000")
+    after = city_count(c)
+    print(f"cities: {before} -> {after}")
+    return 0 if after >= before + n else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=sorted(STAGE_ICON))
     ap.add_argument("-i", type=int, default=lane.HOST)
-    ap.add_argument("--slot", default="480,290", help="empty planet slot in the galaxy menu")
+    ap.add_argument("--slot", default="0", help="planet slot: its index in the galaxy menu or a point X,Y")
+    ap.add_argument("--npc-cities", type=int, default=0,
+                    help="civ: let N cities of other nations appear right away (the game waits for spice and money)")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
     a = ap.parse_args()
     for _ in range(120):  # the game is up (its console answers)
@@ -52,9 +122,23 @@ def main():
         time.sleep(1)
     c.cmd("wait.frames 600 120000")  # a fresh profile flies into the galaxy first (~15 s)
     c.cmd("cheat levels -unlock")
-    sx, sy = map(int, a.slot.split(","))
-    c.cmd(f"click {sx} {sy}")
-    c.cmd("wait.frames 150 60000")
+    if "," in a.slot:
+        sx, sy = map(int, a.slot.split(","))
+    else:
+        sx, sy = find_slot(c, int(a.slot))
+    print("planet slot at", sx, sy)
+    for _ in range(5):  # hover first: a click on a slot that was not hovered may do nothing
+        c.cmd(f"move {sx} {sy}")
+        c.cmd("wait.frames 15 10000")
+        c.cmd(f"click {sx} {sy}")
+        c.cmd("wait.frames 150 60000")
+        if "no window" not in c.cmd('coop.ui find "Choose A Stage"'):
+            break
+        if "," not in a.slot:
+            sx, sy = find_slot(c, int(a.slot))
+    else:
+        print("FAILED: the stage chooser did not open")
+        return 1
     x, y = STAGE_ICON[a.stage]
     c.cmd(f"click {x} {y}")
     c.cmd("wait.frames 150 60000")
@@ -72,6 +156,8 @@ def main():
         if MODE[a.stage].lower() in mode.lower():
             print("in", mode.strip())
             c.cmd("wait.frames 600 120000")
+            if a.stage == "civ" and a.npc_cities:
+                return npc_cities(c, a.npc_cities)
             return 0
         time.sleep(2)
     print("FAILED: still", c.cmd("game.mode").strip())
