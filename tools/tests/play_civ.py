@@ -733,7 +733,7 @@ def audit(game, hc, gc, final=False):
     for p, pol in hn:
         near = [q for q in gn if dist(q[0], p) < 3]
         if near and near[0][1] != pol:
-            time.sleep(1.5)
+            time.sleep(3)  # nodes go out once a second (several chunks with a big planet)
             gn2 = nodes(gc)
             near = [q for q in gn2 if dist(q[0], p) < 3]
             if near and near[0][1] != pol:
@@ -837,6 +837,11 @@ def main():
         pass
     for t in threads:
         t.join(timeout=30)
+    for b in bots:  # a player left in the pause menu gets no updates until it goes back to the game
+        try:
+            b.unpause()
+        except (OSError, ValueError):
+            pass
     with game.lock:  # the checks still running get their time
         wait = max([p[0] for p in game.pending] + [time.time()]) - time.time()
     time.sleep(min(max(wait, 0), 80))
