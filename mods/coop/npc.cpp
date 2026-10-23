@@ -38,6 +38,7 @@ static std::unordered_map<uint16_t, void*> g_host_by_id;
 static std::map<uint8_t, std::set<uint16_t>> g_known;  // guest -> net ids it mirrors
 static uint16_t g_next_id = 1;
 static double g_last_state = 0;
+static double g_frozen_since = 0;                       // host: no creature updates since then
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
 
 // ------------------------------------------------------------------ guest side
@@ -127,11 +128,24 @@ static void send_despawn(uint8_t guest, uint16_t id)
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
-    g_seen_now.clear();
     net::Vec3 center;
     bool rts = rts_stage() && C.stage_center && C.stage_center(center);
     if (!av && !rts)
         return;
+    // no creature updated this frame: the simulation stands still (pause menu, the death caption
+    // waiting for OK, a cinematic). Not a reason to forget them: the guests lost every NPC after 2 s
+    // and got them again when the host went on (play_creature.py 2026-10-23)
+    if (creatures.empty()) {
+        g_frozen_since = g_frozen_since > 0 ? g_frozen_since : now;
+        return;
+    }
+    if (g_frozen_since > 0) { // the frozen time does not count as unseen
+        double gap = now - g_frozen_since;
+        for (auto& [c, hn] : g_host_npcs)
+            hn.last_seen += gap;
+        g_frozen_since = 0;
+    }
+    g_seen_now.clear();
     for (void* c : creatures) {
         if (c == av || game::is_puppet(c) || game::is_destroyed(c))
             continue;

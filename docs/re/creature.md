@@ -90,3 +90,13 @@ Structures of `cCreatureAnimal` and the NPC sync: [05-re-notes.md](../05-re-note
   same, the update filter removed them again (`local_removed` grew all session). `game::herd_quiet`
   sets the target to 0 and disables such herds (at creation and on every puppet update).
   Regression: `coop_team.py` ("no NPC clones of the guest's creature").
+
+## 7. When the host's simulation stands still
+
+* ✔ In the host's pause menu, in the death caption ("You were killed in battle! ..." with a green
+  check that waits for OK, like the space captions in docs/06-testing.md 6.9) and in cinematics no
+  creature is updated (`cCreatureAnimal::Update` is not called: the registry of the frame is
+  empty). `npc.cpp` used to forget every NPC 2 s later and the guests lost them all until the host
+  went on; a frame with no creature update now counts as a pause (the NPCs stay mirrored, standing
+  still). Regression: `coop_exit_menu.py` (host paused 6 s: 21 -> 0 NPCs before, 21 -> 21 after).
+* ✔ The death caption is `coop.ui find "You were killed"`; `key enter` presses its OK.
