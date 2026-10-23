@@ -161,10 +161,11 @@ const Vector3* dir, cCombatant* attacker)`, `ret 0x14`. **`dir` is a unit knock-
   sound, **0xC3C660(ufo)** (`thiscall`, `ret`): cinematic `SPG_PlayerDestroyed_PrePosse_Galaxy /
   _PrePosse_NotGalaxy / _PostPosse`, handle → ufo+0x7F0, hides ship (+0x77C=0, +0x77D=1),
   deactivates tool, event log 0x949ACE8, `(*0x16DD778)->0x100E580(attacker)`.
-* Respawn (P): UFO message handler 0xC3B6A0 (msgs 0x44F1189 / 0x67B2A95, probably cinematic end)
-  with ufo+0x7F0 set → **0xC38420** (`thiscall(ufo)`, `ret`): travel to nearest owned star,
-  clear +0x7F0, state +0x53C = 0, HP = max, energy = max (+0x7F4 = +0x7F8), message 0x6174B67.
-* Sync state: `ufo+0x53C == 2` dead, `ufo+0x7F0 != 0` death cinematic running.
+* Respawn (✔ runtime): UFO message handler 0xC3B6A0 (msg 0x44F1189 = a cinematic ended, or its own
+  retry 0x67B2A95) with ufo+0x7F0 set → **0xC38420** (`thiscall(ufo)`, `ret`): travel to nearest owned
+  star, clear +0x7F0, state +0x53C = 0, HP = max, energy = max (+0x7F4 = +0x7F8), message 0x6174B67.
+  The death cinematic ends only when the player presses OK on its caption (§7.2.1).
+* Sync state: `ufo+0x53C == 2` dead, `ufo+0x7F0 != 0` death explosion effect / caption running.
 
 ### Recipe for §2/§3 (hook 0xC3CEA0, thiscall 5 args, `ret 0x14`; flag `g_netApply` for replays)
 Guest:
@@ -403,8 +404,8 @@ Death path (✔, all inside `cGameDataUFO::TakeDamage` 0xC3CEA0, `ebp` = combata
    0x949ACE8 and `cSimulatorUniverse(*0x16DD778)->0x100E580(attacker)`.
    Second caller of 0xC3C660: 0x1016948 (inside 0x10167F0, when the player UFO has HP ≤ 0 after an
    adventure/sequence ends) ~.
-3. Cinematic end → UFO message handler 0xC3B6A0 (msg 0x44F1189 / 0x67B2A95, `ufo+0x7F0` set) →
-   **Respawn 0x00C38420** (thiscall(ufo), `ret`): picks the owned star (cEmpire::GetStars) nearest to
+3. Cinematic end (✔ runtime: the player's OK on the death caption, §7.2.1) → UFO message handler
+   0xC3B6A0 (msg 0x44F1189 / 0x67B2A95, `ufo+0x7F0` set) → **Respawn 0x00C38420** (thiscall(ufo), `ret`): picks the owned star (cEmpire::GetStars) nearest to
    the active star (fallback home star), travels there with the §7.3 sequence (+ landing 0xFE0E00),
    message 0x6174B67, clears +0x7F0, `state = 0`, **`cCombatant::SetHealth` 0x00F92480**
    (`thiscall(combatant, float)`, `ret 4`, writes combatant+0x38 = ufo+0x540) with
@@ -435,6 +436,48 @@ Recommended hook (extend the existing TakeDamage hook in `squadron.cpp`):
   `cSimulatorSpaceGame->0x1005020(10)` / event log only if you want the full native side effects ~).
 * Alternative single hook: `0xC3C660` itself (skip while rescue is possible). Simpler, but by then
   state = 2, the death sound/event log already ran ~.
+
+### 7.2.1 Death and respawn captions (✔ runtime, lane 4, 2026-10-22; test `coop_space_death.py`)
+
+Found while fixing "after a lone death the respawn did not come within 60 s" (branch
+fix/space-lone-death). Not a hook problem: the debug hit (attacker null) and the rescue timeout
+(`end_down(false)` → PlayerDestroyed) behave exactly like a native death.
+* `PlayerDestroyed` 0xC3C660 starts the cinematic `SPG_PlayerDestroyed_PrePosse_NotGalaxy` (in a
+  system; `_Galaxy` in the galaxy view, `_PostPosse` with a posse) through
+  `cCinematicManager::PlayCinematic` 0xAE0880 (manager `[0x167FB30]`, getter 0xB3D5A0), after
+  `0xAE0900(mgr, 0x14A4C5F5, &params, 0)`. ufo+0x7F0 is the handle of the explosion effect
+  (`0x67DD90()` vt+0x2C, effect 0x4D42643), not the cinematic itself.
+* The cinematic shows the caption "Your <ship> has taken so much damage that it has been destroyed.
+  Thanks to advances in cloning technology you have not died. Instead, you return to your
+  homeworld, a new spaceship at the ready." with a green check button and **waits for the player**:
+  nothing ends it on its own (60 s+ in tests). The check button or Enter posts 0x44EE075 to the
+  cinematic manager → EndCinematic 0xADFF20 → message 0x44F1189 (data+8 = the ended cinematic id)
+  → 0xC3B6A0 → Respawn. The old test that never pressed OK waited forever (test artefact); a player
+  presses OK. Tests press it with `key enter` (works in background mode).
+* 0xC3B6A0 re-posts 0x67B2A95 to itself instead of respawning while `cSimulatorSpaceGame+0x50`
+  has any bit set (0xB18D50). Posting 0x67B2A95 (MessagePost, IMessageManager vt 0x18, 4 args) is
+  the native way to ask for the respawn again.
+* Respawn lands on the colony planet (0xFE0E00) and at once plays the respawn caption
+  **CVG2SPG_short** ("We've built you a new ship, try not to break it this time!", from 0xFF5F66;
+  `CVG2SPG` in the other branch). Its text appears after ~15-30 s and waits for OK too. Cinematic
+  manager +0x2C = 2 while any cinematic plays, 0 otherwise.
+* **The game fault behind a ship stuck dead:** the end of CVG2SPG(_short) is also handled by
+  `cSimulatorSpaceGame` 0x100B730 (at 0x100C513): it sets player UFO +0x6B4/+0x6B8 = 1.0 and calls
+  `[cSimulatorSpaceGame+0x54]->0xFF59D0` (`+0x1E4` → 0x7CFCC0). +0x54 is set on a planet and null in
+  a system (~, runtime reads). If the ship leaves the planet while the respawn caption still plays,
+  the end of that caption faults there (AV at 0x7CFCC0, data 0x1E4, stack holds 0x100C57F and
+  044F1189), the dispatch of 0x44F1189 stops, and a ship that died in the meantime never gets its end
+  message: dead (state 2, +0x7F0 set), no cinematic running, stuck forever. A death started while
+  another cinematic plays does not replace the running id (+0x148), so the OK on the death caption
+  ends the respawn caption. The mod's jump (`travel_to`) did exactly that: it only checked +0x7F0.
+* Fix in `spacecoop.cpp`: no jump while `cCinematicManager+0x2C != 0`, and a watchdog: own ship in
+  state 2 with +0x7F0 set but no cinematic running for 5 s → MessagePost 0x67B2A95 → native
+  Respawn (`respawns_forced` in `coop.status`; the old path is reproduced by
+  `coop.space jumpto <star> force`).
+* Calling Respawn 0xC38420 directly on a stuck ship also works (console `call`), but the message
+  keeps the game's own "busy" check.
+* Not tested: a lethal hit by a real NPC while alone (the debug hit has no attacker; the attacker
+  only reaches the event log and 0x100E580).
 
 ### 7.3 Travel / "jump to partner"
 

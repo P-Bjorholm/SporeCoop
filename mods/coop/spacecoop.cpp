@@ -29,14 +29,14 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540, kInvincible = 0x588,
                     kCinematic = 0x7F0, kPos = 0x38;
 constexpr double kDownTime = 20.0, kRepairHold = 2.0;
-constexpr float kRepairDist = 60.f;
+static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
 enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6 };
 
 static uintptr_t a_PlayerUFOGet, a_Context, a_ActivePlanet, a_StarMgr, a_GetStarRecord, a_ModeSpace, a_EnterSystem,
     a_LeavePlanet, a_TravelSystem, a_PlanetCleanup, a_PlanetCleanupMgr, a_AddHealth, a_SetHealth, a_Destroyed,
     a_SetState, a_TerraA, a_TerraW, a_TerraT, a_TerraMgr, a_SpaceGame, a_AddItemByKey, a_Trading, a_CreateTrading,
-    a_AddMoney, a_PlayerEmpire;
+    a_AddMoney, a_PlayerEmpire, a_CinematicMgr, a_MessageMgr;
 
 struct Key {
     uint32_t v[3];
@@ -47,7 +47,7 @@ static double g_down_until, g_repair_t, g_last_down;
 static bool g_down;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-    g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps;
+    g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
 static bool g_applying;
 static float g_terra_acc[3];
@@ -57,6 +57,14 @@ static std::unordered_map<void*, double> g_raid_since; // raid mission -> start
 static std::string g_last_raid_text;
 
 static bool connected() { return C.sess && C.sess->connected(); }
+
+// any cinematic of the game running (cCinematicManager +0x2C: 0 none, 2 playing; docs/re/space.md 7.2):
+// the death caption, but also the respawn caption "We've built you a new ship..." (CVG2SPG_short)
+static bool cinematic_playing()
+{
+    void* cm = a_CinematicMgr ? cdecl_call<void*>(a_CinematicMgr) : nullptr;
+    return cm && F<uint32_t>(cm, 0x2C) != 0;
+}
 static bool in_space() { return g_ok && game::mode_id() == modes::kSpace; }
 
 static void* my_ufo()
@@ -182,7 +190,7 @@ static void down_tick(double now)
     F<uint8_t>(u, kInvincible) = 1;
     bool close_by = false;
     for (auto& p : partners_here())
-        if (net::dist(p.pos, ufo_pos(u)) < kRepairDist)
+        if (net::dist(p.pos, ufo_pos(u)) < g_repair_dist)
             close_by = true;
     static double last = now;
     double dt = std::min(0.5, now - last);
@@ -194,8 +202,31 @@ static void down_tick(double now)
         end_down(false);
 }
 
+// A destroyed ship waits for the end of its death cinematic (UFO message handler 0xC3B6A0 ->
+// Respawn). If that cinematic is gone but the ship is still dead (the end message was lost, e.g. a
+// fault in another listener of it), post the handler's own retry message 0x67B2A95: the game
+// respawns the ship the native way (docs/re/space.md 7.2).
+static void respawn_tick(double now)
+{
+    static double stuck_since;
+    void* u = my_ufo();
+    if (!u || F<int>(u, kState) != 2 || !F<uint32_t>(u, kCinematic) || cinematic_playing() || !a_MessageMgr) {
+        stuck_since = 0;
+        return;
+    }
+    if (!stuck_since)
+        stuck_since = now;
+    if (now - stuck_since < 5)
+        return;
+    stuck_since = now; // once per 5 s until the ship is back
+    H->log(M, SK_WARN, "space: the ship is destroyed but no death cinematic runs: respawn (msg 0x67B2A95)");
+    if (void* mm = cdecl_call<void*>(a_MessageMgr))
+        vcall<void>(mm, 0x18 / 4, 0x67B2A95u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+    g_respawns_forced++;
+}
+
 // ---------------- jump ----------------
-static std::string travel_to(uint32_t star);
+static std::string travel_to(uint32_t star, bool force = false);
 
 bool can_jump(std::string& to)
 {
@@ -240,12 +271,14 @@ std::string jump(uint8_t to)
     return e;
 }
 
-static std::string travel_to(uint32_t star)
+static std::string travel_to(uint32_t star, bool force)
 {
     if (!a_ModeSpace || !a_TravelSystem || !a_Context || !a_StarMgr || !a_GetStarRecord)
         return "symbols missing";
     void* u = my_ufo();
-    if (u && F<uint32_t>(u, kCinematic))
+    // leaving the planet while the respawn caption still plays destroys the planet object its end
+    // handler uses: the next cinematic end faults and the ship is never respawned (docs/re/space.md 7.2)
+    if (((u && F<uint32_t>(u, kCinematic)) || cinematic_playing()) && !force)
         return "a cinematic is playing";
     void* mode = *(void**)a_ModeSpace;
     int ctx = cdecl_call<int>(a_Context);
@@ -613,6 +646,7 @@ void tick(double now)
             if (uint32_t s = star_of(p.place))
                 g_last_star[p.id] = s;
     down_tick(now);
+    respawn_tick(now);
     terra_tick(now);
     for (auto it = g_partner_down.begin(); it != g_partner_down.end();)
         it = now > it->second + 2 ? g_partner_down.erase(it) : std::next(it);
@@ -690,6 +724,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CreateTrading = S("Simulator::cSpaceTrading::CreateTradingObject");
     a_AddMoney = S("Simulator::cEmpire::AddMoney");
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
+    a_CinematicMgr = S("Simulator::cCinematicManager::Get");
+    a_MessageMgr = S("App::IMessageManager::Get");
     g_ok = a_PlayerUFOGet && a_Context && a_ActivePlanet;
     if (a_SetState)
         H->hook_create(M, (void*)a_SetState, (void*)h_SetState, (void**)&o_SetState);
@@ -709,9 +745,11 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u partners_here=%u\n",
+             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u respawns_forced=%u "
+             "partners_here=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, (unsigned)partners_here().size());
+             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced,
+             (unsigned)partners_here().size());
     return b;
 }
 
@@ -732,9 +770,11 @@ std::string debug(const std::vector<std::string>& a)
         return b;
     }
     if (a[0] == "hp" && u) {
-        snprintf(b, sizeof b, "hp %.1f max %.1f down=%d left=%.1f repair=%.1f state=%d", F<float>(u, kHp),
-                 F<float>(u, kMaxHp), (int)g_down, g_down ? g_down_until - H->time_seconds() : 0.0, g_repair_t,
-                 F<int>(u, kState));
+        // cine=1: the death caption ("...you return to your homeworld") waits for the player's OK;
+        // movie=1: any cinematic runs (also the respawn caption "We've built you a new ship...")
+        snprintf(b, sizeof b, "hp %.1f max %.1f down=%d left=%.1f repair=%.1f state=%d cine=%d movie=%d",
+                 F<float>(u, kHp), F<float>(u, kMaxHp), (int)g_down, g_down ? g_down_until - H->time_seconds() : 0.0,
+                 g_repair_t, F<int>(u, kState), F<uint32_t>(u, kCinematic) ? 1 : 0, (int)cinematic_playing());
         return b;
     }
     if (a[0] == "jump") {
@@ -751,13 +791,14 @@ std::string debug(const std::vector<std::string>& a)
         void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
         if (!f || !mode || cdecl_call<int>(a_Context) != 1)
             return "not in a system";
-        if (!cdecl_call<void*>(a_ActivePlanet) || !u || F<uint32_t>(u, kCinematic) || F<int>(u, kState) == 2)
+        if (!cdecl_call<void*>(a_ActivePlanet) || !u || F<uint32_t>(u, kCinematic) || cinematic_playing() ||
+            F<int>(u, kState) == 2)
             return "no active planet / the ship is not flying";
         thiscall<void>(f, mode);
         return "landing";
     }
-    if (a[0] == "jumpto" && a.size() > 1) {
-        std::string e = travel_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0));
+    if (a[0] == "jumpto" && a.size() > 1) { // "force": even during a cinematic (tests: the old jump)
+        std::string e = travel_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0), a.size() > 2 && a[2] == "force");
         return e.empty() ? "jumping" : e;
     }
     if (a[0] == "goto" && u) { // put the own ship next to a partner (tests of the repair)
@@ -771,6 +812,11 @@ std::string debug(const std::vector<std::string>& a)
                 return b;
             }
         return "no partner here";
+    }
+    if (a[0] == "repairdist" && a.size() > 1) { // tests: the repair range (0: a disabled ship is never repaired)
+        g_repair_dist = (float)atof(a[1].c_str());
+        snprintf(b, sizeof b, "repair range %.0f m", g_repair_dist);
+        return b;
     }
     if (a[0] == "dist" && u) {
         std::string s;

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Space co-op mechanics (spacecoop.cpp) on two instances in the same star system: a lethal hit
 next to a partner only disables the ship, the partner repairs it by flying close, nobody near ->
-the native death; terraforming of one player reaches the partner on the same planet; jump to the
-partner's star system; spice gift."""
+the native death (respawn after OK on its caption); terraforming of one player reaches the partner
+on the same planet; jump to the partner's star system; spice gift."""
 import re
 import time
 
@@ -89,11 +89,16 @@ def main():
     time.sleep(15)
     print('  hit alone:', sp(guest, 'hit', 100000))
     ck('down=0' in sp(guest, 'hp'), 'alone the ship is not disabled (the native death)')
-    for _ in range(30):  # the native death cinematic, then the respawn at a colony
-        time.sleep(2)
+    # the native death caption waits for the player's OK (Enter / check button), then the respawn at a
+    # colony (coop_space_death.py checks this path in detail)
+    time.sleep(3)
+    for _ in range(15):
         if 'state=0' in sp(guest, 'hp'):
             break
+        guest.call('key enter')
+        time.sleep(2)
     print('  guest after the death', sp(guest, 'hp'), sp(guest, 'star'))
+    ck('state=0' in sp(guest, 'hp'), 'after OK on the death caption the ship is respawned')
 
     ck.faults(host=host, guest=guest)
     return ck.result()

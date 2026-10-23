@@ -44,6 +44,7 @@ add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='c
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
+add('space_death', P + 'coop_space_death.py', minutes=5)
 # chaos bot (random real input by both players, network churn); smoke: 2 minutes of tribe
 add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), minutes=3)
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):

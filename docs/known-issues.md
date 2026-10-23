@@ -26,12 +26,6 @@ Fixed entries move to the commit message (and a test).
   --seed 264515564`; hunt: `tools/lab.py run chaos_tribe_awful --repeat 4 --retry 0`. Look at the
   world transfer under loss (reliable window 160 for long round trips, RTO, the join handshake).
 
-## Space: after a lone death the respawn did not come within 60 s in a test
-
-* `coop_space_play.py` (last step): the native death cinematic starts (state 2, +0x7F0 set) but the
-  ship was not respawned 60 s later. The mod does not change that path; check in a real game
-  whether the cinematic waits for input. The rescue timeout uses the same native path.
-
 ## Test saves: no Civilization save with NPC cities yet
 
 * The `civ` fixture (Agrauel) has only the player's city, so the joint-siege test hits the player
