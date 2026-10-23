@@ -60,7 +60,7 @@ class World:
             out = self.con.call('coop.npc list')['out']
         d = {}
         for line in out.splitlines():
-            m = re.match(r'\s*#(\d+) species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
+            m = re.match(r'\s*#(\d+) (?:[0-9A-Fa-f]{8} )?species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)( DEAD)?', line)
             if m:
                 d['n' + m.group(1)] = dict(species=m.group(2), hp=float(m.group(3)), dead=bool(m.group(5)))
         return d

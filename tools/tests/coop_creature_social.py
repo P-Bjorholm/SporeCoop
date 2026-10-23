@@ -91,8 +91,8 @@ def main():
     ck(ht and ht == gt, f'the species table is the host\'s on the guest ({len(ht)} species)')
 
     # ---- 1) befriend a mirrored Kook
-    mirrored = set(re.findall(r'#(\d+) species=' + KOOK + r' spawned', guest.call('coop.npc list')['out']))
-    kooks = [m.group(1) for m in re.finditer(r'#(\d+) species=' + KOOK + r' hp=([\d.]+) dist=([\d.]+)(?! DEAD)',
+    mirrored = set(re.findall(r'#(\d+) (?:[0-9A-Fa-f]{8} )?species=' + KOOK + r' spawned', guest.call('coop.npc list')['out']))
+    kooks = [m.group(1) for m in re.finditer(r'#(\d+) (?:[0-9A-Fa-f]{8} )?species=' + KOOK + r' hp=([\d.]+) dist=([\d.]+)(?! DEAD)',
                                              host.call('coop.npc list')['out'])
              if m.group(1) in mirrored and float(m.group(2)) > 0]
     ck(kooks, f'the guest mirrors Kooks ({kooks})')
@@ -180,7 +180,7 @@ def main():
     mirrored = set(re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out']))
     fam = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
     fam = fam.group(1).zfill(8) if fam else ''
-    others = [(m.group(1), m.group(2)) for m in re.finditer(r'#(\d+) species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)(?! DEAD)',
+    others = [(m.group(1), m.group(2)) for m in re.finditer(r'#(\d+) (?:[0-9A-Fa-f]{8} )?species=([0-9A-F]+) hp=([\d.]+) dist=([\d.]+)(?! DEAD)',
                                                            host.call('coop.npc list')['out'])
               if m.group(2) not in (KOOK, fam) and float(m.group(3)) > 0 and m.group(1) in mirrored]
     if others:

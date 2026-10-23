@@ -164,10 +164,14 @@ def main():
 
     # guest: discovery + join
     guest.type_into('name', 'Bob')
-    st = guest.wait(lambda s: s['lan0']['vis'] and 'Alice' in s['lan0']['text'] and f':{lane.PORT}' in s['lan0']['text'], 30, 'LAN game')
-    check(st is not None, f'guest: host found on the network: {st["lan0"]["text"] if st else None}')
+    # our host among the LAN rows (other lanes' hosts on this machine are listed too)
+    ours = lambda s: next((r for r in ('lan0', 'lan1', 'lan2') if s[r]['vis'] and 'Alice' in s[r]['text']  # noqa: E731
+                           and f':{lane.PORT}' in s[r]['text']), None)
+    st = guest.wait(lambda s: ours(s) is not None, 30, 'LAN game')
+    row = ours(st) if st else None
+    check(row is not None, f'guest: host found on the network: {st[row]["text"] if row else None}')
     shot(gc, 'ui_guest_lan.png')
-    guest.click('lan0')
+    guest.click(row or 'lan0')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
     check(st is not None, f'guest: joined, lobby {st["rows"] if st else None}')
 

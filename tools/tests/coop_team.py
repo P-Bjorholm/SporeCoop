@@ -90,7 +90,7 @@ def main():
     fam = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
     fam = fam.group(1).zfill(8) if fam else ''
     mirrored = set(re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out']))
-    prey = [m.group(1) for m in re.finditer(r'#(\d+) species=([0-9A-F]+) hp=([\d.]+)',
+    prey = [m.group(1) for m in re.finditer(r'#(\d+) (?:[0-9A-Fa-f]{8} )?species=([0-9A-F]+) hp=([\d.]+)',
                                              host.call('coop.npc list')['out'])
             if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
     dna = lambda c: float(re.search(r'dna=([\d.]+)', c.call('coop.dna')['out']).group(1))  # noqa: E731
