@@ -6,7 +6,11 @@ menu ("Exit to Main Menu", "Don't Save" twice) and stays in the session: the hos
 again and the guest is back in the game (it used to wait in the galaxy menu forever). 3) The host
 leaves to the main menu the same way: the guest is told, plays on alone (its own game runs its NPCs,
 the host's frozen mirrors go, its DNA is kept) and gets the host's NPCs back when the host loads
-the game again (until 2026-10-23 the guest stood on an empty planet without a word).
+the game again (until 2026-10-23 the guest stood on an empty planet without a word). 4) The guest
+leaves the same way while the host's evolution vote runs, and the vote ends on the frame the host
+starts to save its world for the guest again: the host's editor waits until the save is written
+(until 2026-10-23 the editor opened while the game wrote that save, the save did not load and the
+guest stayed in LoadGame forever).
 Everything through real input: Esc, clicks on the menu buttons (found with coop.ui find)."""
 import re
 import time
@@ -117,6 +121,56 @@ def main():
     time.sleep(3)
     ck('Bob earned 5 DNA' in host.call('log 80')['out'] and 'solo_dna=0.0' in guest.call('coop.status')['out'],
        '... and goes to the pack when the host is back')
+
+    # 4) the guest leaves during the host's evolution vote
+    print(' ', host.call('coop.vote editor')['out'].splitlines()[0])
+    ck('vote active' in host.call('coop.vote')['out'], 'the host asks for its editor: the vote runs')
+    time.sleep(2)
+    for _ in range(3):
+        guest.call('key esc')
+        time.sleep(1.5)
+        if shown(guest, 'Resume Game'):
+            break
+    ok = press(guest, 'Exit to Main Menu', 'Do you want to save your game?') and \
+        press(guest, "Don't Save", 'Are you sure?') and press(guest, "Don't Save")
+    ck(ok, 'the guest leaves to the main menu during the vote')
+    n0 = host.call('log 400')['out'].count('back to the world')
+    t0 = time.time()
+    while time.time() - t0 < 40 and host.call('log 400')['out'].count('back to the world') == n0:
+        time.sleep(0.05)
+    # the vote ends now: the host's save for the guest is under way
+    print(' ', host.call('coop.vote go')['out'].splitlines()[0], f'{time.time() - t0:.1f} s after the guest left')
+    stuck = back = None
+    t0 = time.time()
+    while time.time() - t0 < 120:
+        gm = guest.call('game.mode')['out']
+        if 'LoadGame' in gm:
+            stuck = stuck or time.time()
+            if time.time() - stuck > 30:
+                break
+        else:
+            stuck = None
+        if 'Creature' in gm and guest.call('coop.avatar')['ok']:
+            back = time.time() - t0
+            break
+        time.sleep(1)
+    ck(stuck is None, 'the guest does not hang in LoadGame')
+    ck(back is not None, f'the guest is back in the host world ({back and round(back)} s)')
+    t0 = time.time()
+    while time.time() - t0 < 30 and 'Editor' not in host.call('game.mode')['out']:
+        time.sleep(1)
+    ck('Editor' in host.call('game.mode')['out'], 'the host\'s editor opened after the vote')
+    held = re.search(r'editor held for a save (\d+)', host.call('coop.vote')['out'])
+    print(f'  editor held for the save: {held and held.group(1)}')
+    shot(guest, 'exit_menu_vote_guest.png')
+    host.call('click 1416 1062')  # leave the editor ("done"): the guest gets the evolved world
+    t0 = time.time()
+    together = False
+    while time.time() - t0 < 120 and not together:
+        together = 'Creature' in host.call('game.mode')['out'] and guest.call('coop.avatar')['ok'] \
+            and 'together 1 1' in host.call('coop.status')['out'] and 'LoadGame' not in guest.call('game.mode')['out']
+        time.sleep(2)
+    ck(together, 'after the host\'s evolution both play together again')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

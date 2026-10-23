@@ -192,3 +192,68 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
 * ✔ The pause menu "Options" is one window (control id 0x0615B50D) that stays loaded: shown when
   its flag 0x1 and its parents' are set. coop.cpp looks it up 5 times a second (outside the frame)
   and does not draw the world labels while it or the co-op window is up.
+
+## 9. Saves made while an editor opens do not load (2026-10-23)
+
+Found on branch fix/vote-load-hang (regression: `coop_exit_menu.py` part 4; repro scripts and the
+broken save were kept in `out/vote-load-hang/`, not in git).
+
+* ✔ What happened in play (docs/stability/creature.md, "a guest in the galaxy menu when an
+  evolution starts hangs in the loading screen"): the host's evolution vote ran, the guest left to
+  the main menu; 5 s later `follow_phase` sent the host's world again (`left_to_menu`), which first
+  **saves** (`save_game`: MessagePost 0x1CD20F0, written by the game over ~2 s, the "saved" box
+  after 1.7-2.0 s). The vote ended at the same moment and the host's editor request was submitted
+  (outside the frame) while the game wrote that save. The guest received it and stayed in
+  `LoadGame` 0x1654C08 for good: frames running (30 fps), no fault, no watchdog stack (the main
+  thread is not stuck, the load mode never switches to the stage); the screen shows a space
+  backdrop with an asteroid. The next world was then cancelled by `via_menu_tick` after 60 s ("the
+  game did not go to the galaxy menu": the game never leaves LoadGame).
+* ✔ The save itself is the cause, not the guest's state: the same files copied into the host's
+  profile (`coop.load Game5 Scalinus`, in a game that had just loaded the good save) hang the host's
+  game in LoadGame the same way.
+* ~ What differs in the broken `Scalinus.spo` (DBPF; resource 0x0179D310 is a table of noun ids
+  and their counts, the other resources are one per noun type): no cVisiblePlanet (noun
+  0x44462A6, 4 in a good save), new cRock 0x2A8FB3F (1) and cInteractiveOrnament 0x3A2511E (12),
+  far more 0x06ABEE7E (0x686 instead of 0x1C2) and cFruitGroup 0x2E96892 (0x3EC instead of 0x360):
+  the save holds the world half torn down / rebuilt for the editor. Which of these keeps the load
+  mode from finishing is not known (?); the mode switch handlers 0xB336B0 / 0xB33A50 (old, new)
+  call 0xB28AA0 (persistence manager: load, [mgr]+0x20 = LoadGame, `SimulatorModeMgr_SetMode`) on
+  the way into LoadGame and 0xB33210 / 0xB331C0 on the way out (not decompiled further).
+* ? Not checked: whether a save made with the editor fully open (mode 0xDBDBA1) loads; SporeCoop
+  does not try it any more.
+* What SporeCoop does: `world::save_game` asks coop.cpp's `save_blocker` first and does not save
+  while an editor is open (0xDBDBA1 / 0x1654C06), the game loads (0x1654C08), an editor request
+  went to the game less than 5 s ago or is held, or the simulator's mode switcher has a switch
+  pending (`SimulatorModeMgr_ptr` [0x167FACC]+0x28); a waiting share retries every 2 s (after the
+  editor: once the host is back in the stage). Editor requests (the vote's, and the game's own when
+  the host is alone) wait while a save of ours is being written (`world::save_busy`: saved for a
+  share and not shared yet, or the saved box not seen within 10 s) or a share still waits for its
+  save (`world::save_pending`: otherwise, when the vote ended a frame before the share posted its
+  save, the editor opened first, the save was refused and the guest waited in the galaxy menu for
+  the whole editor session; seen once as a `coop_exit_menu.py` part 4 failure "back in the host
+  world" with "together" only after the host's evolution); at most 15 s, dropped if the game
+  left the stage meanwhile. A share whose save saw the game change modes is saved again.
+  `coop.vote` prints "editor held for a save N".
+* Timing seen with the fix: "back to the world: sending it to Bob" at t, the vote ends 0.06 s later,
+  the save's box at t+2.0 s, shared at t+2.6 s, the editor opens at t+2.6 s; the guest is back in
+  the creature stage 7 s after the vote ended.
+* The guest's own editor at the end of a vote (MSG_VOTE "ended") is opened only when the guest is
+  still in the creature stage, no mode switch is pending and neither the pause menu nor one of the
+  game's message boxes is up when the outside-frame task runs. ✔ Before: a guest in the "Are you
+  sure? All progress will be lost!" box when the vote ended got its editor opened under the box,
+  and the "Don't Save" click right after left it in Editor mode (0xDBDBA1) with a black screen for
+  good. The pause menu's boxes ("Do you want to save your game?", "Are you sure?") use the same
+  container control id 0x06318E78 as the "game saved" box; the pause menu window (0x0615B50D) is
+  hidden while they are up.
+* Neighbours checked on lane 3 (`out/vote-load-hang/neighbours.py`, not in git), all pass with the
+  fix: A) the guest leaves to the menu while the host is in its editor: it gets the evolved world
+  when the host is back (8 s); B) the guest is in the exit boxes when the vote ends (above);
+  C) the host leaves to the menu (`coop.menu`, the quit message) the moment a guest joins.
+* ✔ C before the fix: our share save (posted for the join) and the quit message's own save ran
+  together; the host's slot was broken and its next `coop.load` of it faulted at 0xBA7F87
+  (`cStarManager::GetStarGridPosition+0xD57`, data 0x1188, called from 0xB27DA6 with 0x1654C08 on
+  the stack) and stayed in LoadGame. A save made in the galaxy menu (a share that waited there) did
+  the same. Now: `save_game` refuses outside a stage (adventures 0x1654C10 allowed), a waiting share
+  saves only once the player controls something again, and a hook on `Simulator_HandleMessage`
+  0xB63610 posts the quit message 0x4715068 again while our save is written (`world::save_busy`),
+  as the game itself does while a mode switch is pending (`coop.vote`: "quit held for a save N").

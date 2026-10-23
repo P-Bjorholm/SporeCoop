@@ -515,6 +515,121 @@ bool open_own_editor(uint32_t editor_id)
     return r;
 }
 
+// the simulator's mode switcher has a switch pending (+0x28: a load, the quit to the menu, an editor)
+bool mode_switch_pending()
+{
+    static uintptr_t mgr_ptr = H->sym("SporeCoop::SimulatorModeMgr_ptr");
+    void* mgr = mgr_ptr ? *(void**)mgr_ptr : nullptr;
+    return mgr && skg::field<uint8_t>(mgr, 0x28);
+}
+
+// An editor request that waits until the host's save for a world share is written (a save made
+// while the editor opens does not load again: world::save_game). One reference held.
+void* g_submit_later = nullptr;
+double g_submit_held_at = 0;
+double g_editor_submitted_at = -100; // the last editor request that reached the game
+bool g_submit_queued = false;        // released, the outside-frame task has not submitted it yet
+unsigned g_submits_held; // tests: editor requests that waited for a save
+
+// a save for a world share is under way or due (a share that waits for its save: the editor lets
+// it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
+bool share_save_due() { return world::save_busy() || world::save_pending(); }
+
+bool submit_now(void* req)
+{
+    g_vote_bypass = true;
+    bool r = o_Submit(req);
+    g_vote_bypass = false;
+    if (r)
+        g_editor_submitted_at = H->time_seconds();
+    return r;
+}
+
+void hold_submit(void* req)
+{
+    skg::vcall<int>(req, 1); // AddRef
+    if (g_submit_later)
+        skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
+    g_submit_later = req;
+    g_submit_held_at = H->time_seconds();
+    if (share_save_due()) {
+        g_submits_held++;
+        LOG("the editor waits until the world save is written");
+    }
+}
+
+// the held request goes to the game once the save is written (at most 15 s later), outside the
+// frame: editors create D3D resources
+void submit_tick(double now)
+{
+    if (!g_submit_later || (share_save_due() && now - g_submit_held_at < 15.0))
+        return;
+    void* req = g_submit_later;
+    g_submit_later = nullptr;
+    if (!stage_mode(game::mode_id()) || mode_switch_pending()) { // the host left the stage meanwhile
+        LOG("the held editor request is dropped: the game left the stage");
+        skg::vcall<int>(req, 2);
+        return;
+    }
+    if (now - g_submit_held_at > 0.05)
+        LOG("the save is written: the editor opens (%.1f s later)", now - g_submit_held_at);
+    g_submit_queued = true; // no save from here until the game has the request (save_blocker)
+    H->run_outside_frame(
+        [](void* r) {
+            submit_now(r);
+            g_submit_queued = false;
+            skg::vcall<int>(r, 2); // Release
+        },
+        req);
+}
+
+// why the game must not save now (world::save_game)
+const char* save_blocker()
+{
+    uint32_t mode = game::mode_id();
+    if (mode == modes::kEditor || mode == modes::kEdit)
+        return "an editor is open (the world is sent when the host is back in the stage)";
+    if (mode == modes::kLoad)
+        return "the game is loading";
+    // a save in the galaxy menu (a share that waited there after the host left its stage) wrote a
+    // slot that faulted the host's own next load (0xBA7F87, cStarManager) and stayed in LoadGame
+    if (!stage_mode(mode) && mode != modes::kScenario)
+        return "the game is not in a stage";
+    if (g_submit_queued || H->time_seconds() - g_editor_submitted_at < 5.0)
+        return "an editor is opening";
+    if (mode_switch_pending())
+        return "the game is switching modes";
+    return nullptr;
+}
+
+// The quit message 0x4715068 (save and leave the stage for the galaxy menu; coop.load and received
+// worlds use it, docs/re/space.md 8.2) saves the game itself. Handled while our save for a world
+// share was still queued or being written (a guest joined as the host left), the two saves broke
+// the host's slot: its next load faulted at 0xBA7F87 (data 0x1188, from 0xB27DA6) and stayed in
+// LoadGame. Like the game does while a mode switch is pending, the message is posted again until
+// our save is written.
+using SimMsg_t = int(SK_THISCALL*)(void*, uint32_t, void*);
+SimMsg_t o_SimMsg;
+unsigned g_quits_delayed; // tests: quit messages that waited for our save
+double g_quit_delay_logged = 0;
+int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
+{
+    if (id == 0x4715068u && world::save_busy()) {
+        uintptr_t get = H->sym("App::IMessageManager::Get");
+        if (void* mm = get ? skg::cdecl_call<void*>(get) : nullptr) {
+            double now = H->time_seconds();
+            if (now - g_quit_delay_logged > 5.0) {
+                g_quit_delay_logged = now;
+                g_quits_delayed++;
+                LOG("leaving the stage waits until the world save is written");
+            }
+            skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+            return 1;
+        }
+    }
+    return o_SimMsg(self, id, data);
+}
+
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
@@ -528,7 +643,14 @@ bool SK_CDECL h_Submit(void* req)
         notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
         set_ready(true);
     }
-    return o_Submit(req);
+    if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && share_save_due()) {
+        hold_submit(req); // the game's own request (alone in the session): after the save
+        return false;
+    }
+    bool r = o_Submit(req);
+    if (r)
+        g_editor_submitted_at = H->time_seconds();
+    return r;
 }
 
 void finish_vote(const char* why)
@@ -548,15 +670,11 @@ void finish_vote(const char* why)
         g_vote_action = nullptr;
         H->run_outside_frame([](void*) { run(); }, nullptr);
     }
-    if (req) // editors create D3D resources: outside the frame
-        H->run_outside_frame(
-            [](void* r) {
-                g_vote_bypass = true;
-                o_Submit(r);
-                g_vote_bypass = false;
-                skg::vcall<int>(r, 2); // Release
-            },
-            req);
+    if (req) { // the editor opens from submit_tick (outside the frame) once no world save is written
+        hold_submit(req);
+        skg::vcall<int>(req, 2); // the vote's reference: hold_submit took its own
+        submit_tick(H->time_seconds());
+    }
 }
 
 void broadcast_vote()
@@ -765,6 +883,7 @@ void on_frame(void*, int, void*)
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
+    submit_tick(now);
     coop_ui::tick();
     menu_tick(now);
     if (g_sess.role() == net::Role::Host)
@@ -990,6 +1109,27 @@ bool shown_chain(sui::Win w)
         if (!sui::visible(w))
             return false;
     return true;
+}
+
+// a visible window with this control id below w (closed boxes stay in the tree, hidden)
+bool visible_below(sui::Win w, uint32_t id, int depth = 0)
+{
+    if (!w || depth > 12 || !sui::visible(w))
+        return false;
+    if (sui::control_id(w) == id)
+        return true;
+    for (sui::Win c : sui::children(w))
+        if (visible_below(c, id, depth + 1))
+            return true;
+    return false;
+}
+
+// the pause menu or one of the game's message boxes ("Do you want to save your game?", "Are you
+// sure?": container 0x06318E78, like the "game saved" box) is up; outside the frame only
+bool pause_ui_up()
+{
+    sui::Win root = sui::main_window();
+    return root && (shown_chain(sui::find(root, kPauseMenuId)) || visible_below(root, 0x06318E78u));
 }
 
 void menu_check_task(void*)
@@ -1224,6 +1364,18 @@ void setup_callbacks()
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local)
                 H->run_outside_frame( // editors create D3D resources: outside the frame
                     [](void* id) {
+                        // the player may have left the stage since (pause menu "Exit to Main Menu")
+                        if (game::mode_id() != modes::kCreature || mode_switch_pending()) {
+                            LOG("own editor not opened: the game left the creature stage");
+                            return;
+                        }
+                        // an editor opened under the pause menu or its "save your game?" boxes: a
+                        // click on "Don't Save" right after left the guest in a black editor for good
+                        if (pause_ui_up()) {
+                            LOG("own editor not opened: the pause menu is open");
+                            feed("evolution: your editor did not open (pause menu); evolve at your nest later");
+                            return;
+                        }
                         bool ok = open_own_editor((uint32_t)(uintptr_t)id);
                         LOG("own editor %s", ok ? "opened" : "not opened");
                     },
@@ -2161,6 +2313,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
+    world::set_save_blocker(save_blocker);
     shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
@@ -2239,6 +2392,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))
+        H->hook_create(M, (void*)a, (void*)h_SimMsg, (void**)&o_SimMsg);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
         H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
@@ -2264,8 +2419,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
-                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u", g_vote.active ? "active" : "none",
-                           g_vote.text.c_str(), g_vote.left, (int)g_own_editor, g_part_list_waivers);
+                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
+                           "quit held for a save %u",
+                           g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
+                           g_part_list_waivers, g_submits_held, g_quits_delayed);
                        return 0;
                    },
                    nullptr, MT);
