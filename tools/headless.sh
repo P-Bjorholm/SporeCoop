@@ -9,9 +9,9 @@
 #   headless.sh down    stop it
 set -euo pipefail
 RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sporecoop-headless"
-# one big virtual monitor: up to 12 game windows of 1440x1080 side by side (SporeKit places them
+# one big virtual monitor: up to 16 game windows (lanes 1..8) of 1440x1080 side by side (SporeKit places them
 # by instance number; covered windows would get no frames either)
-SIZE="${SPORE_HEADLESS_SIZE:-5760x3240}"
+SIZE="${SPORE_HEADLESS_SIZE:-5760x4320}"
 
 running() { [[ -f "$RT/pid" ]] && kill -0 "$(cat "$RT/pid")" 2>/dev/null; }
 

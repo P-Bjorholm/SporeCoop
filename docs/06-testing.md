@@ -39,7 +39,7 @@ Test runs don't get in the way of whoever is at the computer:
   profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
   the mute by application name and apply it to normal play too);
 * **invisible**: `spore.sh run` starts the test games on a headless GNOME Shell
-  (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x3240
+  (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x4320
   virtual monitor; its Xwayland display is passed to Bottles). Nothing appears on the user's
   desktop and the games keep drawing at 30 fps. SporeKit places each window in its own cell of a
   4-wide grid (`[sporekit] test_monitor = grid`): a covered window gets no frames. Do not move test
