@@ -1727,7 +1727,7 @@ std::string targets(bool all)
         int sw = 0, sh = 0;
         H->screen_size(&sw, &sh);
         for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries, squadron::sync_entries,
-                        cellsync::sync_entries})
+                        cellsync::sync_entries, spacecoop::nav_entries})
             for (auto& e : f()) {
                 float w[3] = {e.pos.x, e.pos.y, e.pos.z}, sc[2];
                 if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)

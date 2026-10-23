@@ -740,16 +740,77 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     return g_ok;
 }
 
+std::vector<syncdbg::Entry> nav_entries()
+{
+    std::vector<syncdbg::Entry> v;
+    if (!in_space() || !a_StarMgr || !a_Context)
+        return v;
+    int ctx = cdecl_call<int>(a_Context);
+    void* sm = cdecl_call<void*>(a_StarMgr);
+    if (!sm || IsBadReadPtr(sm, 0xD0))
+        return v;
+    char key[24];
+    if (ctx == 1) {
+        // the loaded cPlanet objects of the current system: cStarManager +0x50..+0x54 (the list
+        // RecordToPlanet 0xBB5B20 searches); cPlanet +0x04 position, +0x13C record (docs/re/space.md 7.9)
+        void** b = F<void**>(sm, 0x50);
+        void** e = F<void**>(sm, 0x54);
+        for (void** it = b; it && it < e && v.size() < 64; ++it) {
+            void* p = *it;
+            if (!p || IsBadReadPtr(p, 0x140))
+                continue;
+            void* rec = F<void*>(p, 0x13C);
+            if (!rec || IsBadReadPtr(rec, 0x198))
+                continue;
+            snprintf(key, sizeof key, "%c%08X", F<int>(rec, 0x194) == 5 ? 'C' : 'P', F<uint32_t>(rec, 0x184));
+            auto& q = F<float[3]>(p, 0x04);
+            v.push_back({key, {q[0], q[1], q[2]}, {0, 0, 0, 1}});
+        }
+    } else if (ctx == 2) {
+        // galaxy view: star records near the own ship. cStarManager +0xC8 = sectors (20 bytes each,
+        // first dword = array of cStarRecord*, as GetStarRecord 0xBA6EB0 indexes them: StarID =
+        // sector << 12 | index); cStarRecord +0x3C position (galaxy coordinates), +0x54 empire id,
+        // +0x70 StarID (docs/re/space.md 7.9)
+        void* me = my_ufo();
+        if (!me)
+            return v;
+        net::Vec3 at = ufo_pos(me);
+        uint8_t* sb = F<uint8_t*>(sm, 0xC8);
+        uint8_t* se = F<uint8_t*>(sm, 0xCC);
+        if (!sb || se <= sb || (se - sb) / 20 > 4096 || IsBadReadPtr(sb, se - sb))
+            return v;
+        for (uint8_t* sec = sb; sec + 20 <= se && v.size() < 400; sec += 20) {
+            void** b = F<void**>(sec, 0);
+            void** e = F<void**>(sec, 4);
+            if (!b || e <= b || e - b > 4096 || IsBadReadPtr(b, (e - b) * 4))
+                continue;
+            for (void** it = b; it < e && v.size() < 400; ++it) {
+                void* r = *it;
+                if (!r || IsBadReadPtr(r, 0x74))
+                    continue;
+                auto& q = F<float[3]>(r, 0x3C);
+                net::Vec3 p{q[0], q[1], q[2]};
+                if (net::dist(p, at) > 60.f)
+                    continue;
+                snprintf(key, sizeof key, "%c%08X", F<uint32_t>(r, 0x54) == F<uint32_t>(me, 0x30) ? 'H' : 'S',
+                         F<uint32_t>(r, 0x70));
+                v.push_back({key, p, {0, 0, 0, 1}});
+            }
+        }
+    }
+    return v;
+}
+
 std::string status()
 {
     char b[400];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u respawns_forced=%u "
-             "partners_here=%u\n",
+             "partners_here=%u partners_down=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced,
-             (unsigned)partners_here().size());
+             (unsigned)partners_here().size(), (unsigned)g_partner_down.size());
     return b;
 }
 
@@ -862,6 +923,45 @@ std::string debug(const std::vector<std::string>& a)
         void* rec = F<void*>(p, 0x13C);
         snprintf(b, sizeof b, "planet b0=%.3f b4=%.3f b8=%.3f", F<float>(rec, 0xB0), F<float>(rec, 0xB4),
                  F<float>(rec, 0xB8));
+        return b;
+    }
+    if (a[0] == "tools" || (a[0] == "tool" && a.size() > 2 && a[1] == "add")) {
+        // tests: the tools in the inventory (instance hash = FNV-1 of the tool file name, e.g. scan,
+        // abduct, interplanetarydrive, interstellardrive) and adding one by name (setup: the fixture's
+        // ship has no interstellar drive yet, docs/re/space.md 7.7)
+        void* inv = inventory();
+        if (!inv)
+            return "no inventory";
+        Key tk{};
+        std::string s;
+        int n = vcall<int>(inv, 0x5C / 4);
+        for (int i = 0; i < n && i < 256; i++) {
+            uint8_t* it = vcall<uint8_t*>(inv, 0x60 / 4, i);
+            if (!it || F<int>(it, 0x14) != 2)
+                continue;
+            const uint32_t* k = vcall<const uint32_t*>(it, 0x18 / 4);
+            if (!k)
+                continue;
+            memcpy(tk.v, k, 12);
+            snprintf(b, sizeof b, "tool %08X %08X %08X\n", k[0], k[1], k[2]);
+            s += b;
+        }
+        if (a[0] == "tools")
+            return s.empty() ? "no tools" : s;
+        if (!tk.v[0] || !a_AddItemByKey) // tool keys are {instance, 0, 0} in this build
+            return "no tool to copy the key type/group from";
+        const std::string& nm = a[2];
+        uint32_t h = 0x811C9DC5u;
+        if (nm.size() > 2 && nm[0] == '0' && nm[1] == 'x')
+            h = (uint32_t)strtoul(nm.c_str(), nullptr, 16);
+        else
+            for (char c : nm)
+                h = (h * 0x01000193u) ^ (uint8_t)tolower((unsigned char)c);
+        tk.v[0] = h;
+        if (vcall<bool>(inv, 0x74 / 4, tk.v)) // HasTool
+            return "already there";
+        thiscall<void>(a_AddItemByKey, inv, tk.v);
+        snprintf(b, sizeof b, "added %08X: %s", h, vcall<bool>(inv, 0x74 / 4, tk.v) ? "ok" : "not in the inventory");
         return b;
     }
     if (a[0] == "planet") {

@@ -118,6 +118,8 @@ static Res g_res[] = {
     {3, "money", 0x1654C05, g_space, s_space},
 };
 
+static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
@@ -132,6 +134,7 @@ void on_session_change()
 
 void tick(net::Session& s, uint32_t mode, double now)
 {
+    g_mode = mode;
     if (s.role() == net::Role::None)
         return;
     for (auto& r : g_res) {
@@ -204,7 +207,9 @@ std::string status()
     char b[128];
     for (auto& r : g_res) {
         double v;
-        if (!r.get(v))
+        // only this mode's resources: in Space the player cCivilization still exists and its
+        // money would show up as a second "money" line (and take debug_add's money)
+        if (r.mode != g_mode || !r.get(v))
             continue;
         snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f\n", r.name, v, r.have, r.pending);
         out += b;
@@ -216,7 +221,7 @@ bool debug_add(const std::string& name, double v, std::string& err)
 {
     for (auto& r : g_res) {
         double cur;
-        if (name == r.name && r.get(cur)) {
+        if (name == r.name && r.mode == g_mode && r.get(cur)) {
             r.set(cur + v);
             return true;
         }

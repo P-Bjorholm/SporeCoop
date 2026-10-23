@@ -16,6 +16,7 @@
 
 #include "net/protocol.h"
 #include "net/session.h"
+#include "syncdbg.h"
 #include "sporekit.h"
 
 namespace spacecoop {
@@ -50,6 +51,10 @@ int spice(std::string& to);
 int give_spice(int n);
 bool can_jump(std::string& to);
 std::string jump(uint8_t to); // "" = ok, else why not
+// tests (coop.targets all): where to fly. In a solar system its planets (key P<PlanetID>, C<PlanetID>
+// for a colony of ours), in the galaxy view the stars near the own ship (S<StarID>, H<StarID> for a
+// star of ours), positions in the coordinates of that view
+std::vector<syncdbg::Entry> nav_entries();
 std::string status();
 std::string debug(const std::vector<std::string>& args);
 
