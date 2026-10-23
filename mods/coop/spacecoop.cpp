@@ -752,7 +752,27 @@ std::vector<syncdbg::Entry> nav_entries()
     if (!sm || IsBadReadPtr(sm, 0xD0))
         return v;
     char key[24];
-    if (ctx == 1) {
+    if (ctx == 0) {
+        // on a planet: its cities (GetAllCities 0xACE1C0, cCity +0x124 position, +0x30 political
+        // id), key T<index> for ours (a click opens the city planner), X<index> for others
+        static uintptr_t all = H->sym("Simulator::cGameNounManager::GetAllCities");
+        void* nm = game::noun_manager();
+        void* vec = all && nm ? thiscall<void*>(all, nm) : nullptr;
+        void* me = my_ufo();
+        if (!vec || !me)
+            return v;
+        void** b = F<void**>(vec, 0);
+        void** e = F<void**>(vec, 4);
+        int i = 0;
+        for (void** it = b; it && it < e && v.size() < 64; ++it, ++i) {
+            void* c = *it;
+            if (!c || IsBadReadPtr(c, 0x130) || !game::object_alive(c))
+                continue;
+            snprintf(key, sizeof key, "%c%d", F<uint32_t>(c, 0x30) == F<uint32_t>(me, 0x30) ? 'T' : 'X', i);
+            auto& q = F<float[3]>(c, 0x124);
+            v.push_back({key, {q[0], q[1], q[2]}, {0, 0, 0, 1}});
+        }
+    } else if (ctx == 1) {
         // the loaded cPlanet objects of the current system: cStarManager +0x50..+0x54 (the list
         // RecordToPlanet 0xBB5B20 searches); cPlanet +0x04 position, +0x13C record (docs/re/space.md 7.9)
         void** b = F<void**>(sm, 0x50);
@@ -781,18 +801,20 @@ std::vector<syncdbg::Entry> nav_entries()
         uint8_t* se = F<uint8_t*>(sm, 0xCC);
         if (!sb || se <= sb || (se - sb) / 20 > 4096 || IsBadReadPtr(sb, se - sb))
             return v;
-        for (uint8_t* sec = sb; sec + 20 <= se && v.size() < 400; sec += 20) {
+        // (stars are ~1 unit apart and the drive reaches a few units: only the neighbourhood; every
+        // star of the galaxy would fill the list in sector order and miss the near ones)
+        for (uint8_t* sec = sb; sec + 20 <= se && v.size() < 200; sec += 20) {
             void** b = F<void**>(sec, 0);
             void** e = F<void**>(sec, 4);
             if (!b || e <= b || e - b > 4096 || IsBadReadPtr(b, (e - b) * 4))
                 continue;
-            for (void** it = b; it < e && v.size() < 400; ++it) {
+            for (void** it = b; it < e && v.size() < 200; ++it) {
                 void* r = *it;
                 if (!r || IsBadReadPtr(r, 0x74))
                     continue;
                 auto& q = F<float[3]>(r, 0x3C);
                 net::Vec3 p{q[0], q[1], q[2]};
-                if (net::dist(p, at) > 60.f)
+                if (net::dist(p, at) > 8.f)
                     continue;
                 snprintf(key, sizeof key, "%c%08X", F<uint32_t>(r, 0x54) == F<uint32_t>(me, 0x30) ? 'H' : 'S',
                          F<uint32_t>(r, 0x70));

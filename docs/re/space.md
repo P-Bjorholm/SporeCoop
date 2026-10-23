@@ -716,7 +716,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * **Stars in the galaxy view**: `cStarManager` **+0xC8** = vector of 20-byte sectors whose first dword
   is an array of `cStarRecord*` (`GetStarRecord` 0xBA6EB0: StarID = sector << 12 | index).
   `cStarRecord` **+0x3C** position (galaxy coordinates, the player UFO's position in the galaxy view
-  is in the same space), +0x54 empire id (the player's political id for own stars), +0x70 StarID.
+  is in the same space; neighbouring stars are ~1 unit apart), +0x54 empire id (the player's political id for own stars), +0x70 StarID.
 * `coop.targets all` prints them (`obj P/C<PlanetID>` in a system, `obj S/H<StarID>` in the galaxy
   view) and `far player <id> x y` for a partner off the screen (its projected point).
 
@@ -732,6 +732,8 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   at (18, H-60)) only works with the **interstellar drive**: without it the camera stops at the
   edge of the system. The space fixture's ship does not have it yet (a new player gets it in the
   first missions: fly to Dunoselka, scan the wreck).
+* Galaxy view: a click on a star in the drive's range (the circle) flies there at once (no money
+  spent in this save); zooming in enters its system. Neighbouring stars are ~1 galaxy unit apart.
 * Tool palettes (bottom right, anchored to the right edge): category tabs at x = W-426 main, W-387
   combat, W-347 gear (scan, abduct), W-306 colony, then three terraforming tabs and cargo; y = H-51 while the palette is
   closed, H-151 while open (a click on a closed tab opens it). Keys 1..9 select the slot of the open

@@ -305,6 +305,57 @@ class Player(threading.Thread):
                 break
         return True
 
+    def planner_open(self):
+        """the city planner is up: its done button (bottom right) is green"""
+        from PIL import Image
+        path = os.path.join(lane.out_dir('shots'), f'planner_{self.name}.png')
+        self.cmd('shot ' + path)
+        r, g, b = Image.open(path).convert('RGB').getpixel((self.W - 25, self.H - 22))
+        return g > 60 and r < 50 and b < 70
+
+    def visit_city(self):
+        """an own city on this planet: fly over it, open the city planner (its rollover's planner
+        button), look at it, close it with the done button"""
+        me, _, objs = self.targets()
+        towns = sorted((o for o in objs if o[0][0] == 'T'), key=lambda o: o[1])
+        if not towns:
+            return False
+        k = towns[0][0]
+        self.count('city_flights')
+        for _ in range(12):
+            me, _, objs = self.targets()
+            t = [o for o in objs if o[0] == k]
+            if not t or t[0][1] < 330 or not me:
+                break
+            self.steer(t[0][2], t[0][3], me, 1.0)
+        me, _, objs = self.targets()
+        t = [o for o in objs if o[0] == k]
+        if not t:
+            return True
+        if self.palette not in (None, 'main'):
+            self.open_palette('main')
+        x, y = t[0][2], t[0][3]
+        self.act(f'move {x} {y}')  # the rollover with the planner button comes up
+        self.sleep(1.0)
+        self.act(f'click {x - 23} {y - 22}')
+        self.sleep(2.5)
+        if self.planner_open():
+            self.count('planners')
+            self.sleep(self.rng.uniform(2, 5))
+            self.act(f'wheel {self.W // 2} {self.H // 2} {self.rng.choice([-2, 2])}')
+            self.sleep(1)
+            self.act(f'click {self.W - 25} {self.H - 22}')  # done
+            self.sleep(2)
+            if self.planner_open():
+                self.count('planner_stuck')
+        return True
+
+    def more_money(self):
+        """the game's own cheat (Ctrl+Shift+C "moreMoney": +1 000 000): the shared money changes on
+        one machine and has to reach the other"""
+        self.act('cheat moreMoney')
+        self.count('money_cheats')
+
     def cruise(self):
         keys = self.rng.choice([['0x57'], ['0x53'], ['0x41'], ['0x44'], ['0x57', '0x41'], ['0x57', '0x44']])
         self.key_hold(keys, self.rng.uniform(0.4, 2.0))
@@ -381,27 +432,38 @@ class Player(threading.Thread):
         return False
 
     def visit_star(self):
-        """galaxy view: click a star nearby (not the one we are at), fly, zoom into its system"""
-        me, _, objs = self.targets()
-        stars = [o for o in objs if o[0][0] in 'SH' and o[1] > 1]
-        if not stars:
-            self.zoom(5)
-            return False
-        k, d, x, y = self.rng.choice(sorted(stars, key=lambda o: o[1])[:6])
-        self.act(f'click {x} {y}')
-        self.count('star_flights')
-        t0 = time.time()
-        while time.time() - t0 < 30:
-            self.sleep(1)
-            _, _, objs = self.targets()
-            o = [o for o in objs if o[0] == k]
-            if not o or o[0][1] < 0.5:
-                break
+        """galaxy view: click one of the nearest stars (the drive reaches a few of them: a click on
+        one in range flies there at once), then zoom into its system"""
+        start = self.last_place[1]
+        for attempt in range(4):
+            me, _, objs = self.targets()
+            stars = sorted((o for o in objs if o[0][0] in 'SH' and o[1] > 0.3), key=lambda o: o[1])[:3]
+            if not stars:
+                self.act(f'wheel {self.W // 2} {self.H // 2} -3')  # zoom out to see more stars
+                self.sleep(1)
+                continue
+            k, d, x, y = self.rng.choice(stars)
+            self.act(f'click {x} {y}')
+            self.count('star_clicks')
+            t0 = time.time()
+            while time.time() - t0 < 6:
+                self.sleep(1)
+                _, _, objs = self.targets()
+                o = [o for o in objs if o[0] == k]
+                if o and o[0][1] < 0.3:
+                    self.count('star_flights')
+                    break
+            else:
+                continue
+            break
         for _ in range(12):
             self.zoom(10)
             self.sleep(1.0)
-            if self.ctx() == 'system':
+            p = self.place()
+            if p[0] & 0x80000000:
                 self.count('systems_entered')
+                if p[1] != start:
+                    self.count('new_systems')
                 return True
         return False
 
@@ -439,6 +501,7 @@ class Player(threading.Thread):
         # goes its own way for a while; the host explores and comes back to the guest less often
         follow = self.pid == 1 and self.rng.random() < 0.85
         if other_star and c != 'galaxy' and time.time() - self.apart_since > (25 if follow else 120):
+            self.count('jump_tries')
             if self.jump_to_partner():  # the co-op window (F9): "Jump to <partner>"
                 self.sleep(6)
                 return
@@ -460,8 +523,13 @@ class Player(threading.Thread):
             self.last_spawn = time.time()
             self.count('pirates_spawned')
             return
+        if self.rng.random() < 0.012:
+            self.more_money()
+            return
         r = self.rng.random()
         if c == 'planet':
+            if r < 0.1 and self.visit_city():
+                return
             if r < 0.75:
                 self.cruise()
             elif r < 0.85:
@@ -475,6 +543,8 @@ class Player(threading.Thread):
                 self.zoom(self.rng.choice([-3, 3]))
             elif self.pid == 0 or not follow:
                 self.to_galaxy()
+            if self.pid == 0 and self.rng.random() < 0.15:
+                self.to_galaxy()  # the host goes exploring other systems now and then
         else:
             self.visit_star()
 
