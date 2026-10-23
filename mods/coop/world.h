@@ -24,6 +24,9 @@ std::string status();
 // guest: a world transfer in progress (bytes so far / total)
 bool progress(uint32_t& got, uint32_t& total);
 void set_auto_load(bool on);
+// true while the local player controls something in a stage (coop.cpp): a load waits until the
+// stage has been playable for a few seconds before it leaves it
+void set_playing_probe(bool (*probe)());
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err);
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);

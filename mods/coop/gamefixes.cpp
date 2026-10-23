@@ -2,7 +2,9 @@
 
 #include <windows.h>
 
-#include <cstring>
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
 #include <string>
 
 namespace gamefixes {
@@ -10,75 +12,95 @@ namespace gamefixes {
 static const SkHost* H;
 static SkMod* M;
 
-// A planet view of the galaxy menu reads the temperature of a terrain state that is null while a
-// save loads under it: `call cTerrainStateMgr_GetTemperatureScore` (0xFB89D0: fld [ecx+0x30]; ret)
-// at 0xF9E5EC faulted with ecx 0 (first-chance AV, mostly survived; seen on guests loading a received
-// world, more often with 3-4 players rejoining). The call goes to this guard instead: 0.0 for a null
-// state, else the same load.
-extern "C" __attribute__((naked)) void sporecoop_temperature_guard()
-{
-    asm volatile("test %ecx, %ecx\n\t"
-                 "jz 1f\n\t"
-                 "flds 0x30(%ecx)\n\t"
-                 "ret\n"
-                 "1:\n\t"
-                 "fldz\n\t"
-                 "ret\n\t");
-}
+// The texture job of a terrain sphere (docs/re/space.md 8.3): a one-shot render layer that the
+// sphere queues in the render manager to draw its planet textures face by face (pass +0x10 0..3,
+// cube face +0x14 0..5). Its DrawLayer (vtable slot 3, thiscall, 4 arguments, ret 0x10) reads the
+// sphere (+0xC) without checks: the terrain state (sphere+0x20C, the sphere's vt 0x10) and the face
+// render targets (sphere+0x148/+0x160 [face]). While a save loaded from the galaxy menu the game drew
+// such a job for a sphere whose state and targets were already gone: first-chance AVs at 0xFB89D0
+// (cTerrainStateMgr_GetTemperatureScore, ecx 0) and 0xF9E660 (the face target). The job's vtable
+// slot goes to this guard, which skips the draw (as the game's own early return when +0x20 is
+// null) when anything it reads is missing.
+using DrawLayerFn = void(__thiscall*)(void*, int, int, void*, void*);
+static DrawLayerFn g_draw_orig;
+static uintptr_t* g_draw_slot;
+static std::atomic<unsigned> g_skipped{0};
+static std::string g_last; // the last skipped job (main thread only)
 
-struct CallPatch {
-    uintptr_t at;     // the call instruction (E8 rel32)
-    uintptr_t target; // its original target
-    uint8_t saved[5];
-    bool on = false;
-};
-static CallPatch g_temp{0xF9E5EC, 0xFB89D0};
-static unsigned g_patched;
+template <class T> static T at(const void* p, size_t off) { return *(const T*)((const uint8_t*)p + off); }
 
-static bool redirect(CallPatch& p, void* to)
+static bool sphere_ready(const void* job, const uint8_t* sphere)
 {
-    uint8_t* code = (uint8_t*)p.at;
-    if (IsBadReadPtr(code, 5) || code[0] != 0xE8)
+    if (!sphere || !at<void*>(sphere, 0x20C))
         return false;
-    int32_t rel;
-    memcpy(&rel, code + 1, 4);
-    if (p.at + 5 + rel != p.target)
-        return false; // not the build we know: leave it alone
-    DWORD old;
-    if (!VirtualProtect(code, 5, PAGE_EXECUTE_READWRITE, &old))
-        return false;
-    memcpy(p.saved, code, 5);
-    int32_t nrel = (int32_t)((uintptr_t)to - (p.at + 5));
-    memcpy(code + 1, &nrel, 4);
-    VirtualProtect(code, 5, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), code, 5);
-    p.on = true;
+    int pass = at<int>(job, 0x10), face = at<int>(job, 0x14);
+    if (pass >= 0 && pass <= 2 && face >= 0 && face < 6) {
+        if (!at<void*>(sphere, 0x160 + 4 * face))
+            return false;
+        if (pass == 2 && !at<void*>(sphere, 0x148 + 4 * face))
+            return false;
+    }
     return true;
 }
 
-static void restore(CallPatch& p)
+static void __fastcall draw_layer_guard(void* job, void*, int flags, int index, void* viewers, void* engine)
 {
-    if (!p.on)
+    const uint8_t* sphere = at<const uint8_t*>(job, 0xC);
+    if (!at<void*>(job, 0x20) || sphere_ready(job, sphere)) {
+        g_draw_orig(job, flags, index, viewers, engine);
         return;
-    DWORD old;
-    if (VirtualProtect((void*)p.at, 5, PAGE_EXECUTE_READWRITE, &old)) {
-        memcpy((void*)p.at, p.saved, 5);
-        VirtualProtect((void*)p.at, 5, old, &old);
-        FlushInstructionCache(GetCurrentProcess(), (void*)p.at, 5);
     }
-    p.on = false;
+    if (sphere)
+        *(int*)(sphere + 0x8A4) = -1; // what DrawLayer does first: this job is no longer queued
+    unsigned n = ++g_skipped;
+    if (n > 8)
+        return;
+    char b[320];
+    snprintf(b, sizeof b,
+             "job %p sphere %p pass %d face %d state %p targets %p/%p sphere job %p id %d tid %lu",
+             job, sphere, at<int>(job, 0x10), at<int>(job, 0x14), sphere ? at<void*>(sphere, 0x20C) : nullptr,
+             sphere ? at<void*>(sphere, 0x148 + 4 * (at<int>(job, 0x14) & 7)) : nullptr,
+             sphere ? at<void*>(sphere, 0x160 + 4 * (at<int>(job, 0x14) & 7)) : nullptr,
+             sphere ? at<void*>(sphere, 0x8A0) : nullptr, sphere ? at<int>(sphere, 0x8A4) : 0, GetCurrentThreadId());
+    g_last = b;
+    H->log(M, SK_WARN, "game fixes: skipped a planet texture job of a terrain sphere without terrain (%s)", b);
+}
+
+static bool patch_slot(uintptr_t* slot, uintptr_t value)
+{
+    DWORD old;
+    if (!VirtualProtect(slot, sizeof *slot, PAGE_READWRITE, &old))
+        return false;
+    *slot = value;
+    VirtualProtect(slot, sizeof *slot, old, &old);
+    return true;
 }
 
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
-    g_patched = redirect(g_temp, (void*)sporecoop_temperature_guard);
-    H->log(M, SK_INFO, "game fixes: planet-view temperature guard %s", g_patched ? "on" : "off (unknown code)");
+    uintptr_t vt = H->sym("Terrain::cTerrainSphereTextureJob::vftable");
+    uintptr_t fn = H->sym("Terrain::cTerrainSphereTextureJob::DrawLayer");
+    uintptr_t* slot = vt ? (uintptr_t*)(vt + 3 * 4) : nullptr;
+    bool ok = slot && fn && !IsBadReadPtr(slot, 4) && *slot == fn && patch_slot(slot, (uintptr_t)&draw_layer_guard);
+    if (ok) {
+        g_draw_slot = slot;
+        g_draw_orig = (DrawLayerFn)fn;
+    }
+    H->log(M, SK_INFO, "game fixes: planet texture job guard %s", ok ? "on" : "off (unknown code)");
 }
 
-void shutdown() { restore(g_temp); }
+void shutdown()
+{
+    if (g_draw_slot && patch_slot(g_draw_slot, (uintptr_t)g_draw_orig))
+        g_draw_slot = nullptr;
+}
 
-std::string status() { return std::string("game fixes: temperature guard ") + (g_temp.on ? "on" : "off") + "\n"; }
+std::string status()
+{
+    return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
+           std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") + "\n";
+}
 
 } // namespace gamefixes

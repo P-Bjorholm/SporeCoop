@@ -33,7 +33,7 @@ def key_arg(k):
 
 
 class Bot:
-    def __init__(self, host, guest, fixture, seed, rate, extra=None, joins=None, ids=None, back_in=None):
+    def __init__(self, host, guest, fixture, seed, rate, extra=None, joins=None, ids=None, back_in=None, churn=1):
         """extra: more players {name: console} (coop_multi.py); joins: {name: join command};
         ids: {name: player id}; back_in(name) -> True when a rejoined player is back in the world"""
         self.c = {'host': host, 'guest': guest, **(extra or {})}
@@ -47,6 +47,7 @@ class Bot:
         self.log = []
         self.joins = 0
         self.count = {}
+        self.weights['churn'] = churn  # weight of rejoins among the actions (1 of 99 by default)
 
     def do(self, who, line):
         self.log.append(f'{time.strftime("%H:%M:%S")} {who}: {line}')
@@ -131,12 +132,13 @@ def main():
     ap.add_argument('--minutes', type=float, default=3)
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--rate', type=float, default=3.0, help='actions per second (mean)')
+    ap.add_argument('--churn', type=float, default=1, help='weight of rejoins among the actions (others: 98)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  chaos: fixture {a.fixture}, {a.minutes} min, seed {seed}', flush=True)
     host, guest = start(a.fixture)
     ck = Checks()
-    bot = Bot(host, guest, a.fixture, seed, a.rate)
+    bot = Bot(host, guest, a.fixture, seed, a.rate, churn=a.churn)
     t0, n, ok = time.time(), 0, True
     try:
         while time.time() - t0 < a.minutes * 60 and ok:
@@ -158,7 +160,7 @@ def main():
         for line in bot.log[-30:]:
             print('   ', line)
         print(f'  replay: SPORE_LANE={lane.LANE} python3 tools/tests/coop_chaos.py --fixture {a.fixture} '
-              f'--minutes {a.minutes} --seed {seed}')
+              f'--minutes {a.minutes} --seed {seed} --churn {a.churn}')
     try:
         shot(host, f'chaos_{a.fixture}_host.png')
         shot(guest, f'chaos_{a.fixture}_guest.png')

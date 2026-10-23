@@ -17,7 +17,26 @@ struct ExcRec {
     std::string where;
     uint32_t regs[8];
     uint32_t stack[12];
+    uint32_t rets[10]; // likely return addresses into the exe found deeper on the stack (0 = none)
 };
+
+// a dword on the stack that points just after a call instruction in the exe's code
+static bool exe_return_address(uint32_t v)
+{
+    static uintptr_t lo, hi;
+    if (!hi) {
+        auto base = (const uint8_t*)GetModuleHandleW(nullptr);
+        auto nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+        auto sec = IMAGE_FIRST_SECTION(nt);
+        lo = (uintptr_t)base + sec->VirtualAddress;
+        hi = lo + sec->Misc.VirtualSize;
+    }
+    if (v < lo + 6 || v >= hi)
+        return false;
+    const uint8_t* c = (const uint8_t*)v;
+    return c[-5] == 0xE8 || (c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0) ||
+           (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10) || (c[-7] == 0xFF && (c[-6] & 0x38) == 0x10);
+}
 
 static std::mutex g_mu;
 static std::vector<ExcRec> g_recs; // unique by (code, eip)
@@ -71,6 +90,14 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT)
         for (int i = 0; i < 12; i++)
             r.stack[i] = sp[i];
+    // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
+    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
+        const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
+        int n = 0;
+        for (const uint32_t* q = sp; q < end && q < sp + 512 && n < 10; q++)
+            if (exe_return_address(*q))
+                r.rets[n++] = *q;
+    }
     g_recs.push_back(r);
     // logging takes the log mutex only; safe enough for a first-chance handler
     logf(&g_kit_mod, SK_ERROR,
@@ -78,6 +105,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
          "esi=%08X edi=%08X ebp=%08X esp=%08X",
          code, (unsigned)eip, r.where.c_str(), (unsigned)r.addr, r.tid, regs[0], regs[1], regs[2],
          regs[3], regs[4], regs[5], regs[6], regs[7]);
+    if (r.rets[0])
+        logf(&g_kit_mod, SK_ERROR, "  calls: %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X", r.rets[0], r.rets[1],
+             r.rets[2], r.rets[3], r.rets[4], r.rets[5], r.rets[6], r.rets[7], r.rets[8], r.rets[9]);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -92,12 +122,19 @@ std::string exceptions_report()
     std::string s = "total faults: " + std::to_string(g_total.load()) + "\n";
     for (auto& r : g_recs) {
         char b[512];
-        snprintf(b, sizeof b, "0x%08lX x%u at 0x%08X %s data=0x%08X tid=%lu\n  stack:", r.code, r.count,
-                 (unsigned)r.eip, r.where.c_str(), (unsigned)r.addr, r.tid);
+        snprintf(b, sizeof b, "0x%08lX x%u at 0x%08X %s data=0x%08X tid=%lu%s\n  stack:", r.code, r.count,
+                 (unsigned)r.eip, r.where.c_str(), (unsigned)r.addr, r.tid, r.tid == main_thread_id() ? " (main)" : "");
         s += b;
         for (int i = 0; i < 12; i++) {
             snprintf(b, sizeof b, " %08X", r.stack[i]);
             s += b;
+        }
+        if (r.rets[0]) {
+            s += "\n  calls:";
+            for (int i = 0; i < 10 && r.rets[i]; i++) {
+                snprintf(b, sizeof b, " %08X", r.rets[i]);
+                s += b;
+            }
         }
         s += "\n";
     }

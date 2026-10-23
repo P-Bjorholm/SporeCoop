@@ -699,4 +699,64 @@ Found while fixing "loading a Cell save from the Space stage crashes" (branch fi
   first-chance AV in `cTerrainStateMgr_GetTemperatureScore` 0xFB89D0 (ecx 0; caller 0xF9E5EC
   `[esi+0xC]->vt 0x10()` returns a null terrain state, a planet render), once at the very load call
   with 1 s settle, once 1 s into the load; the game survived it. Not seen in 14 switches since the
-  load runs outside the frame (`run_outside_frame`).
+  load runs outside the frame (`run_outside_frame`). Why: 8.3.
+
+### 8.3 Planet texture jobs and loads from inside Present (✔ runtime + disassembly, 2026-10-23)
+
+Found on branch fix/menu-load-crash (test `tools/tests/coop_rejoin_loop.py`).
+
+* A terrain sphere (`Terrain::cTerrainSphere`, the planet of a stage and every planet the galaxy menu
+  shows) draws its textures in **render jobs**, one cube face per frame: the job object
+  `cTerrainSphereTextureJob` (vtable 0x14911FC, size 0x28, kept at sphere+0x8A0; +0xC the sphere,
+  AddRef'd; +0x10 pass 0..3; +0x14 face 0..5; +0x20 a render helper, null = nothing to draw; +0x24
+  set up) is queued by `QueueTextureJob` 0xFA0520 (`thiscall(sphere, face, pass) ret 8`) through the
+  render manager ([0x15FE8B8], vtable 0x140DCB0) `AddRenderJob` vt 0x78 = 0x75F6E0 (list +0x330 under
+  the lock +0x28, returns an id from the counter 0x1630C5C, kept at sphere+0x8A4). After the draw its
+  completion calls `OnTextureJobDone` 0xFA8800, which resets the job (0xF99F90) and queues the next
+  face / pass: 6 faces x 3 passes, then pass 3, about 19 frames per planet.
+* `DrawLayer` 0xF9E490 (job vt slot 3, `thiscall(job, flags, layerIndex, viewers, engine) ret 0x10`)
+  sets sphere+0x8A4 = -1 and reads the sphere without checks: the terrain state sphere+0x20C (sphere
+  vt 0x10 = 0xFA0D20) and the face render targets sphere+0x148/+0x160 [face]. The sphere's dispose
+  0xFA4880 (vtable 0x14916D8 slot +0x110) releases the job (+0x8A0 = 0), calls `RemoveRenderJob`
+  vt 0x7C = 0x75F9A0 (by id, no lock) when +0x8A4 != -1, then frees the targets and the state.
+* The render manager's frame 0x7604F0 first **takes** the queued jobs into a local list (0x76062D),
+  then calls Present of the previous frame (0x760727 -> 0x11F8150: swap chain vt 0xC / device vt 0x44),
+  then draws the taken jobs (0x7607A4 -> 0x75E490 -> DrawLayer) and the layers, and puts undrawn
+  jobs back. Present is where SporeKit's frame event runs (coop `on_frame`). Anything that disposes a
+  terrain sphere from there (a load: `LoadGameByName` leaves the galaxy menu and disposes its planets)
+  cannot remove a job that the frame already took; the job is drawn right after Present with the
+  state and targets gone: AV at 0xFB89D0 (temperature, pass 0..2), 0xF9E660 / 0xF9E67E / 0xF9E6FE (the
+  face targets), all on the main thread, call chain 0x75E547 <- 0x7607A9. Seen in co-op as "a planet
+  render faults while a received world loads" (guests with 3-4 players, 2026-10-22/23).
+* Repro (old build): the guest leaves its stage for the galaxy menu (`coop.menu`) and loads a save
+  with `coop.load` (a main-thread command: runs inside Present) 0-1.5 s after the menu came up, in a
+  freshly started game: 2 of 10 fresh games faulted (0xF9E67E, 0xF9E6FE), 4 of 17 first trips to
+  the menu in all; later trips in the same game hardly ever fault (1 hard crash without a logged
+  fault in about 150 later trips, cause not known). The first trip after the join textures the
+  menu's planets, later ones seem to reuse them (~). With the guard of `gamefixes.cpp` and the old load path, 5 of 12
+  fresh games had a skipped draw (`job .. sphere .. state 00000000 targets 00000000/00000000 sphere
+  job 00000000 id -1 tid <main>`: the sphere was disposed, the job had already been taken).
+* What SporeCoop does: every load goes through `world.cpp` `via_menu_tick`: from the galaxy menu
+  only after it has been up `kMenuSettle` (3 s) and always outside the frame (`run_outside_frame`:
+  a posted window message, pumped outside the render manager's frame). Before, a world that arrived
+  while the guest was in the menu (join from the menu, a rejoin during a load) and the host's
+  `coop.load` (a main-thread command) loaded at once from inside Present. As a safety net
+  `gamefixes.cpp` puts a guard into the job's vtable slot 3 that skips the draw while the state or a
+  target is null (`coop.status`: "planet texture job guard on, skipped N"); the guard replaced the
+  first fix (only the temperature call at 0xF9E5EC redirected), after which the same draw faulted at
+  0xF9E660.
+* Leaving a stage: the stage mode begins at once when a load starts (LoadGame 0x1654C08 lasts about
+  0.1 s), its loading screen and setup run in the stage mode. The tribe game's state machine
+  0xCDE7D0 (state at +0x22C, previous mode +0x230, timer +0x238) runs its setup 0xCD78E0 one step
+  after the load (state 3 -> 4); the setup points a camera-like object of the simulator
+  ([0x167FAAC], getter 0xB3D350, vtable 0x14672A8, made by 0xBC3830; null in the galaxy menu) at the
+  tribe through 0xB12CE0 (`thiscall(obj, Vector3*, ?, bool) ret 0xC`, reads obj+0x2B4). A guest got
+  an AV there with the object null (0xB12D32, data 0x2B4; stack: Vector3 on the stack, ebx = the
+  tribe+0x120, saved esi 0: the caller is 0xCD7D0D) during a 4-player churn. Not reproduced on 2
+  players (? which order of events); likely a quit or load while the stage was still setting up.
+  `via_menu_tick` now leaves a stage only when the co-op adapter has had something to control for
+  3 s (`kStageSettle`; a stage without anything to control is left after 20 s).
+* Also found with the same test: two world transfers to the same player (a rejoin while the first
+  one was still being sent) sent their chunks in turn; the guest wrote the old chunks into the new
+  world and dropped it ("world transfer failed: checksum mismatch", 3 of 60 rounds of
+  `--reshare 0:2.5`). A newer transfer now replaces the running one (`share_now`).

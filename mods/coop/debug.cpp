@@ -24,6 +24,20 @@ int c_save(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// the game's quit message (world.cpp load_slot): saves and leaves the stage for the galaxy menu
+int c_menu(void*, int, const char* const*, SkOut* out)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm) {
+        SAY("no message manager");
+        return 1;
+    }
+    skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+    SAY("leaving to the galaxy menu (mode 0x%08X)", game::mode_id());
+    return 0;
+}
+
 int c_load(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 3) {
@@ -257,6 +271,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.load", "coop.load <GameN> <Planet> - load a local save (also from the menu)",
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
+                      nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.cell", "coop.cell list | spawn <slot> [dx dy [scale]] - cell stage experiments", c_cell,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
