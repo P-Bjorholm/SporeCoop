@@ -74,6 +74,18 @@ static LRESULT CALLBACK h_WndProc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             if (!wp)
                 return TRUE;
             break;
+        case WM_SYSCOMMAND:
+            // Wine minimizes a window that the X11 window manager marks iconic (Mutter: every
+            // window on a workspace that is not shown, where agent-ws puts the test games). A
+            // minimized Spore draws nothing: App::Canvas::Tick sleeps 200 ms per tick instead.
+            if ((wp & 0xFFF0) == SC_MINIMIZE) {
+                static bool said;
+                if (!said)
+                    SKLOG(SK_INFO, "minimize ignored (background mode: keeps drawing on a hidden workspace)");
+                said = true;
+                return 0;
+            }
+            break;
         }
     }
     return CallWindowProcW(o_WndProc, w, m, wp, lp);

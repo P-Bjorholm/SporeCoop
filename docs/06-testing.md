@@ -109,6 +109,13 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * In the second process of the same wineserver, blocking sockets/`select()` and starting new threads
   sometimes hang — the console runs on non-blocking sockets in a single thread.
 * Spore stops rendering without focus; test runs enable SporeKit's "background mode".
+* **A window on a hidden workspace is minimized.** Mutter marks every X11 window on a workspace that
+  is not shown as iconic, and Wine then minimizes it (`WM_SYSCOMMAND SC_MINIMIZE`, `IsIconic` = 1).
+  A minimized Spore draws nothing: `App::Canvas::Tick` (0x848260) calls the canvas's IsMinimized
+  (vtable +0x5C, `IsIconic(GetAncestor(hwnd, 3))`) and sleeps 200 ms per tick, so a test game on
+  the agent-ws `sporecoop` workspace stalled at frame 1 to 70 (watchdog "no frames", main thread in
+  `Canvas::Tick`, 2026-10-22). Background mode ignores `SC_MINIMIZE` now (log line "minimize
+  ignored"); hooking `IsIconic` alone was not enough (the main thread then spun in the message loop).
 * **Exiting one instance kills all instances in the bottle** (that's how launching through
   bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
 * **Stack of a frozen game.** `stack` and `hangdump` suspend the main thread; under Wine that hung
