@@ -129,6 +129,13 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 0.8 m / 6°, partner 1 m / 6° (lag equal to the smoothing time), vehicles 1.2 m, ships
 8.5 m at speeds around 100 m/s.
 
+`tools/tests/coop_npc_multi.py` (4 players from two lanes, nobody moves, ~4 min) checks the NPC
+sync of every guest over 40 s (p90 of the living NPCs <= 1.5 m; typical 0.25-0.45 m), that each
+guest's avatar stands at the host's height for it, and that no game caught a fault. A guest whose
+planet loaded without its height map (docs/re/space.md 8.2) fails the height check with about -6 m
+and its NPCs at 6-9 m. `coop_multi.py` (chaos) samples one moment per minute, so a fight or a
+rejoin can push a single round over its 3 m limit; read its per-round `n p90` lines.
+
 ## 6.6 Known Wine quirks
 
 * **Flatpak document portal.** Every Bottles launch bind-mounts `/run/user/<uid>/doc/by-app/com.usebottles.bottles`

@@ -760,3 +760,14 @@ Found on branch fix/menu-load-crash (test `tools/tests/coop_rejoin_loop.py`).
   one was still being sent) sent their chunks in turn; the guest wrote the old chunks into the new
   world and dropped it ("world transfer failed: checksum mismatch", 3 of 60 rounds of
   `--reshare 0:2.5`). A newer transfer now replaces the running one (`share_now`).
+* Seen as a desync: the same fault hit guests that join **from the galaxy menu** (an empty profile: the world
+  arrives in `on_frame`, and `load_slot` called `load_now` right there, inside Present): 3 of 3 cold
+  4-player sessions (2026-10-23, `coop_npc_multi.py`) had one lane-B guest with a first-chance AV in
+  the terrain render pass of the menu's planet view 3 ms after `LoadGameByName`: 0xF9E67E or
+  0xF9E6FE (`mov reg,[ecx]` with ecx = `terrainSphere+0x160+i*4`, a null RTT; same function as the
+  0xF9E5EC call). The game survived, but that guest's planet came up **without its height map**: its
+  ground lay ~6 m under the host's (its own avatar stood 6 m low), NPC proxies placed at the host's
+  heights fell through to it (radial error only) and its screen kept showing the menu picture.
+  Since `load_slot` sends this case through `run_outside_frame` too: 0 faults in 7 sessions.
+  Check for a guest with a broken planet: compare `|pos|` of its own avatar with the host's copy
+  (`coop.sync`), or `exc`.

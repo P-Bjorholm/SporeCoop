@@ -127,27 +127,18 @@ def check_round(ck, host, guests, label, report):
     h1 = sample(host)
     worst = {}
     for name, g in guests.items():
-        gs = sample(g)
-        h2 = sample(host)
-        errs = {}
-        missing = 0
-        me = gs.get(my_key(g, gs))
-        total = 0
-        for key, hp in h1.items():
-            if key.startswith('p'):
-                continue
-            # the host streams NPCs within 110 m of each guest (npc.cpp kRelevance): only those count
-            if key.startswith('n') and me and sum((a - b) ** 2 for a, b in zip(hp, me)) ** 0.5 > 90:
-                continue
-            total += 1
-            gp = gs.get(key)
-            if gp is None:
-                missing += 1
-                continue
-            hp2 = h2.get(key, hp)
-            e = min(sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5, sum((a - b) ** 2 for a, b in zip(hp2, gp)) ** 0.5)
-            errs.setdefault(key[0], []).append(e)
-        cov = 1 - missing / total if total else 1
+        errs, cov, total = measure(host, g, h1)
+        over = [k for k, v in errs.items() if pct(v, 0.9) > limit(k)]
+        # one moment of one guest: a guest that has just rejoined spawns its NPC proxies within
+        # seconds (a churn right before the round), a fight can throw a few NPCs for a moment. A
+        # real desync stays: measure again
+        if cov < 0.85 or over:
+            report.append(f'  [{label}] {name}: coverage {cov:.0%}, over the limit {over}: measured again 6 s later')
+            time.sleep(6)
+            wait_all(host, len(guests), 90)  # a churn just before the round: the guest is still loading
+            time.sleep(4)
+            h1 = sample(host)
+            errs, cov, total = measure(host, g, h1)
         kinds = {}
         for k in h1:
             kinds[k[0]] = kinds.get(k[0], 0) + 1
@@ -155,8 +146,7 @@ def check_round(ck, host, guests, label, report):
         for kind, v in sorted(errs.items()):
             p90 = pct(v, 0.9)
             line += f', {kind} p90 {p90:.2f} m'
-            lim = LIMITS.get(kind, (3.0, 30))[0] * 2  # chaos keeps everything moving: twice the still limit
-            worst[(name, kind)] = (p90, lim)
+            worst[(name, kind)] = (p90, limit(kind))
         report.append(f'  [{label}] {line}')
         ck(cov >= 0.85, f'[{label}] {name} has the host\'s world ({cov:.0%})')
     for (name, kind), (p90, lim) in worst.items():
@@ -166,6 +156,36 @@ def check_round(ck, host, guests, label, report):
         gr = res(g)
         same = all(abs(gr.get(k, v) - v) <= max(2.0, abs(v) * 0.02) for k, v in hr.items())
         ck(same, f'[{label}] {name}: shared resources match ({gr} vs {hr})')
+
+
+def limit(kind):
+    return LIMITS.get(kind, (3.0, 30))[0] * 2  # chaos keeps everything moving: twice the still limit
+
+
+def measure(host, g, h1):
+    """position errors per kind of one guest against host samples, coverage, objects counted"""
+    gs = sample(g)
+    h2 = sample(host)
+    errs = {}
+    missing = 0
+    me = gs.get(my_key(g, gs))
+    total = 0
+    for key, hp in h1.items():
+        if key.startswith('p'):
+            continue
+        # the host streams NPCs within 110 m of each guest (npc.cpp kRelevance): only those count
+        if key.startswith('n') and me and sum((a - b) ** 2 for a, b in zip(hp, me)) ** 0.5 > 90:
+            continue
+        total += 1
+        gp = gs.get(key)
+        if gp is None:
+            missing += 1
+            continue
+        hp2 = h2.get(key, hp)
+        e = min(sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5, sum((a - b) ** 2 for a, b in zip(hp2, gp)) ** 0.5)
+        errs.setdefault(key[0], []).append(e)
+    cov = 1 - missing / total if total else 1
+    return errs, cov, total
 
 
 def main():
