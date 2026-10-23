@@ -1,5 +1,6 @@
 #include "cellsync.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -17,7 +18,7 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 static bool g_ok;
-static uintptr_t a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
+static uintptr_t a_Wipe, a_Cine, a_Pair, a_GetData, a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
     a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
@@ -103,6 +104,7 @@ static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host 
 static std::unordered_set<uint32_t> g_cycle_seen;
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_our_destroy, g_food_guard;
+static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves;
 static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged;
 
 // ---------------- both: symbiosis ----------------
@@ -353,6 +355,8 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
             }
             return false;
         }
+        if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
+            g_hurt_local++; // a mirror bit us here (the host forwards its own view of the same bite)
     }
     return o_DamageCell(victim, attacker, dir, type, x, dt);
 }
@@ -377,17 +381,51 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 
 using Destroy_t = void(SK_CDECL*)(uint32_t, bool, float, int);
 static Destroy_t o_Destroy;
+static std::unordered_map<uintptr_t, uint32_t> g_destroy_callers; // diagnostics: who destroyed a mirror
+// Guest: the cells our avatar touched lately (HandleCollisionPair with the avatar), local index -> time.
+// Only these can have been eaten or swallowed by us.
+static std::unordered_map<uint32_t, double> g_touched;
+static uint32_t g_kept, g_puppet_saves, g_puppet_new, g_own_eats, g_own_food;
+static std::unordered_map<int, void*> g_puppet_seen;
 static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 {
+    if (in_cell()) {
+        // A partner's cell is ours to remove (modes::cell_despawn forgets it before it destroys it).
+        // The game removed it on a level change (RemoveCellsOfOldScale), when an NPC broke or swallowed
+        // it, ...: the partner blinked out and in again with an "appeared in the world" message each
+        // time (13 times in 10 minutes). Its owner decides what happens to it.
+        uint8_t* c = modes::cell_at(idx);
+        if (c && modes::cell_is_puppet(c)) {
+            uintptr_t ra = (uintptr_t)__builtin_return_address(0) - H->rebase(0);
+            g_destroy_callers[ra | 0x80000000u]++;
+            g_puppet_saves++;
+            F<uint8_t>(c, kDead) = 0;
+            F<uint8_t>(c, kDying) = 0;
+            return;
+        }
+    }
     if (is_guest() && !g_our_destroy && in_cell()) {
         auto it = g_host_of.find(idx);
-        if (it != g_host_of.end()) { // the guest ate a mirror (food) or it broke: the host removes it
+        if (it != g_host_of.end()) {
+            g_destroy_callers[(uintptr_t)__builtin_return_address(0)]++;
+            auto t = g_touched.find(idx);
+            if (t == g_touched.end() || H->time_seconds() - t->second > 1.0) {
+                // Not our doing: the game removes it for its own reasons (a poison cloud outside our
+                // active area 0xE78C00, the cells of the old scale on a level change 0xE7CD10, the area
+                // cleared around a hatching cell 0xE78B20, size 0). It is the host's cell: the host
+                // decides, the mirror stays until the host's state drops it. Reported, these made
+                // the host destroy cells nobody had eaten (docs/stability/cell.md).
+                g_kept++;
+                return;
+            }
+            // we ate it (or it broke on us): the host removes it
             net::Writer w;
             w.u32(it->second);
             C.sess->send_reliable_to(0, net::MSG_CELL_EAT, w);
             g_eats_sent++;
             g_mirrors.erase(it->second);
             g_host_of.erase(it);
+            g_touched.erase(t);
             loot = false;
         }
     }
@@ -399,6 +437,10 @@ static AddFood_t o_AddFood;
 static void SK_CDECL h_AddFood(int amount, bool plant)
 {
     o_AddFood(amount, plant);
+    if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
+        g_own_eats++;
+        g_own_food += amount;
+    }
     uint8_t* a = in_cell() ? avatar() : nullptr;
     if (a && amount > 0 && g_body < 1.f) // we ate: the small body grows back (50 points = full size)
         set_body(a, std::min(1.f, g_body + amount * 0.01f));
@@ -408,6 +450,52 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
         w.u8(plant ? 1 : 0);
         C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
     }
+}
+
+// Guest: interactions between two cells of the host's pool (mirror eats mirror food, mirror
+// swallows mirror, the host's cell bumps into a mirror) are the host's business: it simulates them
+// and the result arrives with the next state. Run here they made the guest report "eaten" to the
+// host for cells nobody on the guest had touched, and the host destroyed them (docs/stability/cell.md).
+using Pair_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
+static Pair_t o_Pair;
+static uint32_t g_pairs_skipped;
+static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
+{
+    if (in_cell() && (modes::cell_is_puppet(a) || modes::cell_is_puppet(b))) {
+        // a partner's cell is a picture of a cell simulated on its owner's machine: here nothing eats
+        // it, swallows it or is eaten by it (the owner's own game does that, with our cells mirrored)
+        g_pairs_skipped++;
+        return;
+    }
+    if (is_guest() && in_cell()) {
+        uint8_t* av = avatar();
+        if (a != av && b != av) {
+            g_pairs_skipped++;
+            return;
+        }
+        uint8_t* other = a == av ? b : a;
+        if (other) {
+            double now = H->time_seconds();
+            g_touched[F<uint32_t>(other, 0)] = now;
+            if (g_touched.size() > 256) // forget old touches
+                for (auto it = g_touched.begin(); it != g_touched.end();)
+                    it = now - it->second > 1.0 ? g_touched.erase(it) : std::next(it);
+        }
+    }
+    o_Pair(a, b, dt);
+}
+
+// A level change removes every cell of the old scale (RemoveCellsOfOldScale 0xE7CD10). On the
+// guest these are mirrors: the host removes its own cells at its own level change (they made the
+// guest send ~600 "eaten" reports per level change before h_Destroy kept untouched mirrors).
+using Wipe_t = void(SK_CDECL*)();
+static Wipe_t o_Wipe;
+static uint32_t g_wipes;
+static void SK_CDECL h_Wipe()
+{
+    if (is_guest() && in_cell())
+        g_wipes++; // h_Destroy keeps the mirrors (not touched by us): the host's state replaces them
+    o_Wipe();
 }
 
 using Populate_t = int(SK_CDECL*)(float, int, int, void*, void*, void*, int);
@@ -425,6 +513,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
+    a_GetData = H->sym("Simulator::Cell::GetData");
+    a_Pair = H->sym("Simulator::Cell::HandleCollisionPair");
+    a_Cine = H->sym("Simulator::cCinematicManager::Get");
+    a_Wipe = H->sym("Simulator::Cell::RemoveCellsOfOldScale");
     a_DamageCell = H->sym("Simulator::Cell::DamageCell");
     a_Fnv = H->sym("FNV_hash");
     a_Effect = H->sym("Simulator::Cell::cCellGFX::InstanceEffectOnCell");
@@ -450,6 +542,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_Destroy, (void*)h_Destroy, (void**)&o_Destroy);
     H->hook_create(M, (void*)a_AddFood, (void*)h_AddFood, (void**)&o_AddFood);
     H->hook_create(M, (void*)a_Populate, (void*)h_Populate, (void**)&o_Populate);
+    if (a_Pair)
+        H->hook_create(M, (void*)a_Pair, (void*)h_Pair, (void**)&o_Pair);
+    if (a_Wipe)
+        H->hook_create(M, (void*)a_Wipe, (void*)h_Wipe, (void**)&o_Wipe);
     return true;
 }
 
@@ -615,11 +711,23 @@ static void guest_tick(double now)
         double age = std::min(now - m.seen, 0.5);
         net::Vec3 want{m.pos.x + m.vel.x * (float)age, m.pos.y + m.vel.y * (float)age, m.pos.z};
         net::Vec3 cur = pos_of(c);
-        if (net::dist(cur, want) > 3.f)
-            set_pos(c, want);
-        auto* v = (float*)(c + kVel);
-        v[0] = m.vel.x + (want.x - cur.x) * 2.f;
-        v[1] = m.vel.y + (want.y - cur.y) * 2.f;
+        int n = F<int>(c, 0x250);
+        if (F<uint32_t>(c, 0x248) && n > 1) {
+            // a soft body (docs/re/cell.md 6): +0x4C and +0x90 are the mean of its particles, writes
+            // to them alone are undone, and a centre written away from its particles blew the body
+            // up (mirrors flew off to 1e10 m on the guest). Move the particles with it and keep them
+            // still: the pose is the host's, extrapolated along its velocity.
+            modes::cell_move(c, want, true);
+            auto* acc = (float*)(c + 0x1C4);
+            acc[0] = acc[1] = acc[2] = 0;
+            g_soft_moves++;
+        } else {
+            if (net::dist(cur, want) > 3.f)
+                set_pos(c, want);
+            auto* v = (float*)(c + kVel);
+            v[0] = m.vel.x + (want.x - cur.x) * 2.f;
+            v[1] = m.vel.y + (want.y - cur.y) * 2.f;
+        }
         modes::quat_to_mat(m.rot, (float*)(c + kRot));
         F<uint16_t>(c, kFlags) |= 2;
         F<uint8_t>(c, kAiLock) = 1;
@@ -636,6 +744,13 @@ static void symbiosis_tick(double now)
         return;
     if (g_body < 1.f && std::fabs(F<float>(a, kTargetSize) - g_body_size) > g_body_size * 0.01f)
         g_body = 1.f; // the game resized the avatar (level change): full size again
+    if (C.puppets) // a partner's cell replaced by a new one (the partner blinked out and in)
+        for (auto& p : C.puppets()) {
+            void*& last = g_puppet_seen[p.id];
+            if (last && last != p.cell)
+                g_puppet_new++;
+            last = p.cell;
+        }
     for (auto& [id, k] : g_ko) {
         uint8_t* c = k.state == KO_OUT || k.fx_at > 0 ? puppet_cell(id) : nullptr;
         if (k.state == KO_OUT && c)
@@ -699,8 +814,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     if (type == net::MSG_CELL_HIT && is_guest()) {
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
-        if (r.ok() && idx == 0xFFFFFFFFu)
+        if (r.ok() && idx == 0xFFFFFFFFu) {
+            g_hurt_fwd++;
             hurt_avatar(dmg, t);
+        }
         return;
     }
     if (type == net::MSG_CELL_KO) {
@@ -773,6 +890,8 @@ void on_session_end()
             destroy_local(m.local);
     g_mirrors.clear();
     g_host_of.clear();
+    g_touched.clear();
+    g_puppet_seen.clear();
     g_food_sent = g_plant_sent = -1;
 }
 
@@ -843,11 +962,121 @@ void draw_overlay()
 }
 
 // ---- debug (tests) ----
+// what a player sees: the kind of a cell from its resource (docs/re/cell.md 1): cellType +0xB4,
+// ai.type (first int of the AI block by difficulty)
+static const char* kind_of(uint8_t* c)
+{
+    void* ref = F<void*>(c, kRes);
+    if (!ref || !a_GetData)
+        return "?";
+    void* holder = nullptr;
+    uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
+    if (holder)
+        --F<int>(holder, 0xC);
+    if (!res)
+        return "?";
+    int type = F<int>(res, 0xB4);
+    int d = S() ? F<int>(S(), 0x7C) : 1;
+    uint8_t* ai = res + 0xE0;
+    if (d == 0 && F<int>(res, 0x248) != -1)
+        ai = res + 0x248;
+    else if (d == 2 && F<int>(res, 0x194) != -1)
+        ai = res + 0x194;
+    switch (type) {
+    case 1: return "rock";
+    case 3: return "plant";
+    case 4: return "bubble";
+    case 5: return "poison";
+    case 6: return "part";
+    case 7: return "nanite";
+    case 2: return F<int>(ai, 0) != 0 ? "creature" : "meat";
+    default: return "other";
+    }
+}
+
+// on-screen gameplay cells: key kind size_ratio hp distance screen_x screen_y (the nearest first)
+static std::string see(int max)
+{
+    uint8_t* av = avatar();
+    net::Vec3 me = pos_of(av);
+    float my = std::max(F<float>(av, kSize), 0.01f);
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    struct Seen {
+        uint32_t key;
+        const char* kind;
+        float ratio, d;
+        int hp, x, y;
+    };
+    std::vector<Seen> v;
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+            return;
+        uint32_t key = idx;
+        if (is_guest()) {
+            auto it = g_host_of.find(idx);
+            if (it == g_host_of.end())
+                return;
+            key = it->second;
+        }
+        net::Vec3 p = pos_of(c);
+        float w[3] = {p.x, p.y, p.z}, sc[2];
+        if (!H->world_to_screen(w, sc) || sc[0] < 0 || sc[1] < 0 || sc[0] >= sw || sc[1] >= sh)
+            return;
+        v.push_back({key, kind_of(c), F<float>(c, kSize) / my, net::dist(p, me), F<int>(c, kHp), (int)sc[0], (int)sc[1]});
+    });
+    std::sort(v.begin(), v.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });
+    std::string out;
+    char b[128];
+    float w[3] = {me.x, me.y, me.z}, sc[2] = {-1, -1};
+    H->world_to_screen(w, sc);
+    snprintf(b, sizeof b, "me %d %d hp=%d screen=%dx%d\n", (int)sc[0], (int)sc[1], F<int>(av, kHp), sw, sh);
+    out += b;
+    for (size_t i = 0; i < v.size() && (int)i < max; i++) {
+        snprintf(b, sizeof b, "see c%u %s %.2f %d %.1f %d %d\n", v[i].key, v[i].kind, v[i].ratio, v[i].hp, v[i].d, v[i].x,
+                 v[i].y);
+        out += b;
+    }
+    return out;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     uint8_t* av = avatar();
     if (!av)
         return "not in the cell stage";
+    if (!a.empty() && a[0] == "why") { // which game code destroyed mirrors on this guest
+        std::string o;
+        char b[64];
+        for (auto& [ra, n] : g_destroy_callers) {
+            if (ra & 0x80000000u)
+                snprintf(b, sizeof b, "partner cell destroyed from 0x%08X x%u\n", (unsigned)(ra & 0x7FFFFFFF), n);
+            else
+                snprintf(b, sizeof b, "destroy from 0x%08X x%u\n", (unsigned)(ra - H->rebase(0)), n);
+            o += b;
+        }
+        return o.empty() ? "none" : o;
+    }
+    if (a.size() >= 2 && a[0] == "cell") { // a cell by its sync key (host index): local state
+        uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
+        uint8_t* c = nullptr;
+        if (is_guest()) {
+            auto it = g_mirrors.find(key);
+            c = it != g_mirrors.end() && it->second.local ? modes::cell_at(it->second.local) : nullptr;
+        } else
+            c = modes::cell_at(key);
+        if (!c)
+            return "no such cell";
+        char b[256];
+        auto* v = (float*)(c + kVel);
+        snprintf(b, sizeof b, "cell %s %s pos=(%.2f %.2f) vel=(%.2f %.2f) size=%.2f gfx=%u particles=%d hp=%d level=%d "
+                 "ailock=%d keepalive=%d\n", a[1].c_str(), kind_of(c), pos_of(c).x, pos_of(c).y, v[0], v[1],
+                 F<float>(c, kSize), F<uint32_t>(c, 0x248), F<int>(c, 0x250), F<int>(c, kHp), F<int>(c, kLevel),
+                 F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive));
+        return b;
+    }
+    if (!a.empty() && a[0] == "see")
+        return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
     if (!a.empty() && a[0] == "bite") { // our avatar bites the nearest mirror (through DamageCell)
         uint8_t* best = nullptr;
         float bd = 1e9f;
@@ -913,29 +1142,38 @@ std::string debug(const std::vector<std::string>& a)
         ko += kb;
     }
     snprintf(b, sizeof b,
-             "avatar hp=%d pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "avatar hp=%d own_eats=%u own_food=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d\n",
-             F<int>(av, kHp), pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
+             F<int>(av, kHp), g_own_eats, g_own_food, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local);
-    char ob[48];
-    snprintf(ob, sizeof ob, "avatar_opacity=%.2f\n", F<float>(av, kOpacity));
+    // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
+    // parts: the unlocked part flags S+0x34 (13 bytes)
+    void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
+    std::string parts;
+    if (uint8_t* s = S())
+        for (int i = 0; i < 13; i++)
+            parts += s[0x34 + i] ? '1' : '0';
+    char ob[128];
+    snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s\n", F<float>(av, kOpacity),
+             cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str());
     return b + std::string(ob) + ko + status();
 }
 
 std::string status()
 {
-    char b[256];
+    char b[384];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u eats_in=%u revives=%u respawns=%u\n", food, g_hits_in,
-                 g_eats_in, g_revives, g_respawns);
+        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u\n", food, g_hits_in, g_eats_in, g_revives, g_respawns, g_pairs_skipped,
+                 g_puppet_saves, g_puppet_new);
     else
         snprintf(b, sizeof b,
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
-                 "revives=%u respawns=%u\n",
+                 "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u soft_moves=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
-                 g_revives, g_respawns);
+                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_soft_moves, g_wipes, g_kept, g_puppet_saves, g_puppet_new);
     return b;
 }
 

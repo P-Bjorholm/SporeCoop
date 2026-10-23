@@ -172,7 +172,7 @@ In co-op this wipes all mirrors/puppets on that machine.
 
 **`void __cdecl AddFoodPoints(int amount, bool isPlant)` 0xE7CE10** ✔ (debug keys call it with ±50 at
 0xE81762/0xE8178D; negative works). Clamps to 1000 (0x14846AC), updates plant/over counters, and on
-change runs level-up/down (zoom 0xE72B40 / 0xE57190, repopulate 0xE7CD10) and the 1000 end trigger
+change runs level-up/down (zoom 0xE72B40 / 0xE57190, RemoveCellsOfOldScale 0xE7CD10, see §8) and the 1000 end trigger
 0xE6E8C0. Level table: entries of 0x1C bytes at 0x14846B0 `{playerLevel, foodThreshold, …, float size}`;
 thresholds every 50 points (0,50,100,…).
 
@@ -272,6 +272,47 @@ Guest
    original `AddFoodPoints(T-L, isPlant)` under a re-entrancy guard (keeps level-ups consistent).
 
 Both: co-op respawn and regen near partner as in §6.
+
+## 8. Runtime findings from two players playing (2026-10-23, `tools/tests/play_cell.py`)
+
+Who calls `DestroyCell` 0xE780A0 (return addresses counted on a guest over 10 minutes of play; the
+mod's `coop.pool why` lists them):
+
+| return addr | caller | what | ✔/~ |
+|---|---|---|---|
+| 0xE7CDA1 | **RemoveCellsOfOldScale 0xE7CD10** (cdecl `void(void)`, plain `ret`) | on a level change (AddFoodPoints 0xE7CF5E, avatar body swap 0xE7D908) every pool cell with level ≠ −1 for which 0xE5CE00 is true (and the head of its `+0x36C` chain) is destroyed (~600 per level change). Not a repopulate | ✔ |
+| 0xE78C37 | 0xE78C00 (per-cell visibility step, UpdateCells) | a **poison** cell (cellType 5) outside the active area is destroyed (no keep-alive check) | ✔ |
+| 0xE78B6E | 0xE78B20 (custom: ECX/EDX + stack float radius, `FindCellsInRadius` 0xE87210) | clears every cell in a radius except one (the hatching / respawning avatar) | ~ |
+| 0xE7C03C | size/opacity step 0xE7BFB0 | size reached 0 | ✔ |
+| 0xE791DE | 0xE791A0 (custom: ESI = eater, EAX = victim) | eater swallows the victim (if the eater is the avatar 0xE514B0 first), DestroyCell(victim, loot 1) when both have GFX | ~ |
+| 0xE7DA2E | 0xE7D880 cdecl(eater cell*, victim cell*) from event callback 0xE7DB80 | swallow whole: victim ≠ avatar → `+0x114 = 1`, effect, DestroyCell; victim = avatar → the avatar index moves to the eater and food +150 | ~ |
+| 0xE7AEC3 | event 5 handler 0xE7ADD0 | loot of a broken/swallowed cell, NPC → DestroyCell | ✔ (§3) |
+| 0xE7A14E, 0xE7B798, 0xE7C3E6 | behaviour 0x100E area, event handler 0xE7B410, physics | rare | ? |
+
+* **0xE5CE00** (custom: EAX = cell, returns al): true when the cell is outside the active area
+  (bbox 0x16B4C68 test for the foreground query), false for the avatar and `G+0x51D4`.
+* **HandleCollisionPair 0xE7F140** ✔ cdecl `void(cell* a, cell* b, float dt)`: the only caller is
+  Collisions 0xE7F260 (`add esp,0xC`); it asks the interaction kind both ways (0xE73DD0) and runs the
+  interaction executor 0xE7E7F0. Every bite, eat and swallow between two cells starts here, so
+  skipping a pair removes all their interactions (used by the guest for pairs without its avatar
+  and by both for pairs with a partner's cell). ~500 000 pairs in 10 minutes.
+* Event dispatcher 0xE7E130 (custom: EDI = event, stack float dt, …): an event's callback at
+  `+4` runs first (`+8` = done), then a switch on the type `+0x24` (1..0x32) with the cell indices
+  at `+0x28/+0x2C/+0x30`: 0x12 → EatFood 0xE7DF40(+0x28 eater, +0x2C food, +0x3C), chunk eats
+  0xE7DBD0 / 0xE7DD90, kill 0xE7A770, …
+* Soft bodies of NPC cells ✔ (runtime): a mirror whose `+0x4C` is written without its particles
+  (`+0x250` > 1 and GFX) drifts away exponentially: 2e6 m, 4e18 m within a minute (the centre is
+  pulled back to the particles and the particle velocities grow). Move such cells with
+  `modes::cell_move` (particles too) and zero the particle velocities.
+* Captions in the cell stage: the cinematic manager `+0x2C` (`coop.pool` prints `cine=`) is 2 during
+  the level-up zoom (ends by itself, ~1-2 s, letterbox, no text) and during part/tutorial captions
+  ("When you see the new part appear, swim over the token...", "Other cells and meteor bits are the
+  key to finding new parts...") that wait for the green check (bottom right) or Enter.
+* Cell kinds a player sees (`coop.pool see`): GetData(+0x108) `+0xB4` cellType and the AI block
+  (§1): rock 1, creature (2 with ai.type ≠ 0), meat (2, no AI), plant 3, bubble 4, poison 5, part
+  token 6, nanite 7.
+* The Karke fixture's cell has no weapon (~): a bot that chases smaller creatures never bites (no
+  DamageCell from its avatar with a mirror as victim in 40 minutes of play).
 
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) — confirm at runtime that a live NPC
