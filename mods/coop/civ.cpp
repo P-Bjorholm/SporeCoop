@@ -67,6 +67,23 @@ static std::vector<void*> all_vehicles()
             r.push_back(v);
     return r;
 }
+// The vehicles the game has right now (its own list, nothing filtered), once per frame. A vehicle
+// the game destroyed and freed was still driven by guest_tick through our map (AV in civ::tick on a
+// freed object, then the guest froze: coop_chaos civ_npc, 2026-10-23); object_alive() reads the
+// freed memory and cannot tell.
+static std::unordered_set<void*> g_exist;
+static uint64_t g_exist_frame = ~0ull;
+static bool exists(void* v)
+{
+    uint64_t f = H->frame_index();
+    if (f != g_exist_frame) {
+        g_exist.clear();
+        for (void* x : vec_of(thiscall<void*>(a_GetAllVehicles, nm())))
+            g_exist.insert(x);
+        g_exist_frame = f;
+    }
+    return v && g_exist.count(v);
+}
 static void* player_civ() { return thiscall<void*>(a_PlayerCiv, nm()); }
 static uint32_t pol_of(void* o) { return F<uint32_t>(o, kPol); }
 static net::Vec3 city_pos(void* c)
@@ -1170,10 +1187,26 @@ static void guest_build(net::Reader& r)
     g_applying = false;
 }
 
+static void prune_gone()
+{
+    for (auto& [id, g] : g_gv)
+        if (g.v && !exists(g.v)) {
+            g_gv_of.erase(g.v);
+            g.v = nullptr;
+        }
+    for (auto it = g_hv.begin(); it != g_hv.end();)
+        if (!exists(it->first)) {
+            g_hv_by_id.erase(it->second.id);
+            it = g_hv.erase(it);
+        } else
+            ++it;
+}
+
 void tick(double now)
 {
     if (!active())
         return;
+    prune_gone();
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -1184,6 +1217,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (!active())
         return;
+    prune_gone();
     if (type == net::MSG_CIV_STATE && is_guest())
         guest_state(r);
     else if (type == net::MSG_CIV_CMD && is_host())
