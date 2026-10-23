@@ -123,7 +123,10 @@ def check_round(ck, host, guests, label, report):
             errs.setdefault(key[0], []).append(e)
         total = sum(1 for k in h1 if not k.startswith('p'))
         cov = 1 - missing / total if total else 1
-        line = f'{name}: coverage {cov:.0%} of {total}'
+        kinds = {}
+        for k in h1:
+            kinds[k[0]] = kinds.get(k[0], 0) + 1
+        line = f'{name}: coverage {cov:.0%} of {total} (host {dict(sorted(kinds.items()))})'
         for kind, v in sorted(errs.items()):
             p90 = pct(v, 0.9)
             line += f', {kind} p90 {p90:.2f} m'

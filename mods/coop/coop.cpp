@@ -29,6 +29,7 @@
 #include "cellsync.h"
 #include "civ.h"
 #include "autoupdate.h"
+#include "gamefixes.h"
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
@@ -1339,6 +1340,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
     SAY("%s", spacecoop::status().c_str());
+    SAY("%s", gamefixes::status().c_str());
     SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
@@ -1857,6 +1859,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 
 void on_unload()
 {
+    gamefixes::shutdown();
     keepalive_stop();
     notify::shutdown();
     coop_ui::shutdown();
@@ -2136,6 +2139,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     spc.beacon = add_beacon;
     spacecoop::init(H, M, std::move(spc));
+    gamefixes::init(H, M);
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);
     H->command_add(M, "coop.update", "coop.update [check | apply] - SporeCoop updates from GitHub releases",

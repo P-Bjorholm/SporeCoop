@@ -1,0 +1,14 @@
+// Workarounds for crashes of the game itself that co-op makes more likely (docs/stability-report.md).
+#pragma once
+
+#include <string>
+
+#include "sporekit.h"
+
+namespace gamefixes {
+
+void init(const SkHost* host, SkMod* mod);
+void shutdown(); // puts the original bytes back (hot reload)
+std::string status();
+
+} // namespace gamefixes
