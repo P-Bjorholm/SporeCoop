@@ -157,6 +157,9 @@ def cmd_run(a):
         time.sleep(5)  # Bottles sandboxes starting at the same moment can race
     for th in threads:
         th.join()
+    if alone:  # the machine alone: no game of another lane may be visible (LAN discovery)
+        for lane in range(1, a.lanes + 1):
+            spore(tree, lane, 'kill')
     for t in alone:
         report(attempt(t, 1, False)[0])
     for lane in range(1, a.lanes + 1):

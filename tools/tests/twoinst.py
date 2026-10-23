@@ -11,6 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
+import fixtures  # noqa: E402
 from lane import APPDATA, sh  # noqa: E402,F401
 
 
@@ -137,6 +138,13 @@ def alive(inst):
         return False
 
 
+def check_fixture(host, fixture):
+    bad = [what for what, ok in fixtures.check(host, fixture) if not ok]
+    if bad:
+        print(f'  (fixture {fixture} lacks: {", ".join(bad)} - tools/tests/fixtures.py)', flush=True)
+    return not bad
+
+
 def warm_reset(host, guest, fixture, planet):
     """the running games of the lane start the test again: the fixture goes into a fresh save
     slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
@@ -173,8 +181,8 @@ def start(fixture='creature', planet=None, load_args=()):
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
     same build: warm_reset() instead of a restart (~10 s instead of ~40 s)."""
-    if fixture == 'creature' and planet is None and not load_args:
-        planet = 'Game0/Scalinus'  # loaded by name like the other stages (no menu clicks, warm-capable)
+    if planet is None and not load_args:
+        planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
     # warm only within the same save: switching stages in game can crash (docs/known-issues.md)
     if os.environ.get('SPORE_WARM') == '1' and planet and st.get('build') == build_id() \
@@ -183,6 +191,7 @@ def start(fixture='creature', planet=None, load_args=()):
         try:
             if warm_reset(host, guest, fixture, planet):
                 watch(lane.HOST, lane.GUEST)
+                check_fixture(host, fixture)
                 return host, guest
         except (OSError, ValueError) as e:
             print('  (warm reset failed:', e, ')', flush=True)
@@ -240,6 +249,7 @@ def start(fixture='creature', planet=None, load_args=()):
           + ', '.join(f'{n} {t:.0f}' for n, t in phases) + ')', flush=True)
     lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0)
     watch(lane.HOST, lane.GUEST)
+    check_fixture(host, fixture)
     return host, guest
 
 
