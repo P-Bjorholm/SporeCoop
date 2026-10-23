@@ -1,6 +1,7 @@
 // Background mode: the game keeps running and rendering when its window is not focused
 // (Spore pauses otherwise), and a virtual cursor lets the devkit click without moving
 // the real mouse pointer.
+#include <algorithm>
 #include "core.h"
 
 #include <atomic>
@@ -201,8 +202,16 @@ void place_test_window()
     if (mode == "grid") {
         RECT wr;
         GetWindowRect(w, &wr);
-        int ww = wr.right - wr.left, wh = wr.bottom - wr.top, n = (instance_id() - 1) % 12; // 4x3 on 5760x3240
-        int x = (n % 4) * ww, y = (n / 4) * wh;
+        // as many cells as fit on the test screen (a frame may hang over its edge a little); every
+        // instance needs its own cell: a covered window gets no frames
+        int ww = wr.right - wr.left, wh = wr.bottom - wr.top;
+        int cols = std::max(1, (GetSystemMetrics(SM_CXVIRTUALSCREEN) + 64) / std::max(1, ww));
+        int rows = std::max(1, (GetSystemMetrics(SM_CYVIRTUALSCREEN) + 128) / std::max(1, wh));
+        int n = (instance_id() - 1) % (cols * rows);
+        int sx = std::min(ww, GetSystemMetrics(SM_CXVIRTUALSCREEN) / cols); // frames overlap, not pictures
+        int sy = std::min(wh, GetSystemMetrics(SM_CYVIRTUALSCREEN) / rows);
+        int x = GetSystemMetrics(SM_XVIRTUALSCREEN) + (n % cols) * sx;
+        int y = GetSystemMetrics(SM_YVIRTUALSCREEN) + (n / cols) * sy;
         if (wr.left != x || wr.top != y) {
             SetWindowPos(w, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             SKLOG(SK_INFO, "test window placed in the grid (%d,%d)", x, y);
