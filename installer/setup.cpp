@@ -26,6 +26,7 @@ namespace {
 // builds with a symbol database (data/symbols/*_<first 8 hex>.sym)
 constexpr const char* kGog2016Sha = "922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e";
 constexpr const char* kGog2024Sha = "dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37";
+constexpr const char* kGog2024Code = "5a8267b23a1b916d7e920942d8375ea7fdb2d10a12aca0e603168a8a649f5f8f"; // code_sha256
 constexpr UINT WM_DONE = WM_APP + 1, WM_INFO = WM_APP + 2;
 
 struct Options {
@@ -93,7 +94,7 @@ std::wstring find_game()
     return {};
 }
 
-std::string file_sha(const std::wstring& path)
+std::vector<uint8_t> read_file(const std::wstring& path)
 {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
                            nullptr);
@@ -105,7 +106,45 @@ std::string file_sha(const std::wstring& path)
     DWORD got = 0;
     ReadFile(f, b.data(), (DWORD)b.size(), &got, nullptr);
     CloseHandle(f);
-    return upd::sha256_hex(b.data(), got);
+    b.resize(got);
+    return b;
+}
+
+// code_sha256 (the definition is in sporekit/sha256.cpp and tools/exe_info.py): ImageBase,
+// AddressOfEntryPoint, then every section but .rsrc (name, address, size, raw bytes)
+std::string code_sha(const std::vector<uint8_t>& d)
+{
+    auto u16 = [&](size_t o) -> uint32_t { return o + 2 <= d.size() ? d[o] | d[o + 1] << 8 : 0; };
+    auto u32 = [&](size_t o) -> uint32_t { return o + 4 <= d.size() ? u16(o) | u16(o + 2) << 16 : 0; };
+    if (d.size() < 0x40 || u16(0) != 0x5A4D)
+        return {};
+    size_t pe = u32(0x3C);
+    if (u32(pe) != 0x00004550 || u16(pe + 24) != 0x10B)
+        return {};
+    size_t nsec = u16(pe + 6), opt = pe + 24, sec = opt + u16(pe + 20);
+    std::vector<uint8_t> m;
+    auto put32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; i++)
+            m.push_back((uint8_t)(v >> (8 * i)));
+    };
+    put32(u32(opt + 28)); // ImageBase
+    put32(u32(opt + 16)); // AddressOfEntryPoint
+    for (size_t i = 0; i < nsec; i++) {
+        size_t o = sec + i * 40;
+        if (o + 40 > d.size())
+            return {};
+        if (memcmp(&d[o], ".rsrc\0\0\0", 8) == 0)
+            continue;
+        uint32_t vsize = u32(o + 8), va = u32(o + 12), rsize = u32(o + 16), raw = u32(o + 20);
+        uint32_t n = vsize < rsize ? vsize : rsize;
+        if ((size_t)raw + n > d.size())
+            return {};
+        m.insert(m.end(), d.begin() + o, d.begin() + o + 8);
+        put32(va);
+        put32(vsize);
+        m.insert(m.end(), d.begin() + raw, d.begin() + raw + n);
+    }
+    return upd::sha256_hex(m);
 }
 
 bool game_running()
@@ -233,10 +272,13 @@ void refresh()
     std::wstring game;
     if (!is_game(root))
         game = L"Game: SporeApp.exe is not in this folder's SporebinEP1. Choose the SPORE folder.";
-    else if (std::string sha = file_sha(root + L"\\SporebinEP1\\SporeApp.exe"); sha == kGog2016Sha)
+    else if (std::vector<uint8_t> exe = read_file(root + L"\\SporebinEP1\\SporeApp.exe");
+             upd::sha256_hex(exe) == kGog2016Sha)
         game = L"Game: Spore Galactic Adventures, GOG 2016 build (supported)";
-    else if (sha == kGog2024Sha)
+    else if (upd::sha256_hex(exe) == kGog2024Sha)
         game = L"Game: Spore Galactic Adventures, GOG 2024 build (supported)";
+    else if (code_sha(exe) == kGog2024Code)
+        game = L"Game: Spore Galactic Adventures, same code as the GOG 2024 build (should work, not tested)";
     else
         game = L"Game: Spore Galactic Adventures, a build SporeCoop has not been tested with yet";
     SetWindowTextW(g_game, game.c_str());
