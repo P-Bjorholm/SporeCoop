@@ -134,6 +134,8 @@ def check_round(ck, host, guests, label, report):
         # real desync stays: measure again
         if cov < 0.85 or over:
             report.append(f'  [{label}] {name}: coverage {cov:.0%}, over the limit {over}: measured again 6 s later')
+            report.append('      ' + ' | '.join(l.strip()[:110] for l in g.call('coop.npc')['out'].splitlines()[:2])
+                          + ' | host ' + host.call('coop.npc')['out'].splitlines()[-1].strip()[:110])
             time.sleep(6)
             wait_all(host, len(guests), 90)  # a churn just before the round: the guest is still loading
             time.sleep(4)

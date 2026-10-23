@@ -56,6 +56,7 @@ static std::map<uint16_t, Proxy> g_proxies;
 static std::unordered_map<void*, uint16_t> g_proxy_of;
 static std::map<uint64_t, void*> g_herds; // species instance/group -> herd for proxies
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
+static uint32_t g_proxy_lost = 0;
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
@@ -272,6 +273,19 @@ static void guest_tick(double now)
     for (auto& [id, px] : g_proxies) {
         net::PlayerState s;
         if (!px.buf.sample(now, s))
+            continue;
+        // the guest's own game destroyed the proxy (its tribe killed it, a cleanup): forget the
+        // object at once (it is freed later; it was driven every frame after that) and make a new
+        // one unless the host says the NPC is dead. NPCs vanished from guests this way in a 4-player
+        // tribe run (coverage 26-48 % for 4 minutes).
+        if (px.c && game::is_destroyed(px.c)) {
+            g_proxy_of.erase(px.c);
+            game::puppet_unregister(px.c);
+            px.c = nullptr;
+            px.drv = drive::State{};
+            g_proxy_lost++;
+        }
+        if (!px.c && (s.flags & net::NF_DEAD))
             continue;
         if (!px.c) {
             void* species = game::species_by_key(px.key);
@@ -521,8 +535,8 @@ std::string status()
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
-        snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u\n",
-                 (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in);
+        snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u\n",
+                 (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost);
     }
     return b;
 }
