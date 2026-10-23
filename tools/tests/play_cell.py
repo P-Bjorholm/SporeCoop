@@ -408,9 +408,12 @@ def main():
            f'both ate by themselves (host {hs["own_eats"]} items / {hs["own_food"]} points, guest {gs["own_eats"]} / '
            f'{gs["own_food"]})')
         # regression: the guest reported every cell its game removed (level change, poison culling, ...)
-        # as eaten and the host destroyed them: ~1300 reports in 10 minutes for ~30 real eats
-        ck((gs['eats_sent'] or 0) <= 3 * (gs['own_eats'] or 0) + 20,
-           f'the guest reports only what it ate ({gs["eats_sent"]} reports, {gs["own_eats"]} eats)')
+        # as eaten and the host destroyed them: ~1300 reports in 10 minutes (136 a minute) for ~30 real
+        # eats. Now only cells its avatar touched: eats plus small cells swallowed whole (no food
+        # points, 0xE791A0 / 0xE7D880): 3-9 a minute
+        ck((gs['eats_sent'] or 0) <= 15 * dur / 60 + 10,
+           f'the guest reports only what it ate or swallowed ({gs["eats_sent"]} reports in {dur / 60:.0f} min, '
+           f'{gs["own_eats"]} of them with food points)')
         # regression: the game removed the partner's cell (level change, an NPC swallowed it): blinking
         ko = ko_seen['host'] + ko_seen['guest']
         for name, d in (('host', hs), ('guest', gs)):

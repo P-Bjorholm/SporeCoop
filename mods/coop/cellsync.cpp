@@ -417,9 +417,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
     if (is_guest() && !g_our_destroy && in_cell()) {
         auto it = g_host_of.find(idx);
         if (it != g_host_of.end()) {
-            g_destroy_callers[(uintptr_t)__builtin_return_address(0)]++;
+            uintptr_t ra = (uintptr_t)__builtin_return_address(0);
             auto t = g_touched.find(idx);
-            if (t == g_touched.end() || H->time_seconds() - t->second > 1.0) {
+            bool touched = t != g_touched.end() && H->time_seconds() - t->second <= 1.0;
+            g_destroy_callers[touched ? ((ra - H->rebase(0)) | 0x40000000u) : ra]++;
+            if (!touched) {
                 // Not our doing: the game removes it for its own reasons (a poison cloud outside our
                 // active area 0xE78C00, the cells of the old scale on a level change 0xE7CD10, the area
                 // cleared around a hatching cell 0xE78B20, size 0). It is the host's cell: the host
@@ -1063,6 +1065,8 @@ std::string debug(const std::vector<std::string>& a)
         for (auto& [ra, n] : g_destroy_callers) {
             if (ra & 0x80000000u)
                 snprintf(b, sizeof b, "partner cell destroyed from 0x%08X x%u\n", (unsigned)(ra & 0x7FFFFFFF), n);
+            else if (ra & 0x40000000u)
+                snprintf(b, sizeof b, "reported (touched) from 0x%08X x%u\n", (unsigned)(ra & 0x3FFFFFFF), n);
             else
                 snprintf(b, sizeof b, "destroy from 0x%08X x%u\n", (unsigned)(ra - H->rebase(0)), n);
             o += b;
