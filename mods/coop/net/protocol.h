@@ -65,6 +65,7 @@ enum MsgType : uint8_t {
     MSG_ROLE = 46,        // guest -> host: u8 role (civilization: 0 none, 1 military, 2 economic, 3 religious)
     MSG_CIV_ALARM = 47,   // host -> guests: u8 city index, u8 kind (0 military, 1 religious), u8 owner
     MSG_SPACE = 48,       // any -> (host relays) -> all: u8 kind, u8 origin, payload (spacecoop.cpp)
+    MSG_CELL_BITTEN = 49, // guest -> host: u32 host cell index of the NPC whose mirror bit the guest's cell
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
 };

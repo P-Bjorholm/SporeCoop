@@ -19,13 +19,13 @@ static SkMod* M;
 static Ctx C;
 static bool g_ok;
 static uintptr_t a_Wipe, a_Cine, a_Pair, a_GetData, a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
-    a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect;
+    a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect, a_TargetParams, a_IsPrey, a_IsThreat, a_ScaleDiff, a_NoAttack, a_Alert, a_React, a_Rest;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
 constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C, kSize = 0x58, kRot = 0x5C,
                     kPrevPos = 0x84, kVel = 0x90, kTargetSize = 0xB4, kModelKey = 0xFC, kRes = 0x108,
                     kInvuln = 0x111, kDead = 0x112, kDying = 0x113, kAiLock = 0x16C, kHp = 0x244,
-                    kKeepAlive = 0x354, kLevel = 0x358, kQuery = 0x35C;
+                    kKeepAlive = 0x354, kLevel = 0x358, kQuery = 0x35C, kFlee = 0x220, kChase = 0x22C;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -87,7 +87,7 @@ static void set_pos(uint8_t* c, const net::Vec3& p)
 // ---------------- host ----------------
 static double g_last_send, g_last_food;
 static uint16_t g_cycle;
-static uint32_t g_hits_in, g_eats_in;
+static uint32_t g_hits_in, g_eats_in, g_hits_aggro, g_bitten_in, g_puppet_hits_dropped;
 static int32_t g_food_sent = -1, g_plant_sent = -1;
 
 // ---------------- guest ----------------
@@ -105,7 +105,7 @@ static std::unordered_set<uint32_t> g_cycle_seen;
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_our_destroy, g_food_guard;
 static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_taken;
-static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged;
+static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bitten_sent;
 
 // ---------------- both: symbiosis ----------------
 // A lethal hit does not kill a player who has a partner in the pool: the cell is knocked out for
@@ -320,6 +320,27 @@ static void downed_tick(uint8_t* a, double now, double dt)
         C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
 }
 
+// ai.type of a cell (docs/re/cell.md 1: the first int of the AI block chosen by difficulty), -1 unknown
+static int ai_type(uint8_t* c)
+{
+    void* ref = F<void*>(c, kRes);
+    if (!ref || !a_GetData)
+        return -1;
+    void* holder = nullptr;
+    uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
+    if (holder)
+        --F<int>(holder, 0xC);
+    if (!res)
+        return -1;
+    int d = S() ? F<int>(S(), 0x7C) : 1;
+    uint8_t* ai = res + 0xE0;
+    if (d == 0 && F<int>(res, 0x248) != -1)
+        ai = res + 0x248;
+    else if (d == 2 && F<int>(res, 0x194) != -1)
+        ai = res + 0x194;
+    return F<int>(ai, 0);
+}
+
 // ---------------- hooks ----------------
 using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int, float);
 static DamageCell_t o_DamageCell;
@@ -329,17 +350,15 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
 {
     if (!in_cell())
         return o_DamageCell(victim, attacker, dir, type, x, dt);
-    if (is_host() && victim && attacker && C.puppet_owner) {
-        int owner = C.puppet_owner(victim);
-        if (owner > 0) { // a host NPC bites a guest's cell: the guest takes it on its own cell
-            int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1;
-            net::Writer w;
-            w.u32(0xFFFFFFFFu);
-            w.u8((uint8_t)std::max(0, std::min(dmg, 255)));
-            w.u8((uint8_t)type);
-            C.sess->send_reliable_to((uint8_t)owner, net::MSG_CELL_HIT, w);
-            return false;
-        }
+    // Damage to a player's cell is decided on that player's machine: there the host's NPC is a
+    // mirror that swims into the real cell, and the guest's own collision step bites it (hurt_local,
+    // then its DamageCell / KillCell hooks: knockout, revive). The host's picture of the guest
+    // (a puppet, no collision pairs, invulnerable) takes nothing, or the guest would be bitten twice
+    // (docs/re/cell.md 9). The guest tells the host which NPC bit it (MSG_CELL_BITTEN) for the
+    // NPC's own after-bite behaviour.
+    if (is_host() && victim && C.puppet_owner && C.puppet_owner(victim) > 0) {
+        g_puppet_hits_dropped++;
+        return false;
     }
     if (is_guest() && victim) {
         auto it = g_host_of.find(F<uint32_t>(victim, 0));
@@ -356,7 +375,7 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
             return false;
         }
         if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
-            g_hurt_local++; // a mirror bit us here (the host forwards its own view of the same bite)
+            g_hurt_local++; // a mirror bit us here: the only way a host NPC hurts us (see above)
     }
     if (victim && victim == avatar()) { // damage our own cell takes (diagnostics: is the guest as exposed?)
         int before = F<int>(victim, kHp);
@@ -365,6 +384,17 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
         if (lost > 0 && !g_downed) {
             g_bites_taken++;
             g_damage_taken += lost;
+        }
+        if (lost > 0 && is_guest() && attacker) {
+            // a mirror bit us: on the host that NPC only touched our puppet (no bite there), so it
+            // would chase us on and on. The host runs its after-bite rest (0xE57930 -> 0xE578B0).
+            auto it = g_host_of.find(F<uint32_t>(attacker, 0));
+            if (it != g_host_of.end()) {
+                net::Writer w;
+                w.u32(it->second);
+                C.sess->send_reliable_to(0, net::MSG_CELL_BITTEN, w);
+                g_bitten_sent++;
+            }
         }
         return r;
     }
@@ -520,6 +550,26 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
+// ShouldNotAttack 0xE57480 (cdecl bool(attacker, victim)): the prey / threat tests of the NPC AI
+// (IsPrey 0xE68910, IsThreat 0xE68870) and DamageCell ask it. Its "wontAttackPlayer(WhenSmall)"
+// flags of a species (resource +0x300/+0x301) apply only when the victim is the avatar
+// (G+0x411C). A partner's cell is a player too: for it the game answers as for the avatar, so an
+// NPC that spares the host spares the guest as well (and the other way round).
+using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
+static NoAttack_t o_NoAttack;
+static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
+{
+    uint8_t* g = G();
+    if (!g || !b || !in_cell() || !modes::cell_is_puppet(b))
+        return o_NoAttack(a, b);
+    uint32_t& av = F<uint32_t>(g, 0x411C);
+    uint32_t keep = av;
+    av = F<uint32_t>(b, 0); // single-threaded cell step: restored right after
+    bool r = o_NoAttack(a, b);
+    av = keep;
+    return r;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -539,6 +589,14 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Populate = H->sym("Simulator::Cell::PopulateMarker");
     a_Rollover = H->sym("Simulator::Cell::ShowHealthRollover");
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
+    a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
+    a_IsPrey = H->sym("Simulator::Cell::IsPrey");
+    a_IsThreat = H->sym("Simulator::Cell::IsThreat");
+    a_ScaleDiff = H->sym("Simulator::Cell::GetScaleDifference");
+    a_NoAttack = H->sym("Simulator::Cell::ShouldNotAttack");
+    a_Alert = H->sym("Simulator::Cell::AlertSpeciesOfAttack");
+    a_React = H->sym("Simulator::Cell::ReactToAttacker");
+    a_Rest = H->sym("Simulator::Cell::RestAfterBite");
     a_RefCreate = H->sym("Simulator::Cell::cCellDataReference_::Create");
     a_Serializer = H->sym("Simulator::Cell::cCellSerializer::_ptr");
     a_S = H->sym("Simulator::Cell::cCellSerializableData::_ptr");
@@ -558,6 +616,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_Pair, (void*)h_Pair, (void**)&o_Pair);
     if (a_Wipe)
         H->hook_create(M, (void*)a_Wipe, (void*)h_Wipe, (void**)&o_Wipe);
+    if (a_NoAttack)
+        H->hook_create(M, (void*)a_NoAttack, (void*)h_NoAttack, (void**)&o_NoAttack);
     return true;
 }
 
@@ -856,12 +916,38 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || !c || F<uint8_t>(c, kDying))
             return;
         g_hits_in++;
+        // the NPC and its kind turn on the guest who bit it, as DamageCell does for the host's bites
+        // (species alert 0xE71CE0, then the victim's own reaction: only AI type 0x1006 reacts,
+        // through 0xE57710 -> 0xE57610), so biting is as risky for the guest as for the host
+        if (uint8_t* pc = puppet_cell(from); pc && a_Alert && o_NoAttack && !o_NoAttack(pc, c)) {
+            uint32_t pidx = F<uint32_t>(pc, 0);
+            skg::cdecl_call<void>(a_Alert, c, pidx);
+            if (a_React && ai_type(c) == 0x1006)
+                skg::cdecl_call<void>(a_React, c, pidx);
+            g_hits_aggro++;
+        }
         int hp = F<int>(c, kHp) - dmg;
         if (hp > 0) {
             F<int>(c, kHp) = hp;
         } else {
             F<int>(c, kHp) = 0;
             o_KillCell(c, avatar_idx(), F<void*>(avatar(), kRes), true, t, 0.f); // counts as a player kill
+        }
+    } else if (type == net::MSG_CELL_BITTEN && is_host()) {
+        // our NPC bit a guest on the guest's machine: what DamageCell does for the attacker after a
+        // bite on our own cell (0xE57930: AI type 0x1006 rests, its chase ends) - otherwise it
+        // hunted the guest's puppet without a pause (docs/re/cell.md 9)
+        uint8_t* c = modes::cell_at(r.u32());
+        if (!r.ok() || !c || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+            return;
+        g_bitten_in++;
+        if (a_Rest && ai_type(c) == 0x1006) {
+            void* holder = nullptr;
+            uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+            if (holder)
+                --F<int>(holder, 0xC);
+            if (res)
+                skg::cdecl_call<void>(a_Rest, c, res);
         }
     } else if (type == net::MSG_CELL_EAT && is_host()) {
         uint32_t idx = r.u32();
@@ -1054,6 +1140,88 @@ static std::string see(int max)
     return out;
 }
 
+// the NPCs within r of a player: what the game's own target tests say about each player
+// (docs/re/cell.md 9): prey (chase) / threat (flee) and the current chase target
+static std::string prey_report(float r, bool rows)
+{
+    uint8_t* av = avatar();
+    if (!a_TargetParams || !a_IsPrey || !a_IsThreat || !a_GetData)
+        return "symbols missing";
+    struct Pl {
+        std::string name;
+        uint8_t* c;
+        // NPCs within r / in their prey range and IsPrey / in their threat range and IsThreat / chasing it
+        int around = 0, prey = 0, threat = 0, chasing = 0;
+    };
+    std::vector<Pl> players{{"me", av}};
+    if (C.puppets)
+        for (auto& p : C.puppets())
+            if (p.cell)
+                players.push_back({p.name, (uint8_t*)p.cell});
+    std::string out;
+    char b[256];
+    for (auto& pl : players) {
+        uint8_t* pc = pl.c;
+        // scale difference me -> player (2 = same level)
+        int sd = a_ScaleDiff ? skg::cdecl_call<int>(a_ScaleDiff, av, pc) : -1;
+        snprintf(b, sizeof b, "player %s idx=%u level=%d scale_diff=%d lock189=%d dead=%d invuln=%d size=%.2f pos=(%.1f %.1f)\n",
+                 pl.name.c_str(), F<uint32_t>(pc, 0), F<int>(pc, kLevel), sd, F<uint8_t>(pc, 0x189), F<uint8_t>(pc, kDead),
+                 F<uint8_t>(pc, kInvuln), F<float>(pc, kSize), pos_of(pc).x, pos_of(pc).y);
+        if (rows)
+            out += b;
+    }
+    int n = 0, compared = 0, differ = 0; // NPCs whose answers for a partner differ from those for us
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        if (modes::cell_is_puppet(c) || strcmp(kind_of(c), "creature") != 0)
+            return;
+        float best = 1e9f;
+        for (auto& pl : players)
+            best = std::min(best, net::dist(pos_of(c), pos_of(pl.c)));
+        if (best > r)
+            return;
+        void* holder = nullptr;
+        uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+        if (holder)
+            --F<int>(holder, 0xC);
+        if (!res)
+            return;
+        alignas(4) uint8_t params[32] = {};
+        skg::cdecl_call<void>(a_TargetParams, c, res, params);
+        snprintf(b, sizeof b, "npc %u level=%d chase=%u flee=%u ranges=%.1f/%.1f", idx, F<int>(c, kLevel),
+                 F<uint32_t>(c, kChase), F<uint32_t>(c, kFlee), F<float>(params, 0), F<float>(params, 4));
+        std::string row = b;
+        int mine = -1;
+        for (auto& pl : players) {
+            bool prey = skg::cdecl_call<bool>(a_IsPrey, c, pl.c, params);
+            bool threat = skg::cdecl_call<bool>(a_IsThreat, c, pl.c, params);
+            int ans = prey * 2 + threat;
+            if (mine < 0)
+                mine = ans;
+            else {
+                compared++;
+                differ += ans != mine;
+            }
+            float d = net::dist(pos_of(c), pos_of(pl.c));
+            pl.around += d <= r;
+            pl.prey += prey && d <= F<float>(params, 0);
+            pl.threat += threat && d <= F<float>(params, 4);
+            pl.chasing += F<uint32_t>(c, kChase) == F<uint32_t>(pl.c, 0);
+            snprintf(b, sizeof b, " | %s d=%.1f prey=%d threat=%d", pl.name.c_str(), d, (int)prey, (int)threat);
+            row += b;
+        }
+        if (rows && n++ < 40)
+            out += row + "\n";
+    });
+    snprintf(b, sizeof b, "prey_rules compared=%d differ=%d\n", compared, differ);
+    out += b;
+    for (size_t i = 0; i < players.size(); i++) {
+        snprintf(b, sizeof b, "prey_sum %s around=%d prey=%d threat=%d chasing=%d\n", i ? "partner" : "me", players[i].around,
+                 players[i].prey, players[i].threat, players[i].chasing);
+        out += b;
+    }
+    return out;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     uint8_t* av = avatar();
@@ -1093,6 +1261,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
+    if (!a.empty() && a[0] == "prey")
+        return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f, a.size() < 3 || a[2] != "sum");
     if (!a.empty() && a[0] == "bite") { // our avatar bites the nearest mirror (through DamageCell)
         uint8_t* best = nullptr;
         float bd = 1e9f;
@@ -1189,19 +1359,19 @@ std::string debug(const std::vector<std::string>& a)
 
 std::string status()
 {
-    char b[384];
+    char b[640];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u\n", food, g_hits_in, g_eats_in, g_revives, g_respawns, g_pairs_skipped,
+        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u hits_aggro=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u\n", food, g_hits_in, g_hits_aggro, g_bitten_in, g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped,
                  g_puppet_saves, g_puppet_new);
     else
         snprintf(b, sizeof b,
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
-                 "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u soft_moves=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u\n",
+                 "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
-                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_soft_moves, g_wipes, g_kept, g_puppet_saves, g_puppet_new);
+                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_wipes, g_kept, g_puppet_saves, g_puppet_new);
     return b;
 }
 

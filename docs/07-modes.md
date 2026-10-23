@@ -54,7 +54,9 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   while its first field equals the full index (`GetIfNotDeleted` 0xB72290).
 * The puppet is created via `CreateCellObject(query +0x40FC, pos, 0, avatar resource,
   level, 1, 1, true)`. The level comes from `GetCurrentAdvectInfo`: the avatar's own `mScale`
-  is −1, and cells with −1 are not rendered. The model is set by a hook on
+  is −1, and cells with −1 are not rendered. Every drive keeps it at the players' level as the game
+  reads the avatar's −1 (GetScaleDifference(avatar, puppet) = 2): with the level of its creation
+  the host's NPCs saw the partner as too small to hunt (docs/re/cell.md 9). The model is set by a hook on
   `GetModelKeyForCellResource`: during creation it returns the avatar's current `mModelKey`.
   Without the hook the "PlayerCreature" resource would produce the cell from the initial selection.
 * Movement is driven through `mTargetPosition` with `mIsIdle = false`, just like the player's own cell.

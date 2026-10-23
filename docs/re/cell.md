@@ -314,6 +314,63 @@ mod's `coop.pool why` lists them):
 * The Karke fixture's cell has no weapon (~): a bot that chases smaller creatures never bites (no
   DamageCell from its avatar with a mirror as victim in 40 minutes of play).
 
+## 9. How an NPC picks its prey and its threat (2026-10-23, the host-hunts-host bug)
+
+Chase target `+0x22C` / flee target `+0x220` (cell indices, 0 = none), chase timer `+0x230`, flee
+timer `+0x21C`, re-pick timer `+0x238`.
+
+| addr | what | ✔/~ |
+|---|---|---|
+| 0xE70E30 | per-frame target timers of a behaviour (behaviour 0x1006 0xE7A0A0 calls it): clears `+0x220`/`+0x22C` when the cell is gone, counts `+0x238` down and then calls PickTargets | ✔ |
+| **0xE70CF0** PickTargets | cdecl `bool(cell*, resData*)`: a cell in a group (`+0x38C`, pool G+0xA8) copies its leader's targets; else GetTargetSearchParams + FindPreyAndThreat into `+0x220`/`+0x22C`; a new target starts a flee (0xE70950) or chase (0xE70BC0) with the timer from the AI block (`+0x7C` / `+0x84`) | ✔ |
+| **0xE68B30** GetTargetSearchParams | cdecl `void(cell*, resData*, u8 params[16])`: `+0` float prey radius, `+4` float threat radius (0xE686C0: from the AI block scaled by the level table, constant for the avatar), bytes `+8..+0xD` = AI block `+0x92, +0x8D, +0x8E, +0x8F, +0x90, +0x91` | ✔ |
+| **0xE68990** FindPreyAndThreat | cdecl `void(cell* self, params*, u32* outFlee, u32* outChase, u32* outOther)`: FindCellsInRadius(self+0x35C query, max radius, 512); for each other cell: IsThreat → nearest within `+4` → *outFlee, else IsPrey → nearest within `+0` → *outChase | ✔ |
+| **0xE68870** IsThreat | cdecl `bool(self, other, params)`: other not dead, !ShouldNotAttack, GetScaleDifference(self, other) ≥ 2, and other is a carnivore / herbivore / spiked / ... as the params flags ask | ✔ |
+| **0xE68910** IsPrey | cdecl `bool(self, other, params)`: !ShouldNotAttack(self, other), CanEat 0xE68470(self, other), scale difference: 0 never, 1 only when `params+8` is 0, then herbivore/carnivore flags, and `other+0x189 == 0` | ✔ |
+| 0xE68470 CanEat | cdecl `bool(self, other)`: by the self's creature model (0xE679E0(modelKey): `+0x1250` carnivore, `+0x1251` herbivore), other's cellType (2 meat/creature, 3 plant) and the scale difference | ~ |
+| **0xE57400** GetScaleDifference | cdecl `int(self, other)` = clamp(other.level − self.level + 2, 0, 4), level `+0x358`, −1 (the avatar) read as the level of the food progress (0xE4EE50, EDX = food: the level table 0x14846B0) | ✔ |
+| 0xE57480 ShouldNotAttack | cdecl `bool(a, b)`: same resource, dead, `wontAttackPlayer(WhenSmall)` (res `+0x300/+0x301`) **only when b is the avatar** (`G+0x411C`), friendGroup `+0x2FC` | ✔ |
+| 0xE57610 | cdecl `void(cell* self, u32 attackerIdx)`: reaction to an attack: flee (`+0x220`) or chase (`+0x22C`) the attacker by the AI block flags `+0x91`/`+0x8C`; reached through 0xE57710 (custom: ESI = victim, stack attackerIdx) from DamageCell and the chunk eats | ✔ |
+| 0xE71CE0 | the species alert of DamageCell (called at 0xE7A80B): cells of the victim's species around (FindCellsInRadius, ShouldNotAttack true = same kind) chase (`+0x22C`, 0xE71EC0) or flee (`+0x220`) the attacker by distance; KillCell has its own alert 0xE71F00 | ✔ |
+| 0xE58F10 GetCurrentAdvectInfo | cdecl `(int* level, float*, float*, float*)`: its level is **not** the players' level everywhere (it said 8 where GetScaleDifference reads the avatar as 7, food 600) | ✔ runtime |
+
+The prey radius is small: 2-8 m for most species, 20 m for the biggest (seen with `coop.pool prey`),
+so an NPC hunts whoever is nearest within a few metres.
+
+**The bug (fixed 2026-10-23):** a partner's cell on the host (the puppet) is an ordinary pool cell
+with the level `+0x358` it got when it was created (GetCurrentAdvectInfo at spawn) and never
+updated. After a few level-ups the host's NPCs read it as 2+ levels smaller than they are
+(GetScaleDifference 0): IsPrey false for the normal hunters (and prey only for the big eaters that
+take tiny cells), IsThreat false. So they hunted the host's avatar (−1, always the current level).
+Fix: `modes::cell_drive` keeps the puppet's level at the players' level, asking the game
+(GetScaleDifference(avatar, puppet) must be 2), and the ShouldNotAttack hook answers for a puppet
+victim as for the avatar (swaps `G+0x411C` around the original). After it `coop.pool prey` shows
+the same prey / threat answers for the avatar and the partner's cell for every NPC.
+
+Damage stays with the bitten player's own machine: on the host no collision pair with a partner's
+cell runs (HandleCollisionPair hook, §8), so a host NPC that catches the puppet does nothing there;
+its mirror on the guest touches the guest's real cell and the guest's own collision step bites it
+(`hurt_local`; part-to-part geometry in 0xE6AD80, no AI state needed, the mirror's AI lock does not
+matter). The bite then goes through the guest's DamageCell / KillCell hooks (knockout, revive).
+The host drops any DamageCell on a partner's cell (`puppet_hits_dropped`; none seen: AoE damage
+0xE71520 asks IsDamageable first, which a puppet fails), so nothing is applied twice.
+
+What DamageCell does around a bite besides the hp, and how the co-op path replays it:
+
+* **Attacker rests** (0xE57930, ESI = attacker → RestAfterBite 0xE578B0 for AI type 0x1006): its
+  chase ends and it picks no target for AI block `+0x88` seconds. On the host an NPC that caught
+  the guest's puppet never bit (no pair), so it went on chasing the guest without a pause: in the
+  first run with the level fix the host's NPCs chased the guest 892 samples vs the host 80, the
+  guest was knocked out 3 times. The guest now sends `MSG_CELL_BITTEN {host index}` for every bite
+  a mirror gives it and the host calls RestAfterBite on that NPC.
+* **Species alert** (AlertSpeciesOfAttack 0xE71CE0) and the **victim's reaction**
+  (0xE57710 → ReactToAttacker 0xE57610, AI type 0x1006): run for the host's bites inside
+  DamageCell; a guest's bite arrives as `MSG_CELL_HIT` and the host applies the hp itself, so it
+  now calls both with the guest's puppet as the attacker (`hits_aggro`): the bitten NPC and its
+  kind turn on the guest as they would on the host.
+* The jump tables of 0xE57710 and 0xE57930 (bytes at 0xE577AC / 0xE579C8, index ai.type − 0x1003)
+  are `00 00 00 01 00 00 00 02 00 00 00 00`: only ai.type 0x1006 reaches the call.
+
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) — confirm at runtime that a live NPC
   with `+0x16C=1` stays passive and nothing resets it.

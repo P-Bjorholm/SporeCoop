@@ -425,7 +425,7 @@ static void* cell_spawn(const net::PlayerState& s, void* local)
     void* query = *(void**)(g + 0x40FC);
     void* res = *(void**)(me + 0x108);
     // the avatar's own mScale is -1 ("player"); other cells with -1 are not drawn: use the level the
-    // player is at (GetCurrentAdvectInfo reports the current CellStageScale)
+    // player is at (GetCurrentAdvectInfo reports the current CellStageScale; cell_drive corrects it)
     int scale = 1;
     if (uintptr_t adv = S("Simulator::Cell::GetCurrentAdvectInfo")) {
         int lvl = -1;
@@ -476,6 +476,21 @@ static void cell_drive(void* cp, const net::PlayerState& s, drive::State&, doubl
     if (size > 0.01f && size < 1000.f) {
         *(float*)(c + 0x58) = size;
         *(float*)(c + 0xB4) = size; // mTargetSize
+    }
+    // Keep the puppet at the players' level (+0x358). It used to keep the level of the moment it
+    // was created: after a few level-ups the host's NPCs judged the partner several levels smaller
+    // than them (scale difference 0, IsPrey 0xE68910 says "too small to hunt") and hunted only the
+    // host's own cell (docs/re/cell.md 9, docs/known-issues.md history).
+    // The game reads the avatar's -1 as the level of the food progress (GetScaleDifference
+    // 0xE57400 -> 0xE4EE50); GetCurrentAdvectInfo, which the spawn uses, does not always agree (8
+    // for 7 at food 600). Ask the game: the scale difference avatar -> puppet is 2 at the same level.
+    uint8_t* g = cell_game();
+    uint8_t* av = g ? cell_at(*(uint32_t*)(g + 0x411C)) : nullptr;
+    if (uintptr_t diff = S("Simulator::Cell::GetScaleDifference"); av && av != c && diff) {
+        int d = skg::cdecl_call<int>(diff, av, c); // clamped to 0..4: converges within a few frames
+        int lvl = *(int*)(c + 0x358) + 2 - d;
+        if (d != 2 && lvl >= 0 && lvl < 32)
+            *(int*)(c + 0x358) = lvl;
     }
     *(int*)(c + 0x22C) = -1; // never chase anything
     *(int*)(c + 0x220) = -1; // nor flee

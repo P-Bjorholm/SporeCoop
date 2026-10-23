@@ -28,6 +28,7 @@ from coop_sync import angle, pct
 from twoinst import Checks, Monitor, shot, start
 
 MEASURE = 10.0
+PREY_EVERY = 2.0  # coop.pool prey on the host
 EDIBLE = {'plant', 'meat'}
 HUD_BOTTOM = 130  # the food bar and buttons at the bottom of the screen
 
@@ -324,7 +325,13 @@ def main():
     ko_seen = {'host': 0, 'guest': 0}
     heal = {'host': [0, 0], 'guest': [0, 0]}
     chase = [0, 0]  # host NPC-steps chasing the host / the guest's cell  # eats while hurt, of them healed
-    last_measure = 0.0
+    chase_at_measure = [0, 0]
+    # the game's own prey test on the host (coop.pool prey): NPCs that see each player as prey / threat
+    # within their range, summed over the measures
+    prey = {'me': [0, 0, 0], 'partner': [0, 0, 0]}
+    prey_win = {'me': [0, 0, 0], 'partner': [0, 0, 0]}  # since the last measure line
+    rules = [0, 0]  # NPC answers compared between the host's cell and the guest's / of them different
+    last_measure = last_prey = 0.0
     ok = True
     try:
         while time.time() - t0 < a.minutes * 60 and ok:
@@ -346,16 +353,31 @@ def main():
                 if p.downed and not was:
                     ko_seen[p.name] += 1
                     print(f'  {now - t0:5.0f}s {p.name} knocked out (hp {st[p.name]["hp"]})', flush=True)
+            if now - last_prey >= PREY_EVERY:
+                last_prey = now
+                out = host.call('coop.pool prey 30 sum')['out']
+                for m in re.finditer(r'prey_sum (\w+) around=(\d+) prey=(\d+) threat=(\d+)', out):
+                    for i in range(3):
+                        prey[m.group(1)][i] += int(m.group(i + 2))
+                        prey_win[m.group(1)][i] += int(m.group(i + 2))
+                m = re.search(r'prey_rules compared=(\d+) differ=(\d+)', out)
+                if m:
+                    rules[0] += int(m.group(1))
+                    rules[1] += int(m.group(2))
             if now - last_measure >= MEASURE:
                 last_measure = now
                 hs, gs = st['host'], st['guest']
                 # food: the guest follows the host within a second; compare a fresh pair
                 hf, gf = pool(host)['food'], pool(guest)['food']
-                if hf != gf:
+                # a player eating several chunks in a row moves the total again before the last change
+                # arrived (seen once: 252/240, 1.2 s later 264/252): only a difference that stays counts
+                for _ in range(3):
+                    if hf == gf:
+                        break
                     time.sleep(1.2)
                     hf, gf = pool(host)['food'], pool(guest)['food']
-                    if hf != gf:
-                        food_mismatch.append((round(now - t0), hf, gf))
+                if hf != gf:
+                    food_mismatch.append((round(now - t0), hf, gf))
                 hist.append((round(now - t0), hf, gf))
                 pe, re_, common, host_cells = desync(host, guest)
                 for k, v in pe.items():
@@ -367,6 +389,11 @@ def main():
                     if pd is None or pd < 0:
                         partner_missing.append((round(now - t0), p.name))
                 c = pe.get('c', [])
+                dc = [chase[0] - chase_at_measure[0], chase[1] - chase_at_measure[1]]
+                chase_at_measure = list(chase)
+                print(f'  {now - t0:5.0f}s chased {dc[0]}/{dc[1]}, NPCs around/prey/threat host {prey_win["me"]} guest '
+                      f'{prey_win["partner"]}', flush=True)
+                prey_win = {'me': [0, 0, 0], 'partner': [0, 0, 0]}
                 print(f'  {now - t0:5.0f}s food {hf}/{gf} hp {hs["hp"]}/{gs["hp"]} size {hs["size"]}/{gs["size"]} '
                       f'partner {hs["partner_dist"]}/{gs["partner_dist"]} m, cells {common}/{host_cells} in common, '
                       f'cell err p90 {pct(c, .9):.2f} max {max(c or [0]):.2f}, players p90 {pct(pe.get("p", []), .9):.2f}, '
@@ -431,7 +458,20 @@ def main():
            f'each sees the partner ({len(partner_missing)} misses in {2 * len(hist)} looks: {partner_missing[:6]})')
         print(f'  damage taken: host {hs["damage_taken"]} hp in {hs["bites_taken"]} bites, guest {gs["damage_taken"]} hp in '
               f'{gs["bites_taken"]} bites', flush=True)
-        print(f'  host NPCs chasing (samples): the host {chase[0]}, the guest {chase[1]}', flush=True)
+        print(f'  host NPCs chasing (samples): the host {chase[0]}, the guest {chase[1]}; NPCs around (30 m) / taking '
+              f'it for prey / for a threat in range, summed: host {prey["me"]}, guest {prey["partner"]}', flush=True)
+        # regression: the guest's cell on the host kept the level it was created at, so after a few
+        # level-ups the host's NPCs saw it as too small to hunt and chased only the host (620-2680
+        # samples vs 36-117, knockouts 3-16 vs 0-1 per session; docs/stability/cell.md).
+        # 1. the game's own prey / threat answers (IsPrey, IsThreat) are the same for both players
+        ck(rules[0] > 0 and rules[1] <= 0.02 * rules[0],
+           f'the host\'s NPCs judge the guest\'s cell as they judge the host\'s ({rules[1]} of {rules[0]} answers differ)')
+        # 2. and hunt it: at least a third as often as the host, unless the guest was rarely within reach
+        #    of a hunter that takes it for prey (the prey range is 2-8 m: who swims among the hunters
+        #    is hunted; the bot's paths vary a lot from session to session)
+        ck(chase[0] + chase[1] < 60 or 3 * chase[1] >= chase[0] or 3 * prey['partner'][1] < prey['me'][1],
+           f'the host\'s NPCs hunt the guest too (chased: guest {chase[1]}, host {chase[0]}; in reach as prey: '
+           f'guest {prey["partner"][1]}, host {prey["me"][1]})')
         print(f'  eats while hurt (healed): host {heal["host"][0]} ({heal["host"][1]}), guest {heal["guest"][0]} '
               f'({heal["guest"][1]})', flush=True)
         print(f'  knockouts: host {ko_seen["host"]} guest {ko_seen["guest"]}; revives {hs["revives"]}/{gs["revives"]}, '

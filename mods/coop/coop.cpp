@@ -1200,7 +1200,8 @@ void setup_callbacks()
             creations::on_message(type, from, r);
             return;
         }
-        if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO) {
+        if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
+            type == net::MSG_CELL_BITTEN) {
             cellsync::on_message(type, from, r);
             return;
         }

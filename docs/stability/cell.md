@@ -86,18 +86,49 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
 4. **Progress stalled behind a caption** (bot): a part caption ("When you see the new part
    appear, swim over the token to collect it") waits for the green check; a player who does not
    press it sees the game stand still. Not a mod bug; the bot now presses it like a person.
+5. **The host's NPCs hunted the host, rarely the guest** (branch fix/cell-npc-prey). Summed over the
+   bot's samples, NPCs chasing the host 1067 / 2680 / 620 / 752, the guest's cell 36 / 71 / 117 /
+   103 (play9-12); knockouts host 3 / 16 / 4 / 3, guest 1 / 1 / 1 / 0. Cause (docs/re/cell.md 9):
+   the guest's cell on the host kept the level `+0x358` of the moment it was created, so after a
+   few level-ups the NPCs took it for a cell several levels smaller than them, not worth hunting
+   (`coop.pool prey` at food 600: 10 of 10 hunters "prey" for the host's cell, 0 for the guest's).
+   Fix: the puppet follows the players' level, ShouldNotAttack answers for it as for the avatar,
+   the guest's own machine stays the only place where it is bitten (no double damage), and the
+   host replays what DamageCell does for the NPC around a bite (rest after biting via
+   `MSG_CELL_BITTEN`; alert and reaction when the guest bites). Without the rest the NPCs chased
+   the guest without a pause: 892 vs 80 samples, the guest knocked out 3 times (one run).
+   After (lane 2, 10 min each):
+
+   | run | seed | chased host / guest | in reach as prey host / guest | damage host / guest (hp) | KO host / guest | partner median (m) | result |
+   |---|---|---|---|---|---|---|---|
+   | before (this branch, unchanged code) | 8 | 32 / 109 | | 4 / 3 | 0 / 0 | 26 | OK |
+   | after | 8 | 676 / 488 | | 23 / 10 | 2 / 1 | 20 | OK |
+   | after | 9 | 647 / 286 | | 14 / 7 | 2 / 0 | 76 | OK |
+   | after | 10 | 956 / 65 | | 30 / 6 | 4 / 0 | 23 | (the old 1/3 check failed) |
+   | after | 10 | 675 / 584 | 27 / 17 (every 10 s) | 21 / 24 | 4 / 1 | 23 | OK |
+   | after | 12 | 912 / 317 | 133 / 54 | 42 / 7 | 2 / 0 | 20 | FAIL: one food check (a moving total, test fixed) |
+   | final build | 8 | 546 / 545 | 118 / 99 | 14 / 14 | 3 / 1 | 24 | OK |
+
+   Also on the final build: `coop_cell.py` OK, `coop_sync.py cell` OK (it failed once before on the
+   players' facing with 2 samples, docs/known-issues.md), 0 faults in every run, food equal at every
+   check except the one moving total above.
+
+   The "before" row went the other way in that run (32 / 109, no knockouts): the chase counter also
+   counts chases started by other paths (species alerts, reactions) and the minutes before the first
+   level-up, when the puppet's level was still right; so the chase counts alone did not show the bug
+   in every run. The regression check looks at the game's answers directly (`prey_rules`).
+   The game's prey / threat answers are the same for both players (0 of 6441 differ in seed 12,
+   0 of 7017 in the final run).
+   How often each is hunted still varies a lot between sessions: the prey range is 2-8 m, the NPC
+   hunts whoever swims among the hunters, and the host's NPCs live around the host (a guest far
+   away meets none, docs/known-issues.md). The chase samples come in bursts of 30-80 per 10 s
+   while a pack follows one player.
 
 ## Open issues (docs/known-issues.md)
 
-* **The host's NPCs hunt the host, rarely the guest**: summed over the bot's samples, NPCs chasing
-  the host 1067 / 2680 / 620 / 752, chasing the guest's cell 36 / 71 / 117 / 103 (play9-12). Damage taken: host 51 / 86
-  hp, guest 27 / 34 hp; knockouts host 3 / 16, guest 1 / 1. Host-side bites on the guest's puppet
-  never arrive (the puppet is not damageable there: no AI, not the avatar; `hurt_fwd` = 0 in every
-  run); the guest is only bitten when its cell bumps into a mirror (`hurt_local` 0-16). Playing the
-  guest is safer than playing the host.
 * **A small respawned cell can spiral**: knocked out far from the partner it respawns at half size
-  next to the partner, is hunted again (above) and stays small (play10: host size 0.24 from 11 to
-  19 minutes, 12 respawns). Partly the hunting asymmetry.
+  next to the partner, is hunted again and stays small (play10: host size 0.24 from 11 to
+  19 minutes, 12 respawns). The hunting asymmetry that made it a host-only problem is fixed (5.).
 * Progress stalls of 3-6 minutes happen with this bot also when playing alone (solo1: 84 food from
   3.5 to 5 minutes) - food is sparse at some scales; not a co-op problem.
 
@@ -108,5 +139,10 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
   `puppet_new`, `soft_moves`, `wipes`; `coop.pool see [n]`, `coop.pool cell <key>`,
   `coop.pool why`.
 * The Karke cell has no weapon: hunting never bites (`hits_sent` 0), so guest bites through the
-  host (MSG_CELL_HIT) are not covered by real play with this fixture (coop_cell.py covers them).
+  host (MSG_CELL_HIT, and the NPC alert / reaction it now triggers: `hits_aggro`) are not covered by
+  real play with this fixture (coop_cell.py covers them).
+* `coop.pool prey [r]` (host): the game's prey / threat answers of each NPC for each player;
+  host `bitten_in` / guest `bitten_sent` count the after-bite rests (MSG_CELL_BITTEN), host
+  `puppet_hits_dropped` any DamageCell on a partner's cell (0 so far). play_cell.py prints
+  `chased host/guest` and `NPCs around/prey/threat` every 10 s.
 * Food rate with this bot: ~250-300 points per player per 10 minutes, as alone (solo1: 402 in 15).

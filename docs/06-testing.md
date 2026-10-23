@@ -90,6 +90,13 @@ tools/sporectl.py stack.scan 300                 # exe return addresses on the m
 tools/spore.sh logs                              # tail of sporekit.log
 ```
 
+New symbols in `data/symbols/*.sym` reach a running game only with `sym.reload` before the
+`mod.reload coop` (mods resolve their symbols when they load; without it `H->sym` returns 0). A
+`mod.reload coop` ends the co-op session (both sides show `offline`): to look at a two-player state
+again, start the pair anew (`twoinst.start`, ~40 s). Cell stage: `coop.pool prey [r]` on the host
+lists the NPCs within r m of a player with the game's own prey / threat answers for each player
+(docs/re/cell.md 9), `coop.pool prey 30 sum` only the totals (play_cell.py samples them).
+
 ## 6.4 Test levels
 
 | Level | What | How |
