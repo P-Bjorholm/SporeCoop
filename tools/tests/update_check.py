@@ -96,7 +96,9 @@ def wine(bottle, exe, *args):
                     w, '--', *args], capture_output=True, timeout=300, stdin=subprocess.DEVNULL)
     # Wine keeps its services running after the program exits: stop them, or the next start in
     # this bottle can hang
-    subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), 'kill'], env=dict(os.environ, SPORE_LANE=bottle[9:]),
+    n = bottle[len('SporeLab'):]
+    assert n.isdigit(), bottle  # never the default lane 1: that kills other tests' games
+    subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), 'kill'], env=dict(os.environ, SPORE_LANE=n),
                    capture_output=True)
 
 
