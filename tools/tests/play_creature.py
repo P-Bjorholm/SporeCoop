@@ -120,13 +120,15 @@ class Player(threading.Thread):
                 d['p' + f[1]] = (-1.0, int(f[3]), int(f[4]))
         return d
 
-    def look_for(self, key, tries=4):
-        """turn the camera (right-drag) until the object is on the screen"""
+    def look_for(self, key, tries=4, loose=False):
+        """turn the camera (right-drag, always the same way: a sweep) until the object is on the
+        screen; loose: anywhere on the screen above the HUD (the partner far away near the horizon)"""
+        sign = self.rng.choice([-1, 1])
         for i in range(tries):
             o = self.objs().get(key)
-            if o and self.in_view(o[1], o[2]):
+            if o and (self.in_view(o[1], o[2]) or (loose and 0 < o[1] < self.W and 0 < o[2] < self.H - 170)):
                 return o
-            dx = self.rng.choice([-1, 1]) * self.rng.randint(250, 450)
+            dx = sign * self.rng.randint(300, 450)
             y = self.H // 2
             self.do(f'drag {self.W // 2} {y} {self.W // 2 + dx} {y} right')
             self.add('look_around')
@@ -232,12 +234,13 @@ class Player(threading.Thread):
             self.add('wasd')
 
     def follow(self):
-        o = self.look_for(f'p{self.partner}')
+        o = self.look_for(f'p{self.partner}', 7, loose=True)
         if not o:
             self.add('follow_lost')
             return False
+        # on the ground next to the partner (not the sky above a far one)
         self.do(f'click {max(60, min(self.W - 60, o[1] + self.rng.randint(-80, 80)))} '
-                f'{min(self.H - 180, o[2] + 40)}')
+                f'{max(int(self.H * 0.45), min(self.H - 180, o[2] + 40))}')
         self.add('follow')
         self.sleep(2, 5)
         return True
@@ -276,6 +279,16 @@ class Player(threading.Thread):
                             if typed and msg in typed.group(1):
                                 break
                             self.add('chat_retyped')
+                        if not (typed and msg in typed.group(1)):
+                            # not typed: is the creature dying (the death cinematic takes no UI input)?
+                            av = re.search(r'hp=([\d.]+)/', self.do('coop.avatar'))
+                            dying = (av and float(av.group(1)) <= 0) or uifind.shown(self.con, 'You were killed')
+                            self.add('chat_not_typed_dying' if dying else 'chat_not_typed')
+                            self.notes.append(f'{time.strftime("%H:%M:%S")} chat line not typed '
+                                              f'(hp {av.group(1) if av else "?"}, dying {bool(dying)})')
+                            self.sleep(0.5)
+                            self.f9()
+                            return
                         self.do(f'click {(int(m2.group(1)) + int(m2.group(3))) // 2} {(int(m2.group(2)) + int(m2.group(4))) // 2}')
                         self.add('chat_sent')
                         self.sleep(1.5)
@@ -307,8 +320,11 @@ class Player(threading.Thread):
 
     def exit_and_return(self):
         """pause menu -> Exit to Main Menu -> Don't Save -> Don't Save; the host's world comes back"""
+        self.exit_tries = getattr(self, 'exit_tries', 0) + 1
         self.exit_at = None
-        for _ in range(2):
+        if 'open=1' in self.do('coop.uistate'):  # the co-op window would take the Esc
+            self.f9()
+        for _ in range(3):
             self.do('key esc')
             self.sleep(1.2)
             if uifind.shown(self.con, 'Resume Game'):
@@ -316,9 +332,13 @@ class Player(threading.Thread):
         t0 = time.time()
         ok = uifind.press(self.con, 'Exit to Main Menu', 'Do you want to save your game?') \
             and uifind.press(self.con, "Don't Save", 'Are you sure?') and uifind.press(self.con, "Don't Save")
-        if not ok:
+        if not ok:  # a player tries again a bit later (dying, a caption in the way)
+            self.notes.append(f'{time.strftime("%H:%M:%S")} exit to the main menu: the menu path failed '
+                              f'(try {self.exit_tries})')
             self.sh.exit_result = 'the menu path failed'
             self.clear_dialogs()
+            if self.exit_tries < 3:
+                self.exit_at = time.time() + 20
             return
         self.add('exit_to_menu')
         seen_menu = False
@@ -352,7 +372,7 @@ class Player(threading.Thread):
                 self.hunt(tgt[0], 'pack')
                 return
         d = self.partner_dist()
-        if d is not None and d > 30 and rng.random() < 0.6:
+        if d is not None and d > 25 and rng.random() < 0.7:
             self.follow()
             return
         kind = rng.choices(['hunt', 'social', 'wander', 'follow', 'menu', 'look'],
@@ -544,6 +564,9 @@ def main():
         seen = sh.get('host.chat_seen') + sh.get('guest.chat_seen')
         sent = sh.get('host.chat_sent') + sh.get('guest.chat_sent')
         ck(seen == sent, f'chat lines typed in the co-op window reach both players ({seen}/{sent})')
+    not_typed = sh.get('host.chat_not_typed') + sh.get('guest.chat_not_typed')
+    ck(not_typed == 0, f'the chat line takes the typing while the creature lives ({not_typed} lines lost; '
+                       f'while dying: {sh.get("host.chat_not_typed_dying") + sh.get("guest.chat_not_typed_dying")})')
     if exit_at is not None or sh.exit_result:
         print('  guest left to the main menu:', sh.exit_result)
         ck(sh.exit_result is not None and sh.exit_result.startswith('back'),
