@@ -1711,10 +1711,8 @@ std::string targets(bool all)
     } u{&out, &add};
     tribe::for_each_owned(
         [](void* c, uint8_t owner, void* p) { (*((U*)p)->f)("member", -1, owner, game::position(c)); }, &u);
-    civ::for_each_owned(
-        [](void*, const net::Vec3& pos, uint8_t owner, bool city, void* p) {
-            (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
-        },
+    civ::for_each_target(
+        [](const char* kind, int id, int owner, const net::Vec3& pos, void* p) { (*((U*)p)->f)(kind, id, owner, pos); },
         &u);
     if (all) { // every synchronized object on screen (game bots aim at NPCs, citizens, ships ...)
         net::Vec3 me{};

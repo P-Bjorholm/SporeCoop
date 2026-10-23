@@ -36,7 +36,7 @@ constexpr uintptr_t kPlannerAddBuildingRet = 0xD1419C;
 static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_PlayerCiv, a_GetMoney, a_SpendMoney,
     a_CreateVehicle, a_SlotsLeft, a_VehicleCost, a_DesignKey, a_DesignId, a_SpawnVehicle, a_AddBuilding,
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
-    a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage;
+    a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -123,7 +123,7 @@ static std::unordered_map<void*, uint16_t> g_gv_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_applying; // executing a host message: the hooks let the game act
-static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in;
+static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked;
 
 static uint8_t owner_of_vehicle(void* v)
 {
@@ -249,6 +249,12 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
+            // a mirror of another player's or nation's vehicle: the guest's own civ AI orders the
+            // other nations' vehicles every few frames (hundreds of rejected commands a minute)
+            if (g_gv[it->second].owner != C.sess->my_id()) {
+                g_orders_dropped++;
+                return 0;
+            }
             net::Writer w;
             w.u8(CMD_ORDER);
             w.u16(it->second);
@@ -269,6 +275,10 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
+            if (g_gv[it->second].owner != C.sess->my_id()) {
+                g_orders_dropped++;
+                return 0;
+            }
             net::Writer w;
             w.u8(CMD_MOVE);
             w.u16(it->second);
@@ -366,6 +376,24 @@ static int SK_THISCALL h_AddBuilding(void* city, void* b, int x)
         }
     }
     return r;
+}
+
+// city growth by the civ AI (docs/re/civ.md 1): the guest runs the other nations' AI too, so
+// without this its cities grew on their own and got the host's buildings on top (NPC cities had
+// more buildings on the guest after a minute). Only the two AI growth callers are blocked;
+// CreateBuildingByType (0xBE74A0, the fill-the-city loop 0xCFB827 waits for the count) is not.
+constexpr uintptr_t kGrowthRetBudget = 0xBE5BB3, kGrowthRetNew = 0xBE616E;
+using CreateBuilding_t = void*(SK_THISCALL*)(void*, uint32_t, uint32_t);
+static CreateBuilding_t o_CreateBuilding;
+static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t type)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv &&
+        (ret == H->rebase(kGrowthRetBudget) || ret == H->rebase(kGrowthRetNew))) {
+        g_growth_blocked++;
+        return nullptr; // both callers ignore the result (the host's growth comes as MSG_CIV_BUILD)
+    }
+    return o_CreateBuilding(city, noun, type);
 }
 
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
@@ -664,6 +692,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_BTTick, "Simulator::BehaviorTreeTickGeneric"},
         {&a_CreateInstance, "Simulator::cGameNounManager::CreateInstance"},
         {&a_UIMessage, "UI::RolloverCivCity::HandleUIMessage"},
+        {&a_CreateBuilding, "Simulator::cCity::CreateBuilding"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -680,6 +709,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_UIMessage, (void*)h_UIMessage, (void**)&o_UIMessage);
     H->hook_create(M, (void*)a_AddBuilding, (void*)h_AddBuilding, (void**)&o_AddBuilding);
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
+    H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1238,10 +1268,31 @@ std::string status()
                  g_religious_boosts, g_alarms, g_votes, (unsigned)g_boost.size());
     else
         snprintf(b, sizeof b,
-                 "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u\n",
+                 "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
+                 "orders_dropped=%u growth_blocked=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
-                 g_captures_in);
+                 g_captures_in, g_orders_dropped, g_growth_blocked);
     return b;
+}
+
+void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
+{
+    if (!active())
+        return;
+    for (size_t i = 0; i < g_host_cities.size(); i++)
+        if (void* c = g_host_cities[i]) {
+            uint8_t o = owner_of_city(c);
+            fn("city", (int)i, o == 0xFF ? -1 : (int)o, city_pos(c), user);
+        }
+    if (is_host()) {
+        for (auto& [v, hv] : g_hv)
+            if (hv.owner != 0xFE && game::object_alive(v))
+                fn("vehicle", hv.id, hv.owner, veh_pos(v), user);
+    } else {
+        for (auto& [id, g] : g_gv)
+            if (g.v && g.owner != 0xFE && game::object_alive(g.v))
+                fn("vehicle", id, g.owner, veh_pos(g.v), user);
+    }
 }
 
 std::string list()
