@@ -108,7 +108,8 @@ def mode(con):
 
 def check_round(ck, host, guests, label, report):
     """desync / coverage / resources of every guest against the host"""
-    report.append(f'  [{label}] modes: host {mode(host)}, ' + ', '.join(f'{n} {mode(g)}' for n, g in guests.items()))
+    report.append(f'  [{label}] modes: host {mode(host)}, ' + ', '.join(f'{n} {mode(g)}' for n, g in guests.items())
+                  + ' | host ' + host.call('coop.npc')['out'].strip().splitlines()[0][:120])
     h1 = sample(host)
     worst = {}
     for name, g in guests.items():
@@ -178,6 +179,7 @@ def main():
     bot = Bot(host, guest, a.fixture, seed, a.rate, extra={n: c for n, (c, _) in extra.items()},
               joins={'guest': lane.JOIN, **{n: join_cmd(n) for n in extra}}, ids=ids,
               back_in=lambda name: wait_all(host, a.players - 1, 120))
+    bot.weights['pause'] = 0  # random clicks into an open pause menu can quit to the galaxy menu
     t_end, t_check, n, ok, rounds = time.time() + a.minutes * 60, time.time() + 60, 0, True, 0
     try:
         while time.time() < t_end and ok:

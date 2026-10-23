@@ -40,6 +40,9 @@ class Bot:
         self.join_cmd = joins or {'guest': lane.JOIN}
         self.ids = ids or {'host': 0, 'guest': 1}
         self.back_in = back_in or (lambda name: wait_guest_in(self.c['host'], self.c[name], 90))
+        # action weights; coop_multi.py drops "pause" (random clicks into the pause menu can quit)
+        self.weights = dict(target=30, order=15, click=12, box=8, key=12, wheel=5, ui=4, pause=2, stage=8, churn=1,
+                            save=1, outage=1)
         self.fixture, self.rng, self.rate = fixture, random.Random(seed), rate
         self.log = []
         self.joins = 0
@@ -64,8 +67,7 @@ class Bot:
     def step(self):
         rng = self.rng
         who = rng.choice(list(self.c))
-        kind = rng.choices(['target', 'order', 'click', 'box', 'key', 'wheel', 'ui', 'pause', 'stage', 'churn',
-                            'save', 'outage'], weights=[30, 15, 12, 8, 12, 5, 4, 2, 8, 1, 1, 1])[0]
+        kind = rng.choices(list(self.weights), weights=list(self.weights.values()))[0]
         self.count[kind] = self.count.get(kind, 0) + 1
         if kind == 'target':  # click a unit: own, the partner's, the partner itself
             t = self.targets(who)
