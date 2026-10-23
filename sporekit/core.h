@@ -134,6 +134,7 @@ extern SkHost g_host;
 bool input_key(int vk, const char* mode);
 bool input_text(const std::string& utf8);
 bool input_click(int x, int y, int button);
+bool input_drag(int x1, int y1, int x2, int y2, int button);
 bool input_move(int x, int y);
 bool input_wheel(int x, int y, int notches); // notches > 0: away from the user (zoom in)
 

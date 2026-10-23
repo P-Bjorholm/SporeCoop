@@ -5,7 +5,8 @@
   lab.py run smoke --lanes 3           build, then the smoke suite on lanes 1..3
   lab.py run full --lanes 3 --branch feat/x   the same for a branch (its own worktree + build)
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
-  lab.py reload --lanes 2              deploy the build and hot-reload coop.dll in running games
+  lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
+  lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
   lab.py kill [--lanes 3]              stop the games of the lanes
 
 A lane runs one test at a time. Warm tests reuse the lane's running games (SPORE_WARM=1,
@@ -65,6 +66,21 @@ def ensure_lanes(n):
         print(spore(ROOT, 1, 'lane', 'create', str(lane), check=True).stdout.strip())
 
 
+def lane_game(lane):
+    main = os.path.dirname(os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir')))
+    return main if lane == 1 else os.path.join(os.path.dirname(main), 'SPORE-lab', f'lane{lane}')
+
+
+def save_game_logs(lane, logdir, name):
+    """the games' own logs (SporeKit + mods) next to the test log: the next start overwrites them"""
+    import shutil
+    logs = os.path.join(lane_game(lane), 'SporebinEP1', 'mods', 'logs')
+    for inst, who in ((2 * lane - 1, 'host'), (2 * lane, 'guest')):
+        src = os.path.join(logs, 'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(logdir, f'{name}.{who}.game.log'))
+
+
 def run_one(t, lane, tree, logdir, warm, suffix=''):
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_WARM='1' if warm else '0', PYTHONUNBUFFERED='1')
     log = os.path.join(logdir, t['name'] + suffix + '.log')
@@ -78,6 +94,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
         except subprocess.TimeoutExpired:
             rc = -9
             f.write('\nLAB: TIMEOUT\n')
+    save_game_logs(lane, logdir, t['name'] + suffix)
     text = open(log, errors='replace').read()
     has_result = 'RESULT:' in text or t['cmd'].startswith('make')
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result
@@ -92,6 +109,8 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
 def cmd_run(a):
     tree = worktree(a.branch) if a.branch else ROOT
     tests = suite.select(a.tests)
+    if a.repeat > 1:  # hunting a flaky bug: the same tests many times
+        tests = [dict(t, name=f'{t["name"]}#{k + 1}') for k in range(a.repeat) for t in tests]
     run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ('-' + a.branch.replace('/', '-') if a.branch else '')
     logdir = os.path.join(ROOT, 'out', 'lab', run_id)
     os.makedirs(logdir, exist_ok=True)
@@ -132,7 +151,7 @@ def cmd_run(a):
             warm_ok = False
         else:
             warm_ok = True
-        if not r['ok'] and r['harness'] and a.retry:
+        if not r['ok'] and a.retry:  # once more on a clean lane: passing then = flaky
             r2 = run_one(t, lane, tree, logdir, False, '.retry')
             r2['flaky'] = r2['ok']
             r2['first'] = r['fails'] or ['no RESULT (harness)']
@@ -166,6 +185,20 @@ def cmd_run(a):
         spore(tree, lane, 'kill')
     total = time.time() - t0
     ok = all(r['ok'] for r in results)
+    # flaky history across runs: which tests fail now and then (fix the test or the bug behind it)
+    hist_path = os.path.join(ROOT, 'out', 'lab', 'flaky.json')
+    try:
+        hist = json.load(open(hist_path))
+    except (OSError, ValueError):
+        hist = {}
+    for r in results:
+        h = hist.setdefault(r['name'], {'runs': 0, 'flaky': 0, 'failed': 0, 'last': []})
+        h['runs'] += 1
+        h['flaky'] += bool(r.get('flaky'))
+        h['failed'] += not r['ok']
+        if r.get('flaky') or not r['ok']:
+            h['last'] = (h['last'] + [f'{run_id}: ' + '; '.join(r.get('first') or r['fails'])[:300]])[-5:]
+    json.dump(hist, open(hist_path, 'w'), indent=1)
     json.dump(dict(run=run_id, tree=tree, head=head, lanes=a.lanes, seconds=round(total), ok=ok, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
     lines = [f'# lab run {run_id}', '', f'{head} — {len(results)} tests, {a.lanes} lanes, {total / 60:.1f} min, '
@@ -173,6 +206,11 @@ def cmd_run(a):
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
         lines.append(f'| {r["name"]} | {"ok" if r["ok"] else "FAIL"}{" (flaky)" if r.get("flaky") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
+    shaky = sorted(((h['flaky'] + h['failed']) / h['runs'], n) for n, h in hist.items() if h['flaky'] + h['failed'])
+    if shaky:
+        lines += ['', '## Unstable tests (all runs)', ''] + [
+            f'- {n}: {hist[n]["flaky"]} flaky, {hist[n]["failed"]} failed in {hist[n]["runs"]} runs; last: '
+            f'{hist[n]["last"][-1] if hist[n]["last"] else ""}' for _, n in reversed(shaky)]
     open(os.path.join(logdir, 'summary.md'), 'w').write('\n'.join(lines) + '\n')
     print(f'{"PASSED" if ok else "FAILED"}: {sum(r["ok"] for r in results)}/{len(results)} in {total / 60:.1f} min '
           f'-> out/lab/{run_id}/summary.md')
@@ -184,7 +222,7 @@ def cmd_reload(a):
     sys.path.insert(0, os.path.join(ROOT, 'tools'))
     from sporectl import Console
     build(ROOT)
-    for lane in range(1, a.lanes + 1):
+    for lane in a.lane or [1]:
         spore(ROOT, lane, 'deploy')
         for inst in (2 * lane - 1, 2 * lane):
             try:
@@ -206,10 +244,11 @@ def main():
     r.add_argument('--cold', action='store_true', help='no warm reuse of running games')
     r.add_argument('--no-build', action='store_true')
     r.add_argument('--retry', type=int, default=1)
+    r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt)')
     ln = sub.add_parser('lanes')
     ln.add_argument('n', type=int)
     rl = sub.add_parser('reload')
-    rl.add_argument('--lanes', type=int, default=1)
+    rl.add_argument('--lane', type=int, action='append', help='lane(s) to reload (default 1)')
     k = sub.add_parser('kill')
     k.add_argument('--lanes', type=int, default=5)
     a = ap.parse_args()

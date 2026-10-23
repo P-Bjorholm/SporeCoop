@@ -14,7 +14,8 @@ T = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None):
-    T.append(dict(name=name, cmd=cmd, suites=set(suites) | {'full', 'nightly'}, warm=warm,
+    suites = set(suites) | ({'nightly'} if 'nightly' in suites else {'full', 'nightly'})
+    T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture))
 
 
@@ -41,6 +42,16 @@ add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='c
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
+# chaos bot (random real input by both players, network churn); smoke: 2 minutes of tribe
+add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), minutes=3)
+for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):
+    add(f'chaos_{st}_long', P + f'coop_chaos.py --fixture {st} --minutes {m}', ('nightly',), minutes=m + 1)
+# the same tests over a bad network between guest and host (tools/tests/netem.py)
+for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
+                  ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
+    add(f'{name}_mobile', 'SPORE_NET=mobile ' + P + cmd, ('nightly',), minutes=4)
+add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe --minutes 5', ('nightly',),
+    minutes=6)
 
 
 def select(spec):

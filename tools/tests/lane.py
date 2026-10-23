@@ -22,6 +22,9 @@ GUEST_PROFILE = 'inst2' if LANE == 1 else f'inst{GUEST}'
 HOST_DIR = os.path.join(APPDATA, 'SporeKit-' + HOST_PROFILE, 'Spore')
 GUEST_DIR = os.path.join(APPDATA, 'SporeKit-' + GUEST_PROFILE, 'Spore')
 JOIN = f'cheat coop join 127.0.0.1:{PORT} Bob'
+if os.environ.get('SPORE_NET'):  # the guest goes through a bad network (tools/tests/netem.py)
+    import netem
+    JOIN = f'cheat coop join 127.0.0.1:{netem.from_env(PORT, LANE)} Bob'
 HOST_CMD = f'cheat coop host {PORT} Alice'
 
 

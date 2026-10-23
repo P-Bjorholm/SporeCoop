@@ -151,4 +151,36 @@ bool input_click(int x, int y, int button)
     return true;
 }
 
+// press at (x1, y1), move in steps, release at (x2, y2): selection boxes, camera drags
+bool input_drag(int x1, int y1, int x2, int y2, int button)
+{
+    HWND w = (HWND)game_window();
+    if (!w)
+        return false;
+    input_move(x1, y1);
+    UINT d = button == 1 ? WM_RBUTTONDOWN : WM_LBUTTONDOWN;
+    UINT u = button == 1 ? WM_RBUTTONUP : WM_LBUTTONUP;
+    WPARAM mk = button == 1 ? MK_RBUTTON : MK_LBUTTON;
+    int vk = button == 1 ? VK_RBUTTON : VK_LBUTTON;
+    ensure_hooks();
+    run_after_frames(3, [w, d, mk, x1, y1, vk] {
+        vcursor_set(x1, y1);
+        g_vkdown[vk] = 1;
+        PostMessageW(w, d, mk, MAKELPARAM(x1, y1));
+    });
+    const int steps = 8;
+    for (int i = 1; i <= steps; i++) {
+        int x = x1 + (x2 - x1) * i / steps, y = y1 + (y2 - y1) * i / steps;
+        run_after_frames(4 + i, [w, mk, x, y] {
+            vcursor_set(x, y);
+            PostMessageW(w, WM_MOUSEMOVE, mk, MAKELPARAM(x, y));
+        });
+    }
+    run_after_frames(6 + steps, [w, u, x2, y2, vk] {
+        g_vkdown[vk] = 0;
+        PostMessageW(w, u, 0, MAKELPARAM(x2, y2));
+    });
+    return true;
+}
+
 } // namespace sk

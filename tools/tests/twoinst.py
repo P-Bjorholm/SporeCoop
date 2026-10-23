@@ -57,7 +57,7 @@ def shot(con, name):
 
 class Monitor(threading.Thread):
     """Invariants during a test (docs/10-dev-pipeline.md): a game whose frames stop for more than
-    FREEZE seconds is frozen (the stack of its main thread is taken right away); a game whose
+    FREEZE seconds is frozen (the SporeKit watchdog logs the main thread stack at 30 s); a game whose
     console stops answering has crashed. Uses only any-thread console commands (frame, stack),
     so it works while the main thread hangs. Checks.faults() fails the test on any event."""
     FREEZE = 10.0
@@ -86,8 +86,10 @@ class Monitor(threading.Thread):
                 last, since, reported = f, now, False
             elif not reported and now - since > self.FREEZE:
                 reported = True
-                stack = con.call('stack 16').get('out', '').strip().replace('\n', ' | ')
-                Monitor.events.append(f'{self.name}: FROZE (no frame for {self.FREEZE:.0f} s) stack: {stack[:600]}')
+                # no stack from here: suspending the main thread under Wine can hang the console too;
+                # the SporeKit watchdog writes it into the game log after 30 s (lab.py keeps that log)
+                Monitor.events.append(f'{self.name}: FROZE (no frame for {self.FREEZE:.0f} s; main thread stack: '
+                                      f'watchdog "no frames" in the {self.name} game log)')
             time.sleep(1)
 
 
