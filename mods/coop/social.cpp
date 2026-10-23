@@ -18,15 +18,15 @@ static const SkHost* H;
 static SkMod* M;
 static Ctx C;
 
+static uintptr_t a_AbilityMode;
 static uintptr_t a_RelMgrGet, a_RelGet, a_RelEvent, a_RelRecord, a_SocialMode, a_DnaWorth, a_PlayAbility,
     a_PlayReaction, a_AddEvo;
 
 static constexpr uint32_t kSocialStimulus = 0x10000; // the avatar engages an NPC socially
-static constexpr uint32_t kAbilityMode = 0x169F374;  // cCreatureGameData ability mode: 0 social, 1 combat
 static constexpr float kActRange = 12.f;             // m between the guest and the NPC for an action
 static constexpr double kEngageTime = 60.0;          // an engagement without actions ends after this
 
-enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2 };
+enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3 };
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -209,28 +209,64 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
     o_RelEvent(mgr, event, key, creature);
 }
 
-// SpeciesGoal_Update 0xC2EE60 pays the goal's DNA (allied: 25 for the Kook) when it sees the
-// table change. On a guest the table is the host's copy and the host's own card pays it into the
-// shared pool: the guest's payment would come twice (forwarded as a guest gain)
+// SpeciesGoal_Update 0xC2EE60 pays the card's DNA (allied: 25 for the Kook, extinct: its hunt
+// reward) when it sees the species become allied / extinct. A card exists on the machine whose
+// player is near the species, so the host's, the guest's or both pay it: each machine reports it,
+// the host pays it into the shared pool once per species and outcome (MSG_SOCIAL K_GOAL).
 typedef void(SK_THISCALL* GoalUpdate_t)(void*, uint32_t*, uint32_t*);
 static GoalUpdate_t o_GoalUpdate;
-static int g_in_goal = 0;
-static uint32_t g_goal_dna_dropped = 0;
+static void* g_goal = nullptr; // the card being updated
+static uint32_t g_goal_dna_dropped = 0, g_goal_dna_paid = 0;
+static std::map<std::pair<uint64_t, int>, bool> g_goal_paid; // host: (species, outcome) paid
 
 static void SK_THISCALL h_GoalUpdate(void* goal, uint32_t* a, uint32_t* b)
 {
-    g_in_goal++;
+    void* prev = g_goal;
+    g_goal = goal;
     o_GoalUpdate(goal, a, b);
-    g_in_goal--;
+    g_goal = prev;
 }
 
-bool drop_guest_dna()
+static int goal_outcome(const ResourceKey& k) // the species' relation now: 6 allied, 5 extinct
 {
-    if (g_in_goal > 0 && C.sess && C.sess->role() == net::Role::Client) {
+    void* mgr = rel_mgr();
+    return mgr && a_RelGet ? thiscall<int>(a_RelGet, mgr, &k, (void*)nullptr, (void*)nullptr) : 0;
+}
+
+static uint64_t key64(const ResourceKey& k) { return ((uint64_t)k.group << 32) | k.instance; }
+
+// host: a card's reward, from its own card or reported by a guest; false = paid already
+static bool host_goal_pay(const ResourceKey& k, int outcome)
+{
+    auto id = std::make_pair(key64(k), outcome);
+    if (g_goal_paid.count(id))
+        return false;
+    g_goal_paid[id] = true;
+    g_goal_dna_paid++;
+    return true;
+}
+
+bool goal_dna(float delta)
+{
+    if (!g_goal || !C.sess || !C.sess->connected())
+        return false;
+    ResourceKey k = field<ResourceKey>(g_goal, 0x80); // the card's species (init 0xC30300)
+    int outcome = goal_outcome(k);
+    if (C.sess->role() == net::Role::Host) {
+        if (host_goal_pay(k, outcome))
+            return false; // the host's game pays it (and the total goes to everybody)
         g_goal_dna_dropped++;
         return true;
     }
-    return false;
+    net::Writer w; // guest: the host decides
+    w.u8(K_GOAL);
+    w.u16(0);
+    w.u32(k.instance); w.u32(k.type); w.u32(k.group);
+    w.u8((uint8_t)outcome);
+    w.f32(delta);
+    C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+    g_goal_dna_dropped++;
+    return true;
 }
 
 // abilities of a creature: vt 0xB0 count, vt 0xB4 get(i); ability +8 type, +0x10 1 on the social
@@ -293,7 +329,9 @@ static void guest_tick(double now)
 {
     if (g_engaged >= 0 && (now - g_engaged_at > kEngageTime || !npc::proxy((uint16_t)g_engaged)))
         g_engaged = -1;
-    bool on = g_engaged >= 0 && field<uint32_t>((void*)kAbilityMode, 0) == 0 && !(C.blocked && C.blocked());
+    // the stance: GetAbilityMode 0 social, 1 combat
+    bool social_stance = a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0;
+    bool on = g_engaged >= 0 && social_stance && !(C.blocked && C.blocked());
     for (int k = 0; k < 4; k++) {
         SHORT st = GetAsyncKeyState('1' + k); // bit 0: pressed since the last call (a short tap)
         bool down = (st & 0x8001) != 0;
@@ -445,6 +483,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_PlayReaction = H->sym("SporeCoop::CreaturePlayAnim");
     a_GoalUI = H->sym("SporeCoop::CreatureGoalUI_Get");
     a_GoalRefresh = H->sym("SporeCoop::SpeciesGoal_Refresh");
+    a_AbilityMode = H->sym("Simulator::cCreatureGameData::GetAbilityMode");
     if (uintptr_t a = H->sym("SporeCoop::BT_PostStimulus"))
         H->hook_create(M, (void*)a, (void*)h_Post, (void**)&o_Post);
     if (a_RelEvent)
@@ -463,6 +502,12 @@ void tick(double now)
             return;
         last = now;
         auto t = read_table();
+        for (auto it = g_goal_paid.begin(); it != g_goal_paid.end();) { // an older save loaded again
+            bool still = false;
+            for (auto& r : t)
+                still |= (((uint64_t)r.key[2] << 32) | r.key[0]) == it->first.first && r.relation == it->first.second;
+            it = still ? std::next(it) : g_goal_paid.erase(it);
+        }
         if (!(t == g_sent) || now - g_table_sent > 10.0) { // changes at once, the whole table every 10 s
             g_sent = t;
             g_table_sent = now;
@@ -514,6 +559,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             host_act(from, id, ability_type);
         return;
     }
+    if (kind == K_GOAL && is_host()) {
+        ResourceKey k;
+        k.instance = r.u32(); k.type = r.u32(); k.group = r.u32();
+        int outcome = r.u8();
+        float dna = r.f32();
+        if (r.ok() && dna > 0 && dna < 10000 && game::avatar() && host_goal_pay(k, outcome)) {
+            game::dna_add_raw(dna);
+            if (C.feed)
+                C.feed(std::string(outcome == 6 ? "A species became our ally" : "A goal was reached") + ": +" +
+                       std::to_string((int)(dna + 0.5f)) + " DNA");
+        }
+        return;
+    }
     if (kind == K_PROGRESS && is_guest()) {
         int done = r.u8(), needed = r.u8();
         if (r.ok() && done < needed && C.feed)
@@ -546,6 +604,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 void on_session_end()
 {
     g_engaged = -1;
+    g_goal_paid.clear();
     g_games.clear();
     g_have_table = false;
     g_host_table.clear();
@@ -556,12 +615,15 @@ std::string status()
 {
     char b[300];
     if (is_host())
-        snprintf(b, sizeof b, "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u\n", g_acts_in,
-                 g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx);
+        snprintf(b, sizeof b,
+                 "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
+                 "goal_dna_dropped=%u\n",
+                 g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
+                 g_goal_dna_dropped);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
-                 "events_dropped=%u cards_refreshed=%u goal_dna_dropped=%u\n",
+                 "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
                  g_cards_refreshed, g_goal_dna_dropped);
     return b;
@@ -598,6 +660,22 @@ std::string debug_objects(uint32_t lo, uint32_t hi)
         },
         &u);
     return u.out;
+}
+
+bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #id (2.5 m)
+{
+    void* av = game::avatar();
+    void* px = npc::proxy(id);
+    if (!av || !px)
+        return false;
+    net::Vec3 a = game::position(av), p = game::position(px);
+    float d = net::dist(a, p);
+    if (d < 0.1f)
+        return false;
+    float k = 2.5f / d;
+    net::Vec3 t{p.x + (a.x - p.x) * k, p.y + (a.y - p.y) * k, p.z + (a.z - p.z) * k};
+    game::teleport(av, t, game::orientation(av));
+    return true;
 }
 
 bool debug_social(uint16_t id, int slot)

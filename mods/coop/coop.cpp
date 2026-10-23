@@ -88,8 +88,8 @@ extern bool g_host_away;
 extern float g_solo_dna;
 bool on_dna(float delta)
 {
-    if (social::drop_guest_dna())
-        return false; // a goal card's reward: the host's card pays it into the shared pool
+    if (social::goal_dna(delta))
+        return false; // a goal card's reward: the host pays it into the shared pool once
     if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
         g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
         return true;
@@ -1696,6 +1696,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::species_dump().c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "goto")) {
+        bool ok = social::debug_goto((uint16_t)atoi(argv[2]));
+        SAY(ok ? "next to it" : "no such spawned proxy");
+        return ok ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "objs")) {
         SAY("%s", social::debug_objects(strtoul(argv[2], nullptr, 16), strtoul(argv[3], nullptr, 16)).c_str());
         return 0;
@@ -2150,7 +2155,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.avatar", "print local avatar state", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
-    H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [ability]] - creature social games", c_social, nullptr, MT);
+    H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,

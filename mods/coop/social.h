@@ -31,13 +31,15 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
-// guest: a DNA gain paid by a species goal card (its table is the host's copy): the host pays it
-bool drop_guest_dna();
+// a DNA gain paid by a species goal card (allied / extinct): the host pays it once per species and
+// outcome, whichever machine's card saw it; true = swallow it here
+bool goal_dna(float delta);
 std::string status();
 std::string species_dump(); // coop.social species (tests)
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the
 // stimulus log
 bool debug_social(uint16_t npc_id, int slot);
+bool debug_goto(uint16_t npc_id); // tests: the guest's avatar steps next to proxy #id
 std::string debug_objects(uint32_t vt_lo, uint32_t vt_hi); // game objects with a vtable in the range
 
 } // namespace social

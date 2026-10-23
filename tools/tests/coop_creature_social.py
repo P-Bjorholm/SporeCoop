@@ -46,14 +46,17 @@ def in_view(o):
     return o and 20 < o[1] < 1420 and 90 < o[2] < 900
 
 
-def engage(guest, key, timeout=60):
-    """social stance, then click the NPC until the avatar stands next to it (a player clicks it):
-    the click is the game's social stimulus to the NPC, the mod remembers the engaged mirror"""
+def engage(guest, key, timeout=40):
+    """social stance, the avatar steps next to the NPC (coop.social goto: walking there by clicks
+    lost the target to the camera and to fleeing animals), then a click on it like a player: the
+    click is the game's social stimulus to the NPC, the mod remembers the engaged mirror"""
     guest.call('click 690 998')  # the social stance button (W/2 - 30, H - 82)
     time.sleep(0.3)
     t0 = time.time()
     sweep = 0
     while time.time() - t0 < timeout:
+        guest.call(f'coop.social goto {key[1:]}')
+        time.sleep(0.5)
         o = objs(guest).get(key)
         if not in_view(o):
             guest.call('drag 720 540 950 540 right')  # look around
@@ -63,8 +66,8 @@ def engage(guest, key, timeout=60):
             time.sleep(0.4)
             continue
         guest.call(f'click {o[1]} {o[2]}')
-        time.sleep(1.2 if o[0] > 6 else 0.6)
-        if o[0] < 6 and re.search(r'engaged=' + key[1:] + r'\b', social(guest)):
+        time.sleep(0.8)
+        if re.search(r'engaged=' + key[1:] + r'\b', social(guest)):
             return True
     return False
 
@@ -126,7 +129,6 @@ def main():
         ck(dna1 > dna0, f'the pack earned DNA: {dna0} -> {dna1}')
         ck(abs(num(r'dna=([\d.]+)', guest.call('coop.dna')['out'], 0) - dna1) < 0.5, 'the same DNA on the guest')
         ck(num(r'cards_refreshed=(\d+)', g, 0) >= 1, 'the guest\'s goal cards were told')
-        ck(num(r'goal_dna_dropped=(\d+)', g, 0) == 0 or dna1 > dna0, 'no goal reward paid twice')
         shot(guest, 'social_guest.png')
         shot(host, 'social_host.png')
         # the impressed NPC stays impressed on the guest's mirror (NF_IMPRESSED) and refuses a second game
@@ -140,6 +142,37 @@ def main():
         hs = host.call('coop.social')['out']
         ck(num(r'refused=(\d+)', hs, 0) > res0 and num(r'impressed=(\d+)', hs, 0) == imp1,
            'an impressed NPC is not impressed twice')
+
+    # ---- 1b) more Kooks until the species is an ally (tuning: 3): the card's ally reward is paid
+    # once, by the host, whichever machine's card saw it (both can have the card)
+    if target:
+        done = {target}
+        dna_a = num(r'dna=([\d.]+)', host.call('coop.dna')['out'], 0)
+        for k in kooks:
+            if table(host).get(KOOK, (0, 0, 0))[0] == 6:
+                break
+            if k in done:
+                continue
+            done.add(k)
+            if not engage(guest, 'n' + k, 45):
+                continue
+            r0 = num(r'results_in=(\d+)', social(guest), 0)
+            for _ in range(4):  # an alpha takes two rounds; the ability cools down in between
+                hold(guest, 0x31)
+                time.sleep(3)
+                if num(r'results_in=(\d+)', social(guest), 0) > r0:
+                    break
+                engage(guest, 'n' + k, 15)
+        time.sleep(3)
+        ht, gt = table(host), table(guest)
+        dna_b = num(r'dna=([\d.]+)', host.call('coop.dna')['out'], 0)
+        hs = social(host)
+        print(f'  ally: {ht.get(KOOK)} on the host, {gt.get(KOOK)} on the guest; DNA {dna_a} -> {dna_b}; {hs.strip()}')
+        ck(ht.get(KOOK, (0,))[0] == 6 and gt.get(KOOK) == ht.get(KOOK), 'the Kooks are the pack\'s allies on both')
+        ck(num(r'goal_dna_paid=(\d+)', hs, 0) == 1, 'the ally reward was paid once')
+        ck(abs(num(r'dna=([\d.]+)', guest.call('coop.dna')['out'], 0) - dna_b) < 0.5, 'the same DNA on the guest')
+        ck(shown(guest, 'allies') is not None, 'the guest\'s card says "The Kook are your allies!"')
+        shot(guest, 'social_ally_guest.png')
 
     # ---- 2) mirrored deaths: the host kills an NPC of another species, the guest replays the death
     # (a mirror's death or removal must not count on the guest's own table: three counted kills
@@ -160,10 +193,13 @@ def main():
         ck(ht.get(sp, (0, 0, 0))[2] == k0 + 1 and gt.get(sp) == ht.get(sp),
            f'n{nid} died: one kill of {sp} on the host, the same on the guest ({ht.get(sp)} / {gt.get(sp)})')
         ck(ht == gt, 'the tables match after the death')
-    ck(not shown(guest, 'extinct'), 'no "species is extinct" card on the guest')
+    ck(not shown(guest, 'species is extinct'), 'no "The ... species is extinct!" card on the guest')
 
     # ---- 3) name tags under menus
     lab = lambda c: guest.call('coop.status')['out']  # noqa: E731
+    if shown(guest, 'You were killed'):  # the death caption waits for OK (docs/re/creature.md 7)
+        guest.call('key enter')
+        time.sleep(12)
     for _ in range(3):  # Esc opens the pause menu (a first Esc may close a card)
         guest.call('key esc')
         time.sleep(1.5)

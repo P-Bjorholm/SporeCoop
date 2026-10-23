@@ -123,7 +123,8 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
   species gets 0xC6AEA0 (~ stopped). 0xBA4820 on a change: allied -> every herd of the species
   0xC6A1E0(creature).
 * ✔ `TakeDamage` calls ApplyEvent 2 for every hit and 0 / 5 for every death (also without a
-  player attacker). On a guest every replayed death of a mirror counted as a kill of the species,
+  player attacker; a killed creature of an allied species breaks the alliance: Kooks went from
+  (6, 3 impressed) to (1, 0 impressed, 1 killed) when one of them died, on the host). On a guest every replayed death of a mirror counted as a kill of the species,
   and a mirror that re-entered the relevance radius dead replayed it again: three of them made the
   species extinct on the guest ("Hunt: The Kook species is extinct!" on its card). Fix: the guest
   drops relationship events on mirrors and puppets (`social.cpp` hook), the host sends its table
@@ -140,8 +141,15 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
   just became allied (6) or extinct (5), pays the card's DNA (AddEvolutionPoints) and posts
   0x43715491 / 0xB4987E04; `SpeciesGoal_Refresh` 0xC2FB90 runs it and sets the texts. It runs when
   a relationship message reaches the card (handler 0xC2FD40): a table written by the mod needs a
-  call of 0xC2FB90 on every such object. On a guest the card's DNA is dropped (the host's card pays
-  it into the shared pool).
+  call of 0xC2FB90 on every such object. A card exists only for a species the player selected
+  (a click on one of its creatures shows it), and its init caches the current counts: a card made
+  after the species became allied pays nothing (✔ runtime: cached +0x8C impressed 3, +0xA0 relation
+  6). Field ints: +0x7C state, +0x80 species key, +0x8C / +0x90 cached impressed / killed, +0x94
+  ally DNA (25), +0x98 hunt DNA (20), +0xA0 cached relation, +0xB0..+0xBC the tuning thresholds.
+* Co-op: whichever machine's card pays the ally / extinction reward, it goes to the host, which pays
+  it once per species and outcome into the shared pool (MSG_SOCIAL kind 3; `goal_dna_paid` in
+  `coop.social` on the host). Seen: Kooks allied by the guest, 2 x 10 DNA for the impressions and
+  25 for the ally, once.
 
 ### 8.3 How the native social game runs
 

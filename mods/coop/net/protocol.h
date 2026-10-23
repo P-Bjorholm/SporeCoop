@@ -69,7 +69,8 @@ enum MsgType : uint8_t {
                           // u32 impressed, u32 killed}) of the creature stage (social.cpp)
     MSG_SOCIAL = 50,      // u8 kind: 0 guest -> host act {u16 npc, u32 ability type}; 1 host -> guest progress
                           // {u16 npc, u8 done, u8 needed}; 2 host -> all result {u16 npc, u8 player, u8 ok,
-                          // u32 reaction anim, f32 dna}
+                          // u32 reaction anim, f32 dna}; 3 guest -> host goal reward {u16 0, key[3],
+                          // u8 outcome (6 ally, 5 extinct), f32 dna}, paid once per species and outcome
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
 };

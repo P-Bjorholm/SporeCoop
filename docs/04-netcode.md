@@ -62,7 +62,7 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 | `DAMAGE` | R | host → guest: an NPC hit you (damage, type, attacker net-id) |
 | `DNA` / `DNA_ADD` | R | shared DNA total from the host / gain earned by a guest (also the DNA a guest earned alone while the host was in the main menu) |
 | `SPECIES` | R | host → guests: the creature stage's species relationship table (per species: relation, impressed, killed), on change and every 10 s; the guest writes it into its own and refreshes its goal cards |
-| `SOCIAL` | R | guest → host: a social ability on a mirrored NPC (net-id, ability type); host → guest: rounds done / needed; host → all: the result (impressed or refused, reaction animation, DNA) |
+| `SOCIAL` | R | guest → host: a social ability on a mirrored NPC (net-id, ability type); host → guest: rounds done / needed; host → all: the result (impressed or refused, reaction animation, DNA); any → host: a goal card's ally / extinction reward (species, outcome, DNA), paid once |
 | `RES` / `RES_ADD` | R | shared resource (u8 id: 1 tribe food, 2 civilization money, 3 empire money; f64): total from the host / change on a guest |
 | `PING_MARK` | R | "look here" marker: author id, point, mode; the host forwards it to the others |
 | `WORLD_TIME` | U | once per second: quaternion of the sky object (time of day) |

@@ -113,7 +113,7 @@ Fixed after the sessions (branch `fix/creature-social`, 2026-10-23; docs/re/crea
    death of a mirror (again when a dead mirror came back into range) as a kill of the species: three
    made it extinct there. Relationship events on mirrors are dropped on guests and the host's
    species table (MSG_SPECIES) is the guests' table; the cards are refreshed when it changes, a
-   card's ally / extinction DNA is paid once (by the host). Mirrors now live in their species' nest
+   card's ally / extinction DNA is paid once by the host, whichever machine's card saw it. Mirrors now live in their species' nest
    herd (with the archetype tuning). Check: `coop_creature_social.py`.
 10. **Name tags over the pause menu and the co-op window**: hidden while either is up. Check:
     `coop_creature_social.py`.
