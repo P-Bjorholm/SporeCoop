@@ -74,6 +74,12 @@ static LRESULT CALLBACK h_WndProc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             if (!wp)
                 return TRUE;
             break;
+        case WM_SYSCOMMAND:
+            // a test window on a workspace nobody looks at (agent-ws): GNOME marks it iconic, Wine
+            // minimizes it (window at -32000) and Spore stops rendering and loading for good
+            if ((wp & 0xFFF0) == SC_MINIMIZE)
+                return 0;
+            break;
         }
     }
     return CallWindowProcW(o_WndProc, w, m, wp, lp);
