@@ -1,0 +1,114 @@
+# 10. Development pipeline
+
+How SporeCoop is developed and tested so that a release works for a normal player: many short
+feedback loops on the developer's machine, every change tested on real game instances in
+parallel, random players (bots) that do what nobody planned, and written-down knowledge.
+Rules for every contributor and agent: [CLAUDE.md](../CLAUDE.md).
+
+## 10.1 Where the time goes (measured 2026-10-22, Ryzen 5 7500F, 2 instances per lane)
+
+| Step | Time |
+|---|---|
+| Wine + SporeKit up | 4 s |
+| host: galaxy menu → planet loaded (`coop.load`) | ~10 s |
+| guest: menu settles, joins | ~8 s |
+| world to the guest: host save 2.5 s + transfer of 3.8 MB + load 0.6 s | ~8 s |
+| **cold start of a pair** | **~40 s** |
+| **warm reset** (same save: new slot, `coop.load`, guest rejoins) | **5–6 s** |
+| stage switch in a running game (tribe → civ → space) | ~2 s (space → cell crashes: known issue) |
+| hot reload of coop.dll in running games | ~1 s |
+| memory per game | ~480 MB (12 games ≈ 6 GB) |
+
+The world transfer was capped at 32 packets per frame (~1.1 MB/s); a 128-packet ack window
+makes it ~3 MB/s with 5 % loss (unit test `bulk transfer`).
+
+## 10.2 Test lanes
+
+A lane is an independent copy of the whole setup, so several test pairs run at the same time:
+
+* lane 1 = the real install (`~/Games/Modding/SPORE`, bottle `Games`);
+* lane N ≥ 2 = `tools/spore.sh lane create N`: reflink copies (Btrfs: no extra space) of the game
+  folder (`SPORE-lab/laneN`: own `mods/`, logs, `SporeCoop.package`) and of the bottle
+  (`SporeLabN`: own wineserver, so a crash or quit stays in the lane; registry paths point to the
+  copy); takes 2 s.
+* instances `2N-1` (host) / `2N` (guest): console ports 47800 + i − 1, co-op port 47810 + 2(N−1);
+  test profiles `test` / `inst<2N>`; outputs under `out/laneN/`.
+* `SPORE_LANE=N` selects a lane for `tools/spore.sh`, every test and helper (`tools/tests/lane.py`).
+* Up to 5 lanes (ports); 3 run well on this machine.
+
+## 10.3 The lab (`tools/lab.py`)
+
+```
+tools/lab.py run smoke --lanes 3                 # before a merge (~8 min)
+tools/lab.py run full --lanes 3 --branch feat/x  # a branch: its own worktree + build
+tools/lab.py run tribe_play,select               # chosen tests
+tools/lab.py run chaos_tribe --repeat 10 --retry 0   # hunt a flaky bug
+tools/lab.py reload --lane 2                     # dev loop: build + hot reload in running games
+```
+
+* Tests and their properties: `tools/tests/suite.py` (suites smoke / full / nightly, warm,
+  exclusive, length, save).
+* Scheduling: one test per lane at a time, longest first; a lane prefers a test on the save it
+  has loaded (warm reset instead of a restart); exclusive tests (LAN discovery) run alone at the end.
+* After a failure the lane restarts cold and the test runs once more: passing then = **flaky**.
+  `out/lab/flaky.json` keeps the history; the summary lists the unstable tests — each one is a
+  bug in the test or in the mod and gets fixed, not ignored.
+* Results: `out/lab/<run>/summary.md`, `results.json`, the test logs and both games' own logs.
+
+## 10.4 Invariants (checked in every test)
+
+`twoinst.start()` starts a monitor for both games; `Checks.faults()` fails the test when:
+
+* a game's frames stop for more than 10 s (frozen; the SporeKit watchdog writes the main thread
+  stack into the game log after 30 s);
+* a game stops answering (crash);
+* the exception logger caught a fault (`exc`);
+* a fixture lacks what the test needs (`tools/tests/fixtures.py` facts).
+
+## 10.5 Bots
+
+* **Scenario tests** (`coop_*.py`) — one feature each, with checks.
+* **Chaos bot** (`coop_chaos.py`) — both players act at random but validly: clicks on own and
+  partner units (`coop.targets`), selection boxes (`drag`), orders, keys, the co-op window, the
+  pause menu, stage actions, rejoins, saves, network outages. Seeded: the printed replay line
+  repeats the same actions. Smoke: 2 min of tribe; nightly: every stage, minutes each.
+* **Bad network** (`netem.py`): `SPORE_NET=dsl|mobile|awful|delay=..,jitter=..,loss=..` puts a UDP
+  proxy with delay, jitter, loss, duplicates and outages between guest and host — for any test.
+
+## 10.6 Fixtures (test saves)
+
+`out/fixtures/<name>.tgz` (main checkout, shared by worktrees), described in
+`tools/tests/fixtures.py` (planet, stage, facts). New ones: `tools/tests/make_fixture.py <base>
+<name> --cmd "…"` (load, run commands, save, pack) or `new_stage_game.py` for a new stage game.
+Warm resets put a fixture into a fresh slot (`Game10`…`Game19`): the files of the loaded save
+must not change under the game.
+
+## 10.7 Levels
+
+| When | What | Where |
+|---|---|---|
+| every build | `make test`: unit tests (netcode, DBPF, discovery), `re_lint` (symbols known, confidence) | local + GitHub Actions |
+| after a change | the feature's test on a warm lane, `lab.py reload` for the next try | local |
+| before a merge to `main` | `lab.py run smoke --branch <b>` passes | local |
+| nightly 03:30 | `tools/nightly.sh`: the nightly suite on `main`, desktop notification | local (systemd user timer) |
+| before a release | nightly green + manual play-test checklist (two people, every stage) | local |
+
+GitHub Actions (`.github/workflows/build.yml`) only builds and runs the unit tests: game tests
+need Spore, and a self-hosted runner would let anyone's pull request run code on this machine.
+
+Nightly timer: `cp tools/systemd/sporecoop-nightly.* ~/.config/systemd/user/ && systemctl --user
+daemon-reload && systemctl --user enable --now sporecoop-nightly.timer`.
+
+## 10.8 Git
+
+`main` always works. One topic per branch (`feat/…`, `fix/…`), each in its worktree
+(`../SporeCoop-wt/<branch>`, made by `lab.py run --branch`); small commits; a pull request with the
+lab summary; merge after smoke passes. A bug found anywhere → `docs/known-issues.md` or a GitHub
+issue → a test that reproduces it → the fix.
+
+## 10.9 Knowledge
+
+Search before analysing, write down after learning: `data/symbols/overrides_*.sym` (functions with
+confidence and signature), `docs/re/<area>.md`, `docs/known-issues.md`, this file and
+`docs/06-testing.md`. `tools/re_lint.py` keeps the symbol file honest. Subagents get the same rule
+in their prompt.

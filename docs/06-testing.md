@@ -1,5 +1,8 @@
 # 6. Testing
 
+> Running the tests in parallel (lanes, `tools/lab.py`, warm resets, chaos bot, bad network):
+> [10-dev-pipeline.md](10-dev-pipeline.md). This page covers the single-lane basics.
+
 ## 6.1 Environment
 
 * The game is installed in the Bottles bottle **Games** (runner `caffe-10.0`, DXVK); the Spore registry entries are already there.
