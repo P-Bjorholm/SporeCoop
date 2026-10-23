@@ -113,9 +113,10 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
    players' facing with 2 samples, docs/known-issues.md), 0 faults in every run, food equal at every
    check except the one moving total above.
 
-   The "before" row looks the other way round: with the stale small level the guest's cell was
-   prey for the big eaters that take cells two levels smaller (IsPrey scale difference 1) and for
-   nothing else, and in that run the players stayed small.
+   The "before" row went the other way in that run (32 / 109, no knockouts): the chase counter also
+   counts chases started by other paths (species alerts, reactions) and the minutes before the first
+   level-up, when the puppet's level was still right; so the chase counts alone did not show the bug
+   in every run. The regression check looks at the game's answers directly (`prey_rules`).
    The game's prey / threat answers are the same for both players (0 of 6441 differ in seed 12,
    0 of 7017 in the final run).
    How often each is hunted still varies a lot between sessions: the prey range is 2-8 m, the NPC
