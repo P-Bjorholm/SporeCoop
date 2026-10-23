@@ -133,7 +133,9 @@ cmd_run() {
     [[ -f "$BIN/SporeApp.exe" ]] || { echo "no game at $BIN (lane $LANE: spore.sh lane create $LANE)" >&2; exit 1; }
     nohup flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
         -e "$BIN/SporeApp.exe" -- "${args[@]}" > "$ROOT/out/run.$inst.log" 2>&1 &
-    if command -v agent-ws >/dev/null; then
+    # opt-in: a window on a hidden workspace gets no frame callbacks from GNOME, DXVK then waits
+    # forever and the game stops at frame 1 (seen 2026-10-23); use the headless shell instead
+    if [[ "${SPORE_AGENT_WS:-0}" == 1 ]] && command -v agent-ws >/dev/null; then
         # the game windows go to the "sporecoop" project's own workspace (agent-ws): Bottles drops
         # the environment that agent-ws launch would mark them with, so find them by process
         sk_ini_set test_monitor off
@@ -166,6 +168,13 @@ cmd_kill() {
     for w in $(ps -eo pid,comm,args | awk -v bin="$BIN/SporeApp.exe" '$2=="bwrap" && index($0, bin) {print $1}'); do
         kill_tree "$w"
     done
+    # a test lane's bottle is ours alone: also whatever else ran in it (the setup in update tests
+    # leaves Wine services behind). The "Games" bottle of lane 1 holds other games: only Spore there.
+    if [[ "$LANE" != 1 ]]; then
+        for w in $(ps -eo pid,comm,args | awk -v b="-b $BOTTLE " '$2=="bwrap" && index($0, b) {print $1}'); do
+            kill_tree "$w"
+        done
+    fi
     # leftover launch wrappers (the [x] trick keeps pkill from matching this shell)
     pkill -f "[b]ottles-cli run -b $BOTTLE -e $BIN/SporeApp.exe" || true
     pkill -f "[s]tart.exe /exec start /wait /unix $BIN/SporeApp.exe" || true
