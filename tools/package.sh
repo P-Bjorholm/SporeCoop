@@ -82,6 +82,11 @@ cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.txt"
 cp "$ROOT/third_party/minhook/LICENSE.txt" "$STAGE/SporeCoop/MinHook-LICENSE.txt"
 cp "$ROOT/docs/INSTALL.md" "$STAGE/INSTALL.txt"
 "$STRIP" "$STAGE/SporeCoop/sporekit.dll" "$STAGE/SporeCoop/mods/coop.dll" "$STAGE/SporeCoop/steam_api.sporekit.dll"
+# the update pack (in-game updates and the setup) and the setup itself, also next to the zip
+python3 "$ROOT/tools/mkpack.py" "$STAGE" "$VER" "$STAGE/SporeCoop-$VER.pack" >/dev/null
+cp "$ROOT/build/SporeCoopSetup.exe" "$STAGE/SporeCoopSetup.exe"
+"$STRIP" "$STAGE/SporeCoopSetup.exe"
+cp "$STAGE/SporeCoop-$VER.pack" "$STAGE/SporeCoopSetup.exe" "$ROOT/out/dist/"
 sed -i 's/\r*$/\r/' "$STAGE"/*.bat "$STAGE"/*.txt  # Windows line endings for cmd.exe and Notepad
 (cd "$STAGE" && rm -f "../SporeCoop-$VER.zip" && zip -qr "../SporeCoop-$VER.zip" .)
 echo "$ROOT/out/dist/SporeCoop-$VER.zip"
