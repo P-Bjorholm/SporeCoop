@@ -136,6 +136,8 @@ bool input_text(const std::string& utf8);
 bool input_click(int x, int y, int button);
 bool input_drag(int x1, int y1, int x2, int y2, int button);
 bool input_move(int x, int y);
+// press or release a mouse button and keep it held (steering by holding the button: cell stage)
+bool input_button(int x, int y, int button, bool down);
 bool input_wheel(int x, int y, int notches); // notches > 0: away from the user (zoom in)
 
 // uiproc.cpp
@@ -181,6 +183,7 @@ bool background_mode();
 void set_background_mode(bool on);
 void vcursor_set(int x, int y); // client coords, activates the virtual cursor
 void vcursor_tick();            // auto-release after inactivity
+void vcursor_hold(bool on);     // a held button keeps the virtual cursor active
 void place_test_window();
 void apply_frame_limit();
 void set_frame_limit(int ms);    // console: frame.limit <ms> (33 = the game's own, 0 = none)        // test runs: lift the game's 30 fps cap ([sporekit] test_frame_ms)       // test runs: move the game window to a secondary monitor

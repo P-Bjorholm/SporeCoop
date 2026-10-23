@@ -106,7 +106,8 @@ bool input_move(int x, int y)
     if (!w)
         return false;
     vcursor_set(x, y); // virtual cursor: the real mouse pointer is not moved
-    PostMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
+    WPARAM mk = (g_vkdown[VK_LBUTTON] ? MK_LBUTTON : 0) | (g_vkdown[VK_RBUTTON] ? MK_RBUTTON : 0);
+    PostMessageW(w, WM_MOUSEMOVE, mk, MAKELPARAM(x, y));
     return true;
 }
 
@@ -148,6 +149,30 @@ bool input_click(int x, int y, int button)
         g_vkdown[vk] = 0;
         PostMessageW(w, u, 0, MAKELPARAM(x, y));
     });
+    return true;
+}
+
+// press (and keep holding) or release a button at (x, y); while held, `move` steers the cursor
+bool input_button(int x, int y, int button, bool down)
+{
+    HWND w = (HWND)game_window();
+    if (!w)
+        return false;
+    ensure_hooks();
+    input_move(x, y);
+    int vk = button == 1 ? VK_RBUTTON : (button == 2 ? VK_MBUTTON : VK_LBUTTON);
+    WPARAM mk = button == 1 ? MK_RBUTTON : (button == 2 ? MK_MBUTTON : MK_LBUTTON);
+    if (down) {
+        UINT d = button == 1 ? WM_RBUTTONDOWN : (button == 2 ? WM_MBUTTONDOWN : WM_LBUTTONDOWN);
+        g_vkdown[vk] = 1;
+        vcursor_hold(true);
+        PostMessageW(w, d, mk, MAKELPARAM(x, y));
+    } else {
+        UINT u = button == 1 ? WM_RBUTTONUP : (button == 2 ? WM_MBUTTONUP : WM_LBUTTONUP);
+        g_vkdown[vk] = 0;
+        vcursor_hold(false);
+        PostMessageW(w, u, 0, MAKELPARAM(x, y));
+    }
     return true;
 }
 

@@ -365,6 +365,15 @@ static int c_drag(void*, int argc, const char* const* argv, SkOut* o)
     return ok ? 0 : 1;
 }
 
+static int c_button(void*, int argc, const char* const* argv, SkOut* o)
+{
+    NEED(4, "button <x> <y> <down|up> [left|right|middle]");
+    int b = argc > 4 ? (!strcmp(argv[4], "right") ? 1 : (!strcmp(argv[4], "middle") ? 2 : 0)) : 0;
+    bool ok = input_button(atoi(argv[1]), atoi(argv[2]), b, !strcmp(argv[3], "down"));
+    outf(o, ok ? "button %s" : "failed", argv[3]);
+    return ok ? 0 : 1;
+}
+
 static int c_move(void*, int argc, const char* const* argv, SkOut* o)
 {
     NEED(3, "move <x> <y>");
@@ -597,6 +606,8 @@ void register_builtin_commands()
                 SK_CMD_OUTSIDE_FRAME);
     command_add(k, "click", "click <x> <y> [button]", c_click, nullptr, A);
     command_add(k, "move", "move <x> <y> - mouse move", c_move, nullptr, A);
+    command_add(k, "button", "button <x> <y> <down|up> [left|right|middle] - press and hold / release", c_button,
+                nullptr, A);
     command_add(k, "drag", "drag <x1> <y1> <x2> <y2> [left|right] - press, move, release", c_drag, nullptr, A);
     command_add(k, "wheel", "wheel <x> <y> <notches> - mouse wheel (+ zooms in)", c_wheel, nullptr, A);
     command_add(k, "mods", "list mods", c_mods, nullptr, M);
