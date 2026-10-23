@@ -69,11 +69,11 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/cell_guest.jpg" alt="Cell stage: Bob is knocked out, Alice revives him"></td>
+    <td width="50%"><img src="docs/media/cell_host.jpg" alt="Cell stage: Bob's cell is knocked out, translucent, with a KO countdown; Alice is next to him"></td>
     <td width="50%"><img src="docs/media/creature_host.jpg" alt="Creature stage: Alice and Bob's creatures in one pack"></td>
   </tr>
   <tr>
-    <td><b>Cell.</b> Bob is knocked out — Alice swims over and revives him.</td>
+    <td><b>Cell.</b> Bob is knocked out: Alice has 10 s to swim right next to him and revive him.</td>
     <td><b>Creature.</b> Two players' own creatures in one pack, names above them.</td>
   </tr>
   <tr>

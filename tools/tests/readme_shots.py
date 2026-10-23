@@ -42,6 +42,14 @@ def tribe_ids(con):
 
 
 def stage_cell(h, g):
+    # a freshly loaded tide pool opens with the meteor intro (~10 s) that covers the cells
+    time.sleep(15)
+    for c in (h, g):
+        c.call('wheel 720 540 4')  # closer: the cells are small from the default height
+    # a few metres apart: next to each other the partner revives at once (and the revive plays the
+    # meteor-hatch effect over both cells)
+    g.call('coop.pool tp 4 2')
+    time.sleep(2)
     h.call('coop.pool hurt 1 999')  # the guest is knocked out: translucent, countdown, arrow
     time.sleep(2.5)
     grab(h, 'cell_host')
