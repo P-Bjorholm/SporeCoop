@@ -659,7 +659,27 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
         g_via_menu = ViaMenu{true, slot, planet_file, since, 0}; // the newest request wins
         return true;
     }
-    return load_now(slot, planet_file, err);
+    // Already in the galaxy menu (a guest that joined from it): load outside the frame too. A
+    // received world arrives in on_frame, inside Present: loading it there switched the save under
+    // the menu's planet view in the middle of its render, which faulted in the terrain render pass
+    // (null RTT at 0xF9E67E, or the null terrain state at 0xF9E5EC). The game survived it, but that
+    // guest's planet had no height map: its ground lay ~6 m under the host's, every NPC proxy fell
+    // through to it between the driver's teleports (3-9 m off the host, docs/known-issues.md history)
+    // and the screen kept the menu picture.
+    struct Task {
+        std::wstring slot;
+        std::string planet;
+    };
+    H->run_outside_frame(
+        [](void* u) {
+            Task* t = (Task*)u;
+            std::string e;
+            if (!load_now(t->slot, t->planet, e))
+                g_feed("the world could not be loaded: " + e);
+            delete t;
+        },
+        new Task{slot, planet_file});
+    return true;
 }
 
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err)
