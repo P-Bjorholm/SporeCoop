@@ -148,7 +148,7 @@ SPORE\
 ## 6. Check that it works
 
 * The main menu (galaxy screen) has a new **Co-op** item on the left.
-* `SporebinEP1\mods\logs\sporekit.log` exists and has a line `loaded coop v0.5.0`.
+* `SporebinEP1\mods\logs\sporekit.log` exists and has a line `loaded coop v0.6.0`.
 * Start a game, press **F9**: the co-op window opens.
 
 If there is no Co-op item, see [Troubleshooting](#9-troubleshooting).

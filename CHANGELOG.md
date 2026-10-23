@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
+Installer, updates from GitHub, and a full stability campaign: bots played every stage for hours,
+4-player sessions with rejoins, long chaos runs and bad networks. About 40 bugs found and fixed;
+the numbers are in [docs/stability-report.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/stability-report.md).
+
+All players need 0.6.0 (the network protocol changed; 0.5.0 cannot join).
+
 ### Install and update
 - `SporeCoopSetup.exe`: finds the game, tells whether the build is the tested one, installs,
   updates and uninstalls with one button; downloads the newest release from GitHub (or uses the
@@ -10,6 +18,52 @@
   shows an Update button; files are checked against the release's SHA-256 sums and installed for
   the next start (`[update] check=0` in `mods\coop.ini` turns the check off).
 - Releases also carry `SporeCoop-<version>.pack` (the update) and `SporeCoopSetup.exe`.
+
+### Crashes and freezes fixed
+- A guest loading the host's world could crash in the galaxy menu's planet view, or come up on a
+  planet without its height map (ground 6 m low, animals falling through). Loads now always run
+  outside the game's frame.
+- A guest could hang in the loading screen for good when it left to the main menu during an
+  evolution vote (a save written while the editor opened); saves and editors now wait for each
+  other. The host's own save no longer breaks when it leaves the game while a guest joins.
+- Tribe: a rare fault when the stage was set up right after a load.
+- Space: a fault when the respawn caption ended after the ship had left the planet; the host could
+  crash when the game removed a partner's ship.
+- Civilization: a guest could crash and freeze on a vehicle the game had removed.
+- Creature: a guest fault in the creature event handler.
+
+### Sync fixes
+- Busy Tribe and Civilization planets (24+ citizens, many vehicles) no longer lose their state on
+  guests: snapshots were larger than one packet and dropped every time.
+- Animals stand where the host has them on every guest (some proxies were never updated).
+- Cell: the host no longer destroys cells nobody ate; mirrored cells no longer fly away; the
+  partner's cell no longer blinks.
+- Creature and Tribe: killed animals no longer fly into the sky.
+- Civilization: NPC cities, captures, ruins, spice claims and new cities match on every machine;
+  money from derricks is no longer counted twice.
+- Creature: a guest's kill pays DNA; guests keep the animals while the host's game is paused;
+  goal cards no longer call species extinct.
+
+### Gameplay fixes
+- The host no longer leaves the game by itself: the mod used to answer "Do you want to save your
+  game?" for 30 s after each save. Only the "game saved" box is confirmed now.
+- Cell: the host's creatures hunt every player, not only the host.
+- Creature: guests can befriend animals and make alliances; when the host goes to the main menu,
+  guests are told and play on; name labels hide under menus.
+- Tribe: guests can gather from fruit trees; gifted members can no longer be ordered by the giver;
+  a knocked-out chief is replaced.
+- Space: a disabled guest ship can be repaired in real fights; partners' ships no longer fire on
+  their own.
+
+### Testing
+- Bots that play each stage through real input (`tools/tests/play_*.py`), 4-player sessions
+  (`coop_multi.py`), longer chaos runs, regression tests for every fix; tests run on an invisible
+  display. See [docs/06-testing.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/06-testing.md).
+
+### Known issues
+See [docs/known-issues.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/known-issues.md). The ones players can meet: the
+host's capture cinematic in Civilization pauses everybody until the host presses OK; in Cell a
+guest far from the host swims in an empty pool; the guest's social game in Creature is simplified.
 
 ## [0.5.0] - 2026-10-23
 

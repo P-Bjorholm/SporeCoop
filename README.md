@@ -135,7 +135,7 @@ uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 **Example: two friends over the internet**
 
 ```
-Alice and Bob install Tailscale and SporeCoop 0.5.0.
+Alice and Bob install Tailscale and SporeCoop 0.6.0.
 Alice: Co-op → "Alice" → Host → loads her Tribe save.
        The window says: friends connect to 100.64.12.7:47810
 Bob:   Co-op → "Bob" → 100.64.12.7 → Join.
@@ -172,8 +172,9 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.5.0: co-op in every stage, tested automatically on pairs of real game instances
-(35 scenario tests, a chaos bot that plays both sides, simulated bad networks).
+Version 0.6.0: co-op in every stage for up to 4 players, tested automatically on real game instances:
+40+ scenario tests, bots that play every stage through real input for hours, 4-player sessions with
+rejoins, a chaos bot and simulated bad networks ([stability report](docs/stability-report.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md).
 
 Next:
