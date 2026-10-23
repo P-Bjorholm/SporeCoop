@@ -738,7 +738,20 @@ bool is_chief(void* c)
     return false;
 }
 
-// every machine picks the same chiefs (ids and owners come from the host)
+// health as the host has it: guests keep the last snapshot value (a mirror is never set to 0, so a
+// knocked-out member would still look alive there and the machines would pick different chiefs)
+static float host_health(void* c)
+{
+    if (C.sess && C.sess->role() == net::Role::Host)
+        return game::health(c);
+    auto it = g_gid_of.find(c);
+    if (it == g_gid_of.end())
+        return game::health(c);
+    auto g = g_gm.find(it->second);
+    return g == g_gm.end() ? game::health(c) : g->second.hp;
+}
+
+// every machine picks the same chiefs (ids, owners and health come from the host)
 static void chiefs_tick()
 {
     void* pt = player_tribe();
@@ -748,7 +761,8 @@ static void chiefs_tick()
         for (void* c : members(pt)) {
             uint8_t o = owner_of(c);
             uint16_t id = member_id(c);
-            if (o >= 0xFE || !id || F<uint8_t>(c, kAgeOff) != 1 || !game::object_alive(c))
+            // a knocked-out member (the game's chieftain waits for its respawn with 0 health) leads nobody
+            if (o >= 0xFE || !id || F<uint8_t>(c, kAgeOff) != 1 || !game::object_alive(c) || host_health(c) <= 0)
                 continue;
             if (!best.count(o) || id < best[o]) {
                 best[o] = id;
@@ -1212,6 +1226,17 @@ std::string debug(const std::vector<std::string>& a)
         void* vec[3] = {sel.data(), sel.data() + sel.size(), sel.data() + sel.size()};
         int r = thiscall<int>(a_DoActionForObjects, (void*)nullptr, (void*)vec, atoi(a[1].c_str()), t, (void*)nullptr);
         return "action ordered (" + std::to_string(sel.size()) + " selected, ret " + std::to_string(r) + ")";
+    }
+    if (a.size() >= 2 && a[0] == "spawn" && is_host()) { // spawn <n>: test setup, n more adults in the player tribe
+        void* pt = player_tribe();
+        int n = 0;
+        for (int i = 0; pt && i < atoi(a[1].c_str()) && i < 16; i++) {
+            void* c = spawn_member(pt, 1);
+            if (!c)
+                break;
+            n++;
+        }
+        return "spawned " + std::to_string(n);
     }
     if (a.size() >= 2 && a[0] == "objs") { // objs <noun hex>: objects of a kind near the village, world positions
         struct Q {
