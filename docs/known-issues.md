@@ -25,6 +25,14 @@ Fixed entries move to the commit message (and a test).
   seconds later worked. The two failures came while the shared headless display was being
   restarted, the five runs after it passed, so the cause is not settled.
 
+## Creature: a dead NPC's body can lie up to 14 m from the host's for about 40 s
+
+* Seen 2026-10-23 in creature chaos (tools/tests/coop_multi.py, species 06805133 every time): the
+  guest's copy dies where the host's died, the host's body then moves (knockback), and the guest's
+  body ignores `Teleport` (spatial vt 0x44) and `SetPosition` (vt 0x38) once dead: tried and
+  reverted. The gap closes by itself in about 40 s. Cosmetic: eating a body works on either copy.
+  `coop.sync` leaves dead NPCs out so the desync check measures the living ones.
+
 ## Not covered by tests yet
 
 * Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the

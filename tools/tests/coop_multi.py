@@ -112,6 +112,13 @@ def fps(con):
 
 
 
+def my_key(con, sample_keys):
+    """the guest's own player key in its coop.sync sample (p<id>)"""
+    remotes = {f'p{m.group(1)}' for m in re.finditer(r'^remote (\d+) ', con.call('coop.status')['out'], re.M)}
+    mine = [k for k in sample_keys if k.startswith('p') and k not in remotes]
+    return mine[0] if len(mine) == 1 else None
+
+
 def check_round(ck, host, guests, label, report):
     """desync / coverage / resources of every guest against the host"""
     report.append(f'  [{label}] modes: host {mode(host)} {fps(host)} fps, '
@@ -124,9 +131,15 @@ def check_round(ck, host, guests, label, report):
         h2 = sample(host)
         errs = {}
         missing = 0
+        me = gs.get(my_key(g, gs))
+        total = 0
         for key, hp in h1.items():
             if key.startswith('p'):
                 continue
+            # the host streams NPCs within 110 m of each guest (npc.cpp kRelevance): only those count
+            if key.startswith('n') and me and sum((a - b) ** 2 for a, b in zip(hp, me)) ** 0.5 > 90:
+                continue
+            total += 1
             gp = gs.get(key)
             if gp is None:
                 missing += 1
@@ -134,7 +147,6 @@ def check_round(ck, host, guests, label, report):
             hp2 = h2.get(key, hp)
             e = min(sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5, sum((a - b) ** 2 for a, b in zip(hp2, gp)) ** 0.5)
             errs.setdefault(key[0], []).append(e)
-        total = sum(1 for k in h1 if not k.startswith('p'))
         cov = 1 - missing / total if total else 1
         kinds = {}
         for k in h1:

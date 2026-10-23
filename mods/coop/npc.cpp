@@ -570,11 +570,11 @@ std::vector<syncdbg::Entry> sync_entries()
     std::vector<syncdbg::Entry> v;
     if (C.sess && C.sess->role() == net::Role::Host) {
         for (auto& [c, h] : g_host_npcs)
-            if (game::object_alive(c))
+            if (game::object_alive(c) && !game::is_dead(c)) // bodies: see docs/known-issues.md
                 v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, px] : g_proxies)
-            if (px.c && game::object_alive(px.c))
+            if (px.c && game::object_alive(px.c) && !px.killed)
                 v.push_back({"n" + std::to_string(id), game::position(px.c), game::orientation(px.c)});
     }
     return v;
