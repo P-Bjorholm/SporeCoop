@@ -109,11 +109,6 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * In the second process of the same wineserver, blocking sockets/`select()` and starting new threads
   sometimes hang — the console runs on non-blocking sockets in a single thread.
 * Spore stops rendering without focus; test runs enable SporeKit's "background mode".
-* **Minimized on a hidden workspace.** GNOME marks a window on a workspace nobody looks at as
-  iconic and Wine minimizes it (`window` prints `-32000 -32000 ...`): Spore then renders no frame
-  (`frame=1 fps=0.0`, watchdog "no frames" right after start) and a host's `coop.load` never
-  finishes (twoinst times out on `coop.avatar`). Seen on every lane on 2026-10-22 right after test
-  windows went to the agent-ws `sporecoop` workspace. Background mode swallows `SC_MINIMIZE`.
 * **Exiting one instance kills all instances in the bottle** (that's how launching through
   bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
 * **Stack of a frozen game.** `stack` and `hangdump` suspend the main thread; under Wine that hung
