@@ -40,8 +40,9 @@ class Bot:
         self.join_cmd = joins or {'guest': lane.JOIN}
         self.ids = ids or {'host': 0, 'guest': 1}
         self.back_in = back_in or (lambda name: wait_guest_in(self.c['host'], self.c[name], 90))
-        # action weights; coop_multi.py drops "pause" (random clicks into the pause menu can quit)
-        self.weights = dict(target=30, order=15, click=12, box=8, key=12, wheel=5, ui=4, pause=2, stage=8, churn=1,
+        # action weights; "pause" is off: random clicks into an open pause menu quit the game
+        # (a tribe host shut down this way, 2026-10-23); play_creature.py drives that menu properly
+        self.weights = dict(target=30, order=15, click=12, box=8, key=12, wheel=5, ui=4, pause=0, stage=8, churn=1,
                             save=1, outage=1)
         self.fixture, self.rng, self.rate = fixture, random.Random(seed), rate
         self.log = []

@@ -61,7 +61,28 @@ class Monitor(threading.Thread):
     console stops answering has crashed. Uses only any-thread console commands (frame, stack),
     so it works while the main thread hangs. Checks.faults() fails the test on any event."""
     FREEZE = 10.0
+    LOAD_FREEZE = 60.0  # a world load blocks the main thread: civ planets took 14 s with 16 games running
     events = []
+
+    def game_log(self):
+        """the game log of this instance (lane 1: the main game folder)"""
+        ln = (self.inst + 1) // 2
+        root = os.path.dirname(lane.ROOT)
+        game = os.path.join(root, 'SporebinEP1') if ln == 1 else \
+            os.path.join(os.path.dirname(root), 'SPORE-lab', f'lane{ln}', 'SporebinEP1')
+        name = 'sporekit.log' if self.inst == 1 else f'sporekit.{self.inst}.log'
+        return os.path.join(game, 'mods', 'logs', name)
+
+    def loading(self):
+        """the game's last log lines say it is loading a world"""
+        try:
+            with open(self.game_log(), 'rb') as f:
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 1500))
+                tail = [l for l in f.read().decode('utf-8', 'replace').splitlines() if '[DBG]' not in l]
+        except OSError:
+            return False
+        return bool(tail) and ('world: loading ' in tail[-1] or 'loading the world of' in tail[-1])
 
     def __init__(self, inst, name):
         super().__init__(daemon=True)
@@ -83,8 +104,10 @@ class Monitor(threading.Thread):
             if f != last:
                 if reported:
                     Monitor.events.append(f'{self.name}: frames resumed after {now - since:.0f} s')
+                elif now - since > self.FREEZE:
+                    print(f'  ({self.name}: no frames for {now - since:.0f} s while loading a world)', flush=True)
                 last, since, reported = f, now, False
-            elif not reported and now - since > self.FREEZE:
+            elif not reported and now - since > (self.LOAD_FREEZE if self.loading() else self.FREEZE):
                 reported = True
                 # no stack from here: suspending the main thread under Wine can hang the console too;
                 # the SporeKit watchdog writes it into the game log after 30 s (lab.py keeps that log)

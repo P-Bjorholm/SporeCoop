@@ -66,6 +66,33 @@ static void __fastcall draw_layer_guard(void* job, void*, int flags, int index, 
     H->log(M, SK_WARN, "game fixes: skipped a planet texture job of a terrain sphere without terrain (%s)", b);
 }
 
+// The tribe stage's setup (TribeGame_Setup 0xCD78E0, one step after a load) points a simulator
+// camera object ([0x167FAAC], null in the galaxy menu) at the tribe: LookAt (0xB12CE0, thiscall,
+// 3 arguments) and then 0xB13A60 (thiscall, none) on it without a check. A guest of a 4-player tribe
+// session got an AV there twice (0xB12D32, data 0x2B4: the object was null, a quit or load had come
+// while the stage was still setting up). Both are skipped while the object is null.
+using LookAtFn = void(__thiscall*)(void*, void*, int, int);
+using CamUpdateFn = void(__thiscall*)(void*);
+static LookAtFn g_lookat_orig;
+static CamUpdateFn g_camupd_orig;
+static std::atomic<unsigned> g_cam_skipped{0};
+
+static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int instant)
+{
+    if (!obj) {
+        if (++g_cam_skipped <= 4)
+            H->log(M, SK_WARN, "game fixes: skipped the tribe camera set-up without a simulator camera");
+        return;
+    }
+    g_lookat_orig(obj, target, a, instant);
+}
+
+static void __fastcall camupd_guard(void* obj, void*)
+{
+    if (obj)
+        g_camupd_orig(obj);
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -89,6 +116,10 @@ void init(const SkHost* host, SkMod* mod)
         g_draw_orig = (DrawLayerFn)fn;
     }
     H->log(M, SK_INFO, "game fixes: planet texture job guard %s", ok ? "on" : "off (unknown code)");
+    uintptr_t la = H->sym("SporeCoop::SimCamera_LookAt"), cu = H->sym("SporeCoop::SimCamera_Update");
+    bool cam = la && cu && H->hook_create(M, (void*)la, (void*)&lookat_guard, (void**)&g_lookat_orig) == 0 &&
+               H->hook_create(M, (void*)cu, (void*)&camupd_guard, (void**)&g_camupd_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: tribe camera guard %s", cam ? "on" : "off");
 }
 
 void shutdown()
@@ -100,7 +131,8 @@ void shutdown()
 std::string status()
 {
     return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
-           std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") + "\n";
+           std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
+           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + "\n";
 }
 
 } // namespace gamefixes

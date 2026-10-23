@@ -216,31 +216,49 @@ constexpr uint32_t kSavedBoxId = 0x06318E78;
 static uint64_t g_saved_at, g_box_watch_until, g_box_seen_at, g_box_next_check, g_box_last_enter;
 static bool g_box_task;
 
-static bool any_visible(sui::Win w, uint32_t id, int depth = 0)
+static sui::Win first_visible(sui::Win w, uint32_t id, int depth = 0)
 {
     if (!w || depth > 12 || !sui::visible(w))
-        return false;
+        return nullptr;
     if (sui::control_id(w) == id)
-        return true;
+        return w;
     for (sui::Win c : sui::children(w))
-        if (any_visible(c, id, depth + 1))
-            return true;
-    return false;
+        if (sui::Win f = first_visible(c, id, depth + 1))
+            return f;
+    return nullptr;
 }
+
+// the box's OK button (the check mark, control id 0xFFFFFFF1, 2026-10-23 tree dump)
+constexpr uint32_t kSavedBoxOk = 0xFFFFFFF1;
 
 static void box_task(void*)
 {
     g_box_task = false;
-    if (!any_visible(sui::main_window(), kSavedBoxId))
+    sui::Win box = first_visible(sui::main_window(), kSavedBoxId);
+    if (!box) {
+        if (g_box_seen_at) // confirmed and closed: stop watching (a later Enter hit other menus)
+            g_box_watch_until = 0;
         return;
+    }
     uint64_t now = GetTickCount64();
     if (!g_box_seen_at)
         H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
                (unsigned long long)(now - g_saved_at));
     g_box_seen_at = now;
-    if (now - g_box_last_enter < 400)
+    if (now - g_box_last_enter < 1000)
         return;
     g_box_last_enter = now;
+    // Click its OK button: the box is in front of everything. An Enter went to the window with the
+    // keyboard focus: with the pause menu open (a guest joining makes the host save) it pressed a
+    // pause menu button and the host left the game to the main menu or quit Spore (chaos tests,
+    // 2026-10-23: both 3-4 s after such an Enter).
+    if (sui::Win ok = first_visible(box, kSavedBoxOk)) {
+        sui::Rect r = sui::screen_rect(ok);
+        char cmd[64];
+        snprintf(cmd, sizeof cmd, "click %d %d", (int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2));
+        if (H->command_exec(cmd, nullptr) == 0)
+            return;
+    }
     if (HWND w = (HWND)H->game_window()) {
         PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
         PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);

@@ -12,6 +12,9 @@ Fixed entries move to the commit message (and a test).
   Since 2026-10-23 a load leaves a stage only when it has been playable for 3 s (`world.cpp`
   `kStageSettle`), which should avoid a quit during the setup; if it comes back, the fault log now
   shows the call chain (`exc`: "calls:"). docs/re/space.md 8.3.
+* 2026-10-23: it came back once more (4-player tribe, `coop_multi.py`). Since then `gamefixes.cpp`
+  skips `SimCamera_LookAt` and `SimCamera_Update` while the camera object is null (`coop.status`:
+  "tribe camera skipped N"); the stage setup goes on without pointing that camera.
 
 ## Creature: one NPC 4 m off on every guest for 30+ s (seen once)
 

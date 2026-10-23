@@ -269,6 +269,7 @@ Graphics::cRenderManager::DrawRenderJob=0x0075E490 ; likely thiscall(rm, job nod
 RenderWare::PresentFrame=0x011F8150 ; verified cdecl(ctx) : swap chain (ctx+0x18) vt 0xC Present, else device [0x16F99D0] vt 0x44 Present
 SporeCoop::SimCamera_Get=0x00B3D350 ; verified cdecl() -> [0x167FAAC]: a simulator object (vtable 0x14672A8, size 0x3B8, made by 0xBC3830), null in the galaxy menu
 SporeCoop::SimCamera_LookAt=0x00B12CE0 ; likely thiscall(obj [0x167FAAC], const Vector3* target, ?, bool instant) ret 0xC: uses the planet radius (0xF98790 of the terrain 0xF48A60), obj+0x2B4; AV at 0xB12D32 with a null obj
+SporeCoop::SimCamera_Update=0x00B13A60 ; likely thiscall(obj [0x167FAAC]) ret 0 (ret at 0xB13AB4): called right after SimCamera_LookAt by TribeGame_Setup (0xCD7D14), uses obj at once (0xB133B0)
 SporeCoop::TribeGame_StateUpdate=0x00CDE7D0 ; likely thiscall(tribe game) : state machine +0x22C (0..10), previous mode +0x230, timer +0x238; state 3 -> 4 calls TribeGame_Setup
 SporeCoop::TribeGame_Setup=0x00CD78E0 ; likely: setup of the tribe stage one step after a load (input strategy, terrain cursor, points SimCamera_LookAt at the tribe from 0xCD7D0D)
 Simulator::Cell::HandleCollisionPair=0x00E7F140 ; verified (disassembly 2026-10-23: only caller Collisions 0xE7F260 pushes 3 args, add esp,0xC) cdecl void(cell* a, cell* b, float dt): interaction kind both ways (0xE73DD0) then the interaction executor 0xE7E7F0 (bites, eating, swallowing posted as events)

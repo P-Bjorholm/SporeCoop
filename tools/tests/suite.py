@@ -51,6 +51,8 @@ add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent
 # again while the guest loads, a load right after the galaxy menu came up in fresh games, rejoins at
 # random moments
+# the mod confirms the host's "game saved" box without answering other menus (pause, exit question)
+add('save_box', P + 'coop_save_box.py', ('full',), minutes=4)
 add('rejoin_loop', P + 'coop_rejoin_loop.py --rounds 15 --reshare 0:2.5', minutes=5)
 add('menu_load', P + 'coop_rejoin_loop.py --rounds 5 --local-load 0:1.5 --cold', minutes=5)
 add('rejoin_race_long', P + 'coop_rejoin_loop.py --rounds 40 --race 1:9', ('nightly',), minutes=8)
