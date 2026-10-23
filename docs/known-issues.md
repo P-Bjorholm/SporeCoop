@@ -62,6 +62,8 @@ Fixed entries move to the commit message (and a test).
 
 ## Not covered by tests yet
 
-* Tribe: duet, healer bonus, the chief's aura and rescue in real fights (tests hit through the
-  damage function only). Civilization: military / religious roles in real battles. Space: raids and
+* Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
+  pincer, the chief's aura and rescues happen there; the fixture's tribe has no instruments and
+  no healer tool, so a social click on another tribe's hut is a food gift, CitizenAction 9, and
+  nobody can heal: a fixture of a later tribe save is needed). Civilization: military / religious roles in real battles. Space: raids and
   missions (no live mission in the fixture).

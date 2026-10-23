@@ -602,3 +602,24 @@ species hash** (0x6D60A1CC small fruit plant, 0x029C388A big fruit tree), `+0x6C
 all patches (`for_each_tree`) and takes the tree within 1 m. `coop.targets objs` lists trees on
 screen as `obj fruittree|tree <dist> x y` for game bots (with / without fruit left). A right-click
 right after moving the cursor often hits the ground (a walk): hover ~0.4 s first (docs/06-testing.md 6.10).
+
+---------------------------------------------------------------------------------------------
+## What right-clicks become (runtime, play_tribe.py 2026-10-23, Cohrach fixture)
+
+Recorded from `tribe last local order` / `tribe last order` (the CitizenAction the click gave):
+fruit tree (cTreeData) -> **2** Gather; animal -> **10** Hunt; another tribe's member (attack
+mode) -> **7** Attack; another tribe's hut (attack mode) -> **15** RaidHuts; another tribe's hut
+(social mode, no instruments in this tribe) -> **9** GiftFood; the own food mat (noun 0x629BAFE;
+clicks on 0x55CF865 / 0x18C431C next to it resolve to the mat) -> **0** Eat (hurt members heal
+there, it costs food); the own fire pit (tool noun 0x18C8F0C) -> **12** Party; the own hut ->
+no order. The small plants of noun 0x2C9CC91 near the village gave Gather once in early tries
+but mostly took no order: decoration (~).
+
+Game over: when the player tribe has no member with health left, the game shows "Alas! Your
+population has fallen below the minimum needed to survive... Bounce back in time" with a green OK
+(`key enter`); OK reloads the last save. With co-op the guest follows the host (both had the same
+3 members again, 3 tries). Adding a member while the caption is up faults on OK:
+docs/known-issues.md.
+
+New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 citizens) after
+~8 minutes, on host and guest alike (the guest's own game spawns them too; the positions match).

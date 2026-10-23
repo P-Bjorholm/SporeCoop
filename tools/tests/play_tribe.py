@@ -235,6 +235,7 @@ class Game:
         self.sync_pos = {'t': [], 'n': []}
         self.sync_rot = {'t': [], 'n': []}
         self.outliers = {}
+        self.rejections = []
         self.rejected0 = counter(status(host), 'rejected')
         self.attacked = {}
         self.both_attacked = 0
@@ -496,6 +497,13 @@ class Game:
 
     # ---------------- measuring ----------------
     def measure(self):
+        st = status(self.host)
+        rej = counter(st, 'rejected')
+        if rej > getattr(self, 'rej_seen', self.rejected0):  # why: the host's last guest order
+            self.rej_seen = rej
+            m = re.search(r'tribe last order: (.*)', st)
+            self.rejections.append(m.group(1) if m else '?')
+            self.log.append(f'   host rejected a guest order: {self.rejections[-1]}')
         fh, fg = food(self.host), food(self.guest)
         if fh is not None and fg is not None:
             if abs(fh - fg) > 0.5:  # the shared food travels every few frames: look twice
@@ -518,9 +526,11 @@ class Game:
                 self.game_overs += 1
                 self.dead_since = None
                 time.sleep(12)
-                for p in self.p:
+                for p in self.p:  # the reload resets the view: look where the minimap points again
                     p.cur = None
                     p.busy.clear()
+                    p.zoom = 0
+                    p.calibrate()
                 hs, gs = tribe_state(self.host), tribe_state(self.guest)
         else:
             self.dead_since = None
@@ -548,7 +558,9 @@ class Game:
                 continue
             e1, e2 = math.dist(gp, h1[k][0]), math.dist(gp, h2[k][0])
             self.sync_pos[k[0]].append(min(e1, e2))
-            if min(e1, e2) > 50 and k not in self.outliers:  # what is it on the host
+            if min(e1, e2) > 50 and k not in self.outliers and math.dist(h1[k][0], (0, 0, 0)) > 100:
+                # (at the planet centre on the host: a creature the host stops tracking after a
+                # reload, it reads a destroyed object for up to 2 s; not shown anywhere)
                 info = [ln.strip() for ln in self.host.call('coop.npc list' if k[0] == 'n' else 'coop.tribe')['out']
                         .splitlines() if re.match(rf'\s*#{k[1:]} ', ln)]
                 self.outliers[k] = f'host {[round(x) for x in h1[k][0]]} guest {[round(x) for x in gp]} {info[:1]}'
@@ -642,8 +654,9 @@ def main():
         ck(p.orders['lost'] == 0, f'{p.name}: no order lost ({p.orders["lost"]} of {tot})')
         ck(tot >= 10, f'{p.name}: gave orders through real clicks ({tot})')
         ck(p.orders['ok'] >= 0.7 * tot, f'{p.name}: the members act on the orders ({p.orders})')
-    ck(counter(st1, 'rejected') == g.rejected0, f'the host rejected no guest order ({counter(st1, "rejected")})')
-    far = {k: v for k, v in g.outliers.items() if 'not updated' not in v}  # the host was dropping those
+    ck(counter(st1, 'rejected') == g.rejected0,
+       f'the host rejected no guest order ({counter(st1, "rejected") - g.rejected0}: {g.rejections[:3]})')
+    far = g.outliers
     ck(not far, f'no citizen or animal more than 50 m off on the guest ({list(far)[:5]})')
     for kind in 'tn':
         if g.sync_pos[kind]:
