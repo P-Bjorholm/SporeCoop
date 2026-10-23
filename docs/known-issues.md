@@ -26,10 +26,6 @@ Fixed entries move to the commit message (and a test).
   --seed 264515564`; hunt: `tools/lab.py run chaos_tribe_awful --repeat 4 --retry 0`. Look at the
   world transfer under loss (reliable window 160 for long round trips, RTO, the join handshake).
 
-## Guest: "done" in its own editor does nothing
-
-* Cancel works; not related to DNA. Found 2026-10-22 while making own creations per player.
-
 ## Space: after a lone death the respawn did not come within 60 s in a test
 
 * `coop_space_play.py` (last step): the native death cinematic starts (state 2, +0x7F0 set) but the

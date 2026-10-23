@@ -298,3 +298,51 @@ Runtime checks still needed: baking of a never-seen creation on first spawn (IBa
 0x401010, `*(void**)0x15D1C04`, is used by spawn paths; expect a delay/placeholder ?), GetDatabaseByID(0x11AC199) =
 EditorSaves, SetSpecies on the live avatar (animations, hit points, UI ability bar refresh),
 cell in-place model swap.
+
+## 7. Editor "done" and the part list (✔ disassembly + runtime 2026-10-22)
+
+Why the guest's "done" did nothing for its own creature (cancel worked): the creature comes from
+the Creature Creator (My Creations) and holds parts that are not in the creature-stage editor's
+part list. The stage editor refuses to finish such a creation.
+
+The chain, from the button to leaving the editor:
+
+| addr | what | conv |
+|---|---|---|
+| 0x5DF4B0 | `EditorUI::OnExitButton(int command, int)`: command 0x102 = done (0x101/0x103/0x107 other exits) | ✔ thiscall `ret 8` |
+| **0x57AAA0** | `cEditor::GetFinishState()`: 3 = unchanged, may leave; 4 = unchanged but an error of `editor+0x48` is still there; 0/1/2 the same after edits (2 = a load-time error is still there) | ✔ thiscall plain `ret` |
+| 0x5DEC50 | `EditorUI::RunExitCommand(command)`: switch on command-0x100, 0x102 → `cEditor::Exit(1, 2, 1)` (or a confirmation dialog when `ui+0xEC`) | ✔ thiscall `ret 4` |
+| 0x5DCA40 | state 4 (and 2): `0x4F3B80(+0x48, current)` = first error bit in both, `0x4F3C80(bit)` = its message id (table 0x150D920, 8 bytes per bit), shown through 0x67CA80; the editor stays | ✔ |
+| 0x58A350 | `cEditor::Exit(int how, int, int)`: 0 = commit (0x5802F0), 1 = accept and leave (0x57E8A0), 2 = cancel (0x57C1E0) | ✔ thiscall `ret 0xC` |
+| 0x585D40 | save state machine (`editor+0x38C`: 1 → 2 → 4 thumbnail 256 → 5 thumbnail 128 → `Editor_Save` 0x577650), runs per frame from 0x58BE50 after an edited creature is accepted | ✔ runtime (136 calls, then one Editor_Save) |
+
+Errors are 128-bit sets (`u32[4]`); `0x4F3DA0(a, b)` (cdecl, two sets by value) returns 1 when
+they share no bit. `editor+0x1CC` is the live validation object (flags at +0x24..+0x30, masked by
+the globals 0x15DB7EC..F8, read by 0x57A960); **`editor+0x48`** = the blocking set computed when
+the creation is loaded: `cEditor::GetBlockingErrors` **0x57AC00** (thiscall `(u32 out[4],
+cEditorResource*, model, bool) ret 0x10`, returns `out`; called from the load 0x57F6C0 for +0x48
+and +0x58 and from 5 other places). It returns an empty set when app property 0x55D7CA1 is true
+(a debug switch, ~), else the live errors plus:
+- bit 10 (0x400): creature/cell without a part with property 0xB00F0FEC or 0x11B79301 (?);
+- bit 18 (0x40000): check 0x4EFB60 against editor config prop 0x7A926123 (?);
+- **bit 5 (0x20): a rigblock of the creation is not in the editor's part list**: editor config
+  (`editor+0x24`) prop **0xF5CBE065** = list id, list from the global map 0x15DB960 (filled by
+  0x4EB2B0 from the editor's palette resources; empty list = everything allowed), check
+  **0x4EF8C0** (cdecl `(cEditorResource*, u32 listId, u32* flags)`: walks the rigblocks at
+  `res+0x98`, 0x1D8 bytes each); message id 0x74E889BF;
+- bit 11 (0x800): `editor+0x4B1 && !+0x4B2`;
+- then filtered by 0x4EDF80.
+
+Runtime (lane 3, guest Kirgle 0x290225CD in CreatureEditorExtraLarge 0x465C50BA): `editor+0x48`
+= `{0x20, 0, 0, 0}`, GetFinishState = 4, the message for bit 5 is posted and the editor stays.
+The host's species (Maxis 0x065CBE70, made in the stage) has an empty blocking set: state 3,
+`Exit(1, 2, 1)`. Clearing bit 5 at `editor+0x48` by hand made the guest's done work; an edited
+creature is then saved to My Creations under a new key (0x2904B8xx) and the editor returns to
+the creature stage.
+
+The mod (coop.cpp `h_BlockingErrors`) drops bit 5 from GetBlockingErrors while the player's own
+editor (`open_own_editor`) is open: in the own editor the player's own parts are allowed. Other
+blocking errors still stop "done". Not done: native evolution data of the request (`+0x90 =
+0x64AA168`, `+0x94` = object from `0xF67D40()+0x10E8`, `+0x70` vector of 4 values from
+`+0x10FC..+0x1108`, flags +0x34..+0x3D, see 0xD42F2C) is not filled by the mod's request; done and
+cancel work without it.

@@ -361,6 +361,25 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         *flags |= 1u;
 }
 
+// The own creature usually comes from the Creature Creator (My Creations) and may hold parts that
+// are not in the stage editor's part list. The editor then marks that error (bit 5) as blocking
+// when it loads the creature, and "done" only shows the error and stays in the editor (cancel
+// works). In the own editor such parts are allowed: the bit is dropped from the blocking set
+// (docs/re/creations.md 7).
+bool g_own_editor = false; // the own editor was requested and the player has not left it yet
+using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*, int);
+BlockingErrors_t o_BlockingErrors;
+unsigned g_part_list_waivers; // tests: how often the part-list error was waived
+uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag)
+{
+    uint32_t* r = o_BlockingErrors(ed, out, res, model, flag);
+    if (g_own_editor && out && (out[0] & 0x20u)) {
+        out[0] &= ~0x20u;
+        g_part_list_waivers++;
+    }
+    return r;
+}
+
 // the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
 bool open_own_editor(uint32_t editor_id)
 {
@@ -377,8 +396,11 @@ bool open_own_editor(uint32_t editor_id)
     skg::field<uint32_t>(req, 0x14) = k.type;
     skg::field<uint32_t>(req, 0x18) = k.group;
     g_vote_bypass = true;
+    g_own_editor = true; // the editor loads the creature after Submit, on a later frame
     bool r = skg::cdecl_call<bool>(submit, req);
     g_vote_bypass = false;
+    if (!r)
+        g_own_editor = false;
     return r;
 }
 
@@ -462,6 +484,8 @@ void on_mode_change(uint32_t from, uint32_t to)
     bool editor = to == modes::kEdit || to == modes::kEditor;
     if (editor && stage_mode(from))
         g_was_in_editor = true;
+    if (!editor && (from == modes::kEdit || from == modes::kEditor))
+        g_own_editor = false;
     if (!stage_mode(to))
         return;
     bool new_stage = g_last_stage && to != g_last_stage;
@@ -1893,6 +1917,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
+    if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
+        H->hook_create(M, (void*)a, (void*)h_BlockingErrors, (void**)&o_BlockingErrors);
     H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
@@ -1916,7 +1942,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
-                       SAY("vote %s: %s (%d s)", g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left);
+                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u", g_vote.active ? "active" : "none",
+                           g_vote.text.c_str(), g_vote.left, (int)g_own_editor, g_part_list_waivers);
                        return 0;
                    },
                    nullptr, MT);

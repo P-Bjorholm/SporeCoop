@@ -139,3 +139,19 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * A real missing partner (`partner_dist=-1` on the guest, no puppet, bites and food still work)
   was the host's "game saved" box left open (fixed 2026-10-22): look at the host screenshot
   first. A host that "moves" 0.00 m in the sync samples is paused the same way.
+
+## 6.8 Editors in tests
+
+* `coop_vote.py` and `coop_guest_editor.py` open the creature editor through the evolution vote
+  (`coop.vote editor`). In the 1440x1080 test window "done" is at `click 1416 1062`, cancel at
+  `click 1376 1062`.
+* The fixture's DNA is 0, so a test cannot add parts. An edit that costs nothing: drag a part that
+  is already on the creature (`drag 1110 480 1060 420` moves the bow of the guest's Kirgle); the
+  undo button lights up. An edited creature is saved to My Creations under a new key when the
+  editor is left with done (one `Editor_Save` 0x577650 after the thumbnail state machine).
+* When "done" seems to do nothing, probe the exit chain (docs/re/creations.md 7):
+  `probe 0x5DF4B0` (button), `probe 0x57AAA0` (finish state), `probe 0x4F3C80` (the blocking error
+  bit, first argument), `probe 0x58A350` (leaving). `coop.vote` prints `own editor` and how often
+  the part-list error was waived.
+* Leaving the editor after the host has evolved: the guest is in the stage for ~2 s, then goes to
+  the galaxy menu and loads the host's world (~5 s); its own body is set 3 s after that.
