@@ -295,10 +295,12 @@ class Game:
                 pl.note(kind + '_nothing')
                 return self.pause(pl)
             pl.look(where)
-            if kind == 'gather':
-                pl.centre()  # the mouse in the middle: the listed distances are from there
+            pl.centre()  # the mouse in the middle: the listed distances (and the 250 nearest) are from there
             objs = screen(pl.con)
             tg = [o for o in pl.on_screen(objs) if pick(o)]
+            if kind == 'heal':  # the own food mat: the nearest one, it sits low in the default view
+                tg = sorted([o for o in objs if pick(o) and 20 < o[1] < self.w - 60 and 60 < o[2] < self.h - 70],
+                            key=lambda o: o[3])[:1]
             if not tg:
                 pl.note(kind + '_nothing')
                 return self.pause(pl)
