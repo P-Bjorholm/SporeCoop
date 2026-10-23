@@ -348,7 +348,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         px.health = sp.health;
         px.max_health = sp.max_health;
         net::PlayerState s;
-        s.time_ms = net::now_ms();
+        // the spawn carries no host time: older than any state. The guest's own clock here made
+        // every state older than this snapshot whenever the guest's clock was ahead of the host's
+        // (another PC, another Wine bottle): they were all dropped and the NPC stood still
+        s.time_ms = 0;
         s.pos = sp.pos;
         s.rot = sp.rot;
         s.flags = sp.flags;
@@ -519,10 +522,10 @@ std::string list()
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s\n", id,
-                     px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d\n",
+                     id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "");
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1);
             out += b;
         }
     }
