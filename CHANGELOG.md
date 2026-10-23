@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-23
+
+Builds with the same code as a supported one, and a list of where SporeCoop has been tested.
+0.6.0, 0.6.1 and 0.6.2 can play together (the network protocol did not change); all players need
+the same game build.
+
+### Where SporeCoop has been tested
+
+| Game build | System | Tested |
+|---|---|---|
+| GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux, Wine / Bottles | Yes: developed on it; every stage, 2-4 players, the stability runs of 0.6.0 |
+| GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11 | Yes (0.6.1): every stage as host + guest, two game instances on one PC |
+| GOG 2024 with a changed header (same code) | Windows 11 | Only with a modified copy of the GOG 2024 exe (0.6.2) |
+| GOG 2016 | Windows | Not tested (0.6.0 and older could not work on Windows, fixed in 0.6.1) |
+| GOG 2024 | Linux, Wine | Not tested |
+| Steam, EA app / Origin, disc | any | Not tested: co-op stays off unless the exe's code matches a build above |
+| Two different PCs over the internet or a VPN | Windows | Not tested with 0.6.1+ on Windows |
+
+The same list, kept up to date: [INSTALL.md, section 2](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/INSTALL.md#where-sporecoop-has-been-tested).
+Tried another build? An [issue](https://github.com/WoodyWizard/SporeCoop/issues) with
+`mods\logs\sporekit.log` (it names the exe's `sha256` and `code_sha256`) helps.
+
 ### Game builds
 - A `SporeApp.exe` that differs from a supported build only in the PE header, the resources or a
   signature now gets that build's addresses: symbol files carry a `code_sha256` (the code and
