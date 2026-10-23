@@ -763,6 +763,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   pirates around). Pirates near a guest's puppet died on the host while the guest never fired; the
   mod drops FireTool for puppets (`puppet_shots_blocked` in `coop.fleet list`). (~) The player's own
   ship may also shoot back at an attacker on its own (TakeDamage step 9, auto-retaliation).
+* Pirates spawned with `SpawnUFO`: type 2 (raider) attack the player only around its colonies; on
+  other planets they fly off and vanish after ~30 s without a shot. Type 8 (ambush pirate) attack
+  the player anywhere (✔ runtime, `coop.fleet spawn <type>`).
 * Right after landing the player's ship takes no damage for a few seconds (the planet
   invulnerability counter `cSimulatorPlayerUFO` +0x24, §7.2) ~.
 

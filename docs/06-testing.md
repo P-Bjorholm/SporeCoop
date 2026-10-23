@@ -176,3 +176,24 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
+
+## 6.10 Space game bots (play_space.py)
+
+* `coop.targets all` lists what a bot can fly to: in a solar system its planets (`obj P/C<PlanetID>`),
+  on a planet its cities (`obj T<n>` ours, `X<n>` others), in the galaxy view the stars near the ship
+  (`obj S/H<StarID>`), and partners off the screen as `far player <id> x y` (their projected point).
+  `coop.space star` prints `active <PlanetID>`, the planet a click sent the ship to (a moon next to a
+  planet often takes the click). Inputs per view: docs/re/space.md 9.2.
+* The space fixture's ship has no interstellar drive: the galaxy view stays locked. Tests give it
+  with `coop.space tool add interstellardrive` (a badge cinematic and a tutorial caption follow:
+  confirm them with Enter).
+* Just after landing, damage to the player's ship is ignored for a few seconds (`coop.space hit`
+  and relayed NPC hits alike); wait or retry.
+* `coop.space hp` prints `hp <n> max <n> ...` (no `hp=`): a parser that looks for `hp=` gets
+  nothing, and `coop.space hit <-1 - x>` then heals the ship (negative damage).
+* The tool palette's state (open or closed) is read from a screenshot (tab icons on row H-151 or
+  H-51); a blind click on the wrong row fires the selected weapon into the world. Never press Esc
+  twice: the second one opens the pause menu.
+* The bots run in two threads with their own console connections; the measurement loop uses a
+  third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
+  deterministic, so the same seed gives a similar, not the same, session).

@@ -260,12 +260,12 @@ class Player(threading.Thread):
         self.count('fights')
         st = self.hp()
         near = (self.partner_dist() or 1e9) < 150
-        if time.time() - self.last_damage > 120 and self.rng.random() < (0.6 if near else 0.15) \
-                and st.get('hp', 0) > 60:
+        if time.time() - self.last_damage > 90 and self.rng.random() < 0.5 and st.get('hp', 0) > 60:
             # setup: battle damage, so the next real hits of the pirates are lethal (a real fight to
             # the death takes far longer than a test): next to the partner the ship is disabled and
             # waits for repair, alone it is destroyed (death caption, respawn at a colony)
-            self.cmd(f'coop.space hit {st["hp"] - 40:.0f}')
+            out = self.cmd(f'coop.space hit {st["hp"] - 8:.0f}')
+            self.log.append(f'{time.strftime("%H:%M:%S")} battle damage ({"partner near" if near else "alone"}): {out}')
             self.last_damage = time.time()
             self.count('battle_damage')
         self.last_fight = time.time()
@@ -518,8 +518,10 @@ class Player(threading.Thread):
         if self.pid == 0 and c == 'planet' and time.time() - self.last_fight > 40 \
                 and time.time() - self.last_spawn > 40:
             # setup: no pirates came for a while (combat happens on planets)
+            # raiders (type 2) attack only around colonies and leave elsewhere; ambush pirates (8)
+            # attack the player anywhere (docs/re/space.md 9.4)
             for _ in range(self.rng.choice([1, 2, 3])):
-                self.cmd('coop.fleet spawn 2')
+                self.cmd(f'coop.fleet spawn {self.rng.choice([2, 8, 8])}')
             self.last_spawn = time.time()
             self.count('pirates_spawned')
             return
@@ -615,7 +617,7 @@ def main():
     mon_h, mon_g = Console(lane.HOST, timeout=30), Console(lane.GUEST, timeout=30)
     money_bad, money_n, last_diff = 0, 0, None
     errs, together_s, samples = [], 0, 0
-    stuck, freed = {}, {}
+    stuck, freed, life = {}, {}, {}
     t_last = time.time()
     while time.time() < end and not Monitor.events and ph.is_alive() and pg.is_alive():
         time.sleep(3)
@@ -647,6 +649,17 @@ def main():
                     print(f'  {name}: freed_by_game={m.group(1)} after: host ' + ' | '.join(ph.log[-3:])
                           + ' || guest ' + ' | '.join(pg.log[-3:]), flush=True)
                 hp = con.call('coop.space hp')['out']
+                # deaths and respawns, downs (disabled) and repairs, seen from outside the bots
+                dead, down = 'state=2' in hp, 'down=1' in hp
+                if dead != life.get(name + '.dead', False):
+                    life[name + '.dead'] = dead
+                    life[name + ('.deaths' if dead else '.respawns')] = life.get(name + ('.deaths' if dead else '.respawns'), 0) + 1
+                    print(f'  {name}: {"destroyed" if dead else "respawned"} ({hp})', flush=True)
+                if down != life.get(name + '.down', False):
+                    life[name + '.down'] = down
+                    if down:
+                        life[name + '.downs'] = life.get(name + '.downs', 0) + 1
+                    print(f'  {name}: {"disabled" if down else "no longer disabled"} ({hp})', flush=True)
                 bad = 'state=2' in hp or 'movie=1' in hp
                 stuck[name] = (stuck.get(name) or now) if bad else None
                 if stuck[name] and now - stuck[name] > 90:
@@ -679,9 +692,10 @@ def main():
     ck(money_bad == 0, f'the shared money was the same on both ({money_n} checks, {money_bad} lasting differences)')
     ck(not errs or pct(errs, .9) <= 15, 'NPC ships on the guest follow the host (p90 within 15 m)')
     ck(stats.get('host.shots', 0) + stats.get('guest.shots', 0) > 0, 'the players fought')
-    d = stats.get('host.deaths', 0) + stats.get('guest.deaths', 0)
-    ck(stats.get('host.respawns', 0) + stats.get('guest.respawns', 0) >= d - (1 if ph.dead_since or pg.dead_since else 0),
-       f'every death was followed by a respawn ({d} deaths)')
+    print('  lives:', ' '.join(f'{k}={v}' for k, v in sorted(life.items()) if not isinstance(v, bool)))
+    for name in ('host', 'guest'):
+        d, r = life.get(name + '.deaths', 0), life.get(name + '.respawns', 0)
+        ck(r >= d - (1 if life.get(name + '.dead') else 0), f'every death of the {name} was followed by a respawn ({d} deaths)')
     if Monitor.events or ph.error or pg.error:
         for p in (ph, pg):
             print(f'  last actions of {p.name}:')
