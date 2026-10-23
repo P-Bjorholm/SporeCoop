@@ -234,5 +234,22 @@ broken save were kept in `out/vote-load-hang/`, not in git).
   the save's box at t+2.0 s, shared at t+2.6 s, the editor opens at t+2.6 s; the guest is back in
   the creature stage 7 s after the vote ended.
 * The guest's own editor at the end of a vote (MSG_VOTE "ended") is opened only when the guest is
-  still in the creature stage with no mode switch pending when the outside-frame task runs (a guest
-  leaving through the pause menu at that moment).
+  still in the creature stage, no mode switch is pending and neither the pause menu nor one of the
+  game's message boxes is up when the outside-frame task runs. ✔ Before: a guest in the "Are you
+  sure? All progress will be lost!" box when the vote ended got its editor opened under the box,
+  and the "Don't Save" click right after left it in Editor mode (0xDBDBA1) with a black screen for
+  good. The pause menu's boxes ("Do you want to save your game?", "Are you sure?") use the same
+  container control id 0x06318E78 as the "game saved" box; the pause menu window (0x0615B50D) is
+  hidden while they are up.
+* Neighbours checked on lane 3 (`out/vote-load-hang/neighbours.py`, not in git), all pass with the
+  fix: A) the guest leaves to the menu while the host is in its editor: it gets the evolved world
+  when the host is back (8 s); B) the guest is in the exit boxes when the vote ends (above);
+  C) the host leaves to the menu (`coop.menu`, the quit message) the moment a guest joins.
+* ✔ C before the fix: our share save (posted for the join) and the quit message's own save ran
+  together; the host's slot was broken and its next `coop.load` of it faulted at 0xBA7F87
+  (`cStarManager::GetStarGridPosition+0xD57`, data 0x1188, called from 0xB27DA6 with 0x1654C08 on
+  the stack) and stayed in LoadGame. A save made in the galaxy menu (a share that waited there) did
+  the same. Now: `save_game` refuses outside a stage (adventures 0x1654C10 allowed), a waiting share
+  saves only once the player controls something again, and a hook on `Simulator_HandleMessage`
+  0xB63610 posts the quit message 0x4715068 again while our save is written (`world::save_busy`),
+  as the game itself does while a mode switch is pending (`coop.vote`: "quit held for a save N").

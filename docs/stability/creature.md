@@ -125,7 +125,10 @@ Fixed after the sessions (branch `fix/creature-social`, 2026-10-23; docs/re/crea
     The host saved its world for that guest on the frame the vote ended; the editor opened while
     the game wrote the save, and such a save does not load (docs/re/creature.md 9). The host's
     editor now waits until the save is written and the mod never saves while an editor opens or a
-    mode switch is pending. Check: `coop_exit_menu.py` part 4.
+    mode switch is pending. Its neighbours: a guest in the exit boxes when the vote ended was left
+    in a black editor (its own editor is not opened under the pause menu any more); a host leaving
+    the moment a guest joined broke its own slot (two saves at once; the quit now waits for our
+    save). Check: `coop_exit_menu.py` part 4.
 
 Sessions with fixes 8-11 (seed 31, four 10-minute runs, 2026-10-23): no fault, no freeze in any;
 NPC p90 0.30-0.77 m, players p90 1.1-2.2 m, the shared DNA the same in 141-143 of 142-143
