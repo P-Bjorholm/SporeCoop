@@ -637,11 +637,16 @@ std::string list()
     if (is_host()) {
         double now = H->time_seconds();
         for (auto& [c, hn] : g_host_npcs) {
+            if (!g_seen_now.count(c)) { // maybe freed already: no field reads
+                snprintf(b, sizeof b, "  #%u %p not updated for %d ms\n", hn.id, c, (int)((now - hn.last_seen) * 1000));
+                out += b;
+                continue;
+            }
             net::Vec3 p = game::position(c);
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f pos=(%.1f %.1f %.1f)%s%s\n", hn.id, c,
-                     game::species_key(c).instance, game::health(c), net::dist(p, ap), p.x, p.y, p.z,
-                     game::is_dead(c) ? " DEAD" : "",
-                     g_seen_now.count(c) ? "" : (" not updated for " + std::to_string((int)((now - hn.last_seen) * 1000)) + " ms").c_str());
+            // " DEAD" right after dist: tests match "dist=N( DEAD)?"
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s\n", hn.id, c,
+                     game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
+                     p.x, p.y, p.z, "");
             out += b;
         }
     } else {
