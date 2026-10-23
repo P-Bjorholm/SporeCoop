@@ -106,9 +106,16 @@ def mode(con):
     return con.call('game.mode')['out'].strip().split('\n')[0].split(' ', 1)[-1][:20]
 
 
+def fps(con):
+    m = re.search(r'fps=([\d.]+)', con.call('frame')['out'])
+    return m.group(1) if m else '?'
+
+
+
 def check_round(ck, host, guests, label, report):
     """desync / coverage / resources of every guest against the host"""
-    report.append(f'  [{label}] modes: host {mode(host)}, ' + ', '.join(f'{n} {mode(g)}' for n, g in guests.items())
+    report.append(f'  [{label}] modes: host {mode(host)} {fps(host)} fps, '
+                  + ', '.join(f'{n} {mode(g)} {fps(g)} fps' for n, g in guests.items())
                   + ' | host ' + host.call('coop.npc')['out'].strip().splitlines()[0][:120])
     h1 = sample(host)
     worst = {}
