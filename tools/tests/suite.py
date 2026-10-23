@@ -44,6 +44,8 @@ add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='c
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
+# two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
+add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets

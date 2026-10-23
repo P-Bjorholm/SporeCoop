@@ -16,6 +16,7 @@ usage: coop_ui.py [--no-restart]
 import os
 import subprocess
 import sys
+import re
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -76,7 +77,7 @@ class Ui:
                 st[key] = rest.strip("'")
             else:
                 f = rest.split(' ', 5)
-                if len(f) >= 5:
+                if len(f) >= 5 and all(re.fullmatch(r'-?[\d.]+', x) for x in f[:4]):  # (status text can span lines)
                     st[key] = {'rect': [int(float(x)) for x in f[:4]], 'vis': f[4] == '1',
                                'text': f[5].strip("'") if len(f) > 5 else ''}
         return st

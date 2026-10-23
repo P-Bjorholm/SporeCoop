@@ -66,15 +66,6 @@ Fixed entries move to the commit message (and a test).
   health (e.g. 0.4) and stand. Seen in play_tribe.py (enemy chief `#4 hp=0.0` on the host, `0.4`
   on the guest). The co-op chiefs use the host's health on every machine since 2026-10-23.
 
-## Civilization: the first vehicle snapshot chunk can be too big for a packet (not seen yet)
-
-* The same pattern as the tribe bug fixed on 2026-10-23 (play/tribe): `civ.cpp host_tick` sends
-  24 vehicles per chunk (41 bytes each) and the first chunk also carries up to 48 cities (17
-  bytes each). A message that does not fit `kMaxPacket` (1200) is dropped by the connection for
-  good (`connection.cpp`: "can never fit any packet"), every cycle: with more than ~10 cities
-  and 24+ vehicles the guest would lose the first chunk's vehicles (and the city owners) all the
-  time. Size the chunks from the byte budget like `tribe.cpp host_tick` does now.
-
 ## Cell: a guest far from the host swims in an empty pool
 
 * The host simulates and sends only the cells around its own cell (its active tiles, docs/re/cell.md
@@ -146,13 +137,44 @@ Fixed entries move to the commit message (and a test).
   spice, terraform, take missions or meet raids. A fixture made after the tutorial (scan the wreck,
   meet a neighbour, a colony with spice) would cover them: play it once, then `make_fixture.py`.
 
+## Civilization: single vehicle sync outliers of 20-27 m
+
+* `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
+  samples was 22-27 m in three sessions (one sample each). Not traced yet: candidates are a guest
+  mirror bound to a nearby local vehicle of the same kind right after a purchase (the 25 m bind
+  radius in guest_state) or the velocity estimate around a capture caption pause. Reproduce:
+  `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 9` (it prints the outliers):
+  `v13 22.7 m host (-497, 27, 66) guest (-493, 45, 79)` three samples in a row, an NPC vehicle on
+  the far side of the planet; not seen on player vehicles.
+
+## Civilization: the host's capture caption stops everybody's game
+
+* A captured city plays a cinematic whose caption waits for the host's OK; until then the host's
+  world (and so every guest's vehicles) stands still. Everybody is told now ("... watches a
+  cinematic: the world waits for the OK"), but a host who is away stops the game for all.
+  Reproduce: capture a city (`play_civ.py`), do not press Enter on the host. Fix idea: close the
+  caption on the host after a few seconds when guests are connected (EndCinematic 0xADFF20).
+
+## Civilization: the NPC AI still spawns vehicles on guests
+
+* The guest's civ AI spawns vehicles for the other nations; the next snapshot kills them
+  (`civ(guest)` `removed=` grows by a few per minute). `SpawnVehicle` callers 0xBE7643 / 0xBFBCF7
+  use the result without a null check, so blocking needs a hook at the AI decision instead.
+
+## Civilization: no building placement through the city planner in tests
+
+* In `civ_npc` (a new game) the planner's house / factory / entertainment have no design yet; a
+  click on a tile opens the building editor (co-op vote). The bots only open and close the planner;
+  guest buildings are tested through `coop.civ build` (coop_civ.py). A fixture with designs (or a
+  bot that makes one in the editor) is needed.
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
   pincer, the chief's aura and rescues happen there; the fixture's tribe has no instruments and
   no healer tool, so a social click on another tribe's hut is a food gift, CitizenAction 9, and
-  nobody can heal: a fixture of a later tribe save is needed). Civilization: military / religious
-  roles in real battles, a siege by real vehicles of both players (coop_civ_play.py besieges an NPC
-  city of `civ_npc` through the capture function). Space: raids and missions (no live mission in
+  nobody can heal: a fixture of a later tribe save is needed). Civilization: the religious role
+  and trade in real play (play_civ.py plays military vehicles: the military role and joint sieges
+  by real vehicles are covered). Space: raids and missions (no live mission in
   the fixture), spice trading, terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).

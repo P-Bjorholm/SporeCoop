@@ -46,5 +46,8 @@ std::string debug(const std::vector<std::string>& args);
 bool active();
 // owners for overlay tags
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user);
+// test bots (coop.targets): every city ("city", host index, owner: player id, 253 shared, -1 other nation)
+// and every player vehicle ("vehicle", net id, owner)
+void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user);
 
 } // namespace civ
