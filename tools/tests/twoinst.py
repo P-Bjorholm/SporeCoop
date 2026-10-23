@@ -186,7 +186,8 @@ def start(fixture='creature', planet=None, load_args=()):
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
-    # warm only within the same save: switching stages in game can crash (docs/known-issues.md)
+    # warm only within the same save: a test starts from its fixture (stage switches in game work,
+    # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and st.get('build') == build_id() \
             and st.get('fixture') == fixture and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)

@@ -51,7 +51,9 @@ python3 tools/tests/load_game.py                 # up to the Creature stage
 make coop && tools/spore.sh deploy && tools/sporectl.py mod.reload coop
 tools/sporectl.py shot                           # look at the screen
 tools/sporectl.py exc                            # caught exceptions (address + symbol)
-tools/sporectl.py hangdump                       # main thread stack to the log
+tools/sporectl.py hangdump                       # main thread stack to the log (can hang under Wine)
+tools/sporectl.py stack.here 300 all            # main thread call chain, read ON the main thread
+tools/sporectl.py stack.scan 300                 # exe return addresses on the main stack, no suspend
 tools/spore.sh logs                              # tail of sporekit.log
 ```
 
@@ -103,5 +105,13 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
 * Spore stops rendering without focus; test runs enable SporeKit's "background mode".
 * **Exiting one instance kills all instances in the bottle** (that's how launching through
   bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
+* **Stack of a frozen game.** `stack` and `hangdump` suspend the main thread; under Wine that hung
+  the console for good (2026-10-22). When frames stop but the console still answers `game.mode`,
+  the main thread is pumping messages in some nested loop: `stack.here 300 all` runs on the main
+  thread itself and lists every return address from its own frame up (modules and offsets; coop.dll
+  offsets: `llvm-symbolizer --obj=build/coop.dll 0x1000_0000+offset`). `stack.scan` reads the stack
+  from the TEB without suspending (stale values mixed in). Filter exe values to real return
+  addresses (a call instruction before them) — UTF-16 text looks like code addresses. `winedbg`
+  attach from `flatpak enter <wineserver pid>` failed with error 5.
 * A hung Wine process can be left half-dead (a zombie leader with live threads)
   and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.
