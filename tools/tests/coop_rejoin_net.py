@@ -89,6 +89,7 @@ def main():
     ap.add_argument('--limit', type=float, default=90, help='seconds a rejoin may take')
     ap.add_argument('--gap', default='1:4', help='seconds between leave and join (min:max)')
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--trace', action='store_true', help='print both sides\' net status every 2 s')
     ap.add_argument('--lose-bye', choices=['even', 'all', 'none'], default='even',
                     help='rounds whose goodbye the bad network loses (an outage over the leave)')
     a = ap.parse_args()
@@ -136,6 +137,8 @@ def main():
                 reloaded = time.time() - t
                 break
             wait_guest_in(host, guest, timeout=1, close=close)
+            if a.trace:
+                print(f'    {time.time() - t:5.1f}s host: {net_line(host)}', flush=True)
         if ok and reloaded is None and 'share' in log_times(lane.HOST, t, {'share': r'world: sharing'}):
             ok = False  # the world was sent but never arrived / loaded
         parts = log_times(lane.HOST, t, {'hello': r"player \d+ '.*' joined from", 'share': r'world: sharing',
