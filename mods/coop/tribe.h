@@ -51,7 +51,8 @@ std::string object_key(void* obj);
 // tests: the position of every planet tree (cTreeData, fruit trees to gather from)
 // tests: every tribe's centre ("tribe<i>[p]", i as in coop.tribe)
 void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& pos, void* user), void* user);
-void for_each_tree_pos(void (*fn)(const net::Vec3& pos, void* user), void* user);
+// (fruit: the tree has fruit slots, ~ docs/re/tribe.md Trees)
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 

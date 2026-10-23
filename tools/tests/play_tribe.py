@@ -385,7 +385,7 @@ class Game:
     def target_for(self, pl, kind, st, centres, enemies):
         """(world point to look at, which screen object to right-click)"""
         if kind == 'gather':
-            return centres.get('p'), lambda o: o[0] in ('tree', 'o2C9CC91')
+            return centres.get('p'), lambda o: o[0] in ('fruittree', 'o2C9CC91')
         if kind == 'heal':  # eat at the own food mat (CitizenAction 0): hurt members heal there
             return centres.get('p'), lambda o: o[0] == 'o629BAFE'
         if kind in ('raid', 'social'):
@@ -423,8 +423,12 @@ class Game:
         """right-click the target; a click that misses the target's model hits the ground (a walk):
         a player then clicks a bit higher (on the trunk, the body)"""
         last, n, act = '', None, None
-        for dy in ((0,) if kind == 'walk' else (-8, -22, 0, -40)):
+        for dy in ((0,) if kind == 'walk' else (0, -10, -20, -35)):
             before = pl.last_order()
+            # hover first: the game picks the object under the cursor per frame, a click right
+            # after the jump of the cursor hits whatever was under it before (mostly the ground)
+            pl.do(f'move {tgt[1]} {tgt[2] + dy}')
+            time.sleep(0.4)
             pl.do(f'click {tgt[1]} {tgt[2] + dy} right')
             time.sleep(0.8)
             last, n = pl.last_order()

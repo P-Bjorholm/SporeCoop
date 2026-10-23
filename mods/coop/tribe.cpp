@@ -138,10 +138,10 @@ void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& p
         fn("tribe" + std::to_string(i) + (tribes[i] == pt ? "p" : ""), tribe_pos(tribes[i]), user);
 }
 
-void for_each_tree_pos(void (*fn)(const net::Vec3& pos, void* user), void* user)
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, bool fruit, void* user), void* user)
 {
-    if (g_ok)
-        for_each_tree([&](void*, const net::Vec3& p) { fn(p, user); });
+    if (g_ok) // +0x48: the fruit left (bits, +0x4C = all slots ~): a tree without fruit is no gather target
+        for_each_tree([&](void* t, const net::Vec3& p) { fn(p, F<uint32_t>(t, 0x48) != 0, user); });
 }
 
 // ---------------- host ----------------
@@ -1237,6 +1237,25 @@ std::string debug(const std::vector<std::string>& a)
             n++;
         }
         return "spawned " + std::to_string(n);
+    }
+    if (!a.empty() && a[0] == "trees") { // trees near the village with their raw fields (RE)
+        net::Vec3 at;
+        center(at);
+        std::vector<std::pair<float, std::string>> v;
+        for_each_tree([&](void* t, const net::Vec3& p) {
+            char b[256];
+            float d = net::dist(p, at);
+            snprintf(b, sizeof b, "%p d=%.0f pos=(%.1f %.1f %.1f) c=%04X e=%04X 1c=%.2f 48=%08X 4c=%08X 50=%08X 54=%08X 58=%08X 6c=%.2f 78=%08X 7c=%02X\n",
+                     t, d, p.x, p.y, p.z, F<uint16_t>(t, 0xC), F<uint16_t>(t, 0xE), F<float>(t, 0x1C), F<uint32_t>(t, 0x48),
+                     F<uint32_t>(t, 0x4C), F<uint32_t>(t, 0x50), F<uint32_t>(t, 0x54), F<uint32_t>(t, 0x58), F<float>(t, 0x6C),
+                     F<uint32_t>(t, 0x78), F<uint8_t>(t, 0x7C));
+            v.push_back({d, b});
+        });
+        std::sort(v.begin(), v.end());
+        std::string out;
+        for (size_t i = 0; i < v.size() && i < (a.size() > 1 ? (size_t)atoi(a[1].c_str()) : 25); i++)
+            out += v[i].second;
+        return out;
     }
     if (a.size() >= 2 && a[0] == "objs") { // objs <noun hex>: objects of a kind near the village, world positions
         struct Q {

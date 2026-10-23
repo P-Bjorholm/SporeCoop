@@ -188,8 +188,12 @@ Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
 * `coop.targets objs` lists everything on screen: `member <id> <owner>`, `obj t<id>` (citizens of
   every tribe), `n<id>` (animals), `tree` (fruit trees), `o2C9CC91` (small food plants),
   `hut<i>[p]` (huts, `p` = the player tribe), `tribe<i>[p]` (tribe centres, also off screen),
-  `o<noun>` for the rest. A right-click on a tree's base point often hits the ground (a walk):
-  not every tree picks.
+  `fruittree` / `tree` (planet trees with / without fruit left), `o<noun>` for the rest.
+* **Hover before a right-click on an object**: the game picks the object under the cursor once per
+  frame; `click` jumps the cursor and presses 3 frames later, which often still hits whatever was
+  under the old cursor position (the ground: a walk order). `move x y`, ~0.4 s, then `click x y
+  right` picked fruit trees 37 of 40 times (base point, 10 and 20 px above it); without the move
+  about 1 in 3. Trees on the horizon (y < ~280) rarely pick at all.
 * Camera: the arrow keys pan (~30 m/s), the wheel zooms, a right-drag rotates. The Home key does
   nothing in the tribe stage and **`H` opens the Spore Guide**, which swallows every later click
   (close it at `click 1338 59`). The minimap is the way to look somewhere: a click there centres

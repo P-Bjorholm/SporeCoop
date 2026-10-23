@@ -592,7 +592,13 @@ Where they live (✔ found with `coop.memfind` from a picked tree up to a global
 * The hover pick hands DoActionForObjects the live tree pointer (the same pointer as in the patch
   vector; refcount 3 while hovered and ordered).
 
+Fields near the village of Cohrach (`coop.tribe trees`, ~ from 30 trees): `+0x0C` = 7 for all,
+`+0x0E` 3..0x10, `+0x1C` size (0.7 small, 1.4-1.6 big), **`+0x48` fruit left** (bit per fruit; 0 =
+picked empty: such a tree is no gather target), **`+0x4C` all fruit slots** (0x07 small, 0x1F big),
+`+0x50` patch key (0x7B..0x89, = the patch's key), `+0x54` index in the patch, **`+0x58` plant
+species hash** (0x6D60A1CC small fruit plant, 0x029C388A big fruit tree), `+0x6C` scale.
+
 **Recipe (tribe.cpp):** the guest sends a tree target as `kind 3 + position (+0x10)`; the host walks
 all patches (`for_each_tree`) and takes the tree within 1 m. `coop.targets objs` lists trees on
-screen as `obj tree <dist> x y` for game bots. A click on a tree's base point often hits the
-ground (a walk order) - not every tree on screen picks; aim at the base and accept walks.
+screen as `obj fruittree|tree <dist> x y` for game bots (with / without fruit left). A right-click
+right after moving the cursor often hits the ground (a walk): hover ~0.4 s first (docs/06-testing.md 6.10).

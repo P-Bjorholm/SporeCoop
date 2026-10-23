@@ -1758,11 +1758,11 @@ std::string targets(int all)
                 },
                 &o);
             tribe::for_each_tree_pos( // planet trees are no game objects (fruit trees: gather)
-                [](const net::Vec3& p, void* u) {
+                [](const net::Vec3& p, bool fruit, void* u) {
                     auto* q = (O*)u;
                     float w[3] = {p.x, p.y, p.z}, sc[2];
                     if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < q->sw && sc[1] < q->sh)
-                        q->seen->push_back({"tree", net::dist(p, q->me), (int)sc[0], (int)sc[1]});
+                        q->seen->push_back({fruit ? "fruittree" : "tree", net::dist(p, q->me), (int)sc[0], (int)sc[1]});
                 },
                 &o);
             // tribe centres also off screen (a bot pans the camera towards them): "tribe<i>[p] -1 x y"
