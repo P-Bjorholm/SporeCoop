@@ -48,7 +48,7 @@ def pool(con):
     out = con.call('coop.pool')['out']
     d = {'raw': out}
     for k in ('hp', 'food', 'downed', 'revives', 'respawns', 'mirrors', 'hits_in', 'hits_sent', 'eats_in',
-              'eats_sent', 'purged', 'pairs_skipped', 'hurt_local', 'hurt_fwd', 'kept', 'own_eats', 'own_food', 'puppet_new', 'puppet_saves', 'created', 'destroyed', 'local_gameplay_cells'):
+              'eats_sent', 'purged', 'pairs_skipped', 'hurt_local', 'hurt_fwd', 'kept', 'own_eats', 'own_food', 'puppet_new', 'puppet_saves', 'chasing_me', 'chasing_partner', 'bites_taken', 'damage_taken', 'created', 'destroyed', 'local_gameplay_cells'):
         m = re.search(r'\b' + k + r'=(-?\d+)', out)
         d[k] = int(m.group(1)) if m else None
     for k in ('size', 'target', 'body', 'partner_dist'):
@@ -322,13 +322,25 @@ def main():
     food_mismatch = []
     partner_missing = []
     ko_seen = {'host': 0, 'guest': 0}
+    heal = {'host': [0, 0], 'guest': [0, 0]}
+    chase = [0, 0]  # host NPC-steps chasing the host / the guest's cell  # eats while hurt, of them healed
     last_measure = 0.0
     ok = True
     try:
         while time.time() - t0 < a.minutes * 60 and ok:
             now = time.time()
             for p in P:
+                prev = st[p.name]
                 st[p.name] = pool(p.c)
+                cur = st[p.name]
+                # eating heals (AvatarEat: hp += eat.hpValue): an eat while hurt, did hp go up?
+                if (prev.get('own_eats') is not None and cur.get('own_eats') is not None and cur['own_eats'] > prev['own_eats']
+                        and prev['hp'] is not None and 0 < prev['hp'] < 6 and not cur.get('downed')):
+                    heal[p.name][0] += 1
+                    heal[p.name][1] += cur['hp'] > prev['hp']
+                if p.name == 'host':  # the host's NPCs hunt whom (the guest is a puppet there)
+                    chase[0] += cur.get('chasing_me') or 0
+                    chase[1] += cur.get('chasing_partner') or 0
                 was = p.downed
                 p.step(now, st[p.name])
                 if p.downed and not was:
@@ -414,6 +426,11 @@ def main():
         ck(pl and pct(pl, .9) <= 1.5, f'players in sync (p90 {pct(pl, .9):.2f} m)')
         ck(len(partner_missing) <= max(1, len(hist) // 10),
            f'each sees the partner ({len(partner_missing)} misses in {2 * len(hist)} looks: {partner_missing[:6]})')
+        print(f'  damage taken: host {hs["damage_taken"]} hp in {hs["bites_taken"]} bites, guest {gs["damage_taken"]} hp in '
+              f'{gs["bites_taken"]} bites', flush=True)
+        print(f'  host NPCs chasing (samples): the host {chase[0]}, the guest {chase[1]}', flush=True)
+        print(f'  eats while hurt (healed): host {heal["host"][0]} ({heal["host"][1]}), guest {heal["guest"][0]} '
+              f'({heal["guest"][1]})', flush=True)
         print(f'  knockouts: host {ko_seen["host"]} guest {ko_seen["guest"]}; revives {hs["revives"]}/{gs["revives"]}, '
               f'respawns {hs["respawns"]}/{gs["respawns"]}; guest bites sent {gs["hits_sent"]}, host bites applied '
               f'{hs["hits_in"]}; guest eats sent {gs["eats_sent"]}, host eats applied {hs["eats_in"]}', flush=True)

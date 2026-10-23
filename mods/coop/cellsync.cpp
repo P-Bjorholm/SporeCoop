@@ -104,7 +104,7 @@ static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host 
 static std::unordered_set<uint32_t> g_cycle_seen;
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_our_destroy, g_food_guard;
-static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves;
+static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_taken;
 static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged;
 
 // ---------------- both: symbiosis ----------------
@@ -357,6 +357,16 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
         }
         if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
             g_hurt_local++; // a mirror bit us here (the host forwards its own view of the same bite)
+    }
+    if (victim && victim == avatar()) { // damage our own cell takes (diagnostics: is the guest as exposed?)
+        int before = F<int>(victim, kHp);
+        bool r = o_DamageCell(victim, attacker, dir, type, x, dt);
+        int lost = before - F<int>(victim, kHp);
+        if (lost > 0 && !g_downed) {
+            g_bites_taken++;
+            g_damage_taken += lost;
+        }
+        return r;
     }
     return o_DamageCell(victim, attacker, dir, type, x, dt);
 }
@@ -786,6 +796,8 @@ static void hurt_avatar(int dmg, int type)
     if (!a || dmg <= 0 || F<uint8_t>(a, kInvuln) || F<uint8_t>(a, kDying))
         return;
     int old = F<int>(a, kHp), hp = old - dmg;
+    g_bites_taken++;
+    g_damage_taken += std::min(old, dmg);
     if (hp > 0) {
         F<int>(a, kHp) = hp;
         if (a_Rollover && F<uint32_t>(a, 0x248))
@@ -1129,8 +1141,20 @@ std::string debug(const std::vector<std::string>& a)
         return "bite sent";
     }
     char b[320];
-    int local = 0;
-    for_each_cell([&](uint8_t*, uint32_t) { local++; });
+    int local = 0, chase_me = 0, chase_partner = 0;
+    std::unordered_set<uint32_t> partner_idx;
+    if (C.puppets)
+        for (auto& p : C.puppets())
+            if (p.cell)
+                partner_idx.insert(F<uint32_t>(p.cell, 0));
+    for_each_cell([&](uint8_t* c, uint32_t) {
+        local++;
+        uint32_t t = F<uint32_t>(c, 0x22C); // chase target (docs/re/cell.md 1)
+        if (t == avatar_idx())
+            chase_me++;
+        else if (partner_idx.count(t))
+            chase_partner++;
+    });
     float pd = 0;
     nearest_partner(1e9f, nullptr, &pd);
     std::string ko;
@@ -1142,9 +1166,9 @@ std::string debug(const std::vector<std::string>& a)
         ko += kb;
     }
     snprintf(b, sizeof b,
-             "avatar hp=%d own_eats=%u own_food=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "avatar hp=%d own_eats=%u own_food=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d\n",
-             F<int>(av, kHp), g_own_eats, g_own_food, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
+             F<int>(av, kHp), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the unlocked part flags S+0x34 (13 bytes)
@@ -1153,9 +1177,9 @@ std::string debug(const std::vector<std::string>& a)
     if (uint8_t* s = S())
         for (int i = 0; i < 13; i++)
             parts += s[0x34 + i] ? '1' : '0';
-    char ob[128];
-    snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s\n", F<float>(av, kOpacity),
-             cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str());
+    char ob[160];
+    snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n",
+             F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner);
     return b + std::string(ob) + ko + status();
 }
 
