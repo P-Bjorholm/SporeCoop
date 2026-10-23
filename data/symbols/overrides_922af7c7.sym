@@ -78,6 +78,9 @@ Simulator::cCity::SetBuildingModel=0x00BDB920 ; verified thiscall(building, type
 Simulator::cCity::SnapBuildingToSlot=0x00BE3630 ; verified thiscall(building, bool) ret 8
 Simulator::cCity::ChangeOwner=0x00BE8A00 ; verified thiscall(polID, bool, bool) ret 0xC
 Simulator::cCity::Capture=0x00BE9410 ; partly verified thiscall(polID, type, a3, a4, a5) ret 0x14
+Simulator::cCommodityNode::SetOwner=0x00BFF3F0 ; likely thiscall(node, uint32 pol, int reason) ret 8: spice node owner (+0x30 via vt 0x48), clears the buy/convert/capture ids +0x218/+0x21C/+0x220 and progress +0x224..; callers pass -1 (claim/release) or 3 (vehicle capture 0xCB95AD)
+Simulator::cCommodityNode::Claim=0x00BFF800 ; likely thiscall(node, uint32 pol) ret 4: SetOwner(pol, -1), model update 0xBFE650, mine state +0x1EC = 3 (the derrick); called by the claim behaviour 0xBC012F/0xBC0244. Applied on guests from the host snapshot (no money, no event seen at runtime)
+Simulator::cCommodityNode::Unclaim=0x00BFF870 ; likely thiscall(node) plain ret: SetOwner(-1, -1), mine state reset
 Simulator::cVehicle::SetOrder=0x00CAC180 ; verified thiscall(target, type, flag) ret 0xC
 Simulator::cVehicle::SetMoveOrder=0x00CAC260 ; verified thiscall(Vector3 by value, flag) ret 0x10
 Simulator::cVehicle::OrderStamp=0x00C9EFB0 ; partly verified thiscall(v, int) called after orders

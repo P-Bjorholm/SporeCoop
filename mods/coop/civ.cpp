@@ -26,7 +26,7 @@ static bool g_ok;
 constexpr uintptr_t kVehicleVt = 0x014756D8;
 constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
                     kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30;
-constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540;
+constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C;
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uint32_t kMsgActivated = 0x287259F6, kBtnLand = 0x62D6902, kBtnWater = 0x62D6908, kBtnAir = 0x62D690F,
@@ -36,7 +36,8 @@ constexpr uintptr_t kPlannerAddBuildingRet = 0xD1419C;
 static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_PlayerCiv, a_GetMoney, a_SpendMoney,
     a_CreateVehicle, a_SlotsLeft, a_VehicleCost, a_DesignKey, a_DesignId, a_SpawnVehicle, a_AddBuilding,
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
-    a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding;
+    a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
+    a_NodeClaim, a_NodeUnclaim;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -123,7 +124,7 @@ static std::unordered_map<void*, uint16_t> g_gv_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
 static uint16_t g_rx_cycle = 0xFFFF;
 static bool g_applying; // executing a host message: the hooks let the game act
-static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked;
+static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in;
 
 static uint8_t owner_of_vehicle(void* v)
 {
@@ -693,6 +694,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_CreateInstance, "Simulator::cGameNounManager::CreateInstance"},
         {&a_UIMessage, "UI::RolloverCivCity::HandleUIMessage"},
         {&a_CreateBuilding, "Simulator::cCity::CreateBuilding"},
+        {&a_NodeClaim, "Simulator::cCommodityNode::Claim"},
+        {&a_NodeUnclaim, "Simulator::cCommodityNode::Unclaim"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -803,6 +806,22 @@ static void trade_tick(double now)
                  std::to_string(g_trade_total) + " so far)");
 }
 
+// spice nodes (cCommodityNode, noun 0x403DF5C): position and owner political id (-1 free)
+constexpr uint32_t kNodeNoun = 0x403DF5C;
+static std::vector<std::pair<net::Vec3, uint32_t>> spice_nodes()
+{
+    std::vector<std::pair<net::Vec3, uint32_t>> r;
+    game::for_each_object(
+        [](void* o, uint32_t n, void* u) {
+            net::Vec3 p;
+            if (n == kNodeNoun && game::object_alive(o) && game::object_position(o, p))
+                ((std::vector<std::pair<net::Vec3, uint32_t>>*)u)->push_back({p, pol_of(o)});
+            return true;
+        },
+        &r);
+    return r;
+}
+
 static void boost_tick(double now);
 static void host_tick(double now)
 {
@@ -874,6 +893,17 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             w.f32(F<float>(v, kVHp));
+        }
+        // spice nodes and who owns them (chunk 0, once a second): claims happen on the host only
+        if (k == 0) {
+            std::vector<std::pair<net::Vec3, uint32_t>> nodes;
+            if (g_cycle % 10 == 0)
+                nodes = spice_nodes();
+            w.u8((uint8_t)std::min<size_t>(nodes.size(), 64));
+            for (size_t i = 0; i < nodes.size() && i < 64; i++) {
+                w.f32(nodes[i].first.x); w.f32(nodes[i].first.y); w.f32(nodes[i].first.z);
+                w.u32(nodes[i].second);
+            }
         }
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
@@ -1143,6 +1173,26 @@ static void guest_state(net::Reader& r)
         g.v = v;
         g_gv_of[v] = id;
     }
+    if (chunk == 0) { // spice node owners (a guest's derricks appear where the host's vehicles claimed)
+        uint8_t nn = r.u8();
+        for (int i = 0; i < nn && r.ok(); i++) {
+            net::Vec3 p;
+            p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+            uint32_t pol = r.u32();
+            if (!r.ok())
+                break;
+            void* node = game::find_object(kNodeNoun, p, 5.f);
+            if (!node || pol_of(node) == pol)
+                continue;
+            g_applying = true;
+            if (pol == 0xFFFFFFFFu)
+                thiscall<void>(a_NodeUnclaim, node);
+            else
+                thiscall<void>(a_NodeClaim, node, pol);
+            g_applying = false;
+            g_nodes_in++;
+        }
+    }
     if (chunk + 1 < chunks)
         return;
     for (auto it = g_gv.begin(); it != g_gv.end();) {
@@ -1269,9 +1319,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
-                 "orders_dropped=%u growth_blocked=%u\n",
+                 "orders_dropped=%u growth_blocked=%u nodes_in=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
-                 g_captures_in, g_orders_dropped, g_growth_blocked);
+                 g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in);
     return b;
 }
 
@@ -1298,7 +1348,7 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
 std::string list()
 {
     std::string out;
-    char b[220];
+    char b[300];
     if (!g_ok || !nm())
         return out;
     void* pc = player_civ();
@@ -1307,9 +1357,11 @@ std::string list()
         void* c = cities[i];
         net::Vec3 p = city_pos(c);
         uint8_t o = owner_of_city(c);
-        snprintf(b, sizeof b, "city %d %p pol=%08X%s owner=%d buildings=%u pos=(%.0f %.0f %.0f)\n", host_index_of_city(c),
-                 c, pol_of(c), pc && pol_of(c) == pol_of(pc) ? " (player)" : "", o == 0xFF ? -1 : (int)o,
-                 (unsigned)vec_of((uint8_t*)c + 0x340).size(), p.x, p.y, p.z);
+        snprintf(b, sizeof b,
+                 "city %d %p pol=%08X%s owner=%d buildings=%u pos=(%.0f %.0f %.0f) capture=%.0f/%08X convert=%.0f buy=%.0f\n",
+                 host_index_of_city(c), c, pol_of(c), pc && pol_of(c) == pol_of(pc) ? " (player)" : "",
+                 o == 0xFF ? -1 : (int)o, (unsigned)vec_of((uint8_t*)c + 0x340).size(), p.x, p.y, p.z, F<float>(c, 0x748),
+                 F<uint32_t>(c, 0x74C), F<float>(c, 0x750), F<float>(c, 0x758));
         out += b;
     }
     for (void* v : all_vehicles()) {
@@ -1425,8 +1477,71 @@ std::string debug(const std::vector<std::string>& a)
         }
         return build_in_city(city, noun, p, true) ? "built" : "no free slot";
     }
+    if (a.size() >= 1 && a[0] == "nouns") { // nouns [hex noun [TYPE]]: objects per noun, or that noun's objects on screen
+        struct Q {
+            uint32_t noun = 0, type = 0;
+            std::unordered_map<uint32_t, int> count;
+            std::string out;
+            const SkHost* h;
+        } q;
+        q.h = H;
+        if (a.size() >= 2)
+            q.noun = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        if (a.size() >= 3)
+            q.type = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        game::for_each_object(
+            [](void* o, uint32_t n, void* u) {
+                auto* q = (Q*)u;
+                if (!q->noun) {
+                    q->count[n]++;
+                    return true;
+                }
+                net::Vec3 p;
+                if (n != q->noun || !game::object_alive(o) || !game::object_position(o, p) || q->out.size() > 6000)
+                    return true;
+                float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+                if (!q->h->world_to_screen(w, sc))
+                    sc[0] = sc[1] = -1;
+                char line[128];
+                snprintf(line, sizeof line, "obj %p %.0f %.0f %.0f %d %d%s\n", o, p.x, p.y, p.z, (int)sc[0], (int)sc[1],
+                         q->type && !game::cast(o, q->type) ? " (not that type)" : "");
+                q->out += line;
+                return true;
+            },
+            &q);
+        if (q.noun)
+            return q.out;
+        std::string out;
+        for (auto& [n, c] : q.count) {
+            char line[48];
+            snprintf(line, sizeof line, "noun %08X %d\n", n, c);
+            out += line;
+        }
+        return out;
+    }
+    if (a.size() >= 2 && a[0] == "slots") { // slots <host city index>: building plots, where they are on screen
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        std::string out;
+        uint8_t* b = F<uint8_t*>(city, kCitySlots);
+        uint8_t* e = F<uint8_t*>(city, kCitySlots + 4);
+        for (int k = 0; b && b + (k + 1) * 0x18 <= e && k < 32; k++) {
+            uint8_t* s = b + k * 0x18;
+            float* p = (float*)(s + 0xC);
+            float sc[2] = {-1, -1};
+            if (!H->world_to_screen(p, sc))
+                sc[0] = sc[1] = -1;
+            char line[128];
+            snprintf(line, sizeof line, "slot %d %s %.0f %.0f %.0f %d %d\n", k, *(void**)(s + 4) ? "busy" : "free", p[0],
+                     p[1], p[2], (int)sc[0], (int)sc[1]);
+            out += line;
+        }
+        return out;
+    }
     return "usage: coop.civ select <id> <0|1> | move <id> <x> <y> <z> | buy <city> <0 land|1 water|2 air> | "
-           "build <city> <house|factory|fun>";
+           "build <city> <house|factory|fun> | slots <city>";
 }
 
 std::vector<syncdbg::Entry> sync_entries()
