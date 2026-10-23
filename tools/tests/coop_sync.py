@@ -40,6 +40,14 @@ def sample(con):
     return d
 
 
+def seg_dist(p, a, b):
+    """distance from p to the segment a-b"""
+    ab = [y - x for x, y in zip(a, b)]
+    ll = sum(c * c for c in ab)
+    t = 0 if ll == 0 else max(0.0, min(1.0, sum((pc - ac) * c for pc, ac, c in zip(p, a, ab)) / ll))
+    return math.dist(p, [ac + t * c for ac, c in zip(a, ab)])
+
+
 def angle(q1, q2):
     dot = abs(sum(a * b for a, b in zip(q1, q2)))
     n = math.sqrt(sum(a * a for a in q1)) * math.sqrt(sum(b * b for b in q2)) or 1
@@ -99,7 +107,12 @@ def measure(stage):
             kind = k[0]
             e1, e2 = math.dist(gp, h1[k][0]), math.dist(gp, h2[k][0])
             hq = h1[k][1] if e1 <= e2 else h2[k][1]
-            pos.setdefault(kind, []).append(min(e1, e2))
+            # the guest was read between the two host reads: compare with the host's path between
+            # them (fast ships move metres between two console calls)
+            e = seg_dist(gp, h1[k][0], h2[k][0])
+            pos.setdefault(kind, []).append(e)
+            if e > 50:  # print the big ones: which object, when, where on both sides
+                print(f'    big: {k} {e:.0f} m at sample {i}: host {h1[k][0]} / {h2[k][0]}, guest {gp}', flush=True)
             rot.setdefault(kind, []).append(angle(gq, hq))
             keys.setdefault(kind, set()).add(k)
         time.sleep(0.5)

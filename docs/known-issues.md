@@ -161,10 +161,11 @@ Fixed entries move to the commit message (and a test).
 
 * 2026-10-23, 4 runs: ships p90 7.4-10.6 m (one run over the limit), single samples up to 690 m.
   Ships fly fast and the test reads host and guest one after the other, so most of it is the time
-  between the two reads plus the interpolation delay; the 690 m sample is one frame of a ship that
-  was just spawned or removed (play_space.py saw one 412 m sample in 2 h). The p90 of real play is
-  1.2-8.3 m (docs/stability/space.md). Fix the test (bracket the guest read with two host reads like
-  coop_multi.py, compare against the nearer) before tightening anything.
+  between the two reads plus the interpolation delay; the 690 m sample is the first sample after the start:
+  the host's new ship still stands at its default spot (0, 0, 699) for that moment (play_space.py
+  saw one 412 m sample in 2 h). The p90 of real play is
+  1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
+  its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
 
 ## Not covered by tests yet
 
