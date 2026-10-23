@@ -42,10 +42,14 @@ Test runs don't get in the way of whoever is at the computer:
   (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x3240
   virtual monitor; its Xwayland display is passed to Bottles). Nothing appears on the user's
   desktop and the games keep drawing at 30 fps. SporeKit places each window in its own cell of a
-  4x3 grid (`[sporekit] test_monitor = grid`, instances 13+ reuse cells). Keep the 5760x3240 monitor:
+  grid that fills the screen (`[sporekit] test_monitor = grid`: two 5760x3240 monitors, 8x3 cells, so
+  every instance of lanes 1-8 has its own; a covered game window lags). Keep 5760x3240 per monitor:
   on 5760x4320 Wine offers no 1440x1080 and the games come up at 1920x1080 (fixed click coordinates
   then miss). `headless.sh` takes the display from its live Xwayland, never from a log: a stale
-  display once made Bottles fall back to the user's desktop. Do not move test
+  display once made Bottles fall back to the user's desktop. The bus of the headless session must get
+  its runtime folder too (env before dbus-run-session): its document portal otherwise mounts on the real
+  /run/user/$UID/doc and unmounts it when stopped, and Bottles fails with "Can't find source path
+  .../doc/by-app/com.usebottles.bottles" (fix: `systemctl --user restart xdg-document-portal`). Do not move test
   windows to a hidden workspace of the real desktop: GNOME sends them no frame callbacks, DXVK waits
   and the game stops at frame 1. `SPORE_HEADLESS=0` shows the games on the desktop (then SporeKit
   moves them to a non-primary monitor: `test_monitor = auto|primary|off`). `tools/headless.sh down`
