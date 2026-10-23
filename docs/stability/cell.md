@@ -24,7 +24,7 @@ driven by the same bot, each with its own seeded random generator, about 3 decis
 * **Measures** every 10 s with console commands: food on both machines (must be equal), every
   synced cell's position on the guest vs the host (`coop.sync`, the coop_sync.py method: the closer
   of two host samples around the guest sample), players' positions, the partner seen by both,
-  knockouts, revives, respawns, each player's own eats (`own_eats`/`own_food`), damage taken,
+  knockouts, revives, respawns, each player's own eats (`own_eats`/`own_points`), damage taken,
   which player the host's NPCs chase, eats while hurt (does eating heal), freezes / crashes
   (twoinst monitors) and caught faults (`exc`).
 * **Checks**: the games kept running; the pair made progress (food +20); both ate by themselves;
@@ -99,7 +99,7 @@ outside: the shared X server `:2` went away / was restarted, `XIO: fatal IO erro
 
 ## Notes for the next person
 
-* `coop.pool` now prints `own_eats`, `own_food`, `bites_taken`, `damage_taken`, `cine`, `parts`,
+* `coop.pool` now prints `own_eats`, `own_points`, `bites_taken`, `damage_taken`, `cine`, `parts`,
   `chasing_me` / `chasing_partner` and (guest) `pairs_skipped`, `kept`, `puppet_saves`,
   `puppet_new`, `soft_moves`, `wipes`; `coop.pool see [n]`, `coop.pool cell <key>`,
   `coop.pool why`.

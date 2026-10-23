@@ -48,7 +48,7 @@ def pool(con):
     out = con.call('coop.pool')['out']
     d = {'raw': out}
     for k in ('hp', 'food', 'downed', 'revives', 'respawns', 'mirrors', 'hits_in', 'hits_sent', 'eats_in',
-              'eats_sent', 'purged', 'pairs_skipped', 'hurt_local', 'hurt_fwd', 'kept', 'own_eats', 'own_food', 'puppet_new', 'puppet_saves', 'chasing_me', 'chasing_partner', 'bites_taken', 'damage_taken', 'created', 'destroyed', 'local_gameplay_cells'):
+              'eats_sent', 'purged', 'pairs_skipped', 'hurt_local', 'hurt_fwd', 'kept', 'own_eats', 'own_points', 'puppet_new', 'puppet_saves', 'chasing_me', 'chasing_partner', 'bites_taken', 'damage_taken', 'created', 'destroyed', 'local_gameplay_cells'):
         m = re.search(r'\b' + k + r'=(-?\d+)', out)
         d[k] = int(m.group(1)) if m else None
     for k in ('size', 'target', 'body', 'partner_dist'):
@@ -371,7 +371,7 @@ def main():
                       f'partner {hs["partner_dist"]}/{gs["partner_dist"]} m, cells {common}/{host_cells} in common, '
                       f'cell err p90 {pct(c, .9):.2f} max {max(c or [0]):.2f}, players p90 {pct(pe.get("p", []), .9):.2f}, '
                       f'revives {hs["revives"]}/{gs["revives"]} respawns {hs["respawns"]}/{gs["respawns"]} '
-                      f'own food {hs["own_food"]}/{gs["own_food"]}', flush=True)
+                      f'own food {hs["own_points"]}/{gs["own_points"]}', flush=True)
             if Monitor.events:
                 ok = False
             time.sleep(0.15)
@@ -404,9 +404,9 @@ def main():
         ck(not food_mismatch, f'food progress equal on both machines ({len(hist) - len(food_mismatch)}/{len(hist)} checks; '
            f'mismatches {food_mismatch[:5]})')
         ck(hs['food'] == gs['food'], f'and at the end ({hs["food"]} / {gs["food"]})')
-        ck((hs['own_food'] or 0) > 0 and (gs['own_food'] or 0) > 0,
-           f'both ate by themselves (host {hs["own_eats"]} items / {hs["own_food"]} points, guest {gs["own_eats"]} / '
-           f'{gs["own_food"]})')
+        ck((hs['own_points'] or 0) > 0 and (gs['own_points'] or 0) > 0,
+           f'both ate by themselves (host {hs["own_eats"]} items / {hs["own_points"]} points, guest {gs["own_eats"]} / '
+           f'{gs["own_points"]})')
         # regression: the guest reported every cell its game removed (level change, poison culling, ...)
         # as eaten and the host destroyed them: ~1300 reports in 10 minutes (136 a minute) for ~30 real
         # eats. Now only cells its avatar touched: eats plus small cells swallowed whole (no food

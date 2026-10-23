@@ -1170,7 +1170,7 @@ std::string debug(const std::vector<std::string>& a)
         ko += kb;
     }
     snprintf(b, sizeof b,
-             "avatar hp=%d own_eats=%u own_food=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "avatar hp=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d\n",
              F<int>(av, kHp), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local);

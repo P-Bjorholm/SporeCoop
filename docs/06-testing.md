@@ -141,6 +141,9 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
   `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
   inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
   partner cell was there and exact — it looked like a missing puppet / timing bug.
+* `coop_cell.py` reads `coop.pool` keys with `re.search(key + '=(-?\d+)')` (no word boundary): a new
+  field whose name ends in an old key (`own_food=` before `food=`) is read instead of it. On
+  2026-10-23 that turned "shared food progress" into "0 -> 0"; the field is `own_points=` now.
 * Cross-check before hunting a "missing puppet": the `remote … puppet=<ptr>` value, and in the cell
   stage `local_gameplay_cells` (counts every foreground cell except the own avatar) = mirrors + 1
   when the partner's cell exists.
