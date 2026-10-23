@@ -3,16 +3,13 @@
 Bugs found and not fixed yet. Each entry: what happens, how to reproduce it, what is known.
 Fixed entries move to the commit message (and a test).
 
-## Loading a save of another stage while in the Space stage crashes
+## Guest: rare first-chance fault in a planet render while a world loads
 
-* **What:** the game crashes in `cStar::GetSolarSystem` (null star) when a save of the Cell stage
-  is loaded in game while the Space stage is running.
-* **Reproduce:** `tools/tests/warm_check.py` (tribe → civ → space → cell warm switches); seen
-  2026-10-22 in lane 2: `exception 0xC0000005 at 0x00C8B8F3 Simulator::cStar::GetSolarSystem+0x3`.
-* **Players:** a guest in Space whose host then loads an earlier-stage save receives that world and
-  loads it in game → the same crash.
-* **Idea:** leave to the galaxy menu first when the received world is of another stage (world.cpp);
-  tribe → civ → space switches in game work.
+* `exception 0xC0000005 at 0x00FB89D0 cTerrainStateMgr_GetTemperatureScore` (data 0x30, caller
+  0xF9E5EC: a planet render gets a null terrain state), guest only, while it loaded a received world
+  from the galaxy menu (2 of ~30 switches in `coop_stage_switch.py`, 2026-10-22). The game survives
+  it. Not seen in 14 switches since `world.cpp` starts the load outside the frame; if it comes back:
+  docs/re/space.md 8.2, and compare with the host (never seen there).
 
 ## Cell: the partner's cell is sometimes missing after the join
 

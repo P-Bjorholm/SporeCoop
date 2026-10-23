@@ -32,6 +32,10 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   `kMsgSaveGame` 0x1CD20F0 message the menu button uses, via `MessagePost`), waits for the files
   to be written (2.5 s) and sends the save folder. The guest puts it into a free slot and loads
   the planet the host named. One slot can contain several planets.
+* A world (or `coop.load`) that arrives while a stage runs is loaded through the galaxy menu: the
+  game's quit message 0x4715068 saves and leaves the stage, the save is loaded ~3 s after the menu
+  is up (`world.cpp load_slot`). Loading straight from a stage crashed from Space (null active
+  star, docs/re/space.md 8) and misbehaved from Cell; test `coop_stage_switch.py`.
 * Space: the game only saves when off-planet. If the host is on a planet, the guest waits and the
   host sees "a player is waiting for the world: leave the planet to save". Forcing a save on a
   planet was tried and rejected: such a save loads with UI errors every frame (0xEBDD12)
