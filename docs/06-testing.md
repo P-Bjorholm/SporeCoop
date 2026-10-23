@@ -193,7 +193,11 @@ Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
   frame; `click` jumps the cursor and presses 3 frames later, which often still hits whatever was
   under the old cursor position (the ground: a walk order). `move x y`, ~0.4 s, then `click x y
   right` picked fruit trees 37 of 40 times (base point, 10 and 20 px above it); without the move
-  about 1 in 3. Trees on the horizon (y < ~280) rarely pick at all.
+  about 1 in 3. `world_to_screen` also projects points hidden behind hills and the horizon: a
+  bot filters targets by the distance column of `coop.targets objs` (metres from the planet point
+  under the mouse: `move` the mouse to the middle first), e.g. < 90 m for trees around the village.
+  Objects in front (the fire pit, the hut, members) take the click instead: skip targets within
+  ~70 px of them.
 * Camera: the arrow keys pan (~30 m/s), the wheel zooms, a right-drag rotates. The Home key does
   nothing in the tribe stage and **`H` opens the Spore Guide**, which swallows every later click
   (close it at `click 1338 59`). The minimap is the way to look somewhere: a click there centres

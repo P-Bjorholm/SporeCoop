@@ -79,14 +79,16 @@ def food(con):
 
 
 def screen(con):
-    """things on screen: [(key, x, y)]: member<id>, t<id>, n<id>, tree, o2C9CC91 (food plant), hut<i>[p]"""
+    """things on screen: [(key, x, y, dist)]: member<id>, t<id>, n<id>, fruittree, tree, hut<i>[p],
+    tribe<i>[p], o<noun>; dist = metres from the planet point under the mouse (-1: unknown).
+    Points behind hills and the horizon are listed too: filter far ones by dist."""
     out = []
     for line in con.call('coop.targets objs')['out'].splitlines():
         f = line.split()
         if len(f) == 5 and f[0] == 'member':
-            out.append(('member' + f[1], int(f[3]), int(f[4])))
+            out.append(('member' + f[1], int(f[3]), int(f[4]), -1.0))
         elif len(f) == 5 and f[0] == 'obj':
-            out.append((f[1], int(f[3]), int(f[4])))
+            out.append((f[1], int(f[3]), int(f[4]), float(f[2])))
     return out
 
 
@@ -155,12 +157,12 @@ class Player:
         x, y = x + (b1 * a22 - b2 * a12) / det, y + (a11 * b2 - a12 * b1) / det
         return min(205, max(15, x)), min(1025, max(940, y))
 
-    def look(self, w):
+    def look(self, w, tol=30):
         """centre the view on a world point through the minimap (a linear map from the calibration,
         then one correction from where the view went)"""
         if not self.J:
             return False
-        if getattr(self, 'cur', None) and math.dist(self.cur, w) < 30:
+        if getattr(self, 'cur', None) and math.dist(self.cur, w) < tol:
             return True
         x, y = self.solve(w, *self.base)
         for _ in range(2):
@@ -168,7 +170,7 @@ class Player:
             if not c:
                 return False
             self.cur = c
-            if math.dist(c, w) < 30:
+            if math.dist(c, w) < max(tol, 30):
                 self.note('look')
                 return True
             x, y = self.solve(w, x, y, c)
@@ -185,7 +187,7 @@ class Player:
             xs, ys = [o[1] for o in own], [o[2] for o in own]
             box = (min(xs) - 30, min(ys) - 45, max(xs) + 30, max(ys) + 25)
         else:
-            _, x, y = self.rng.choice(own)
+            _, x, y, _ = self.rng.choice(own)
             box = (x - 35, y - 55, x + 35, y + 25)
         x1, y1, x2, y2 = max(5, box[0]), max(65, box[1]), min(self.w - 65, box[2]), min(self.h - 130, box[3])
         if x2 - x1 < 10 or y2 - y1 < 10:
@@ -291,22 +293,33 @@ class Game:
                 pl.note(kind + '_nothing')
                 return self.pause(pl)
             pl.look(where)
-            tg = [o for o in pl.on_screen(screen(pl.con)) if pick(o)]
+            if kind == 'gather':
+                pl.centre()  # the mouse in the middle: the listed distances are from there
+            objs = screen(pl.con)
+            tg = [o for o in pl.on_screen(objs) if pick(o)]
             if not tg:
                 pl.note(kind + '_nothing')
                 return self.pause(pl)
             if kind in ('raid', 'social', 'epic'):
                 pl.mode(0 if kind == 'social' else 1)
-            if kind == 'gather':  # the food plants nearest to the village: the food comes home sooner
-                tg = [o for o in tg if o[2] > 280] or tg  # not on the horizon: those rarely pick
+            if kind == 'gather':  # a fruit tree in the open: not behind the fire, the hut, members
+                busy = [o for o in objs if o[0].startswith(('hut', 'member', 't', 'o18C8F0C', 'o18C6D19', 'o629BAFE',
+                                                            'o55CF865', 'o18C431C')) and o[0] != 'tree']
+                tg = [o for o in tg if o[3] < 90 and all(math.hypot(o[1] - b[1], o[2] - b[2]) > 70 for b in busy)]
                 tg.sort(key=lambda o: math.hypot(o[1] - self.w / 2, o[2] - self.h / 2))
-                tg = tg[:5]
+                tg = tg[:4]
             if kind == 'raid':
                 hits = self.attacked.setdefault(enemies[0], {})
                 hits[pl.pid] = time.time()
                 if len([t for t in hits.values() if time.time() - t < 10]) >= 2:
                     self.both_attacked += 1
-            self.click_order(pl, kind, sel, rng.choice(tg), busy={'gather': 40, 'hunt': 25, 'heal': 30}.get(kind, 30))
+            busy = {'gather': 40, 'hunt': 25, 'heal': 30}.get(kind, 30)
+            if kind == 'gather':  # another tree when the pick misses
+                for t in tg[:3]:
+                    if self.click_order(pl, kind, sel, t, busy):
+                        break
+            else:
+                self.click_order(pl, kind, sel, rng.choice(tg), busy)
         elif kind == 'partner':  # real clicks on the partner's members: they must never get selected
             pm = [o for o in pl.on_screen(screen(pl.con)) if o[0].startswith('member') and int(o[0][6:]) in partner]
             if not pm and partner:
@@ -314,7 +327,7 @@ class Game:
                 pm = [o for o in pl.on_screen(screen(pl.con)) if o[0].startswith('member') and int(o[0][6:]) in partner]
             if not pm:
                 return self.pause(pl)
-            k, x, y = rng.choice(pm)
+            k, x, y, _ = rng.choice(pm)
             how = rng.choice(['click', 'box', 'right'])
             if how == 'click':
                 pl.do(f'click {x} {y}')
@@ -384,10 +397,8 @@ class Game:
 
     def target_for(self, pl, kind, st, centres, enemies):
         """(world point to look at, which screen object to right-click)"""
-        if kind == 'gather':
+        if kind == 'gather':  # fruit trees around the village
             return centres.get('p'), lambda o: o[0] == 'fruittree'
-        if kind == 'heal':  # eat at the own food mat (CitizenAction 0): hurt members heal there
-            return centres.get('p'), lambda o: o[0] == 'o629BAFE'
         if kind in ('raid', 'social'):
             if not enemies:
                 return None, None
@@ -441,10 +452,10 @@ class Game:
             pl.note('missed_pick')
         if act is None:
             pl.orders['none'] += 1
-            return
+            return False
         if act == 'walk' and kind != 'walk':
             pl.orders['none'] += 1  # only walks: the pick missed every time
-            return
+            return False
         acts = pl.actions.setdefault(kind, {})
         acts[act] = acts.get(act, 0) + 1
         for i in sel:
@@ -454,6 +465,7 @@ class Game:
         pl.pending.append(dict(due=time.time() + 8, kind=kind, sel=sel, tgt=tgt[0], last=last, hp=hp,
                                rej=counter(status(self.host), 'rejected'),
                                pos={i: hs[i]['pos'] for i in sel if i in hs}))
+        return True
 
     def target_hp(self, key):
         if key[0] == 't':
