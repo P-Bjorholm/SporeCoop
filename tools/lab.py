@@ -135,6 +135,9 @@ def cmd_run(a):
     head = git('log', '-1', '--format=%h %s', cwd=tree)
     skip = {int(x) for x in a.skip.split(',') if x.strip()}
     a.lane_ids = [n for n in range(1, 9) if n not in skip][:a.lanes]
+    # a lane for tests that take a whole lane of their own outside the run (update_check.py wipes
+    # the mod from its lane): neither used by this run nor by other work (--skip); '' = none
+    os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 9) if n not in a.lane_ids and n not in skip), ''))
     print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} ({head})')
     if not a.no_build:
         build(tree)

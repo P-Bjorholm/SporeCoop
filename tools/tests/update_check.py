@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The installer and the in-game update, end to end, on a clean copy of the game (lane 6 by default:
-one game, its own bottle; only TCP console port 47810 + ... is used, not the co-op UDP ports):
+one game, its own bottle; only TCP console port 47810 + ... is used, not the co-op UDP ports; in the
+lab a lane that is neither in the run nor skipped):
 
   1. the lane gets the game's original files back (no SporeCoop)
   2. SporeCoopSetup.exe /S installs the current build (pack from tools/package.sh)
@@ -104,8 +105,14 @@ def wine(bottle, exe, *args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--lane', type=int, default=6)
+    # the lab gives a lane outside its run (SPORE_FREE_LANE, '' = none free); by hand: lane 6
+    free = os.environ.get('SPORE_FREE_LANE')
+    ap.add_argument('--lane', type=int, default=int(free) if free else 6)
     a = ap.parse_args()
+    if free == '' and '--lane' not in sys.argv:
+        print('RESULT: SKIP (no lane outside this lab run is free: this test wipes the mod from its lane)')
+        return 0
+    assert a.lane > 1, 'never the real install (lane 1)'
     lane, ck = a.lane, Checks()
     env = dict(os.environ, SPORE_LANE=str(lane))
     spore = lambda *x: subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), *x], env=env,  # noqa: E731
