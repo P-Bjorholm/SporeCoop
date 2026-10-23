@@ -102,8 +102,13 @@ def wait_all(host, want, timeout=150):
     return False
 
 
+def mode(con):
+    return con.call('game.mode')['out'].strip().split('\n')[0].split(' ', 1)[-1][:20]
+
+
 def check_round(ck, host, guests, label, report):
     """desync / coverage / resources of every guest against the host"""
+    report.append(f'  [{label}] modes: host {mode(host)}, ' + ', '.join(f'{n} {mode(g)}' for n, g in guests.items()))
     h1 = sample(host)
     worst = {}
     for name, g in guests.items():
