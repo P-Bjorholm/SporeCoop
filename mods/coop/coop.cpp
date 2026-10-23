@@ -1765,6 +1765,18 @@ std::string targets(int all)
                         q->seen->push_back({"tree", net::dist(p, q->me), (int)sc[0], (int)sc[1]});
                 },
                 &o);
+            // tribe centres also off screen (a bot pans the camera towards them): "tribe<i>[p] -1 x y"
+            tribe::for_each_tribe_center(
+                [](const std::string& key, const net::Vec3& p, void* u) {
+                    auto* q = (O*)u;
+                    // world_to_screen fills the point for anything in front of the camera, even off screen
+                    float w[3] = {p.x, p.y, p.z}, sc[2] = {-1e9f, -1e9f};
+                    H->world_to_screen(w, sc);
+                    if (sc[0] > -1e8f) // listed first (distance -1): never cut off by the limit
+                        q->seen->push_back({key, -1.f, (int)std::clamp(sc[0], -99999.f, 99999.f),
+                                            (int)std::clamp(sc[1], -99999.f, 99999.f)});
+                },
+                &o);
         }
         // the nearest first, at most 80 (a console answer holds 8 KB; the tide pool has ~400 cells)
         std::sort(seen.begin(), seen.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });

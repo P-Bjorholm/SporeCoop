@@ -128,6 +128,16 @@ static void* find_tree(const net::Vec3& pos, float max_dist)
     return best;
 }
 
+void for_each_tribe_center(void (*fn)(const std::string& key, const net::Vec3& pos, void* user), void* user)
+{
+    if (!g_ok)
+        return;
+    void* pt = player_tribe();
+    auto tribes = all_tribes();
+    for (size_t i = 0; i < tribes.size(); i++)
+        fn("tribe" + std::to_string(i) + (tribes[i] == pt ? "p" : ""), tribe_pos(tribes[i]), user);
+}
+
 void for_each_tree_pos(void (*fn)(const net::Vec3& pos, void* user), void* user)
 {
     if (g_ok)

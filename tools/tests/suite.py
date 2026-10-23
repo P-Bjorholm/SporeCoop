@@ -53,6 +53,8 @@ add('update', P + 'update_check.py', minutes=6)  # its own lane 6, one game
 add('chaos_tribe', P + 'coop_chaos.py --fixture tribe --minutes 2', ('smoke',), minutes=3)
 for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 6)):
     add(f'chaos_{st}_long', P + f'coop_chaos.py --fixture {st} --minutes {m}', ('nightly',), minutes=m + 1)
+# games played by bots through real input for many minutes (docs/stability/<stage>.md)
+add('play_tribe', P + 'play_tribe.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='tribe')
 # the same tests over a bad network between guest and host (tools/tests/netem.py)
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):
