@@ -18,7 +18,7 @@ Editors::cEditor::GetFinishState=0x0057AAA0 ; verified (disassembly + runtime) t
 Editors::cEditor::Exit=0x0058A350 ; verified runtime thiscall(editor, int how (0 commit, 1 accept and leave, 2 cancel), int, int) ret 0xC: done in a creature-stage editor calls (1, 2, 1) -> 0x57E8A0
 Editors::EditorUI::OnExitButton=0x005DF4B0 ; verified runtime thiscall(ui, int command (0x102 = done), int) ret 8: asks GetFinishState, then leaves (0x5DEC50) or shows the first blocking error (0x5DCA40)
 Editors::EditorUI::RunExitCommand=0x005DEC50 ; verified (disassembly + runtime) thiscall(ui, int command 0x100..0x107) ret 4: 0x102 = done -> Exit(1, 2, 1) (or a confirmation dialog when ui+0xEC)
-Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14
+Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14; (dmg, attackerPol, type, const Vector3* push, attacker): push = knockback impulse, (0,0,0) in bites/strikes (type 2, runtime log); pays kill DNA at 0xC07BAC only for an avatar attacker (docs/re/creature.md 2)
 Simulator::cCreatureBase::PlayAnimation=0x00C12430 ; verified REA + ret 0xC (animID, block, disableBlend)
 Simulator::cCreatureBase::PlayAnimationTo=0x00C14AE0 ; verified ret 0x10
 SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified REA (cTimeOfDay::SetTimeOfDay): cdecl() -> spatial object whose orientation is the time of day

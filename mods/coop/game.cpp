@@ -75,8 +75,11 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
 {
     if (!o_TakeDamage)
         return;
-    Vector3 pos = field<Vector3>(c, kPosOff);
-    o_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &pos,
+    // the vector is the hit's push (knockback): the game passes (0,0,0) for bites and strikes.
+    // It used to be the creature's position (|v| ~ 505): every forwarded hit threw the creature,
+    // a kill ~80 m up (play_creature.py 2026-10-23, docs/re/creature.md 3)
+    Vector3 push{};
+    o_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
                  attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
 }
 
@@ -148,8 +151,8 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist)
 
 void hit(void* c, float dmg, int type, void* attacker)
 {
-    Vector3 pos = field<Vector3>(c, kPosOff);
-    h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &pos,
+    Vector3 push{}; // no knockback, like a bite (see apply_damage)
+    h_TakeDamage((uint8_t*)c + kCombatOff, dmg, attacker ? political_id(attacker) : 0xFFFFFFFFu, type, &push,
                  attacker ? (uint8_t*)attacker + kCombatOff : nullptr);
 }
 static uintptr_t a_PlayAnim, a_PlayAnimTo;
@@ -437,5 +440,6 @@ void puppet_unregister(void* c)
 }
 
 bool is_puppet(void* c) { return std::find(g_puppets.begin(), g_puppets.end(), c) != g_puppets.end(); }
+const std::vector<void*>& puppets() { return g_puppets; }
 
 } // namespace game

@@ -283,7 +283,10 @@ static void guest_tick(double now)
         drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
-            game::apply_damage(px.c, 1e6f, 0, nullptr); // play the death locally
+            // play the death locally with a just-lethal hit: the knockback grows with the damage
+            // (1e6 threw the corpse ~150 m up, it hung 15-80 m away from the host's corpse for
+            // the rest of its life: play_creature.py 2026-10-23)
+            game::apply_damage(px.c, std::max(game::health(px.c), 0.f) + 0.5f, 0, nullptr);
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
     }

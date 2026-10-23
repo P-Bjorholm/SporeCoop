@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Creature co-op mechanics on two instances (docs/09-coop-design.md):
 joint hunt bonus, the pack saves a player from a lethal hit, pack regeneration."""
+import math
 import re
 import time
 
+from coop_sync import sample
 from twoinst import Checks, shot, start
 
 
@@ -86,15 +88,25 @@ def main():
             if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
     dna = lambda c: float(re.search(r'dna=([\d.]+)', c.call('coop.dna')['out']).group(1))  # noqa: E731
     d0 = dna(host)
+    killed = before = None
     for cand in prey[:3]:
+        before = sample(host).get('n' + cand)
         guest.call(f'coop.npc hit {cand} 100000')
         time.sleep(1.5)
         if dna(host) > d0:
+            killed = 'n' + cand
             break
     d1 = dna(host)
-    time.sleep(1)
+    time.sleep(2)
     ck(d1 > d0, f'a kill by the guest pays DNA: host {d0} -> {d1} (prey {prey[:3]})')
     ck(abs(dna(guest) - d1) < 0.5, f'the guest has the same DNA ({dna(guest)})')
+    # the corpse stays where the animal fell, the same on both (a forwarded hit used to push with
+    # the victim's position as the impulse: the corpse flew ~80 m up, on the guest it stayed there)
+    hs, gs = sample(host).get(killed), sample(guest).get(killed)
+    if killed and before and hs and gs:
+        moved, apart = math.dist(before[0], hs[0]), math.dist(hs[0], gs[0])
+        ck(moved < 5 and apart < 3, f'the corpse lies where it fell ({moved:.1f} m) and in the same place '
+                                    f'on both ({apart:.1f} m apart)')
     print('  host :', host.call('coop.team')['out'].splitlines()[-1])
     print('  guest:', guest.call('coop.team')['out'].splitlines()[-1])
     shot(host, 'team_host.png')
