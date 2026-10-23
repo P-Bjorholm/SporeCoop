@@ -111,6 +111,8 @@ class Player:
         self.orders = {'ok': 0, 'lost': 0, 'idle': 0, 'none': 0}  # none: the click gave no order
         self.busy = {}               # member -> busy until (a real player lets a gatherer work)
         self.J = None                # minimap calibration
+        self.zoom = 0                # wheel notches from the start view
+        self.actions = {}            # kind -> {CitizenAction id the click became: count}
 
     def do(self, line):
         self.log.append(f'{time.strftime("%H:%M:%S")} {self.name}: {line}')
@@ -296,6 +298,7 @@ class Game:
             if kind in ('raid', 'social', 'epic'):
                 pl.mode(0 if kind == 'social' else 1)
             if kind == 'gather':  # the food plants nearest to the village: the food comes home sooner
+                tg = [o for o in tg if o[2] > 280] or tg  # not on the horizon: those rarely pick
                 tg.sort(key=lambda o: math.hypot(o[1] - self.w / 2, o[2] - self.h / 2))
                 tg = tg[:5]
             if kind == 'raid':
@@ -330,8 +333,12 @@ class Game:
         elif kind == 'camera':
             what = rng.choice(['wheel', 'wheel', 'pan', 'rotate'])
             pl.cur = None
-            if what == 'wheel':
-                pl.do(f'wheel {self.w // 2} {self.h // 2} {rng.choice([-3, -2, 2, 3])}')
+            if what == 'wheel':  # zoom, but not so close that the village leaves the view
+                n = rng.choice([-3, -2, 2, 3])
+                n = max(-4 - pl.zoom, min(2 - pl.zoom, n))
+                if n:
+                    pl.zoom += n
+                    pl.do(f'wheel {self.w // 2} {self.h // 2} {n}')
             elif what == 'pan':
                 k = rng.choice(['0x25', '0x26', '0x27', '0x28'])  # arrow keys
                 pl.do(f'key {k} down')
@@ -366,6 +373,11 @@ class Game:
         if not central:
             pl.look(st[m]['pos'])
             objs = screen(pl.con)
+            if not any(o[0] == f'member{m}' for o in pl.on_screen(objs)) and pl.zoom > -4:
+                pl.do(f'wheel {self.w // 2} {self.h // 2} -2')  # too close to see it: zoom out
+                pl.zoom -= 2
+                time.sleep(0.8)
+                objs = screen(pl.con)
         if group:
             return pl.select(idle, objs, group=True)
         return pl.select([m], objs)
@@ -408,14 +420,29 @@ class Game:
         return True
 
     def click_order(self, pl, kind, sel, tgt, busy):
-        before = pl.last_order()
-        dy = -6 if tgt[0] in ('tree', 'o2C9CC91') else 0
-        pl.do(f'click {tgt[1]} {tgt[2] + dy} right')
-        time.sleep(0.8)
-        last, n = pl.last_order()
-        if n == before[1]:  # the click gave no order (missed the target, hit the UI)
+        """right-click the target; a click that misses the target's model hits the ground (a walk):
+        a player then clicks a bit higher (on the trunk, the body)"""
+        last, n, act = '', None, None
+        for dy in ((0,) if kind == 'walk' else (-8, -22, 0, -40)):
+            before = pl.last_order()
+            pl.do(f'click {tgt[1]} {tgt[2] + dy} right')
+            time.sleep(0.8)
+            last, n = pl.last_order()
+            if n == before[1]:
+                continue  # the click gave no order at all (the UI, the sky)
+            m = re.search(r'action=(\d+)', last)
+            act = 'walk' if ('walk' in last or 'kind=1' in last) else (m.group(1) if m else '?')
+            if act != 'walk' or kind == 'walk':
+                break
+            pl.note('missed_pick')
+        if act is None:
             pl.orders['none'] += 1
             return
+        if act == 'walk' and kind != 'walk':
+            pl.orders['none'] += 1  # only walks: the pick missed every time
+            return
+        acts = pl.actions.setdefault(kind, {})
+        acts[act] = acts.get(act, 0) + 1
         for i in sel:
             pl.busy[i] = time.time() + busy
         hs = tribe_state(self.host)
@@ -567,7 +594,7 @@ def main():
           + ' '.join(f'{(t - t0) / 60:.1f}:{k}' for t, k in g.phases), flush=True)
     for p in g.p:
         print(f'  {p.name}: ' + ' '.join(f'{k}={v}' for k, v in sorted(p.count.items())), flush=True)
-        print(f'  {p.name} orders: {p.orders}', flush=True)
+        print(f'  {p.name} orders: {p.orders}; actions the clicks became: {p.actions}', flush=True)
     fs = [f for _, f, _ in g.food]
     print(f'  food: start {food0}, end {fs[-1] if fs else "?"}, max {max(fs) if fs else "?"}, '
           f'rises {g.food_rises}, samples {len(fs)}, host/guest mismatches {g.food_mismatch}', flush=True)
