@@ -68,11 +68,12 @@ tools/spore.sh logs                              # tail of sporekit.log
 
 | Level | What | How |
 |---|---|---|
-| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, interpolation | `make test` |
+| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation | `make test` |
 | In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
 | Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
 | Modes | any mode from a fixture: guest joins from the menu, receives and loads the world, both puppets, movement | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Planet`, `coop_mode.py --adventure` |
+| Bad network | the guest leaves and joins again (even rounds lose the goodbye), timings of handshake, world transfer and reload | `SPORE_NET=awful python3 tools/tests/coop_rejoin_net.py --rounds 4` |
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
 ## 6.5 Startup speed

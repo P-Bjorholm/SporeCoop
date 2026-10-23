@@ -235,6 +235,91 @@ static void test_session()
     CHECK(why.find("build") != std::string::npos);
 }
 
+// a UDP relay between guests and the host (like tools/tests/netem.py or a NAT that keeps its mapping):
+// everything from the guests reaches the host from ONE address and port
+struct Relay {
+    UdpSocket a, b; // a faces the guests, b faces the host
+    Endpoint host, guest;
+    bool drop = false;
+    std::vector<std::vector<uint8_t>> up; // what went to the host (for replays)
+    Relay(uint16_t host_port)
+    {
+        a.open(0);
+        b.open(0);
+        Endpoint::parse("127.0.0.1", host_port, host);
+    }
+    void pump()
+    {
+        uint8_t buf[2048];
+        Endpoint from;
+        for (int n; (n = a.recv_from(from, buf, sizeof buf)) > 0;) {
+            guest = from;
+            up.emplace_back(buf, buf + n);
+            if (!drop)
+                b.send_to(host, buf, n);
+        }
+        for (int n; (n = b.recv_from(from, buf, sizeof buf)) > 0;)
+            if (!drop && guest.port)
+                a.send_to(guest, buf, n);
+    }
+};
+
+// a guest whose goodbye got lost joins again through the same relay: the host sees the same address
+// and port; the new HELLO used to land in the old (accepted) peer and was dropped as a duplicate,
+// the old peer never timed out (the new connection kept it alive): the guest never got back in
+static void test_rejoin_same_endpoint()
+{
+    printf("rejoin through a relay (same address for the host), goodbye lost\n");
+    Session host;
+    int joins = 0, leaves = 0, chats = 0;
+    host.cb.player_join = [&](const PlayerInfo&) { joins++; };
+    host.cb.player_leave = [&](uint8_t, uint8_t) { leaves++; };
+    host.cb.chat = [&](uint8_t id, const std::string& t) { chats += id == 1 && t == "back"; };
+    std::string err;
+    CHECK(host.host(0, "host", err));
+    Relay relay(host.port());
+    std::string addr = "127.0.0.1:" + std::to_string(relay.a.local_port());
+    auto run = [&](Session& c, int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            c.update();
+            relay.pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    Session g1;
+    CHECK(g1.join(addr, "bob", err));
+    run(g1, 300);
+    CHECK(g1.connected() && joins == 1);
+    for (int i = 0; i < 5; i++) { // some traffic of the first connection (late copies replayed below)
+        g1.send_chat("old");
+        run(g1, 20);
+    }
+    size_t old_pkts = relay.up.size();
+    relay.drop = true; // the goodbye is lost
+    g1.leave("test");
+    run(g1, 50);
+    relay.drop = false;
+    CHECK(leaves == 0);
+    Session g2; // joins again (a new socket, but the relay keeps the host-facing address)
+    bool back = false;
+    g2.cb.connected = [&] { back = true; };
+    CHECK(g2.join(addr, "bob", err));
+    run(g2, 600);
+    CHECK(back);
+    CHECK(leaves == 1 && joins == 2);
+    CHECK(host.players().size() == 2);
+    // late packets of the first connection (delayed / duplicated by the network) are ignored
+    for (size_t i = 0; i < old_pkts; i++)
+        relay.b.send_to(relay.host, relay.up[i].data(), relay.up[i].size());
+    run(g2, 100);
+    g2.send_chat("back");
+    run(g2, 200);
+    CHECK(chats == 1);
+    CHECK(leaves == 1 && host.players().size() == 2);
+    printf("  %s", host.status().c_str());
+}
+
 // the host's player state and every chunk of a big snapshot (a cell pool of 600 cells = 43
 // chunks of ~900 bytes, more than the 32 packets of one flush) reach the guest in the same frame
 static void test_big_snapshot()
@@ -374,6 +459,79 @@ static void test_bulk()
     CHECK(mbps > 2.5); // the old 32-packet window gave ~1.1 MB/s
 }
 
+// the world over a very bad link (netem "awful": 250 +- 120 ms each way, 10 % loss, 2 % duplicates)
+// a message lost several times in a row let the receiver buffer 1024 later ones; it then dropped new
+// messages while still acknowledging their packets, so they were never sent again and the transfer
+// stalled for good (a guest rejoin over SPORE_NET=awful never completed)
+static void test_bulk_bad_link()
+{
+    printf("bulk transfer over 250 +- 120 ms, 10%% loss, 2%% duplicates\n");
+    struct Pk {
+        uint32_t t;
+        std::vector<uint8_t> d;
+        bool operator<(const Pk& o) const { return t > o.t; }
+    };
+    for (int run = 0; run < 4; run++) {
+        size_t window = run < 2 ? 160 : 600; // world.cpp: 160 on the internet, 600 on a LAN
+        Connection a, b;
+        std::mt19937 rng(run + 1);
+        std::uniform_real_distribution<float> U(0, 1);
+        std::vector<Pk> ab, ba; // heaps by arrival time
+        // and one message (#100) lost every time for 4 s: the receiver buffers everything after it
+        const uint8_t hole[8] = {100, 0, 0, 0, 0x55, 0x55, 0x55, 0x55};
+        uint32_t hole_until = 0;
+        auto send = [&](std::vector<Pk>& q, const std::vector<uint8_t>& p, uint32_t now) {
+            if (&q == &ab && std::search(p.begin(), p.end(), hole, hole + 8) != p.end()) {
+                if (!hole_until)
+                    hole_until = now + 4000;
+                if (now < hole_until)
+                    return;
+            }
+            if (U(rng) < 0.10f)
+                return;
+            for (int k = U(rng) < 0.02f ? 2 : 1; k > 0; k--) {
+                q.push_back({now + (uint32_t)(250 + (U(rng) * 2 - 1) * 120), p});
+                std::push_heap(q.begin(), q.end());
+            }
+        };
+        const int N = 3300; // a tribe save: ~3.3 MB in 1 KB chunks
+        int queued = 0, got = 0;
+        bool ordered = true;
+        uint32_t now = 1000;
+        std::vector<uint8_t> pkt;
+        for (; got < N && now < 1000 + 120000; now += 33) {
+            while (queued < N && a.pending_reliable() < window) {
+                Writer w;
+                w.u32(queued++);
+                std::vector<uint8_t> pad(1010, 0x55);
+                w.raw(pad.data(), pad.size());
+                a.send_reliable(42, w);
+            }
+            for (unsigned i = 0; i < kAckWindow / 3 && a.build_packet(now, pkt); i++)
+                send(ab, pkt, now);
+            for (; !ab.empty() && ab.front().t <= now; ab.pop_back()) {
+                std::pop_heap(ab.begin(), ab.end());
+                auto& p = ab.back();
+                b.on_packet(p.d.data(), p.d.size(), now, [&](uint8_t type, Reader& r) {
+                    if (type == 42 && r.u32() != (uint32_t)got++)
+                        ordered = false;
+                });
+            }
+            while (b.build_packet(now, pkt))
+                send(ba, pkt, now);
+            for (; !ba.empty() && ba.front().t <= now; ba.pop_back()) {
+                std::pop_heap(ba.begin(), ba.end());
+                auto& p = ba.back();
+                a.on_packet(p.d.data(), p.d.size(), now, [](uint8_t, Reader&) {});
+            }
+        }
+        printf("  window %zu, seed %d: %d/%d in %.1f s, resends=%u rtt=%.0f\n", window, run + 1, got, N, (now - 1000) / 1000.0,
+               a.stats.resends, a.rtt_ms);
+        CHECK(got == N && ordered);
+        CHECK(now - 1000 < 45000);
+    }
+}
+
 // creations arrive from other players: the RefPack decoder must survive any input
 static void test_refpack_untrusted()
 {
@@ -457,7 +615,9 @@ int main()
     test_reliability();
     test_ackbits();
     test_bulk();
+    test_bulk_bad_link();
     test_session();
+    test_rejoin_same_endpoint();
     test_big_snapshot();
     test_interp();
     test_discovery();

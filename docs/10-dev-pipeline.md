@@ -75,6 +75,9 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
   repeats the same actions. Smoke: 2 min of tribe; nightly: every stage, minutes each.
 * **Bad network** (`netem.py`): `SPORE_NET=dsl|mobile|awful|delay=..,jitter=..,loss=..` puts a UDP
   proxy with delay, jitter, loss, duplicates and outages between guest and host — for any test.
+  The proxy waits on both sockets with `select()` and drains them; until 2026-10-23 it polled each
+  socket with a 5 ms timeout and so capped the link at ~200 packets/s (~200 KB/s, plus kernel
+  drops of its full receive buffer): every world transfer over it took ~21-24 s whatever the preset.
 
 ## 10.6 Fixtures (test saves)
 

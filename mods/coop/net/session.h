@@ -17,6 +17,7 @@ struct Peer {
     uint8_t id = 0xFF; // player id (host side: guest id; client side: 0 = host)
     std::string name;
     bool accepted = false;
+    bool bye = false; // said goodbye: dropped in update()
     Connection conn;
 };
 
@@ -70,6 +71,7 @@ private:
     Peer* find_peer(const Endpoint& e);
     void drop_peer(size_t idx, uint8_t reason);
     uint8_t alloc_id() const;
+    bool retired(uint32_t conn) const;
 
     Role role_ = Role::None;
     UdpSocket sock_;
@@ -79,6 +81,7 @@ private:
     uint32_t join_started_ = 0;
     std::vector<std::unique_ptr<Peer>> peers_;
     std::vector<PlayerInfo> roster_; // client: known players (incl. host)
+    std::vector<uint32_t> retired_;  // host: conn ids of dropped peers (their late packets are ignored)
 };
 
 } // namespace net

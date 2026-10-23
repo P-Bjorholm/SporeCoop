@@ -42,7 +42,8 @@ class Proxy:
         self.b = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # faces the host
         self.b.bind(('127.0.0.1', 0))
         for s in (self.a, self.b):
-            s.settimeout(0.005)
+            s.setblocking(False)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
         self.queue, self.lock = [], threading.Lock()
         self.down_until = 0.0
         self.stats = dict(up=0, down=0, lost=0, dup=0)
@@ -65,19 +66,30 @@ class Proxy:
                 heapq.heappush(self.queue, (now + d, id(data) + _, sock, data, addr))
 
     def pump(self):
+        # select() over both sockets, everything that is waiting is read at once: the old loop waited
+        # up to 5 ms on each idle socket per packet and so capped the link at ~200 packets/s (~200 KB/s),
+        # which made a world transfer take ~21 s on "mobile" whatever the netcode did
+        import select
         while not self.stop:
-            for s in (self.a, self.b):
-                try:
-                    data, addr = s.recvfrom(4096)
-                except (socket.timeout, BlockingIOError, OSError):
-                    continue
-                if s is self.a:
-                    self.guest = addr
-                    self.stats['up'] += 1
-                    self.send_later(self.b, data, self.host)
-                elif self.guest:
-                    self.stats['down'] += 1
-                    self.send_later(self.a, data, self.guest)
+            with self.lock:
+                wait = max(0.0, min(0.02, self.queue[0][0] - time.time())) if self.queue else 0.02
+            try:
+                ready, _, _ = select.select([self.a, self.b], [], [], wait)
+            except (OSError, ValueError):
+                ready = []
+            for s in ready:
+                for _ in range(256):
+                    try:
+                        data, addr = s.recvfrom(4096)
+                    except (socket.timeout, BlockingIOError, OSError):
+                        break
+                    if s is self.a:
+                        self.guest = addr
+                        self.stats['up'] += 1
+                        self.send_later(self.b, data, self.host)
+                    elif self.guest:
+                        self.stats['down'] += 1
+                        self.send_later(self.a, data, self.guest)
             now = time.time()
             with self.lock:
                 while self.queue and self.queue[0][0] <= now:

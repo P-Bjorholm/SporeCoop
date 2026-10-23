@@ -18,6 +18,19 @@ static void logf(const Session::Callbacks& cb, const char* fmt, ...)
     cb.log(b);
 }
 
+// a connection id that differs from the previous ones of this process (and of other processes)
+static uint32_t new_conn_id(uint32_t salt)
+{
+    static uint64_t counter = 0;
+    uint64_t x = ((uint64_t)now_ms() << 32) ^ salt ^ (++counter * 0x9E3779B97F4A7C15ull) ^ (uint64_t)(uintptr_t)&counter;
+    x ^= x >> 30;
+    x *= 0xBF58476D1CE4E5B9ull;
+    x ^= x >> 27;
+    x *= 0x94D049BB133111EBull;
+    x ^= x >> 31;
+    return (uint32_t)x ? (uint32_t)x : 1u;
+}
+
 bool Session::host(uint16_t port, const std::string& name, std::string& err)
 {
     leave("restart");
@@ -48,6 +61,7 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     auto p = std::make_unique<Peer>();
     p->id = 0;
     p->conn.remote = ep;
+    p->conn.conn_id = new_conn_id(sock_.local_port());
     p->conn.created_ms = p->conn.last_recv_ms = join_started_;
     Hello h;
     h.build = build;
@@ -66,15 +80,20 @@ void Session::leave(const char* why)
         return;
     uint32_t now = now_ms();
     for (auto& p : peers_) {
+        // unreliable, in three packets: a reliable BYE waited behind any earlier lost message (and
+        // was sent once), so over a lossy link the other side often never saw it
         Writer w;
         w.u8(0);
-        p->conn.send_reliable(MSG_BYE, w);
         std::vector<uint8_t> pkt;
-        if (p->conn.build_packet(now + 1000, pkt))
-            sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
+        for (int i = 0; i < 3; i++) {
+            p->conn.send_unreliable(MSG_BYE, w, true);
+            if (p->conn.build_packet(now + 1000, pkt))
+                sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
+        }
     }
     peers_.clear();
     roster_.clear();
+    retired_.clear();
     sock_.close();
     role_ = Role::None;
     welcomed_ = false;
@@ -87,6 +106,11 @@ Peer* Session::find_peer(const Endpoint& e)
         if (p->conn.remote == e)
             return p.get();
     return nullptr;
+}
+
+bool Session::retired(uint32_t conn) const
+{
+    return std::find(retired_.begin(), retired_.end(), conn) != retired_.end();
 }
 
 uint8_t Session::alloc_id() const
@@ -165,10 +189,10 @@ std::string Session::status() const
     s += b;
     uint32_t now = now_ms();
     for (auto& p : peers_) {
-        snprintf(b, sizeof b, "  [%u] %-16s %s rtt=%.0fms last=%ums sent=%u recv=%u resend=%u pending=%u\n",
+        snprintf(b, sizeof b, "  [%u] %-16s %s rtt=%.0fms last=%ums sent=%u recv=%u acked=%u resend=%u pending=%u\n",
                  p->id, p->name.c_str(), p->conn.remote.str().c_str(), p->conn.rtt_ms,
                  now - p->conn.last_recv_ms, p->conn.stats.packets_sent, p->conn.stats.packets_recv,
-                 p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
+                 p->conn.stats.acked, p->conn.stats.resends, (unsigned)p->conn.pending_reliable());
         s += b;
     }
     return s;
@@ -251,6 +275,9 @@ void Session::drop_peer(size_t idx, uint8_t reason)
     bool was = p->accepted;
     uint8_t id = p->id;
     logf(cb, "player %u (%s) disconnected (reason %u)", id, p->name.c_str(), reason);
+    retired_.push_back(p->conn.conn_id);
+    if (retired_.size() > 64)
+        retired_.erase(retired_.begin());
     peers_.erase(peers_.begin() + idx);
     if (was) {
         PlayerLeave pl{id, reason};
@@ -345,7 +372,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             break;
         }
         case MSG_BYE:
-            p.conn.last_recv_ms = 0; // dropped in update()
+            p.bye = true; // dropped in update()
             break;
         case MSG_ANIM: {
             AnimEvent ev;
@@ -492,11 +519,29 @@ void Session::update()
         if (!Connection::looks_valid(buf, n))
             continue;
         Peer* p = find_peer(from);
+        uint32_t conn = Connection::peek_conn(buf, n);
+        if (role_ == Role::Host && (!p || p->conn.conn_id != conn)) {
+            if (retired(conn))
+                continue; // a late packet of a connection that is gone
+            if (p) {
+                // the same address and port with a new connection id: the guest left and joined
+                // again (its goodbye got lost) through a NAT / proxy that kept the mapping; the old
+                // peer goes (otherwise it swallowed the new HELLO and never timed out)
+                for (size_t k = 0; k < peers_.size(); k++)
+                    if (peers_[k].get() == p) {
+                        logf(cb, "a new connection from %s replaces player %u", from.str().c_str(), p->id);
+                        drop_peer(k, 0);
+                        break;
+                    }
+                p = nullptr;
+            }
+        }
         if (!p) {
             if (role_ != Role::Host || peers_.size() >= 16)
                 continue;
             auto np = std::make_unique<Peer>();
             np->conn.remote = from;
+            np->conn.conn_id = conn;
             np->conn.created_ms = now;
             peers_.push_back(std::move(np));
             p = peers_.back().get();
@@ -523,10 +568,10 @@ void Session::update()
     } else {
         for (size_t i = 0; i < peers_.size();) {
             auto& p = peers_[i];
-            bool dead = p->accepted ? now - p->conn.last_recv_ms > timeout_ms || p->conn.last_recv_ms == 0
-                                    : now - p->conn.created_ms > 10000;
+            bool dead = p->bye || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
+                                               : now - p->conn.created_ms > 10000);
             if (dead)
-                drop_peer(i, p->conn.last_recv_ms == 0 ? 0 : 1);
+                drop_peer(i, p->bye ? 0 : 1);
             else
                 i++;
         }

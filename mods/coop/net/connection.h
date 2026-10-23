@@ -37,6 +37,10 @@ struct AckBits {
     bool test(unsigned k) const { return k < 128 && (((k < 64 ? lo : hi) >> (k & 63)) & 1); }
 };
 constexpr unsigned kAckWindow = 128;
+// reliable messages the receiver buffers ahead of a missing one; the sender never sends a message
+// this far past the oldest unacknowledged one, so the buffer can never overflow (it used to drop the
+// message of a packet it still acknowledged: lost for good, the world transfer stalled forever)
+constexpr unsigned kRelWindow = 2048;
 
 struct ConnStats {
     uint32_t packets_sent = 0, packets_recv = 0, resends = 0, acked = 0;
@@ -47,6 +51,10 @@ public:
     using Deliver = std::function<void(uint8_t type, Reader& payload)>;
 
     Endpoint remote;
+    // connection id in every packet header (protocol 6): the guest picks a new one for every join,
+    // so a rejoin from the same address and port (a NAT that keeps the mapping, a proxy) is a new
+    // connection and late packets of the old one are told apart instead of corrupting the new one
+    uint32_t conn_id = 0;
     float rtt_ms = 100.f;
     uint32_t last_recv_ms = 0;
     uint32_t created_ms = 0;
@@ -63,6 +71,7 @@ public:
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
 
     static bool looks_valid(const uint8_t* data, size_t n);
+    static uint32_t peek_conn(const uint8_t* data, size_t n); // conn id of a valid packet
 
 private:
     struct OutMsg {
