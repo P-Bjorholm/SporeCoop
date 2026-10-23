@@ -280,7 +280,13 @@ static void guest_tick(double now)
             g_proxy_of[px.c] = id;
             game::teleport(px.c, s.pos, s.rot);
         }
-        drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+        if (!px.killed)
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+        else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
+               // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
+            *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
+            game::teleport(px.c, s.pos, s.rot);
+        }
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
             game::apply_damage(px.c, 1e6f, 0, nullptr); // play the death locally

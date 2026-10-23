@@ -95,12 +95,33 @@ def main():
     ck(len(animals) > 0, f'guest mirrors the host animals ({len(animals)})')
     if animals:
         m0 = re.search(r'cmds_done=(\d+)', host.call('coop.status')['out'])
+        for i, v in members(guest).items():  # every own member hunts the weakest animal
+            if v[0] == 1 and v[3] == 'player':
+                guest.call(f'coop.tribe select {i} 1')
+        animals.sort(key=lambda a: float(a[1]))
         print(' ', guest.call(f'coop.tribe act_npc 10 {animals[0][0]}')['out'])
         time.sleep(2)
         st = host.call('coop.status')['out']
         m1 = re.search(r'cmds_done=(\d+)', st)
         ck(m0 and m1 and int(m1.group(1)) > int(m0.group(1)),
            'host found the animal and executed the hunt: ' + re.search(r'tribe\(host\).*', st).group(0))
+        # the hunted animal dies: its body lies at the same place on both machines (the guest's
+        # body used to shoot off into the sky, ~80 m up while driven)
+        from coop_sync import sample
+        key, dead = 'n' + animals[0][0], False
+        for _ in range(45):
+            dead = any(re.match(rf'\s*#{animals[0][0]} .*DEAD', ln) for ln in host.call('coop.npc list')['out'].splitlines())
+            if dead:
+                break
+            time.sleep(1)
+        if dead:
+            time.sleep(3)
+            hs, gs = sample(host), sample(guest)
+            if key in hs and key in gs:
+                d = dist(hs[key][0], gs[key][0])
+                ck(d < 3, f'the hunted animal\'s body lies where the host has it ({d:.1f} m)')
+        else:
+            print('  (the hunted animal did not die within 45 s)')
     # gathering from a fruit tree by a real right-click: trees are cTreeData (no game object), the
     # host finds its own tree by position (before 2026-10-23 every such order was rejected)
     gm = members(guest)

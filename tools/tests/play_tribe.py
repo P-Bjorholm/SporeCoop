@@ -643,6 +643,8 @@ def main():
         ck(tot >= 10, f'{p.name}: gave orders through real clicks ({tot})')
         ck(p.orders['ok'] >= 0.7 * tot, f'{p.name}: the members act on the orders ({p.orders})')
     ck(counter(st1, 'rejected') == g.rejected0, f'the host rejected no guest order ({counter(st1, "rejected")})')
+    far = {k: v for k, v in g.outliers.items() if 'not updated' not in v}  # the host was dropping those
+    ck(not far, f'no citizen or animal more than 50 m off on the guest ({list(far)[:5]})')
     for kind in 'tn':
         if g.sync_pos[kind]:
             ck(pct(g.sync_pos[kind], .9) <= LIMITS[kind][0], f'sync {kind}*: 90% within {LIMITS[kind][0]} m')
