@@ -1021,10 +1021,29 @@ static void coop_init()
            a_CreateHerd && a_HerdEnable && a_CreatureCreate ? "on" : "off");
 }
 
+// a member that changed hands (a gift) stayed selected on the giver's machine, so the giver could
+// still order the partner's member (play_tribe.py): drop members of others from the own selection
+static uint32_t g_unselected;
+static void drop_foreign_selection()
+{
+    void* pt = player_tribe();
+    if (!pt)
+        return;
+    uint8_t me = C.sess->my_id();
+    for (void* c : members(pt)) {
+        uint8_t o = owner_of(c);
+        if (o < 0xFE && o != me && F<uint8_t>(c, kSelectedOff)) {
+            vcall<int>((uint8_t*)c + 0xC0, 0x54 / 4, 0); // SetSelected(false)
+            g_unselected++;
+        }
+    }
+}
+
 void tick(double now)
 {
     if (!active())
         return;
+    drop_foreign_selection();
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -1090,14 +1109,14 @@ std::string status()
 {
     char b[256];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u\n", (unsigned)g_hm.size(),
-                 g_cmds_done, g_cmds_rejected, g_gifts);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe());
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";

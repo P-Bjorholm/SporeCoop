@@ -114,6 +114,8 @@ def main():
         ck(hm.get(mine[0], (None,))[0] == 0, f'the host owns the gifted member #{mine[0]} now')
         time.sleep(1)
         ck(members(guest).get(mine[0], (None,))[0] == 0, 'the guest sees the new owner')
+        # the giver must not keep the gifted member selected (it could order the partner's member)
+        ck(members(guest).get(mine[0], (0, 1))[1] == 0, 'the gifted member is no longer selected by the giver')
         ck('gave 1 tribe member' in host.call('coop.status')['out'], 'everybody is told about the gift')
     shot(host, 'tribe_host.png')
     shot(guest, 'tribe_guest.png')
