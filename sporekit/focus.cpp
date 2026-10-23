@@ -161,6 +161,13 @@ void focus_attach_window(void* hwnd)
 }
 
 static DWORD g_vcursor_last;
+static std::atomic<bool> g_vcursor_held{false};
+
+void vcursor_hold(bool on)
+{
+    g_vcursor_held = on;
+    g_vcursor_last = GetTickCount();
+}
 
 void vcursor_set(int x, int y)
 {
@@ -172,7 +179,7 @@ void vcursor_set(int x, int y)
 
 void vcursor_tick()
 {
-    if (g_vcursor_active && GetTickCount() - g_vcursor_last > 5000)
+    if (g_vcursor_active && !g_vcursor_held && GetTickCount() - g_vcursor_last > 5000)
         g_vcursor_active = false;
 }
 

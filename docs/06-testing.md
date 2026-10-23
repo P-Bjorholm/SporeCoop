@@ -175,6 +175,9 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
   inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
   partner cell was there and exact — it looked like a missing puppet / timing bug.
+* `coop_cell.py` reads `coop.pool` keys with `re.search(key + '=(-?\d+)')` (no word boundary): a new
+  field whose name ends in an old key (`own_food=` before `food=`) is read instead of it. On
+  2026-10-23 that turned "shared food progress" into "0 -> 0"; the field is `own_points=` now.
 * Cross-check before hunting a "missing puppet": the `remote … puppet=<ptr>` value, and in the cell
   stage `local_gameplay_cells` (counts every foreground cell except the own avatar) = mirrors + 1
   when the partner's cell exists.
@@ -210,3 +213,14 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
+
+## 6.10 Playing bots
+
+* `tools/tests/play_cell.py [--minutes 10] [--seed N]`: host and guest play the Cell stage through
+  real input (hold the mouse and steer with `button x y down` / `move` / `button up`, clicks,
+  W/A/S/D) and measure sync, shared food, knockouts, revives and damage; results and the bugs it
+  found: docs/stability/cell.md. Its eyes: `coop.pool see` (kind, size ratio, distance, screen
+  position of what is on screen); `coop.pool why` lists who removed mirrors on a guest.
+* A cinematic in the cell stage sets `cine=1` in `coop.pool`: the level-up zoom ends by itself
+  (~1-2 s), captions wait for the green check (bottom right) or Enter.
+* A 10-minute session takes ~11 minutes with the start; the bot reaches 300-650 food (alone: ~270).

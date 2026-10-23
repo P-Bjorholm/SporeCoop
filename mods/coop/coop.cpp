@@ -247,7 +247,11 @@ void drive_puppet(Remote& r, double now)
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s));
+    if (r.puppet && !visible) // why a partner disappears (docs/stability/cell.md)
+        LOG("%s hidden: flags=0x%X age=%.1f same_place=%d", r.name.c_str(), (unsigned)s.flags, r.buf.age(now),
+            (int)same_place(s));
     if (r.puppet && r.puppet_adapter && r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)) {
+        LOG("%s: its puppet was removed by the game", r.name.c_str());
         r.puppet = nullptr; // removed by the game itself: show it again
         r.puppet_adapter = nullptr;
     }
