@@ -1116,7 +1116,10 @@ static void* resolve_target(const Target& t)
 static void host_command(uint8_t from, net::Reader& r)
 {
     uint8_t kind = r.u8();
-    auto reject = [&] { g_cmds_rejected++; };
+    auto reject = [&] {
+        if (from != C.sess->my_id())
+            g_cmds_rejected++;
+    };
     auto own_vehicle = [&](uint16_t id) -> void* {
         auto it = g_hv_by_id.find(id);
         if (it == g_hv_by_id.end() || g_hv[it->second].owner != from)
