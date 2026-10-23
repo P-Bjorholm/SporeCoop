@@ -38,6 +38,7 @@ static std::unordered_map<uint16_t, void*> g_host_by_id;
 static std::map<uint8_t, std::set<uint16_t>> g_known;  // guest -> net ids it mirrors
 static uint16_t g_next_id = 1;
 static double g_last_state = 0;
+static double g_frozen_since = 0;                       // host: no creature updates since then
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
 
 // ------------------------------------------------------------------ guest side
@@ -55,7 +56,7 @@ static std::map<uint16_t, Proxy> g_proxies;
 static std::unordered_map<void*, uint16_t> g_proxy_of;
 static std::map<uint64_t, void*> g_herds; // species instance/group -> herd for proxies
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
-static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0;
+static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -127,11 +128,24 @@ static void send_despawn(uint8_t guest, uint16_t id)
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
-    g_seen_now.clear();
     net::Vec3 center;
     bool rts = rts_stage() && C.stage_center && C.stage_center(center);
     if (!av && !rts)
         return;
+    // no creature updated this frame: the simulation stands still (pause menu, the death caption
+    // waiting for OK, a cinematic). Not a reason to forget them: the guests lost every NPC after 2 s
+    // and got them again when the host went on (play_creature.py 2026-10-23)
+    if (creatures.empty()) {
+        g_frozen_since = g_frozen_since > 0 ? g_frozen_since : now;
+        return;
+    }
+    if (g_frozen_since > 0) { // the frozen time does not count as unseen
+        double gap = now - g_frozen_since;
+        for (auto& [c, hn] : g_host_npcs)
+            hn.last_seen += gap;
+        g_frozen_since = 0;
+    }
+    g_seen_now.clear();
     for (void* c : creatures) {
         if (c == av || game::is_puppet(c) || game::is_destroyed(c))
             continue;
@@ -283,7 +297,10 @@ static void guest_tick(double now)
         drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
         if ((s.flags & net::NF_DEAD) && !px.killed) {
             px.killed = true;
-            game::apply_damage(px.c, 1e6f, 0, nullptr); // play the death locally
+            // play the death locally with a just-lethal hit: the knockback grows with the damage
+            // (1e6 threw the corpse ~150 m up, it hung 15-80 m away from the host's corpse for
+            // the rest of its life: play_creature.py 2026-10-23)
+            game::apply_damage(px.c, std::max(game::health(px.c), 0.f) + 0.5f, 0, nullptr);
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
     }
@@ -397,8 +414,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_host_by_id.find(q.net_id);
         if (it == g_host_by_id.end() || !g_seen_now.count(it->second))
             return;
+        void* npc = it->second;
         void* attacker = C.puppet_of(from);
-        game::apply_damage(it->second, teamplay::on_player_hit(it->second, from, q.damage), q.type, attacker);
+        float dmg = teamplay::on_player_hit(npc, from, q.damage);
+        // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
+        // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
+        // A guest's puppet is not it, so a guest's kill paid nothing. The pack shares its progress:
+        // the lethal hit lands as the host avatar's (one hit, the target dies, no aggro to move).
+        void* av = game::avatar();
+        if (av && !game::is_dead(npc) && game::health(npc) > 0 && game::health(npc) <= dmg) {
+            attacker = av;
+            g_kills_credited++;
+        }
+        game::apply_damage(npc, dmg, q.type, attacker);
         g_hits_applied++;
         break;
     }
@@ -486,8 +514,9 @@ std::string status()
         size_t known = 0;
         for (auto& [g, ks] : g_known)
             known += ks.size();
-        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u\n",
-                 (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied);
+        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u\n",
+                 (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
+                 g_kills_credited);
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
@@ -572,8 +601,8 @@ std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
     if (C.sess && C.sess->role() == net::Role::Host) {
-        for (auto& [c, h] : g_host_npcs)
-            if (game::object_alive(c) && !game::is_dead(c)) // bodies: see docs/known-issues.md
+        for (auto& [c, h] : g_host_npcs) // updated this frame: an unloaded one may be freed already
+            if (g_seen_now.count(c) && game::object_alive(c) && !game::is_dead(c)) // living ones only
                 v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, px] : g_proxies)

@@ -55,7 +55,12 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
 
 static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
 {
-    drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true);
+    // a partner's creature: lunges and charges move it faster than a puppet can walk, and attack
+    // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
+    // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
+    drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
+    if (game::herd_of(p) != game::avatar_herd())
+        game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
     float mh = game::max_health(p); // puppets mirror the remote health, never die locally
     if (mh > 0)
         game::set_health(p, mh);

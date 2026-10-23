@@ -224,3 +224,25 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * A cinematic in the cell stage sets `cine=1` in `coop.pool`: the level-up zoom ends by itself
   (~1-2 s), captions wait for the green check (bottom right) or Enter.
 * A 10-minute session takes ~11 minutes with the start; the bot reaches 300-650 food (alone: ~270).
+
+## 6.11 Bots that play through real input (play_creature.py)
+
+* `tools/tests/play_creature.py --minutes 10 [--seed N]`: host and guest play the Creature stage in
+  two threads (walk, WASD, right-drag to look around, hunt NPCs found with `coop.targets all`,
+  joint hunts, social, eating, pause menu, F9 window with chat, zoom; the guest once exits to the
+  main menu). Measurements and findings: docs/stability/creature.md.
+* Clicking menus: `tools/tests/uifind.py` (`shown(con, caption)`, `press(con, caption, expect)`)
+  finds a window by caption with `coop.ui find` and adds up the parents' rectangles (each is
+  relative to its parent; flag 0x1 = visible). A menu stays "visible" under a dialog it opened:
+  `press` waits for what the click should open, it does not wait for the button to go away.
+* The F9 window: hold F9 for ~0.25 s (`key 0x78 down`, `up`): the mod polls the key state, a tap
+  is missed. `coop.uistate` prints every widget with its rectangle. Typing into the chat line: click
+  it, wait ~0.5 s (the edit takes the focus a frame or two later), then `text "..."`.
+* Ability keys: the stance buttons above the ability bar are at `(W/2 - 30, H - 82)` (social) and
+  `(W/2 + 43, H - 82)` (combat); keys 1..4 use the current stance's abilities (docs/re/creature.md 1).
+* Player sync in play: standing players match within 1.5 m (p90 ~0.6 m), moving ones trail by the
+  interpolation and walking delay (median ~0.5 s); in fights a partner's puppet snaps at 4 m.
+  coop.sync's 1.5 m limit for players is for walking (coop_sync.py), not for fights.
+* Several agents on one machine: each one gets its own lane; temp files belong in a folder of
+  your own (subagents of one session share the scratchpad folder: another agent's `up.py` there
+  started the cell fixture in this lane, 2026-10-23).

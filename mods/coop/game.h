@@ -74,6 +74,7 @@ Key species_key(void* c);
 void* species_by_key(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* herd_of(void* c);
+void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it
 uint32_t political_id(void* c);
 
 // ---- combat ----
@@ -110,5 +111,6 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 void puppet_register(void* c);
 void puppet_unregister(void* c);
 bool is_puppet(void* c);
+const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO puppets in space
 
 } // namespace game

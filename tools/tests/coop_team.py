@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Creature co-op mechanics on two instances (docs/09-coop-design.md):
 joint hunt bonus, the pack saves a player from a lethal hit, pack regeneration."""
+import math
 import re
 import time
 
+from coop_sync import sample
 from twoinst import Checks, shot, start
 
 
@@ -35,6 +37,13 @@ def main():
             break
         time.sleep(1)
     ck(nid is not None, f'guest mirrors host NPCs (target #{nid})')
+    # the guest's puppet has a herd of its own species: the game used to fill it with 4 clones of
+    # the guest's creature (real NPCs on the host, mirrored to the guest)
+    gsp = re.search(r'puppet pos=.* species=([0-9A-F]+)', host.call('coop.status')['out'])
+    hsp = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
+    if gsp and hsp and gsp.group(1) != hsp.group(1).zfill(8):
+        clones = host.call('coop.npc list')['out'].count('species=' + gsp.group(1))
+        ck(clones == 0, f'no NPC clones of the guest\'s creature ({clones})')
     print(' ', host.call('coop.team')['out'].splitlines()[-1])
 
     # joint hunt: the guest hits, then the host hits the same NPC within 6 s
@@ -76,6 +85,35 @@ def main():
     chat = host.call('coop.status')['out']
     ck('saved Bob' in chat, 'everybody sees "Alice saved Bob from death"')
 
+    # a guest's kill pays the pack's DNA (the game pays only kills by the host's own avatar:
+    # until 2026-10-23 a guest could hunt all day for nothing; docs/re/creature.md 2)
+    fam = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
+    fam = fam.group(1).zfill(8) if fam else ''
+    mirrored = set(re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out']))
+    prey = [m.group(1) for m in re.finditer(r'#(\d+) species=([0-9A-F]+) hp=([\d.]+)',
+                                             host.call('coop.npc list')['out'])
+            if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
+    dna = lambda c: float(re.search(r'dna=([\d.]+)', c.call('coop.dna')['out']).group(1))  # noqa: E731
+    d0 = dna(host)
+    killed = before = None
+    for cand in prey[:3]:
+        before = sample(host).get('n' + cand)
+        guest.call(f'coop.npc hit {cand} 100000')
+        time.sleep(1.5)
+        if dna(host) > d0:
+            killed = 'n' + cand
+            break
+    d1 = dna(host)
+    time.sleep(2)
+    ck(d1 > d0, f'a kill by the guest pays DNA: host {d0} -> {d1} (prey {prey[:3]})')
+    ck(abs(dna(guest) - d1) < 0.5, f'the guest has the same DNA ({dna(guest)})')
+    # the corpse stays where the animal fell, the same on both (a forwarded hit used to push with
+    # the victim's position as the impulse: the corpse flew ~80 m up, on the guest it stayed there)
+    hs, gs = sample(host).get(killed), sample(guest).get(killed)
+    if killed and before and hs and gs:
+        moved, apart = math.dist(before[0], hs[0]), math.dist(hs[0], gs[0])
+        ck(moved < 5 and apart < 3, f'the corpse lies where it fell ({moved:.1f} m) and in the same place '
+                                    f'on both ({apart:.1f} m apart)')
     print('  host :', host.call('coop.team')['out'].splitlines()[-1])
     print('  guest:', guest.call('coop.team')['out'].splitlines()[-1])
     shot(host, 'team_host.png')

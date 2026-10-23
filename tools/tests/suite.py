@@ -41,6 +41,7 @@ add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
@@ -61,6 +62,8 @@ for st, m in (('creature', 6), ('cell', 6), ('tribe', 8), ('civ', 8), ('space', 
     add(f'chaos_{st}_long', P + f'coop_chaos.py --fixture {st} --minutes {m}', ('nightly',), minutes=m + 1)
 # two bots PLAY the Cell stage together (real input: swim, eat, flee, revive), sync / food / regression checks
 add('play_cell', P + 'play_cell.py --minutes 10', ('nightly',), warm=True, minutes=12, fixture='cell')
+# played like people play (real input, measurements; docs/stability/creature.md)
+add('play_creature', P + 'play_creature.py --minutes 10', ('nightly',), minutes=12)
 # the same tests over a bad network between guest and host (tools/tests/netem.py)
 for name, cmd in (('tribe_coop', 'coop_tribe.py'), ('cell_coop', 'coop_cell.py'), ('civ_coop', 'coop_civ.py'),
                   ('team', 'coop_team.py'), ('space_coop', 'coop_space.py')):

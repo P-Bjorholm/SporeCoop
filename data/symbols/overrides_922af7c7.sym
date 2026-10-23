@@ -18,7 +18,7 @@ Editors::cEditor::GetFinishState=0x0057AAA0 ; verified (disassembly + runtime) t
 Editors::cEditor::Exit=0x0058A350 ; verified runtime thiscall(editor, int how (0 commit, 1 accept and leave, 2 cancel), int, int) ret 0xC: done in a creature-stage editor calls (1, 2, 1) -> 0x57E8A0
 Editors::EditorUI::OnExitButton=0x005DF4B0 ; verified runtime thiscall(ui, int command (0x102 = done), int) ret 8: asks GetFinishState, then leaves (0x5DEC50) or shows the first blocking error (0x5DCA40)
 Editors::EditorUI::RunExitCommand=0x005DEC50 ; verified (disassembly + runtime) thiscall(ui, int command 0x100..0x107) ret 4: 0x102 = done -> Exit(1, 2, 1) (or a confirmation dialog when ui+0xEC)
-Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14
+Simulator::cCreatureAnimal::TakeDamage=0x00C075A0 ; verified: cCombatant vtable[6] of cCreatureAnimal (this=creature+0x5A8), ret 0x14; (dmg, attackerPol, type, const Vector3* push, attacker): push = knockback impulse, (0,0,0) in bites/strikes (type 2, runtime log); pays kill DNA at 0xC07BAC only for an avatar attacker (docs/re/creature.md 2)
 Simulator::cCreatureBase::PlayAnimation=0x00C12430 ; verified REA + ret 0xC (animID, block, disableBlend)
 Simulator::cCreatureBase::PlayAnimationTo=0x00C14AE0 ; verified ret 0x10
 SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified REA (cTimeOfDay::SetTimeOfDay): cdecl() -> spatial object whose orientation is the time of day
@@ -106,6 +106,7 @@ Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (R
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
 Simulator::Cell::PreloadModel=0x00E624C0 ; verified runtime (coop_creations_cell.py): cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
 Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
+Simulator::CreatureStageEventHandler=0x00D47FC0 ; verified asm: thiscall(self, u32 msgId, msg*) ret 8 -> bool, a vtable method (ptr at .rdata 0x147B680); handles msgs 0x61B1320 0x49B56D7 0x5371F11 0x60B4123 0xD335362C 0xD3353635 0xD335363A about the avatar (msg+0 = avatar); at 0xD48634 reads (+0xE84)->+0x32C of an adult other-species creature: null on puppets/proxies -> fault (coop lends a blank +0xE84)
 Simulator::cCity::AddCaptureDamage=0x00BE9C50 ; verified cdecl(planetCtx, city, city+0x2F0 meter, ownerPol, float dmg, attackerPol, bool) caller add esp,0x1C; +0x748 += dmg*0.1, max 100 (docs/re/civ.md co-op A)
 Simulator::cCity::SetCaptureProgress=0x00BD7E40 ; verified thiscall(attackerPol, float pct) ret 8: +0x74C/+0x748 + meter
 Simulator::cCity::CheckMilitaryCapture=0x00BE9AB0 ; verified thiscall(bool flag) ret 4: +0x748>=100 -> Capture(pol,0,0,flag,0)

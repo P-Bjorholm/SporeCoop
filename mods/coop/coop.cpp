@@ -369,6 +369,37 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         *flags |= 1u;
 }
 
+// The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
+// the adult creature of another species an event is about (0xD48634). Our puppets and NPC proxies
+// have no +0xE84 object: the guest faulted there while it fought proxies (play_creature.py,
+// 2026-10-23). During the handler they get a blank one whose +0x32C is -1 ("none").
+typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
+StageMsg_t o_StageMsg;
+alignas(16) uint8_t g_blank_e84[0x1000];
+unsigned g_stage_msg_guards; // handler calls that needed the blank object (tests)
+bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
+{
+    void* patched[256];
+    int n = 0;
+    if (g_mode == modes::kCreature)
+        for (void* c : game::puppets()) {
+            void** e84 = (void**)((uint8_t*)c + 0xE84);
+            if (n < 256 && !IsBadReadPtr(e84, 4) && *e84 == nullptr && game::noun_id(c) == 0x18EB45Eu) {
+                *e84 = g_blank_e84;
+                patched[n++] = c;
+            }
+        }
+    if (n)
+        g_stage_msg_guards++;
+    bool r = o_StageMsg(self, id, msg);
+    for (int i = 0; i < n; i++) { // the handler may have destroyed nothing of ours: restore only our pointer
+        void** e84 = (void**)((uint8_t*)patched[i] + 0xE84);
+        if (!IsBadReadPtr(e84, 4) && *e84 == g_blank_e84)
+            *e84 = nullptr;
+    }
+    return r;
+}
+
 // The own creature usually comes from the Creature Creator (My Creations) and may hold parts that
 // are not in the stage editor's part list. The editor then marks that error (bit 5) as blocking
 // when it loads the creature, and "done" only shows the error and stays in the editor (cancel
@@ -541,6 +572,12 @@ void follow_phase(double now)
         // a guest in an editor is left alone (it may be evolving inside the same stage); a guest
         // that plays another stage than the host is pulled back into the host's stage
         bool behind = ls.mode != g_mode && stage_mode(ls.mode);
+        // a guest that played this phase and went to the main menu (pause menu "Exit to Main
+        // Menu") while staying in the session waited for the host's world forever (the lobby said
+        // "Waiting for the host's world...", play_creature.py 2026-10-23): it gets the world again
+        bool left_to_menu = ls.mode == modes::kMenu && r.joined_phase;
+        if (left_to_menu)
+            behind = true;
         if (!behind) {
             r.other_mode_since = -1;
             if (ls.mode == g_mode)
@@ -556,7 +593,7 @@ void follow_phase(double now)
         r.joined_phase = false;
         std::string err;
         if (world::share_with(id, err, g_save_on_share))
-            feed("next phase: sending the world to " + r.name);
+            feed((left_to_menu ? "back to the world: sending it to " : "next phase: sending the world to ") + r.name);
         else
             feed("cannot share the world: " + err);
     }
@@ -1371,6 +1408,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 g_mode == modes::kCreature ? game::species_key(r.puppet).instance
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
+            if (g_mode == modes::kCreature)
+                SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u\n", r.drv.last_err,
+                    r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports);
         }
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
@@ -1634,9 +1674,9 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
                 int ok = H->world_to_screen(w, sc);
                 uint8_t* cr = (uint8_t*)r.puppet;
-                SAY("point %d %d %d flags=%08X e84=%p guards=%u", ok, (int)sc[0], (int)sc[1],
+                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u", ok, (int)sc[0], (int)sc[1],
                     g_mode == modes::kCreature ? *(uint32_t*)(cr + 0xB58) : 0u,
-                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards);
+                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards);
                 return 0;
             }
         SAY("no partner");
@@ -1957,6 +1997,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
+    *(int32_t*)(g_blank_e84 + 0x32C) = -1;
+    if (uintptr_t a = H->sym("Simulator::CreatureStageEventHandler"))
+        H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))
