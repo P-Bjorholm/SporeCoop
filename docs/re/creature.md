@@ -32,3 +32,61 @@ Structures of `cCreatureAnimal` and the NPC sync: [05-re-notes.md](../05-re-note
   attacker, the puppet is not the avatar, so guest kills paid nothing (no DNA for anybody, no goal
   progress). Fixed in `npc.cpp`: a lethal guest hit is applied as the host avatar's
   (`guest_kills=` in `coop.npc` on the host); regression check in `coop_team.py`.
+
+## 3. The push vector of `TakeDamage`
+
+* ✔ The 4th argument (`const Vector3*`) is the hit's push (knockback impulse), not a position: a
+  bite or strike of the player (type 2) passes (0,0,0) (runtime log of every real call,
+  2026-10-23). Our synthetic hits passed the victim's position (|v| ~ 505 on Scalinus): a forwarded
+  guest hit pushed the NPC on the host, a 1000-damage kill threw the corpse ~80 m up, and the guest's
+  local death replay (1e6 damage) threw its proxy the same way; the proxy corpse then hung 15-80 m
+  away from the host's corpse until it was removed (`teleport` / `set_position` do not hold a dead
+  creature). `game::apply_damage` / `game::hit` pass (0,0,0) now; the death replay uses a just-lethal
+  hit. Regression: the corpse check in `coop_team.py`.
+
+## 4. The avatar-event handler and +0xE84
+
+* ✔ `Simulator::CreatureStageEventHandler` 0xD47FC0: a vtable method (pointer at .rdata 0x147B680),
+  `thiscall(self, u32 msgId, msg*) ret 8 -> bool`; it handles the messages 0x61B1320, 0x49B56D7,
+  0x5371F11, 0x60B4123, 0xD335362C, 0xD3353635, 0xD335363A when `msg+0` is the avatar (checked with
+  0xB1FCD0). On the 0x60B4123 / 0xD335362C path it walks creatures and, for an adult (`+0xB34 == 1`,
+  0xC0B890) creature of another species with `+0xB54` set, reads `(+0xE84)->+0x32C` (0xC0C2C0 is
+  the getter of +0xE84) without a null check: our puppets and NPC proxies have no +0xE84 object, the
+  guest faulted at 0xD48634 (data 0x32C) while it fought proxies. Same field as the
+  `CreatureSelectionUI` crash (coop.cpp guards both: during this handler the puppets and proxies
+  get a blank object whose +0x32C is -1, "none"). +0xE84 is the creature's archetype tuning, set by
+  `Create` from the herd's archetype (docs/re/tribe.md E: +0x388 = isEpic); our herds have none.
+  ? the meaning of tuning +0x32C.
+* ✔ 0xC0B890: `+0xB34 == 1` (age: 1 = adult ~). 0xC04260 `thiscall(victim, 0)` -> float: the DNA a
+  kill of this creature is worth.
+
+## 5. What a player meets that tests did not do (play_creature.py)
+
+* ✔ The pause menu (Esc) is "Options": Resume Game, Spore Guide, Spy Glass, Ban, Settings, Save,
+  Exit to Main Menu, Quit Spore. `coop.ui find "<caption>"` lists a window with its parents
+  (rectangles relative to the parent, flag 0x1 = visible); `tools/tests/uifind.py` turns that into a
+  screen point. "Exit to Main Menu" asks "Do you want to save your game?" (Don't Save / Cancel /
+  Save), then "Are you sure? All progress will be lost!" (Don't Save again). The menu stays
+  "visible" under the dialogs it opened: check for the dialog, not for the menu to go away.
+* ✔ A guest that exits to the main menu stays in the session (galaxy menu, co-op lobby open in the
+  Co-op item); since 2026-10-23 the host sends its world again after 5 s (back in ~14 s).
+* ✔ The mating call is Backspace (blue bar, middle button "Mating Call [Backspace]"). With DNA 0
+  nothing happens; with DNA the "Mate: Locate your Mate!" card appears and a thought bubble shows
+  over the nest. Clicking the nearby family members did not start the editor within 30 s (not
+  explored further; the evolution vote is tested through `coop.vote editor`).
+* ✔ The ability bar keys work on an unfocused test window (background mode); WASD and the arrow
+  keys move the avatar; a right-drag turns the camera.
+* ✔ On the guest, the goal card of a species whose local creatures were removed (NPCs are the
+  host's) says "The <species> species is extinct!" while the host's card says "Impress 3 <species>
+  to ally" (docs/known-issues.md).
+
+## 6. Herds of our own creatures fill themselves up
+
+* ✔ `CreateHerd(pos, species, 0, 0, 0, 0)` (puppets of players with their own creature, NPC proxies
+  on the guest) gives a herd with `mTargetHerdSize` (+0xF4) = 5 and `mbEnabled` (+0x218) = 1 a
+  moment later (runtime, 2026-10-23; docs/re/tribe.md E has the herd fields). The game then spawns
+  members up to the target: on the host 4 clones of the guest's Kirgle stood at the nest within
+  seconds of the join, as real NPCs, mirrored to the guest. On the guest the proxies' herds did the
+  same, the update filter removed them again (`local_removed` grew all session). `game::herd_quiet`
+  sets the target to 0 and disables such herds (at creation and on every puppet update).
+  Regression: `coop_team.py` ("no NPC clones of the guest's creature").

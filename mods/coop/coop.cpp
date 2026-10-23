@@ -365,6 +365,37 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         *flags |= 1u;
 }
 
+// The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
+// the adult creature of another species an event is about (0xD48634). Our puppets and NPC proxies
+// have no +0xE84 object: the guest faulted there while it fought proxies (play_creature.py,
+// 2026-10-23). During the handler they get a blank one whose +0x32C is -1 ("none").
+typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
+StageMsg_t o_StageMsg;
+alignas(16) uint8_t g_blank_e84[0x1000];
+unsigned g_stage_msg_guards; // handler calls that needed the blank object (tests)
+bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
+{
+    void* patched[256];
+    int n = 0;
+    if (g_mode == modes::kCreature)
+        for (void* c : game::puppets()) {
+            void** e84 = (void**)((uint8_t*)c + 0xE84);
+            if (n < 256 && !IsBadReadPtr(e84, 4) && *e84 == nullptr && game::noun_id(c) == 0x18EB45Eu) {
+                *e84 = g_blank_e84;
+                patched[n++] = c;
+            }
+        }
+    if (n)
+        g_stage_msg_guards++;
+    bool r = o_StageMsg(self, id, msg);
+    for (int i = 0; i < n; i++) { // the handler may have destroyed nothing of ours: restore only our pointer
+        void** e84 = (void**)((uint8_t*)patched[i] + 0xE84);
+        if (!IsBadReadPtr(e84, 4) && *e84 == g_blank_e84)
+            *e84 = nullptr;
+    }
+    return r;
+}
+
 // The own creature usually comes from the Creature Creator (My Creations) and may hold parts that
 // are not in the stage editor's part list. The editor then marks that error (bit 5) as blocking
 // when it loads the creature, and "done" only shows the error and stays in the editor (cancel
@@ -1636,9 +1667,9 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
                 int ok = H->world_to_screen(w, sc);
                 uint8_t* cr = (uint8_t*)r.puppet;
-                SAY("point %d %d %d flags=%08X e84=%p guards=%u", ok, (int)sc[0], (int)sc[1],
+                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u", ok, (int)sc[0], (int)sc[1],
                     g_mode == modes::kCreature ? *(uint32_t*)(cr + 0xB58) : 0u,
-                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards);
+                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards);
                 return 0;
             }
         SAY("no partner");
@@ -1958,6 +1989,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
+    *(int32_t*)(g_blank_e84 + 0x32C) = -1;
+    if (uintptr_t a = H->sym("Simulator::CreatureStageEventHandler"))
+        H->hook_create(M, (void*)a, (void*)h_StageMsg, (void**)&o_StageMsg);
     if (uintptr_t a = H->sym("Editors::EditorRequest::Submit"))
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
     if (uintptr_t a = H->sym("Editors::cEditor::GetBlockingErrors"))

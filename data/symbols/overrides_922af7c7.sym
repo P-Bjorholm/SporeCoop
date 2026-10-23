@@ -106,6 +106,7 @@ Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (R
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
 Simulator::Cell::PreloadModel=0x00E624C0 ; verified runtime (coop_creations_cell.py): cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
 Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
+Simulator::CreatureStageEventHandler=0x00D47FC0 ; verified asm: thiscall(self, u32 msgId, msg*) ret 8 -> bool, a vtable method (ptr at .rdata 0x147B680); handles msgs 0x61B1320 0x49B56D7 0x5371F11 0x60B4123 0xD335362C 0xD3353635 0xD335363A about the avatar (msg+0 = avatar); at 0xD48634 reads (+0xE84)->+0x32C of an adult other-species creature: null on puppets/proxies -> fault (coop lends a blank +0xE84)
 Simulator::cCity::AddCaptureDamage=0x00BE9C50 ; verified cdecl(planetCtx, city, city+0x2F0 meter, ownerPol, float dmg, attackerPol, bool) caller add esp,0x1C; +0x748 += dmg*0.1, max 100 (docs/re/civ.md co-op A)
 Simulator::cCity::SetCaptureProgress=0x00BD7E40 ; verified thiscall(attackerPol, float pct) ret 8: +0x74C/+0x748 + meter
 Simulator::cCity::CheckMilitaryCapture=0x00BE9AB0 ; verified thiscall(bool flag) ret 4: +0x748>=100 -> Capture(pol,0,0,flag,0)
