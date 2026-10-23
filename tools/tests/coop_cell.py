@@ -24,6 +24,9 @@ def main():
     host, guest = start('cell', 'Game0/Karke')
     ck = Checks()
     time.sleep(5)
+    # the host saved before sending the world: the game's "saved" box (pauses the game) is confirmed
+    boxes = re.findall(r'id=0x06318E78 cmd=\S+ fl=0x([0-9A-F]+)', host.call('coop.ui tree 3')['out'])
+    ck(not any(int(f, 16) & 1 for f in boxes), f'no "game saved" box left open on the host ({boxes})')
     h, ho = pool(host)
     g, go = pool(guest)
     print(' ', ho.strip().replace('\n', ' | '))
@@ -50,6 +53,11 @@ def main():
                 shot(host, 'cell_sync_host.png')
     print(f'  samples {len(errs)}: puppet vs remote state max {max(errs or [0]):.2f}, facing max {max(rots or [0]):.1f} deg, '
           f'vs the real host cell avg {sum(lags) / max(1, len(lags)):.2f} max {max(lags or [0]):.2f}')
+    if len(errs) < 20:  # what the guest knows about the host (docs/known-issues.md)
+        for name, con in (('guest', guest), ('host', host)):
+            st = con.call('coop.status')['out']
+            print(f'  {name} status:', ' | '.join(l.strip() for l in st.splitlines()
+                                               if re.match(r'\s*(\[\d\]|remote |together |puppet |mode=|host |client|guest )', l)))
     ck(len(errs) >= 20, 'sync samples taken')
     ck(max(errs or [9]) < 0.3, f'the partner cell is exactly where its state says (max {max(errs or [9]):.2f})')
     r90 = sorted(rots)[int(len(rots) * 0.9) - 1] if rots else 999

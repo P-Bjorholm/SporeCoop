@@ -14,6 +14,7 @@
 #include "game.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
+#include "sui.h"
 
 namespace world {
 
@@ -179,6 +180,58 @@ static std::wstring current_slot(std::string& planet)
     return best;
 }
 
+// The game confirms every save with a native box "The game on planet <name> is saved." (UTFWin
+// window, control id 0x06318E78, OK button; closed boxes stay in the tree without the visible
+// flag). While it is up the simulation is paused (a cell does not move), and sometimes the box
+// also holds the frames. It used to be confirmed with one Enter posted 2.5 s after our save: under
+// CPU load the box came later, stayed open and the host's game stood still - its frames too, so
+// the guest got no host state (no partner cell). Now the box is watched for after each save and
+// confirmed once it is visible (UI reads outside the frame); the world is shared when it was seen.
+constexpr uint32_t kSavedBoxId = 0x06318E78;
+static uint64_t g_saved_at, g_box_watch_until, g_box_seen_at, g_box_next_check, g_box_last_enter;
+static bool g_box_task;
+
+static bool any_visible(sui::Win w, uint32_t id, int depth = 0)
+{
+    if (!w || depth > 12 || !sui::visible(w))
+        return false;
+    if (sui::control_id(w) == id)
+        return true;
+    for (sui::Win c : sui::children(w))
+        if (any_visible(c, id, depth + 1))
+            return true;
+    return false;
+}
+
+static void box_task(void*)
+{
+    g_box_task = false;
+    if (!any_visible(sui::main_window(), kSavedBoxId))
+        return;
+    uint64_t now = GetTickCount64();
+    if (!g_box_seen_at)
+        H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
+               (unsigned long long)(now - g_saved_at));
+    g_box_seen_at = now;
+    if (now - g_box_last_enter < 400)
+        return;
+    g_box_last_enter = now;
+    if (HWND w = (HWND)H->game_window()) {
+        PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
+        PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
+    }
+}
+
+static void box_tick()
+{
+    uint64_t now = GetTickCount64();
+    if (now >= g_box_watch_until || g_box_task || now < g_box_next_check)
+        return;
+    g_box_next_check = now + 200;
+    g_box_task = true;
+    H->run_outside_frame(box_task, nullptr);
+}
+
 bool save_game(std::string& err)
 {
     using namespace skg;
@@ -201,13 +254,17 @@ bool save_game(std::string& err)
     // in the game's own message processing. A synchronous MessageSend from our frame hook (inside
     // Present) deadlocked DXVK threads.
     vcall<void>(mm, 0x18 / 4, 0x1CD20F0u, (void*)nullptr, (void*)nullptr, 0);
+    g_saved_at = GetTickCount64();
+    g_box_seen_at = 0;
+    g_box_watch_until = g_saved_at + 30000;
     return true;
 }
 
 struct PendingShare {
     uint8_t peer;
-    uint64_t at;   // share at this tick count (files are written asynchronously after a save)
+    uint64_t at;   // share from this tick count (files are written asynchronously after a save)
     bool need_save;
+    uint64_t latest = 0; // ... once the saved box was seen, or at this tick count without it
     uint64_t next_try = 0;
     bool told = false;
 };
@@ -298,11 +355,16 @@ static void deferred_tick()
         g_feed("the world of " + d.host + " could not be loaded: " + err);
 }
 
-void guest_tick() { deferred_tick(); }
+void guest_tick()
+{
+    deferred_tick();
+    box_tick();
+}
 
 void tick(net::Session& s)
 {
     deferred_tick();
+    box_tick();
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
@@ -312,6 +374,7 @@ void tick(net::Session& s)
                 if (save_game(why)) {
                     p.need_save = false;
                     p.at = now + 2500;
+                    p.latest = now + 10000;
                 } else {
                     p.next_try = now + 2000;
                     if (!p.told)
@@ -322,15 +385,14 @@ void tick(net::Session& s)
             i++;
             continue;
         }
-        if (now < p.at) {
+        // the save is complete when its box shows up (box_tick confirms it)
+        if (now < p.at || (p.latest && now < p.latest && g_box_seen_at < g_saved_at)) {
             i++;
             continue;
         }
-        // our save opened the "game saved" box, which pauses the game: confirm it with Enter
-        if (HWND w = (HWND)H->game_window()) {
-            PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
-            PostMessageW(w, WM_KEYUP, VK_RETURN, 0xC01C0001);
-        }
+        if (p.latest && g_box_seen_at < g_saved_at)
+            H->log(M, SK_INFO, "world: no saved box %llu ms after the save: sharing anyway",
+                   (unsigned long long)(now - g_saved_at));
         std::string err;
         if (!share_now(g_pending[i].peer, err))
             g_feed("cannot share the world: " + err);
