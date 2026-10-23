@@ -389,7 +389,12 @@ class Bot(Player):
             if new:
                 break
         else:
-            hst = civ_state(self.hc)[2]
+            hcit, _, hst = civ_state(self.hc)
+            if hcit.get(ci, {}).get('owner') not in (self.id, 253):
+                # the city changed hands meanwhile (a capture splits the cities again): the game
+                # says "this city belongs to ..." and buys nothing
+                self.g.bump('buy_not_mine')
+                return 'the city is not ours any more'
             if stat(hst, 'buys_refused') > stat(hst0, 'buys_refused'):
                 # the host has no slot left although this player's button was enabled: it says so
                 self.g.bump('buy_refused')
@@ -883,6 +888,15 @@ def main():
     if game.count.get('orders_guest', 0) >= 8 and rate['guest'] > rate['host'] + 0.25:
         game.problem(f'guest orders are lost more often than the host\'s ({100 * rate["guest"]:.0f}% vs '
                      f'{100 * rate["host"]:.0f}%)')
+    # money: the guest never earns on its own (the host's economy pays everybody)
+    try:
+        m = re.search(r'shared money=\S+ synced=1 pending=\S+ from_guests=\+(\d+)/(-?\d+)', hc.call('coop.res')['out'])
+    except OSError:
+        m = None
+    if m:
+        print(f'  money changes from the guest: +{m.group(1)} / {m.group(2)}', flush=True)
+        if int(m.group(1)) > 500:
+            game.problem(f'the guest earned {m.group(1)} on its own (counted twice: the host earns it too)')
     sent, done, rej = stat(gst, 'cmds_sent'), stat(hst, 'cmds_done'), stat(hst, 'rejected')
     print(f'  guest commands: sent {sent}, executed {done}, rejected {rej} '
           f'(refused purchases {stat(hst, "buys_refused")})', flush=True)

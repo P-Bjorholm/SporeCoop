@@ -554,8 +554,10 @@ Runtime findings (✔ = seen working in the game), with what the co-op code does
   (SetOwner + model 0xBFE650 + mine state +0x1EC = 3); **Unclaim 0xBFF870** thiscall(node). Claims
   happen in the vehicle claim behaviour (0xBC012F/0xBC0244). Calling Claim on a guest shows the
   derrick and costs nothing. ✔ (applied from the host snapshot)
-* A claimed node earns money for the player civ on the host only (no double income from the guest:
-  the guest's money changes only by host totals). ✔
+* A claimed node earns money (cCivilization::AddMoney 0xBEFEB0, +70..+100 every few seconds). The
+  guest's copy of the derricks (and of the save's claimed nodes) earned it too and shared.cpp sent
+  every local gain to the host: double income (~8000 extra in 10 minutes, found 2026-10-23).
+  Guests now ignore AddMoney for the player civ; `coop.res` on the host shows `from_guests=+X/-Y`. ✔
 
 ### 9.3 New cities of other nations
 * The planet has fixed city sites; a manager (singleton 0x167B5EC, `0xB268A0` Get, tick 0xAE6190)

@@ -42,7 +42,7 @@ static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_P
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
     a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
     a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr, a_DestroyBuilding,
-    a_CombatantDamage;
+    a_CombatantDamage, a_AddMoney;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -436,6 +436,22 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, void* who, int flag)
     return r;
 }
 
+// Money is the host's: the guest's local economy (its own copy of the claimed spice derricks, city
+// income) ran too and every local gain went to the host as a shared-money delta (+80..+100 every few
+// seconds: the treasury grew about twice as fast with a guest). Guests ignore AddMoney for the player
+// civilization; their spending still reaches the host (SpendMoney is another function).
+using AddMoney_t = void(SK_THISCALL*)(void*, float, int);
+static AddMoney_t o_AddMoney;
+static uint32_t g_income_blocked;
+static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
+{
+    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && civ == player_civ() && amount > 0) {
+        g_income_blocked++;
+        return;
+    }
+    o_AddMoney(civ, amount, difficulty);
+}
+
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
 static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
@@ -741,6 +757,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_CinematicMgr, "Simulator::cCinematicManager::Get"},
         {&a_DestroyBuilding, "Simulator::cCity::DestroyBuilding"},
         {&a_CombatantDamage, "Simulator::cCombatant::TakeDamage"},
+        {&a_AddMoney, "Simulator::cCivilization::AddMoney"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -759,6 +776,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_Capture, (void*)h_Capture, (void**)&o_Capture);
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
+    H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1614,10 +1632,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked);
     return b;
 }
 

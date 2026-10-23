@@ -105,6 +105,7 @@ struct Res {
     double synced = 0;   // value after the last sync (guest) / last broadcast (host)
     double pending = 0;  // guest: local change not yet sent
     double last_send = 0;
+    double gained = 0, spent = 0; // host: sum of the guests' positive / negative changes
 };
 
 static bool g_civ(double& v) { float* p = civ_money(); if (p) v = *p; return p; }
@@ -192,6 +193,7 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
         } else if (type == net::MSG_RES_ADD && s.role() == net::Role::Host) {
             if (std::fabs(v) < 1e7)
                 r.set(cur + v);
+            (v > 0 ? r.gained : r.spent) += v; // tests: what the guests changed
             H->log(M, SK_INFO, "shared %s %+.1f from player %u", r.name, v, from);
         }
         return;
@@ -206,7 +208,8 @@ std::string status()
         double v;
         if (!r.get(v))
             continue;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f\n", r.name, v, r.have, r.pending);
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f from_guests=+%.0f/%.0f\n", r.name, v, r.have,
+                 r.pending, r.gained, r.spent);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
