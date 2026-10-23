@@ -39,7 +39,41 @@ faults (twoinst monitors, `exc`).
 
 ## Sessions
 
-RESULTS
+Final bot (all fixes below), lane 4, 11 minutes each. Orders: given by a real click and
+followed (members moved or the target lost health on the host) / lost (the host rejected a
+guest order) / idle (arrived, nobody moved) / clicks that gave no order or only walks.
+
+| seed | result | host orders ok/lost/idle/none | guest orders | food start -> end (rises) | citizens at the end | t* p90 / max | n* p90 | co-op counters |
+|---|---|---|---|---|---|---|---|---|
+| 21 | FAIL (the guest gave only 6 orders: after the bounce back its selections failed; host-side outliers of creatures the host stopped tracking, now ignored) | 25/0/0/4 | 6/0/0/2 | 20 -> 78 (18), 1 game over | 7 | 1.28 / 2.5 m | 0.80 m | aura 22, rescue 1 |
+| 22 | FAIL (1 guest order rejected, cause not logged) | 23/0/0/2 | 11/0/2/1 | 20 -> 157 (20) | 32 (5 tribes) | 0.77 / 3.2 m | 0.76 m | pincer 12, aura 5 |
+| 23 | OK | 28/0/0/0 | 17/0/3/5 | 20 -> 216 (21) | 31 | 0.75 / 3.2 m | 0.74 m | aura 43, **epic killed together (+80)** |
+| 31 | OK | 13/0/1/1 | 24/0/2/2 | 20 -> 105 (17) | 29 | 0.75 / 3.0 m | 0.73 m | pincer 20, aura 4, rescues 2 |
+| 32 | OK | 25/0/2/0 | 21/0/1/6 | 20 -> 133 (19) | 32 | 0.72 / 3.2 m | 0.73 m | - |
+| 33, `SPORE_NET=mobile` | OK | 19/0/3/1 | 19/0/1/6 | 20 -> 159 (17) | 35 | 1.42 / 5.2 m | 0.99 m | pincer 51, aura 35, rescues 2, **epic killed together** |
+| 41 | OK | 25/0/1/4 | 15/0/0/8 | 20 -> 122 (17) | 31 | 0.76 / 3.1 m | 0.72 m | pincer 26, aura 18 |
+
+Bot limitations: the own food mat sits at the bottom edge of the default view and the bot rarely
+finds it (heal orders: 4 in s7, then mostly "nothing"); raids are not coordinated in time (both
+players raided the same tribe within 10 s only 0-1 times per session, the pincer still happened
+through overlapping fights).
+In every session: no freeze, crash or fault on either game, the shared food was the same on both
+machines in every sample (~50 per session), the player tribe's members, owners and chiefs were
+the same on both (after the fixes), nobody ever had a partner's member selected although each
+player clicked, box-selected and right-clicked the partner's members 10-25 times per session (the
+freeze once seen when selecting the partner's units did not come back), every gift (1-4 per
+session) arrived on both machines. Facing p90 of citizens 2-10 degrees.
+
+What happens in a typical session: 3 -> 6 members (setup), gathering brings +5 food per trip
+(food 20 -> 100-220 in 11 minutes, healing at the food mat costs some), raids on the Pink
+Village bring the pincer and the chief's aura into play (and kill members on both sides), new NPC
+tribes form after ~5 minutes (2 -> 5 tribes, ~30 citizens), the epic creature comes after 8
+minutes together and was killed together twice (+80 food); one session ended in a game over
+("population below the minimum") and bounced back to the save on both machines.
+
+Before the final bot: 11 sessions (seeds 1-11, 2-10 minutes) while the bot learned to play
+(selection timing, the minimap, hovering before right-clicks, fruit trees) found bugs 1-5 below,
+the game-over crash and the guest's Spore Guide (`H`: test pitfall, docs/06-testing.md 6.10).
 
 ## Bugs found and fixed
 
@@ -90,6 +124,10 @@ with every tracked creature.
   host's NPC table for up to 2 s with a destroyed object (position 0,0,0); its id keeps the guest
   proxy alive meanwhile. If the game allocates a new creature at the same address within those
   2 s it would inherit the old id and species on the guest (not seen).
+* Seed 21: after the bounce back (game over) the guest's box selections failed 38 times and it gave
+  no more orders. The view resets on a reload and the bot now calibrates the minimap again after
+  a bounce back; a forced bounce back (kill the tribe, OK on the host) then worked for the guest
+  (selection and orders), so the stale minimap is the likely cause, not the mod. Not seen again.
 * Seed 22: the host rejected one guest order (cause not logged then; the bot logs the host's
   reason since 2026-10-23).
 * Civilization: the vehicle snapshot can have the same too-big-chunk problem as tribe had
