@@ -61,3 +61,8 @@ anything new, write it down in the same change.**
 * Small commits after each logical step, English messages and comments; a pull request per branch
   with the lab summary (`out/lab/<run>/summary.md`).
 * Everything published (README, docs, release notes) is in English.
+* Merge locally (`git merge --ff-only` or a local merge commit) and push `main`; do not use GitHub's
+  merge button: it writes the account's e-mail into the merge commit. Commits use the GitHub
+  no-reply address.
+* Releases: add the version's section to `CHANGELOG.md`, bump `COOP_VERSION` (mods/coop/coop.cpp),
+  push a tag `vX.Y.Z`: GitHub Actions builds the zip and publishes the release.
