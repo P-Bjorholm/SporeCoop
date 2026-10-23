@@ -133,11 +133,13 @@ def cmd_run(a):
     logdir = os.path.join(ROOT, 'out', 'lab', run_id)
     os.makedirs(logdir, exist_ok=True)
     head = git('log', '-1', '--format=%h %s', cwd=tree)
+    skip = {int(x) for x in a.skip.split(',') if x.strip()}
+    a.lane_ids = [n for n in range(1, 9) if n not in skip][:a.lanes]
     print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} ({head})')
     if not a.no_build:
         build(tree)
-    ensure_lanes(a.lanes)
-    for lane in range(1, a.lanes + 1):  # a run starts from clean games
+    ensure_lanes(max(a.lane_ids))
+    for lane in a.lane_ids:  # a run starts from clean games
         spore(tree, lane, 'kill')
     parallel = sorted([t for t in tests if not t['exclusive']], key=lambda t: -t['minutes'])
     alone = [t for t in tests if t['exclusive']]
@@ -195,18 +197,18 @@ def cmd_run(a):
             report(r)
 
     t0 = time.time()
-    threads = [threading.Thread(target=worker, args=(lane,)) for lane in range(1, a.lanes + 1)]
+    threads = [threading.Thread(target=worker, args=(lane,)) for lane in a.lane_ids]
     for th in threads:
         th.start()
         time.sleep(5)  # Bottles sandboxes starting at the same moment can race
     for th in threads:
         th.join()
     if alone:  # the machine alone: no game of another lane may be visible (LAN discovery)
-        for lane in range(1, a.lanes + 1):
+        for lane in a.lane_ids:
             spore(tree, lane, 'kill')
     for t in alone:
         report(attempt(t, 1, False)[0])
-    for lane in range(1, a.lanes + 1):
+    for lane in a.lane_ids:
         spore(tree, lane, 'kill')
     total = time.time() - t0
     ok = all(r['ok'] for r in results)
@@ -265,6 +267,7 @@ def main():
     r = sub.add_parser('run')
     r.add_argument('tests', nargs='?', default='smoke', help='smoke | full | nightly | name,name')
     r.add_argument('--lanes', type=int, default=int(os.environ.get('SPORE_LANES', '3')))
+    r.add_argument('--skip', default='', help='lanes other work uses, e.g. 3,6: the run takes the next free ones')
     r.add_argument('--branch')
     r.add_argument('--cold', action='store_true', help='no warm reuse of running games')
     r.add_argument('--no-build', action='store_true')

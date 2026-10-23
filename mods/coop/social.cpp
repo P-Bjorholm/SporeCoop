@@ -20,7 +20,7 @@ static Ctx C;
 
 static uintptr_t a_AbilityMode;
 static uintptr_t a_RelMgrGet, a_RelGet, a_RelEvent, a_RelRecord, a_SocialMode, a_DnaWorth, a_PlayAbility,
-    a_PlayReaction, a_AddEvo;
+    a_PlayReaction;
 
 static constexpr uint32_t kSocialStimulus = 0x10000; // the avatar engages an NPC socially
 static constexpr float kActRange = 12.f;             // m between the guest and the NPC for an action
