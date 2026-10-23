@@ -276,6 +276,9 @@ bool stage_mode(uint32_t m)
 }
 
 void notice(const std::string& text, int from); // feed + chat log on every player
+// Civilization and Space editors change designs (buildings, vehicles, ships, the anthem), not the
+// species: the vote and the notices say so (until 2026-10-23 a house design "evolved the species")
+bool design_stage(uint32_t m) { return m == modes::kCiv || m == modes::kSpace; }
 void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uint32_t argb);
 bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
 
@@ -327,7 +330,7 @@ bool start_action_vote(const std::string& text, const std::string& done, std::fu
 void start_vote(void* req, const std::string& text)
 {
     g_vote_action = nullptr;
-    g_vote_done = "evolution starts";
+    g_vote_done = design_stage(game::mode_id()) ? "the editor opens" : "evolution starts";
     if (req)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
     g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u};
@@ -414,10 +417,11 @@ bool SK_CDECL h_Submit(void* req)
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
         if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active)
-                start_vote(req, g_name + " wants to evolve (" + modes::mode_name(mode) + ")");
+                start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
+                                    modes::mode_name(mode) + ")");
             return false; // runs when the vote is over
         }
-        notice(g_name + " evolves its own creature", -1);
+        notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
         set_ready(true);
     }
     return o_Submit(req);
@@ -504,8 +508,9 @@ void on_mode_change(uint32_t from, uint32_t to)
     for (auto& [id, r] : g_remotes)
         if (!r.echo)
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
-    notice(new_stage ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
-                     : g_name + " evolved the species: everybody gets the new body",
+    notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
+           : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
+                              : g_name + " evolved the species: everybody gets the new body",
            -1);
 }
 
