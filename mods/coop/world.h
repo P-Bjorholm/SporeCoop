@@ -15,6 +15,11 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false);
 bool share_now(uint8_t peer, std::string& err);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
+// nullptr when it may
+void set_save_blocker(const char* (*probe)());
+// host: a save of ours is still being written (the game's editor waits for it: save_game)
+bool save_busy();
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 void guest_tick(); // guests: load a world that arrived while in an editor

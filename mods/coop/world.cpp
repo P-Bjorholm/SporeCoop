@@ -275,9 +275,22 @@ static void box_tick()
     H->run_outside_frame(box_task, nullptr);
 }
 
+static const char* (*g_save_blocker)();
+void set_save_blocker(const char* (*probe)()) { g_save_blocker = probe; }
+
 bool save_game(std::string& err)
 {
     using namespace skg;
+    // A save written while the game switches modes does not load again: the host's save for a
+    // world share went into the game's message queue on the frame its evolution vote ended, the
+    // editor opened while it was written, and the save (no cVisiblePlanet, extra rocks and
+    // ornaments) kept every game that loaded it in LoadGame forever, frames running
+    // (docs/re/creature.md "Saves made while an editor opens"). Not while an editor opens, is open,
+    // or a mode switch is pending.
+    if (const char* why = g_save_blocker ? g_save_blocker() : nullptr) {
+        err = why;
+        return false;
+    }
     uintptr_t get = H->sym("App::IMessageManager::Get");
     void* mm = get ? cdecl_call<void*>(get) : nullptr;
     if (!mm) {
@@ -310,16 +323,29 @@ struct PendingShare {
     uint64_t latest = 0; // ... once the saved box was seen, or at this tick count without it
     uint64_t next_try = 0;
     bool told = false;
+    uint32_t mode = 0; // the game mode the save was made in
 };
 static std::vector<PendingShare> g_pending;
 
 bool share_with(uint8_t peer, std::string& err, bool save_first)
 {
     if (save_first) {
+        for (auto& p : g_pending)
+            if (p.peer == peer && p.need_save)
+                return true; // already waiting for a save
         g_pending.push_back({peer, 0, true});
         return true;
     }
     return share_now(peer, err);
+}
+
+bool save_busy()
+{
+    for (auto& p : g_pending)
+        if (!p.need_save)
+            return true; // saved for a share, not written completely yet
+    uint64_t now = GetTickCount64();
+    return g_saved_at && now < g_saved_at + 10000 && g_box_seen_at < g_saved_at;
 }
 
 bool share_now(uint8_t peer, std::string& err)
@@ -535,6 +561,7 @@ void tick(net::Session& s)
                     p.need_save = false;
                     p.at = now + 2500;
                     p.latest = now + 10000;
+                    p.mode = game::mode_id();
                 } else {
                     p.next_try = now + 2000;
                     if (!p.told)
@@ -547,6 +574,17 @@ void tick(net::Session& s)
         }
         // the save is complete when its box shows up (box_tick confirms it)
         if (now < p.at || (p.latest && now < p.latest && g_box_seen_at < g_saved_at)) {
+            i++;
+            continue;
+        }
+        // the game left the mode the save was made in while it was written (an editor opened):
+        // that save may not load (see save_game); save again once the game allows it
+        if (game::mode_id() != p.mode) {
+            H->log(M, SK_WARN, "world: the game went from %s to %s during the save for player %u: saving again",
+                   modes::mode_name(p.mode), modes::mode_name(game::mode_id()), p.peer);
+            p.need_save = true;
+            p.next_try = now + 2000;
+            p.latest = 0;
             i++;
             continue;
         }

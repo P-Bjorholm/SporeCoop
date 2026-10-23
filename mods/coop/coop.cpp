@@ -510,6 +510,79 @@ bool open_own_editor(uint32_t editor_id)
     return r;
 }
 
+// the simulator's mode switcher has a switch pending (+0x28: a load, the quit to the menu, an editor)
+bool mode_switch_pending()
+{
+    static uintptr_t mgr_ptr = H->sym("SporeCoop::SimulatorModeMgr_ptr");
+    void* mgr = mgr_ptr ? *(void**)mgr_ptr : nullptr;
+    return mgr && skg::field<uint8_t>(mgr, 0x28);
+}
+
+// An editor request that waits until the host's save for a world share is written (a save made
+// while the editor opens does not load again: world::save_game). One reference held.
+void* g_submit_later = nullptr;
+double g_submit_held_at = 0;
+double g_editor_submitted_at = -100; // the last editor request that reached the game
+unsigned g_submits_held; // tests: editor requests that waited for a save
+
+bool submit_now(void* req)
+{
+    g_vote_bypass = true;
+    bool r = o_Submit(req);
+    g_vote_bypass = false;
+    if (r)
+        g_editor_submitted_at = H->time_seconds();
+    return r;
+}
+
+void hold_submit(void* req)
+{
+    skg::vcall<int>(req, 1); // AddRef
+    if (g_submit_later)
+        skg::vcall<int>(g_submit_later, 2); // a newer request replaces it
+    g_submit_later = req;
+    g_submit_held_at = H->time_seconds();
+    g_submits_held++;
+    LOG("the editor waits until the world save is written");
+}
+
+// the held request goes to the game once the save is written (at most 15 s later), outside the
+// frame: editors create D3D resources
+void submit_tick(double now)
+{
+    if (!g_submit_later || (world::save_busy() && now - g_submit_held_at < 15.0))
+        return;
+    void* req = g_submit_later;
+    g_submit_later = nullptr;
+    if (!stage_mode(game::mode_id()) || mode_switch_pending()) { // the host left the stage meanwhile
+        LOG("the held editor request is dropped: the game left the stage");
+        skg::vcall<int>(req, 2);
+        return;
+    }
+    LOG("the save is written: the editor opens (%.1f s later)", now - g_submit_held_at);
+    H->run_outside_frame(
+        [](void* r) {
+            submit_now(r);
+            skg::vcall<int>(r, 2); // Release
+        },
+        req);
+}
+
+// why the game must not save now (world::save_game)
+const char* save_blocker()
+{
+    uint32_t mode = game::mode_id();
+    if (mode == modes::kEditor || mode == modes::kEdit)
+        return "an editor is open (the world is sent when the host is back in the stage)";
+    if (mode == modes::kLoad)
+        return "the game is loading";
+    if (g_submit_later || H->time_seconds() - g_editor_submitted_at < 5.0)
+        return "an editor is opening";
+    if (mode_switch_pending())
+        return "the game is switching modes";
+    return nullptr;
+}
+
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
@@ -522,7 +595,14 @@ bool SK_CDECL h_Submit(void* req)
         notice(g_name + " evolves its own creature", -1);
         set_ready(true);
     }
-    return o_Submit(req);
+    if (!g_vote_bypass && req && g_sess.role() == net::Role::Host && world::save_busy()) {
+        hold_submit(req); // the game's own request (alone in the session): after the save
+        return false;
+    }
+    bool r = o_Submit(req);
+    if (r)
+        g_editor_submitted_at = H->time_seconds();
+    return r;
 }
 
 void finish_vote(const char* why)
@@ -542,15 +622,11 @@ void finish_vote(const char* why)
         g_vote_action = nullptr;
         H->run_outside_frame([](void*) { run(); }, nullptr);
     }
-    if (req) // editors create D3D resources: outside the frame
-        H->run_outside_frame(
-            [](void* r) {
-                g_vote_bypass = true;
-                o_Submit(r);
-                g_vote_bypass = false;
-                skg::vcall<int>(r, 2); // Release
-            },
-            req);
+    if (req) { // the editor opens from submit_tick (outside the frame) once no world save is written
+        hold_submit(req);
+        skg::vcall<int>(req, 2); // the vote's reference: hold_submit took its own
+        submit_tick(H->time_seconds());
+    }
 }
 
 void broadcast_vote()
@@ -758,6 +834,7 @@ void on_frame(void*, int, void*)
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
+    submit_tick(now);
     coop_ui::tick();
     menu_tick(now);
     if (g_sess.role() == net::Role::Host)
@@ -1217,6 +1294,11 @@ void setup_callbacks()
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local)
                 H->run_outside_frame( // editors create D3D resources: outside the frame
                     [](void* id) {
+                        // the player may have left the stage since (pause menu "Exit to Main Menu")
+                        if (game::mode_id() != modes::kCreature || mode_switch_pending()) {
+                            LOG("own editor not opened: the game left the creature stage");
+                            return;
+                        }
                         bool ok = open_own_editor((uint32_t)(uintptr_t)id);
                         LOG("own editor %s", ok ? "opened" : "not opened");
                     },
@@ -2098,6 +2180,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
+    world::set_save_blocker(save_blocker);
     shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
@@ -2201,8 +2284,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("editor request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
-                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u", g_vote.active ? "active" : "none",
-                           g_vote.text.c_str(), g_vote.left, (int)g_own_editor, g_part_list_waivers);
+                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u",
+                           g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
+                           g_part_list_waivers, g_submits_held);
                        return 0;
                    },
                    nullptr, MT);
