@@ -76,9 +76,9 @@ Structures of `cCreatureAnimal` and the NPC sync: [05-re-notes.md](../05-re-note
   explored further; the evolution vote is tested through `coop.vote editor`).
 * ✔ The ability bar keys work on an unfocused test window (background mode); WASD and the arrow
   keys move the avatar; a right-drag turns the camera.
-* ✔ On the guest, the goal card of a species whose local creatures were removed (NPCs are the
-  host's) says "The <species> species is extinct!" while the host's card says "Impress 3 <species>
-  to ally" (docs/known-issues.md).
+* ✔ On the guest, the goal card of a species said "The <species> species is extinct!" while the
+  host's card said "Impress 3 <species> to ally": the guest counted the replayed deaths of mirrors
+  as kills (section 8.1). Fixed 2026-10-23.
 
 ## 6. Herds of our own creatures fill themselves up
 
@@ -100,3 +100,86 @@ Structures of `cCreatureAnimal` and the NPC sync: [05-re-notes.md](../05-re-note
   went on; a frame with no creature update now counts as a pause (the NPCs stay mirrored, standing
   still). Regression: `coop_exit_menu.py` (host paused 6 s: 21 -> 0 NPCs before, 21 -> 21 after).
 * ✔ The death caption is `coop.ui find "You were killed"`; `key enter` presses its OK.
+
+## 8. Social games, the species relationship table, goal cards (2026-10-23)
+
+Static analysis: a full Ghidra analysis of the exe in a private project (`analyzeHeadless`, ~15 min,
+then queries by a small script in seconds); runtime: `probe`, memory diffs, `call`.
+
+### 8.1 The species relationship table
+
+* ✔ `cSpeciesRelationshipManager::Get` 0xB3D590 (cdecl) -> manager. The table is a hash map at
+  manager +0x20 (buckets +4, bucket count +8); a node is `{ResourceKey species, record {relation,
+  ?, impressed, killed, -1}, ..., next at +0x20}`. `SpeciesRelationMap_Record` 0xBA3B20
+  (thiscall on manager +0x20) returns the record, inserting a zero one.
+* ✔ `GetRelationship` 0xBA40C0 `thiscall(mgr, key*, a, b) ret 0xC`: the record's relation, 0 = not
+  set (then the archetype tuning +0x390 decides). Creature stage values: 6 allied (and the own
+  species), 5 extinct, 4 / 3 impressed some (~), 1-2 hostile (~).
+* ✔ `ApplyEvent` 0xBA49E0 `thiscall(mgr, int event, key*, creature) ret 0xC`: event 3 = one
+  creature impressed (record +8 += 1; ally at tuning +0x40C, 4 at +0x408), 0 / 5 = killed (+0xC;
+  extinct at tuning +0x400 via 0xBA4730), 2 = attacked, 6 / 7 nest events. A change refreshes the
+  creature UI (`CreatureGoalUI_Get` 0xD37CB0 -> [0x169F210], vt 0x28(0)).
+* ✔ 0xBA4730 "the species is extinct": event-log message, and every herd (noun 0x01BE418E) of the
+  species gets 0xC6AEA0 (~ stopped). 0xBA4820 on a change: allied -> every herd of the species
+  0xC6A1E0(creature).
+* ✔ `TakeDamage` calls ApplyEvent 2 for every hit and 0 / 5 for every death (also without a
+  player attacker). On a guest every replayed death of a mirror counted as a kill of the species,
+  and a mirror that re-entered the relevance radius dead replayed it again: three of them made the
+  species extinct on the guest ("Hunt: The Kook species is extinct!" on its card). Fix: the guest
+  drops relationship events on mirrors and puppets (`social.cpp` hook), the host sends its table
+  (MSG_SPECIES, on change and every 10 s) and the guest writes it into its own every 0.5 s.
+* ✔ Kook tuning (archetype tuning +0xE84 of the creature): +0x3FC 1, +0x400 3 kills to extinct,
+  +0x404 1, +0x408 2, +0x40C 3 impressed to ally ("Impress 3 Kook to ally"), +0x418 25 (ally DNA),
+  +0x420 20, +0x424 1 social round, +0x428 5.0 s, +0x42C 0.05.
+
+### 8.2 Goal cards
+
+* ✔ A species card ("Impress 3 Kook to ally", "Hunt ...") is a game object, noun 0x1406A572, vtable
+  0x146BED8. Init 0xC30300 copies the species key and the tuning thresholds; `SpeciesGoal_Update`
+  0xC2EE60 `thiscall(goal, out, out) ret 8` reads impressed / killed / relation and, when the species
+  just became allied (6) or extinct (5), pays the card's DNA (AddEvolutionPoints) and posts
+  0x43715491 / 0xB4987E04; `SpeciesGoal_Refresh` 0xC2FB90 runs it and sets the texts. It runs when
+  a relationship message reaches the card (handler 0xC2FD40): a table written by the mod needs a
+  call of 0xC2FB90 on every such object. On a guest the card's DNA is dropped (the host's card pays
+  it into the shared pool).
+
+### 8.3 How the native social game runs
+
+* ✔ The avatar's click on an NPC in the social stance posts the social stimulus 0x10000 (value 5)
+  to the NPC's AI (`BT_PostStimulus` 0xBC9940 `thiscall(ai(+0xB4C)+8, maskLo, maskHi, float,
+  sender) ret 0x10`). The NPC's behaviour tree answers: node 0x341BD4BE (table at 0x15943A0: start
+  0xDA43D0 "SocialPropose", tick 0xDA49C0, end 0xD9F810) builds the session (rounds = tuning +0x424,
+  +1 for an alpha, +0xB58 bit 1), the meter UI (0xE31xxx) and the prompts. The player's ability keys
+  answer it; without such a session the keys do nothing (no animation either).
+* ✔ The win: `CreatureSocialSuccess` 0xD9BC40 `thiscall(session, npc, other) ret 8` (called at
+  0xDA4A6B when the meter is full): ApplyEvent 3, DNA = `CreatureDnaWorth` 0xC04260(npc, 1) (Kook:
+  10) + a meter bonus, popup, message 0x60B4123 {avatar, other, 0} via 0xD39360, npc +0xB58 |= 0x80
+  (impressed: green face), UI refresh. Returns the reaction animation (by relation: 1 0xF37DB906,
+  2 / 5 0xD37DB8F6, 3 0x538BF747, else 0x738BF75B) that the tick plays with `CreaturePlayAnim`
+  0xC122B0 `thiscall(c, anim, 1, -1) ret 0xC`.
+* ✔ `CreatureSocialMode` 0xC0E7C0 (thiscall, no args): 0 = no social game with this NPC.
+* ✔ Abilities: creature vt 0xB0 count, vt 0xB4 GetAbility(i); ability +8 type, +0x10 is 1 on the
+  social ability (~: sing, type 0x25, index 4 on both test creatures). `PlayAbility` 0xC1E580
+  `thiscall(c, index, 0) ret 8` plays it (-1 while cooling down). The ability mode (stance) is the
+  global 0x169F374: 0 social, 1 combat.
+* ✗ Letting a mirror run its own AI on the guest (to get the native session there) does not work:
+  the mirror left its herd (+0x1674 = 0) and was destroyed by the game a minute later (a dangling
+  proxy, a fault in coop.dll; 0xBA4730 then faulted on the null herd). Not pursued.
+* Co-op (social.cpp): the guest's click engages the mirror (the stimulus is seen in the hook), a
+  social key plays the guest's ability and sends it to the host (MSG_SOCIAL), the host counts the
+  rounds the native game would ask for and applies the win like 0xD9BC40 without its meter (event
+  3, DNA, impressed flag, reaction animation on both). Not done: the meter and the NPC's prompts on
+  the guest, message 0x60B4123, abilities used by a click on the ability bar.
+
+### 8.4 Mirrors in the nest herd
+
+* ✔ Herds are game objects, noun 0x01BE418E; species profile at +0xA4, nest at +0x160. Mirrors on
+  the guest go into the nest herd of their species (from the local NPCs the update filter removes,
+  else the first nest herd of the species among the game objects): `Create` gives them the herd's
+  archetype tuning (+0xE84), which the social code and the avatar-event handler (section 4) read.
+
+### 8.5 The pause menu window
+
+* ✔ The pause menu "Options" is one window (control id 0x0615B50D) that stays loaded: shown when
+  its flag 0x1 and its parents' are set. coop.cpp looks it up 5 times a second (outside the frame)
+  and does not draw the world labels while it or the co-op window is up.

@@ -23,9 +23,10 @@ def num(rx, text, default=None):
 
 def table(con):
     """{species instance: (relation, impressed, killed)}"""
-    return {m.group(1): (int(m.group(2)), int(m.group(3)), int(m.group(4)))
-            for m in re.finditer(r'species ([0-9A-F]{8})/\S+ relation=(-?\d+) x=\d+ impressed=(\d+) killed=(\d+)',
-                                 con.call('coop.social species')['out'])}
+    t = {m.group(1): (int(m.group(2)), int(m.group(3)), int(m.group(4)))
+         for m in re.finditer(r'species ([0-9A-F]{8})/\S+ relation=(-?\d+) x=\d+ impressed=(\d+) killed=(\d+)',
+                              con.call('coop.social species')['out'])}
+    return {k: v for k, v in t.items() if v != (0, 0, 0)}  # an empty record is the same as none
 
 
 def social(con):

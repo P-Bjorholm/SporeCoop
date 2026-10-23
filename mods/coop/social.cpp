@@ -135,6 +135,23 @@ static void enforce_table()
             changed = true;
         }
     }
+    // a record the host does not have (made by the guest's own game: seen with relation 3 after a
+    // 10-minute session) goes back to "not set" (relation 0 = the archetype's default)
+    for (auto& r : read_table()) {
+        if (!r.relation && !r.x && !r.impressed && !r.killed)
+            continue;
+        bool host_has = false;
+        for (auto& h : g_host_table)
+            host_has |= !memcmp(h.key, r.key, sizeof r.key);
+        if (host_has)
+            continue;
+        ResourceKey k{r.key[0], r.key[1], r.key[2]};
+        if (uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k)) {
+            rec[0] = rec[1] = rec[2] = rec[3] = 0;
+            g_table_fixed++;
+            changed = true;
+        }
+    }
     if (changed)
         H->run_outside_frame(refresh_cards, nullptr);
 }

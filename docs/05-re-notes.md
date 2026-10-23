@@ -20,6 +20,12 @@ build known to Spore ModAPI (Disk: 24 904 192 / 24 909 584; March2017: 24 885 24
    `tools/addrport/pe_window.py` makes a "windowed" copy of the exe: same headers, imports,
    `.rdata/.data`, but `.text` is cut down to the needed window (e.g. 0xC00000–0xC30000). Addresses
    match the real ones, and analysis takes seconds. Verified addresses → `overrides_922af7c7.sym`.
+2b. **A private full analysis** (2026-10-23): `analyzeHeadless <dir> spore -import SporeApp.exe
+   -postScript Q.java q.txt out.txt` analyses the whole exe in ~15 min into a project of one's own
+   (not the shared REA session, which other agents use); later queries with `-process SporeApp.exe
+   -noanalysis -readOnly` take ~7 s (decompile, callers, xrefs, byte scans). Calls Ghidra does not
+   see (functions only reached by `call rel32` from code it did not disassemble, BT node tables in
+   .data) are found by scanning the file for the 32-bit value or for E8/E9 rel32 targets.
 3. **Runtime verification** via devkit: `mem.read`, `call`, the exception logger (`exc`),
    the watchdog thread (`hangdump`).
 

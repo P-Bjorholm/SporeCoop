@@ -55,12 +55,14 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 | `PLAYER_JOIN/LEAVE` | R | id, nickname, appearance |
 | `PLAYER_STATE` | U | id, tick, position (3×f32), orientation, velocity, movement flags, health, species, **mode** and **place** (protocol v2: a puppet is visible only in the same mode and place) |
 | `ANIM` | R | animation played by the player's creature (jump, attack, social); the host relays it |
-| `NPC_SPAWN` | R | net-id, species key (ResourceKey), scale, flags (dead / "family"), position, HP |
+| `NPC_SPAWN` | R | net-id, species key (ResourceKey), scale, flags (dead / "family" / impressed), position, HP |
 | `NPC_STATE` | U | 10 Hz, batches of ~25: net-id, position, orientation, velocity, HP, flags |
 | `NPC_DESPAWN` | R | net-id: left the 110 m radius (+20 m hysteresis) or disappeared |
 | `DAMAGE_REQ` | R | guest → host: my hit on an NPC (net-id, damage, type) |
 | `DAMAGE` | R | host → guest: an NPC hit you (damage, type, attacker net-id) |
-| `DNA` / `DNA_ADD` | R | shared DNA total from the host / gain earned by a guest |
+| `DNA` / `DNA_ADD` | R | shared DNA total from the host / gain earned by a guest (also the DNA a guest earned alone while the host was in the main menu) |
+| `SPECIES` | R | host → guests: the creature stage's species relationship table (per species: relation, impressed, killed), on change and every 10 s; the guest writes it into its own and refreshes its goal cards |
+| `SOCIAL` | R | guest → host: a social ability on a mirrored NPC (net-id, ability type); host → guest: rounds done / needed; host → all: the result (impressed or refused, reaction animation, DNA) |
 | `RES` / `RES_ADD` | R | shared resource (u8 id: 1 tribe food, 2 civilization money, 3 empire money; f64): total from the host / change on a guest |
 | `PING_MARK` | R | "look here" marker: author id, point, mode; the host forwards it to the others |
 | `WORLD_TIME` | U | once per second: quaternion of the sky object (time of day) |

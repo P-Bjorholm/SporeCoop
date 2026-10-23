@@ -243,6 +243,14 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
 * Player sync in play: standing players match within 1.5 m (p90 ~0.6 m), moving ones trail by the
   interpolation and walking delay (median ~0.5 s); in fights a partner's puppet snaps at 4 m.
   coop.sync's 1.5 m limit for players is for walking (coop_sync.py), not for fights.
+* Social games of a guest (`coop_creature_social.py`): social stance, a click on the mirrored NPC
+  (`coop.social` shows `engaged=<id>`), then hold the ability key (`key 0x31 down`, 0.3 s, `up`):
+  the mod polls keys 1-4 and a bare `key 0x31` tap is missed, like F9. `coop.social act <id> [slot]`
+  does the same without input; `coop.social species` prints the species table (both machines must
+  print the same). A guest idling at a nest gets attacked: the test sets `coop.team hp 1000`.
+* The host leaving to the main menu (`coop_exit_menu.py` part 3): "Exit to Main Menu" goes straight
+  to the menu when nothing changed since the last save (the world was just saved for the guest), so
+  the "Don't Save" dialogs may not come.
 * Several agents on one machine: each one gets its own lane; temp files belong in a folder of
   your own (subagents of one session share the scratchpad folder: another agent's `up.py` there
   started the cell fixture in this lane, 2026-10-23).
