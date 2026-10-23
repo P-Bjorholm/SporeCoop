@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-23
+
+Support for the current GOG build of Spore, and a fix that made the mod work on Windows at all.
+Tested on Windows 11 with the GOG 2024 build: host and guest (two game instances on one PC) played
+every stage: cell, creature, tribe, civilization and space (joining, world transfer, puppets,
+NPC damage through the host, shared DNA / money / food, civ purchases, buildings and orders, tribe
+orders, ship damage, saving), with no faults.
+
+If you installed 0.6.0 on the current GOG build, the Co-op item was missing and
+`mods\logs\sporekit.log` said "no symbol database for this SporeApp.exe build". Install 0.6.1 with
+`SporeCoopSetup.exe` or `install.bat` (the in-game update cannot start there, because the mod was
+off). 0.6.0 and 0.6.1 can play together (the network protocol did not change), but all players
+need the same game build.
+
 ### The current GOG build and Windows
 - The current GOG download of the SPORE Collection (the 2024 update, `SporeApp.exe` 24 895 536
   bytes, SHA-256 `dc04aee5…`) is supported: it has its own symbol files
