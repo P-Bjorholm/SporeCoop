@@ -537,6 +537,12 @@ void follow_phase(double now)
         // a guest in an editor is left alone (it may be evolving inside the same stage); a guest
         // that plays another stage than the host is pulled back into the host's stage
         bool behind = ls.mode != g_mode && stage_mode(ls.mode);
+        // a guest that played this phase and went to the main menu (pause menu "Exit to Main
+        // Menu") while staying in the session waited for the host's world forever (the lobby said
+        // "Waiting for the host's world...", play_creature.py 2026-10-23): it gets the world again
+        bool left_to_menu = ls.mode == modes::kMenu && r.joined_phase;
+        if (left_to_menu)
+            behind = true;
         if (!behind) {
             r.other_mode_since = -1;
             if (ls.mode == g_mode)
@@ -552,7 +558,7 @@ void follow_phase(double now)
         r.joined_phase = false;
         std::string err;
         if (world::share_with(id, err, g_save_on_share))
-            feed("next phase: sending the world to " + r.name);
+            feed((left_to_menu ? "back to the world: sending it to " : "next phase: sending the world to ") + r.name);
         else
             feed("cannot share the world: " + err);
     }

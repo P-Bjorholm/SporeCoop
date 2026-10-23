@@ -41,6 +41,7 @@ add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ')
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
