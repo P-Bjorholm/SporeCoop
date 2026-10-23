@@ -584,8 +584,8 @@ std::vector<syncdbg::Entry> sync_entries()
 {
     std::vector<syncdbg::Entry> v;
     if (C.sess && C.sess->role() == net::Role::Host) {
-        for (auto& [c, h] : g_host_npcs)
-            if (game::object_alive(c))
+        for (auto& [c, h] : g_host_npcs) // updated this frame: an unloaded one may be freed already
+            if (g_seen_now.count(c) && game::object_alive(c))
                 v.push_back({"n" + std::to_string(h.id), game::position(c), game::orientation(c)});
     } else {
         for (auto& [id, px] : g_proxies)

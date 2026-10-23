@@ -14,6 +14,11 @@ struct State {
     double last_cmd = 0;
     double stuck_since = 0;
     net::Vec3 last_target;
+    // diagnostics (coop.status): did the last frame's nudge stay where we put it?
+    net::Vec3 nudged_to;
+    bool nudged = false;
+    uint32_t nudges = 0, nudges_kept = 0, teleports = 0;
+    float last_err = 0, last_speed = 0;
 };
 
 inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
@@ -22,16 +27,23 @@ inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y 
 // remote velocity, so the puppet does not trail a walking creature by its latency
 // nudge: also pull the puppet a part of the way every frame (it cannot walk faster than the
 // creature's top speed, so a walking puppet would otherwise trail by its latency)
+// snap: teleport when the puppet is this far from where it should be
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
-                 double age = 0, bool nudge = false)
+                 double age = 0, bool nudge = false, float snap = 8.f)
 {
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
     net::Vec3 cur = game::position(p);
+    if (ds.nudged && net::dist(cur, ds.nudged_to) < 0.5f)
+        ds.nudges_kept++;
+    ds.nudged = false;
     float err = net::dist(cur, pos);
     float sp = speed(vel);
-    if (err > 8.f) {
+    ds.last_err = err;
+    ds.last_speed = speed(game::velocity(p));
+    if (err > snap) {
         game::teleport(p, pos, rot);
+        ds.teleports++;
         ds.last_cmd = now;
     } else if (sp > 0.3f || err > 0.8f) {
         // walk towards a point slightly ahead, faster than the remote while behind (catch up)
@@ -45,7 +57,10 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
         }
         if (nudge && err > 0.5f) {
             const float k = 0.15f;
-            game::set_position(p, {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k});
+            ds.nudged_to = {cur.x + (pos.x - cur.x) * k, cur.y + (pos.y - cur.y) * k, cur.z + (pos.z - cur.z) * k};
+            game::set_position(p, ds.nudged_to);
+            ds.nudged = true;
+            ds.nudges++;
         }
         // face where the remote faces (walking would turn the puppet towards its own path)
         game::set_orientation(p, rot);
@@ -58,6 +73,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             ds.stuck_since = now;
         else if (now - ds.stuck_since > 1.5) {
             game::teleport(p, pos, rot);
+            ds.teleports++;
             ds.stuck_since = 0;
         }
     } else
