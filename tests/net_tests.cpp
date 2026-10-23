@@ -373,11 +373,41 @@ static void test_bulk()
     CHECK(mbps > 2.5); // the old 32-packet window gave ~1.1 MB/s
 }
 
+// creations arrive from other players: the RefPack decoder must survive any input
+static void test_refpack_untrusted()
+{
+    printf("RefPack decoder on hostile input\n");
+    std::mt19937 rng(11);
+    std::vector<uint8_t> out;
+    int ok = 0;
+    for (int k = 0; k < 2000; k++) {
+        std::vector<uint8_t> in(5 + rng() % 600);
+        for (auto& b : in)
+            b = (uint8_t)rng();
+        in[0] = 0x10;
+        in[1] = 0xFB;
+        in[2] = 0;
+        in[3] = (uint8_t)(rng() % 8);
+        in[4] = (uint8_t)rng(); // declared size < 2 KB
+        uint32_t size = (uint32_t)in[3] << 8 | in[4];
+        if (dbpf::refpack_decode(in.data(), in.size(), out))
+            ok++;
+        CHECK(out.size() <= size);
+    }
+    // a "bomb": a tiny literal then long back-references, far more than the declared 16 bytes
+    std::vector<uint8_t> bomb = {0x10, 0xFB, 0, 0, 16, 0xE0 /* 4 literal bytes */, 'a', 'b', 'c', 'd'};
+    for (int i = 0; i < 4000; i++) { bomb.push_back(0xDC); bomb.push_back(0); bomb.push_back(0); bomb.push_back(0xFF); }
+    CHECK(!dbpf::refpack_decode(bomb.data(), bomb.size(), out));
+    CHECK(out.size() <= 16);
+    printf("  2000 random inputs (%d decoded), bomb rejected\n", ok);
+}
+
 int main()
 {
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
+    test_refpack_untrusted();
     test_reliability();
     test_ackbits();
     test_bulk();

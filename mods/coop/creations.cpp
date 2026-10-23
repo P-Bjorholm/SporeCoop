@@ -602,7 +602,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint8_t owner = r.u8(), kind = r.u8();
     uint32_t id = r.u32(), total = r.u32(), off = r.u32();
     uint16_t n = r.u16();
-    if (!r.ok() || kind >= kKinds || total > (8u << 20) || off + n > total)
+    if (!r.ok() || kind >= kKinds || total > (8u << 20) || (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
         return;

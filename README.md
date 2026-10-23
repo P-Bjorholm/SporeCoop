@@ -1,4 +1,14 @@
-# SporeCoop
+<p align="center">
+  <img src="docs/media/banner.svg" alt="SporeCoop — play every stage of Spore together" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?label=download&color=8ea6ff" alt="Latest release"></a>
+  <a href="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml"><img src="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-74c867" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/game-SPORE%20Collection%20(GOG)-f0b44a" alt="SPORE Collection (GOG)">
+  <img src="https://img.shields.io/badge/players-2%E2%80%934-ff7a5f" alt="2–4 players">
+</p>
 
 <!-- support:top:start -->
 <p align="center">
@@ -7,74 +17,202 @@
 <p align="center"><b>☕ Like this project? <a href="https://buymeacoffee.com/chamomilewoods">Support the author on Buy Me a Coffee</a></b></p>
 <!-- support:top:end -->
 
-A co-op mod for **Spore + Galactic Adventures (GOG)** and **SporeKit**, the framework
-that plugs the mod into the game. Everything is built on Linux (llvm-mingw) and
-tested in Bottles (Wine).
+**SporeCoop** is a multiplayer mod for Spore. Two to four friends evolve **in one world**, from the
+tide pool to the galaxy: everybody plays their own creature, the host's world is shared with the
+guests, and every stage has mechanics that only work together — revive a knocked-out cell, hunt as
+a pack, besiege a city from two sides, repair your partner's ship before it explodes.
 
-| Component | What it is | Where |
-|---|---|---|
-| `steam_api.dll` (loader) | proxy DLL: the game loads it on its own, and it brings up SporeKit | `loader/` |
-| `sporekit.dll` | mod runtime: symbols, hooks, frame, console, hot reload, overlay | `sporekit/` |
-| `coop.dll` | the co-op mod itself | `mods/coop/` |
-| `sporectl` | CLI for controlling the running game (tests, RE, screenshots) | `tools/sporectl.py` |
-| `spore.sh` | deploy/launch in Bottles, profiles, fixtures, logs | `tools/spore.sh` |
-| `addrport` | ports ModAPI addresses to this exe, builds "windowed" exes for REA | `tools/addrport/` |
-| `fakepeer.py` | fake network player for tests without a second instance | `tools/fakepeer.py` |
-| `package.sh` | zip for installing on a friend's machine (Windows/Wine) | `tools/package.sh` |
+<p align="center">
+  <img src="docs/media/tribe_host.jpg" alt="Tribe stage: Alice's and Bob's chiefs, a pincer attack notification" width="80%">
+</p>
 
-Documentation lives in [`docs/`](docs/README.md).
+## Contents
 
-## Status (2026-10-22)
+- [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
+  [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
+  [Building from source](#building-from-source) · [Credits](#credits)
 
-| Milestone | Status |
+## Features
+
+- **Co-op from the main menu.** A *Co-op* item in Spore's own galaxy menu: host a game, find
+  friends on your network or type an address, chat and get ready in the lobby. **F9** opens it in game.
+- **One world.** The host's save is sent to every guest and loaded automatically. The host
+  simulates creatures, tribes, cities and ships; guests see the same world and act through the host.
+- **Your own creations.** Everybody plays their own creature, cell and spaceship from
+  *My Creations*, and the others see it.
+- **Evolve together.** Entering an editor or the next stage starts a vote; it begins when everybody
+  is ready, and the evolved world goes to everybody.
+- **Native look.** Windows, fonts and slide-in notifications use Spore's own interface.
+- **Safe for your saves.** A guest keeps the host's world in a separate slot; your own saves are
+  never overwritten.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/ui_lobby_menu.jpg" alt="The co-op window in the galaxy menu: hosting a game"></td>
+    <td width="50%"><img src="docs/media/creature_guest_window.jpg" alt="The co-op lobby in game (F9): players, stage, ping, ready, own creature"></td>
+  </tr>
+  <tr>
+    <td>The <i>Co-op</i> window in the galaxy menu: host a game or join one.</td>
+    <td>In game, <b>F9</b>: players, stage, ping, readiness, chat and your own creature.</td>
+  </tr>
+</table>
+
+## Every stage together
+
+| Stage | What you do together |
 |---|---|
-| M0 Infrastructure | ✅ loader, SporeKit, devkit console, screenshots, input, hot reload, exception logger, watchdog thread, profiles and 2 instances |
-| M1 "Ghosts" | ✅ host/join, other players' puppets walk with animation, nicknames above them, chat, host world transfer to the guest, animation replay (jump etc.) |
-| M2 "Pack" | ✅ host NPCs are mirrored on the guest (the guest's own NPCs are removed), guest hits are resolved by the host, NPC damage reaches the guest, shared time of day; ⏳ social interactions with NPCs, eggs/nests/fruit |
-| M3 "Shared progress" | ✅ shared DNA (host holds the total); a dead player's puppet is hidden until respawn; ⏳ body parts, editor |
-| M4 "Convenience" | ✅ the world is transferred and loaded on the guest automatically (from the menu), the host saves before the transfer; the guest plays its own creature (M8) |
-| M5 "All modes" | ✅ Cell, Creature, Tribe, Civilization, Space, Adventures: see [docs/07-modes.md](docs/07-modes.md) and the table below |
-| M6 "Interface" | ✅ "Co-op" entry in Spore's main menu, native connection window, lobby (players, stage, ping, readiness, chat), LAN game discovery, F9 in-game, notifications as slide-out panels with icons: [docs/08-ui.md](docs/08-ui.md) |
-| M7 "Together" | ✅ one world across all phases: Cell "Symbiosis" (knockout, revival by a partner, respawn as a small cell), Creature "Pack", Tribe "Chiefs" (pincers, a chief per player, duets, epic creatures), Civilization "Governors" (roles, joint sieges, alarms, superweapon votes), Space "Squadron" (rescue, jump to partner, raid alerts, terraforming together), voting on evolution: [docs/09-coop-design.md](docs/09-coop-design.md) |
-| M8 "Own creations" | ✅ everyone has their own creature and cell (from "My Creations"), visible to all, chosen in the F9 window, each evolves in their own editor; ⏳ "done" exit from the guest's editor, ship: [docs/09-coop-design.md](docs/09-coop-design.md) §9.4.1 |
+| 🦠 **Cell — Symbiosis** | One tide pool. A killing bite only knocks you out for 10 s: a partner who swims right next to you revives you, otherwise you respawn as a small cell next to them. |
+| 🦎 **Creature — Pack** | Hunt the same animals for +25 % damage; when you are about to die near a partner, the pack saves you; partners heal each other. |
+| 🔥 **Tribe — Chiefs** | The tribe's members are split between players, each with their own chief (+20 % aura). Attack a tribe from two sides for +50 % (a *pincer*), perform together to make friends faster, kill the epic creature together for 80 food. |
+| 🏙️ **Civilization — Governors** | Every player governs their own cities and vehicles and picks a role: military, economic or religious. Two players besieging one city take it 50 % faster; a city under attack calls the others; superweapons fire only after a vote. |
+| 🚀 **Space — Squadron** | Fight the same pirates in one system. A destroyed ship is only disabled for 20 s — a partner who flies close repairs it. Jump straight to a partner's star, get alerts about raids on their colonies, terraform a planet together. |
 
-| Mode | What others see | Shared |
-|---|---|---|
-| Cell | the player's cell with its model, at the exact position and rotation; knockout is visible to everyone | tide pool (NPCs, food), food progress |
-| Creature | creature in the pack, animations | DNA, NPCs and damage via the host, time of day |
-| Tribe | owner labels over every member, each player's chief | tribe food; pincer attacks, duets, healers, epic creatures |
-| Civilization | owner labels over cities and vehicles, alarm beacons | money; roles, joint sieges, superweapon votes, gifts, trade |
-| Space | the player's ship in the same system or on the planet | empire money; rescue, jump to partner, raid alerts, mission tools, terraforming together, spice gifts |
-| Adventures | captain in the same adventure | — |
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/cell_guest.jpg" alt="Cell stage: Bob is knocked out, Alice revives him"></td>
+    <td width="50%"><img src="docs/media/creature_host.jpg" alt="Creature stage: Alice and Bob's creatures in one pack"></td>
+  </tr>
+  <tr>
+    <td><b>Cell.</b> Bob is knocked out — Alice swims over and revives him.</td>
+    <td><b>Creature.</b> Two players' own creatures in one pack, names above them.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/civ_host.jpg" alt="Civilization stage: the capital is under attack, everybody is told"></td>
+    <td><img src="docs/media/space_host.jpg" alt="Space stage: Bob's ship is disabled, a REPAIR beacon shows where it is"></td>
+  </tr>
+  <tr>
+    <td><b>Civilization.</b> A city is under attack: every player gets the alarm and a beacon.</td>
+    <td><b>Space.</b> Bob's ship is disabled — a <i>REPAIR</i> beacon and a 20 s countdown.</td>
+  </tr>
+</table>
 
-## Quick start (development)
+## Install
 
-```bash
-make && make test                 # build everything + network unit tests on Linux
-tools/spore.sh install            # once: install the steam_api.dll proxy into the game
-tools/spore.sh deploy             # copy fresh DLLs/symbols/configs into the game
-tools/spore.sh run -p test        # run the game in Bottles with the test profile (windowed, separate saves)
-tools/sporectl.py info            # check that SporeKit is alive
-tools/sporectl.py shot            # screenshot to out/shots/
-make coop && tools/spore.sh deploy && tools/sporectl.py mod.reload coop   # hot reload
-python3 tools/tests/coop_two_instances.py                                # full test: 2 game instances (Creature)
-python3 tools/tests/coop_mode.py --fixture space --planet Game0/Maraya     # test any mode from a fixture
-python3 tools/tests/coop_ui.py                                           # UI test: menu → lobby → game
-```
+You need the **GOG "SPORE Collection"** (Spore + Galactic Adventures) on Windows or on Linux with
+Wine (Bottles, Lutris, Proton). Every player installs the same SporeCoop version.
+
+1. Download **`SporeCoop-0.5.0.zip`** from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest).
+2. Extract it into the game's **`SporebinEP1`** folder (next to `SporeApp.exe`).
+3. Run **`install.bat`** (as administrator if the game is under `Program Files`).
+4. Start Spore: the galaxy menu now has a **Co-op** item.
+
+The full guide — checking your game build, Linux, installing by hand, the internet, updating,
+uninstalling and troubleshooting — is in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+> Other builds of Spore (Steam, EA app, disc) are not supported yet: the game starts as usual and
+> co-op stays off.
 
 ## How to play
 
-1. Host: main menu → **Co-op** → name → **Host**, then load a save or start a game.
-   The window shows the addresses to give to your friends.
-2. Guest: main menu → **Co-op** → name → click a game in the "Games on your network" list
-   or enter the host's address → **Join**. The host's world arrives and loads automatically, and the guest
-   appears nearby (in Space the host must be off-planet so the game allows saving).
-3. In-game, **F9** opens the lobby: players, stage, ping, readiness, chat, "Send my world", "Leave".
+**Host**
 
-The same is available in the cheat console (`Ctrl+Shift+C`): `coop name Alice`, `coop host`,
-`coop join <ip>`, `coop status`, `coop say <text>`, `coop ping`, `coop leave`.
-In Adventures, each player launches the same adventure themselves. Over the internet, UDP port 47810
-on the host must be reachable (port forwarding on the router, or a VPN such as ZeroTier / Radmin VPN / Tailscale).
+1. Galaxy menu → **Co-op** → type your name → **Host**.
+2. Load a save or start a new game. The window shows the addresses your friends can use.
+
+**Guest**
+
+1. Galaxy menu → **Co-op** → type your name.
+2. Click the host under *Games on your network*, or type the host's address (e.g. `100.64.12.7` on
+   Tailscale) → **Join**.
+3. The host's world arrives and loads by itself; you appear next to the host with your own creature.
+
+**In game**
+
+| Key / command | What it does |
+|---|---|
+| **F9** | the co-op window: players, stage, ping, readiness, chat, *Send my world*, *Leave* |
+| *I'm ready* | agree to evolve (editor, next stage) |
+| `Ctrl+Shift+C` → `coop status` | session details in the cheat console |
+| `coop say <text>` | chat |
+| `coop ping` | show everybody the place under your mouse (Tribe, Civilization) |
+| `coop give` | give your selected tribe members, vehicles or the opened city to a partner |
+| `coop role 1`…`3` | Civilization role: military, economic, religious |
+
+**Example: two friends over the internet**
+
+```
+Alice and Bob install Tailscale and SporeCoop 0.5.0.
+Alice: Co-op → "Alice" → Host → loads her Tribe save.
+       The window says: friends connect to 100.64.12.7:47810
+Bob:   Co-op → "Bob" → 100.64.12.7 → Join.
+       Alice's tribe loads; Bob gets his share of the members and his own chief.
+Both:  F9 → I'm ready when the tribe is ready for Civilization.
+```
+
+## FAQ
+
+**Does it work with the Steam or EA version?** Not yet: SporeCoop needs the GOG build's executable
+(`SHA-256 922af7c7…`). See the roadmap.
+
+**Do all players need the game?** Yes, every player needs their own copy of SPORE Collection and
+the same SporeCoop version.
+
+**What happens to my saves?** Nothing: the host saves before sending its world; guests keep the
+host's world in a separate save slot, and a guest's own save of the same planet is moved to
+`Games-sporecoop-backup` first.
+
+**Can we play in different stages?** The host decides the stage; a guest who is somewhere else is
+brought to the host's world.
+
+**Does it change the game files?** It replaces `steam_api.dll` with a small loader (the original
+is kept as `steam_api_orig.dll` and still used) and adds `sporekit.dll`, a `mods` folder and
+`Data\SporeCoop.package`. `uninstall.bat` restores everything.
+
+**Is it safe?** The whole source is here, and the release zip is built from it by
+[GitHub Actions](https://github.com/WoodyWizard/SporeCoop/actions). The mod listens on UDP 47810 only
+while you host; its debug console accepts connections from your own PC only (127.0.0.1). A world
+or creature received from another player is checked before it touches the disk: plain file names
+inside the save slot only, limited sizes.
+
+## Status and roadmap
+
+Version 0.5.0: co-op in every stage, tested automatically on pairs of real game instances
+(35 scenario tests, a chaos bot that plays both sides, simulated bad networks).
+Known issues: [docs/known-issues.md](docs/known-issues.md).
+
+Next:
+
+- [ ] easier internet play (no VPN or port forwarding)
+- [ ] an installer with updates
+- [ ] support for the Steam and EA builds
+- [ ] four-player tests, shared galaxy in Space, co-op adventures
+
+## Building from source
+
+SporeCoop is built on Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (32-bit
+Windows targets) and tested under Wine/Bottles.
+
+```bash
+git clone https://github.com/WoodyWizard/SporeCoop.git   # inside the SPORE game folder
+cd SporeCoop
+make LLVM_MINGW=/path/to/llvm-mingw   # steam_api.dll (loader), sporekit.dll, coop.dll, SporeCoop.package
+make test                             # unit tests (netcode, save format) + symbol check
+tools/package.sh                      # out/dist/SporeCoop-<version>.zip
+```
+
+| Part | What it is | Where |
+|---|---|---|
+| loader | `steam_api.dll` proxy: the game loads it and it starts SporeKit | [`loader/`](loader/) |
+| SporeKit | runtime inside the game: symbols, hooks, console, input, hot reload, crash and hang logs | [`sporekit/`](sporekit/), [`sdk/`](sdk/include/) |
+| coop | the mod: sessions, world sharing, one module per stage, the co-op window | [`mods/coop/`](mods/coop/) |
+| symbols | addresses of game functions for this build (2 400+ ported, 240 verified by hand) | [`data/symbols/`](data/symbols/) |
+| tests | two-instance scenario tests, chaos bot, bad-network proxy, the parallel test lab | [`tools/tests/`](tools/tests/), [`tools/lab.py`](tools/lab.py) |
+
+Documentation: [architecture](docs/01-architecture.md), [netcode](docs/04-netcode.md),
+[reverse engineering](docs/05-re-notes.md) and [per-stage notes](docs/re/),
+[testing](docs/06-testing.md), [development pipeline](docs/10-dev-pipeline.md) —
+all in [docs/](docs/README.md). Contributions are welcome: open an issue first for bigger changes.
+
+## Credits
+
+- Built by [WoodyWizard](https://github.com/WoodyWizard).
+- Function names and addresses were ported from [Spore ModAPI](https://github.com/Spore-Community/Spore-ModAPI)
+  by the Spore modding community; hooks by [MinHook](https://github.com/TsudaKageyu/minhook).
+  Details and licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Spore is a trademark of Electronic Arts Inc. SporeCoop is an unofficial fan mod, not affiliated
+  with or endorsed by Electronic Arts or Maxis. It contains no game files.
+
+Licensed under the [MIT license](LICENSE).
 
 <!-- support:bottom:start -->
 ## ☕ Support the author

@@ -1,5 +1,6 @@
-# Build and unit tests on every push and pull request. The game tests need Spore and run on the
-# developer's machine (tools/lab.py, docs/10-dev-pipeline.md): never on GitHub runners.
+# Build and unit tests on every push and pull request; a tag "v*" also builds the release zip and
+# publishes it as a GitHub release (notes: the tag's section of CHANGELOG.md). The game tests need
+# Spore and run on the developer's machine (tools/lab.py, docs/10-dev-pipeline.md), never here.
 name: build
 
 on:
@@ -26,9 +27,32 @@ jobs:
         run: make -j4 LLVM_MINGW=$LLVM_MINGW
       - name: unit tests + knowledge check
         run: make test HOSTCXX=clang++
+      - name: release zip
+        run: tools/package.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: sporecoop-build
-          path: |
-            build/*.dll
-            build/SporeCoop.package
+          name: sporecoop-zip
+          path: out/dist/SporeCoop-*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sporecoop-zip
+          path: dist
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          # the notes: this version's section of CHANGELOG.md
+          awk -v v="$ver" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          (cd dist && sha256sum SporeCoop-*.zip > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SHA256SUMS.txt \
+            --title "SporeCoop $ver" --notes-file notes.md

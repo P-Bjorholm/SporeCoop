@@ -44,6 +44,31 @@ struct In {
     uint32_t received = 0;
 };
 
+// A received world comes from another player's machine: only plain relative names inside the
+// save slot, sane sizes (a save slot is a few MB; a Space save with many systems stays far below)
+constexpr uint32_t kMaxWorldBytes = 128u << 20, kMaxWorldFiles = 2048;
+
+static bool safe_rel(const std::string& rel)
+{
+    if (rel.empty() || rel.size() > 200)
+        return false;
+    size_t start = 0;
+    int depth = 0;
+    while (start <= rel.size()) {
+        size_t end = rel.find_first_of("/\\", start);
+        if (end == std::string::npos)
+            end = rel.size();
+        std::string part = rel.substr(start, end - start);
+        if (part.empty() || part == "." || part == ".." || ++depth > 4)
+            return false; // also rejects leading or doubled separators
+        for (unsigned char c : part)
+            if (!(isalnum(c) || c == ' ' || c == '_' || c == '-' || c == '.' || c == '(' || c == ')' || c >= 0x80))
+                return false; // no ':' (drives, streams), no control characters
+        start = end + 1;
+    }
+    return true;
+}
+
 static std::deque<Out> g_out;
 static bool g_auto_load = true;
 static In g_in;
@@ -692,8 +717,13 @@ static void finish(const std::string& host_name)
         return;
     }
     std::vector<std::string> rels;
-    for (auto& [i, f] : g_in.files)
+    for (auto& [i, f] : g_in.files) {
+        if (!safe_rel(f.rel)) { // checked on arrival already; never write outside the slot
+            g_in = In{};
+            return;
+        }
         rels.push_back(f.rel);
+    }
     std::wstring slot = pick_slot(crc, planet_file(rels));
     if (slot.empty()) {
         g_feed("world transfer failed: no free save slot");
@@ -759,7 +789,7 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
     switch (type) {
     case net::MSG_WORLD_OFFER:
         g_in = In{};
-        if (g_in.offer.read(r)) {
+        if (g_in.offer.read(r) && g_in.offer.total_size <= kMaxWorldBytes && g_in.offer.file_count <= kMaxWorldFiles) {
             g_in.active = true;
             g_feed("receiving world from " + host_name + " (" + std::to_string(g_in.offer.total_size / 1024) +
                    " KB)");
@@ -768,6 +798,17 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
     case net::MSG_WORLD_FILE: {
         net::WorldFile wf;
         if (g_in.active && wf.read(r)) {
+            uint64_t sum = wf.size;
+            for (auto& [i, f] : g_in.files)
+                if (i != wf.index)
+                    sum += f.data.size();
+            if (!safe_rel(wf.path) || wf.index >= g_in.offer.file_count || sum > g_in.offer.total_size) {
+                H->log(M, SK_WARN, "world: rejected file %u '%s' (%u bytes) from %s", wf.index, wf.path.c_str(),
+                       wf.size, host_name.c_str());
+                g_feed("the world from " + host_name + " was rejected (bad file name or size)");
+                g_in = In{};
+                break;
+            }
             File& f = g_in.files[wf.index];
             f.rel = wf.path;
             f.data.resize(wf.size);
@@ -778,7 +819,7 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
         net::WorldChunk ch;
         if (g_in.active && ch.read(r)) {
             auto it = g_in.files.find(ch.index);
-            if (it != g_in.files.end() && ch.offset + ch.data.size() <= it->second.data.size()) {
+            if (it != g_in.files.end() && (uint64_t)ch.offset + ch.data.size() <= it->second.data.size()) {
                 memcpy(it->second.data.data() + ch.offset, ch.data.data(), ch.data.size());
                 g_in.received += (uint32_t)ch.data.size();
             }

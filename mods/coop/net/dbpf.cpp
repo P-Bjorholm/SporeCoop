@@ -91,15 +91,16 @@ bool refpack_decode(const uint8_t* src, size_t n, std::vector<uint8_t>& out)
     if (size > (64u << 20))
         return false;
     out.reserve(size);
+    // untrusted input (creations come over the network): never grow past the declared size
     auto lit = [&](size_t k) {
-        if (o + k > n)
+        if (o + k > n || out.size() + k > size)
             return false;
         out.insert(out.end(), src + o, src + o + k);
         o += k;
         return true;
     };
     auto copy = [&](size_t off, size_t len) {
-        if (off == 0 || off > out.size())
+        if (off == 0 || off > out.size() || out.size() + len > size)
             return false;
         size_t from = out.size() - off;
         for (size_t i = 0; i < len; i++)

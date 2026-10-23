@@ -1,4 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
+// the release version (tools/package.sh names the zip after it)
+#define COOP_VERSION "0.5.0"
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
@@ -1809,7 +1812,7 @@ void on_unload()
     g_remotes.clear();
 }
 
-SkModInfo g_info = {SK_ABI_VERSION, "coop", "0.4.0", on_unload};
+SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
 
 } // namespace
 

@@ -26,7 +26,8 @@ makes it ~3 MB/s with 5 % loss (unit test `bulk transfer`).
 
 A lane is an independent copy of the whole setup, so several test pairs run at the same time:
 
-* lane 1 = the real install (`~/Games/Modding/SPORE`, bottle `Games`);
+* lane 1 = the game folder that contains this repository (the repository is cloned into the
+  game folder, next to `SporebinEP1`), in the Bottles bottle `SPORE_BOTTLE` (default `Games`);
 * lane N ≥ 2 = `tools/spore.sh lane create N`: reflink copies (Btrfs: no extra space) of the game
   folder (`SPORE-lab/laneN`: own `mods/`, logs, `SporeCoop.package`) and of the bottle
   (`SporeLabN`: own wineserver, so a crash or quit stays in the lane; registry paths point to the
@@ -96,8 +97,13 @@ must not change under the game.
 GitHub Actions (`.github/workflows/build.yml`) only builds and runs the unit tests: game tests
 need Spore, and a self-hosted runner would let anyone's pull request run code on this machine.
 
-Nightly timer: `cp tools/systemd/sporecoop-nightly.* ~/.config/systemd/user/ && systemctl --user
-daemon-reload && systemctl --user enable --now sporecoop-nightly.timer`.
+Nightly timer (from the repository root):
+
+```bash
+sed "s|@REPO@|$PWD|g" tools/systemd/sporecoop-nightly.service > ~/.config/systemd/user/sporecoop-nightly.service
+cp tools/systemd/sporecoop-nightly.timer ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now sporecoop-nightly.timer
+```
 
 ## 10.8 Git
 

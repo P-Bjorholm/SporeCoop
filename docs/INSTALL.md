@@ -1,0 +1,170 @@
+# Installing SporeCoop
+
+Every player installs the same SporeCoop version into their own copy of the game. The install
+replaces one file of the game (`steam_api.dll`, kept as `steam_api_orig.dll`) and adds a few
+others; your saves and creations are not touched.
+
+* [1. What you need](#1-what-you-need)
+* [2. Check your game build](#2-check-your-game-build)
+* [3. Install on Windows](#3-install-on-windows)
+* [4. Install on Linux (Wine, Bottles, Lutris, Proton)](#4-install-on-linux-wine-bottles-lutris-proton)
+* [5. Install by hand](#5-install-by-hand)
+* [6. Check that it works](#6-check-that-it-works)
+* [7. Playing over the internet](#7-playing-over-the-internet)
+* [8. Update and uninstall](#8-update-and-uninstall)
+* [9. Troubleshooting](#9-troubleshooting)
+
+## 1. What you need
+
+| | |
+|---|---|
+| Game | **SPORE Collection from GOG** (Spore + Galactic Adventures). The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
+| System | Windows 10/11, or Linux with Wine 9+ (Bottles, Lutris, plain Wine; Proton works if the game runs from a GOG install). |
+| Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
+| Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
+
+Other builds of Spore (Steam, EA app, disc, Origin) have a different executable. The mod then stays
+switched off and the game runs as usual. Support for them is planned (see the roadmap in the
+README).
+
+## 2. Check your game build
+
+The mod is made for exactly this file:
+
+| | |
+|---|---|
+| File | `SPORE\SporebinEP1\SporeApp.exe` |
+| Size | 24 888 320 bytes |
+| SHA-256 | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
+
+Where the game usually is:
+
+* GOG Galaxy: `C:\Program Files (x86)\GOG Galaxy\Games\SPORE`
+* GOG offline installer: `C:\GOG Games\SPORE`
+* Linux: inside the Wine prefix, e.g. `drive_c/GOG Games/SPORE`, or wherever you installed it.
+
+Windows (PowerShell, in the `SporebinEP1` folder):
+
+```powershell
+Get-FileHash .\SporeApp.exe -Algorithm SHA256
+```
+
+Linux:
+
+```bash
+sha256sum "SPORE/SporebinEP1/SporeApp.exe"
+```
+
+`install.bat` checks this too and warns when the build differs.
+
+## 3. Install on Windows
+
+1. Download `SporeCoop-<version>.zip` from the
+   [latest release](https://github.com/WoodyWizard/SporeCoop/releases/latest).
+2. Open the game folder and go into **`SporebinEP1`** (the folder with `SporeApp.exe`).
+3. Extract the zip there, so that `SporebinEP1` now contains `install.bat` and a `SporeCoop` folder.
+4. Run **`install.bat`**. If the game is under `C:\Program Files (x86)`, right-click it and choose
+   **Run as administrator** (Windows does not let normal programs write there).
+5. Start SPORE as usual (from GOG Galaxy or the desktop shortcut).
+
+Some antivirus programs warn about a replaced `steam_api.dll`: that file is the SporeCoop
+loader. Its source is in this repository (`loader/loader.c`); the release is built by
+GitHub Actions from that source.
+
+## 4. Install on Linux (Wine, Bottles, Lutris, Proton)
+
+The files are the same as on Windows. Pick one way to run `install.bat`:
+
+**Plain Wine** (use your prefix):
+
+```bash
+cd "/path/to/SPORE/SporebinEP1"
+unzip ~/Downloads/SporeCoop-*.zip
+WINEPREFIX=~/.wine wine cmd /c install.bat
+```
+
+**Bottles:** open the bottle that has SPORE → *Run Executable…* → choose `install.bat` in
+`SporebinEP1`. Or from a terminal:
+`flatpak run --command=bottles-cli com.usebottles.bottles run -b "<bottle>" -e "/path/to/SPORE/SporebinEP1/install.bat"`
+
+**Lutris:** right-click the game → *Run EXE inside Wine prefix* → `install.bat`.
+
+**Without running anything:** do the [install by hand](#5-install-by-hand) with your file manager.
+
+`steam_api.dll` is loaded from the game folder, so no DLL override is needed.
+
+## 5. Install by hand
+
+Inside `SporebinEP1`, after extracting the zip:
+
+| Do | From | To |
+|---|---|---|
+| rename (once, keep it!) | `steam_api.dll` | `steam_api_orig.dll` |
+| copy | `SporeCoop\steam_api.sporekit.dll` | `steam_api.dll` |
+| copy | `SporeCoop\sporekit.dll` | `sporekit.dll` |
+| copy the folder contents | `SporeCoop\mods\` | `mods\` |
+| copy | `SporeCoop\SporeCoop.package` | `..\Data\SporeCoop.package` |
+
+The result:
+
+```
+SPORE\
+├── Data\SporeCoop.package        the "Co-op" menu icon and notification icons
+└── SporebinEP1\
+    ├── SporeApp.exe              the game (unchanged)
+    ├── steam_api.dll             SporeCoop loader
+    ├── steam_api_orig.dll        the original steam_api.dll (the loader passes calls to it)
+    ├── sporekit.dll              SporeKit: symbols, hooks, console
+    └── mods\
+        ├── coop.dll              the co-op mod
+        ├── coop.ini, sporekit.ini
+        ├── sporekit\symbols\*.sym   game function addresses
+        └── logs\                 created on the first start
+```
+
+## 6. Check that it works
+
+* The main menu (galaxy screen) has a new **Co-op** item on the left.
+* `SporebinEP1\mods\logs\sporekit.log` exists and has a line `loaded coop v0.5.0`.
+* Start a game, press **F9**: the co-op window opens.
+
+If there is no Co-op item, see [Troubleshooting](#9-troubleshooting).
+
+## 7. Playing over the internet
+
+The host listens on **UDP port 47810**. Guests need to reach it:
+
+* **Easiest:** all players join the same virtual LAN —
+  [Tailscale](https://tailscale.com), [ZeroTier](https://www.zerotier.com) or
+  [Radmin VPN](https://www.radmin-vpn.com). Then join with the host's VPN address
+  (the co-op window shows the host's addresses), or pick the host under *Games on your network*.
+* **Port forwarding:** forward UDP 47810 on the host's router to the host's PC, allow
+  SporeApp.exe in the Windows firewall, and give friends your public IP.
+
+Connections across a long distance work (the protocol was tested with 120 ms ± 60 ms delay and
+3 % packet loss); very lossy links can make a rejoin slow (see `docs/known-issues.md`).
+
+## 8. Update and uninstall
+
+**Update:** extract the new zip into `SporebinEP1` over the old files and run `install.bat`
+again. All players update together.
+
+**Uninstall:** run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
+removes `sporekit.dll` and `Data\SporeCoop.package`; delete the `mods` folder too if you like.
+By hand: delete `steam_api.dll`, rename `steam_api_orig.dll` back to `steam_api.dll`, delete
+`sporekit.dll`, `mods\` and `..\Data\SporeCoop.package`.
+
+**Your saves:** a guest stores the host's world as a separate save slot (marked as a co-op world)
+and reuses it next time. If you already have your own save of the same planet, it is moved to
+`Games-sporecoop-backup` next to your `Games` folder first, never overwritten.
+
+## 9. Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. |
+| The game does not start after installing | Run `uninstall.bat`, start the game once without the mod, then install again. An antivirus may have removed `steam_api.dll` or `sporekit.dll`: restore them or add an exception. |
+| *Games on your network* stays empty | Both PCs must be on the same network or VPN; allow SporeApp.exe in the firewall (private networks). Type the host's address instead. |
+| Join fails or times out | The host's UDP 47810 must be reachable (VPN or port forwarding). Every player needs the same SporeCoop version. |
+| The guest loads the world and then nothing | In Space the host must be in a star system, not on a planet (the game only saves off-planet). |
+| Something else | Open an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with `mods\logs\sporekit.log` of host and guest and what you did. |

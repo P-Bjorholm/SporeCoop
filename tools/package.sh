@@ -3,7 +3,7 @@
 # Contents are extracted into SporebinEP1 and installed with install.bat.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VER="$(grep -oP 'SK_VERSION "\K[^"]+' "$ROOT/sporekit/core.h")"
+VER="$(grep -oP 'define COOP_VERSION "\K[^"]+' "$ROOT/mods/coop/coop.cpp")"
 STAGE="$ROOT/out/dist/stage"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/SporeCoop/mods/sporekit/symbols"
@@ -22,6 +22,14 @@ if not exist SporeApp.exe (
   echo Put install.bat and the SporeCoop folder into ...\SPORE\SporebinEP1 and run it again.
   pause
   exit /b 1
+)
+rem the mod is made for the GOG 2016 build (docs: INSTALL.txt, section 2); other builds keep co-op off
+set WANT=922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e
+for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 SporeApp.exe).Hash.ToLower()" 2^>nul`) do set HAVE=%%h
+if defined HAVE if /i not "%HAVE%"=="%WANT%" (
+  echo WARNING: this SporeApp.exe is not the GOG build SporeCoop supports.
+  echo The game will run, but co-op stays off. See INSTALL.txt, section 2.
+  echo.
 )
 if not exist steam_api_orig.dll (
   copy /y steam_api.dll steam_api_orig.dll >nul
@@ -51,8 +59,9 @@ EOF
 
 cat > "$STAGE/README-SporeCoop.txt" <<EOF
 SporeCoop $VER - co-op for every stage of SPORE (GOG "SPORE Collection" build)
+https://github.com/WoodyWizard/SporeCoop
 
-Install: copy install.bat and the SporeCoop folder into SPORE\\SporebinEP1, run install.bat.
+Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
 All players need the same game build (GOG SporebinEP1\\SporeApp.exe, sha256 922af7c7...).
 Other builds load the game normally but co-op stays disabled.
 
@@ -65,7 +74,13 @@ In game F9 opens the lobby: players, stage, ping, ready, chat, "Send my world", 
 Evolution (editor, next stage) is decided by a vote: everybody presses "I'm ready".
 Cheat console (Ctrl+Shift+C) works too: coop host | coop join <ip> | coop leave.
 EOF
-STRIP="${LLVM_MINGW:-$HOME/.local/opt/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64}/bin/llvm-strip"
+# the toolchain the Makefile uses (LLVM_MINGW ?= ... there), unless set in the environment
+LLVM_MINGW="${LLVM_MINGW:-$(sed -n 's/^LLVM_MINGW ?= //p' "$ROOT/Makefile" | sed 's/\$(HOME)/$HOME/; s|\$HOME|'"$HOME"'|')}"
+STRIP="$LLVM_MINGW/bin/llvm-strip"
+cp "$ROOT/LICENSE" "$STAGE/LICENSE.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/THIRD_PARTY_NOTICES.txt"
+cp "$ROOT/third_party/minhook/LICENSE.txt" "$STAGE/SporeCoop/MinHook-LICENSE.txt"
+cp "$ROOT/docs/INSTALL.md" "$STAGE/INSTALL.txt"
 "$STRIP" "$STAGE/SporeCoop/sporekit.dll" "$STAGE/SporeCoop/mods/coop.dll" "$STAGE/SporeCoop/steam_api.sporekit.dll"
 (cd "$STAGE" && rm -f "../SporeCoop-$VER.zip" && zip -qr "../SporeCoop-$VER.zip" .)
 echo "$ROOT/out/dist/SporeCoop-$VER.zip"
