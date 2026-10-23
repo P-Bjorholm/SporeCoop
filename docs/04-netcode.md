@@ -95,6 +95,22 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 * No packets for 5 s → "connection unstable", 15 s → disconnect.
 * `coop status` shows RTT, packet loss, and each player's state.
 
+### Measured over netem (2026-10-23, tribe save of 3.8 MB, `coop_rejoin_net.py`, lane 2)
+
+| Link | handshake (join to `together`) | world transfer (host "sharing" to guest "received") | rejoin until the resent world is loaded |
+|---|---|---|---|
+| plain (localhost) | 0.8 s | 1.0 s | 9.5 s |
+| `mobile` (120 ± 60 ms, 3 % loss) | 0.8 s | 8 s | 17 s |
+| `awful` (250 ± 120 ms, 10 % loss) | 1-2 s | 16 s | 25 s |
+
+* The host saves for ~2.6 s before sending, the guest loads for ~4 s after receiving.
+* Over a long round trip the transfer is window bound: 160 messages in flight (world.cpp), host
+  rtt ~450 ms during the transfer on `awful`, ~330 chunks/s. A bigger window was tried in a
+  simulation of `awful` (unit test `test_bulk_bad_link` without the hole): 240-600 messages cut the
+  time to 7-10 s but 2-4x the resends were spurious (jitter of ± 120 ms reorders more packets than
+  the 128-packet ack window covers, so their acks never come), and a cumulative "next reliable id"
+  ack did not reduce them (most spurious resends are buffered behind a hole). Left at 160.
+
 ## 4.7 NAT
 
 M1–M3: direct IP (UDP port forwarding on the host or a VPN network). Later: a rendezvous server
