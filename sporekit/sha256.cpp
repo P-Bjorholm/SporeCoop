@@ -2,6 +2,7 @@
 #include "core.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -86,6 +87,73 @@ struct Sha256 {
 
 namespace sk {
 
+static std::string hex_digest(Sha256& s)
+{
+    uint8_t d[32];
+    s.final(d);
+    char hex[65];
+    for (int i = 0; i < 32; i++)
+        snprintf(hex + i * 2, 3, "%02x", d[i]);
+    return hex;
+}
+
+// code_sha256 of a PE file: SHA-256 over ImageBase (u32 LE), AddressOfEntryPoint (u32 LE), then for
+// every section in table order except ".rsrc": Name (8 bytes), VirtualAddress (u32 LE),
+// VirtualSize (u32 LE) and the raw bytes [PointerToRawData, + min(VirtualSize, SizeOfRawData)).
+// It ignores the PE header (timestamp, checksum), resources and data appended after the image
+// (signatures): two exes with the same code and data at the same addresses get the same value.
+// The same definition is in tools/exe_info.py and installer/setup.cpp.
+std::string pe_code_sha256_hex(const std::wstring& path)
+{
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f)
+        return {};
+    std::vector<uint8_t> d;
+    {
+        fseek(f, 0, SEEK_END);
+        long n = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (n > 0) {
+            d.resize((size_t)n);
+            d.resize(fread(d.data(), 1, d.size(), f));
+        }
+    }
+    fclose(f);
+    auto u16 = [&](size_t o) -> uint32_t { return o + 2 <= d.size() ? d[o] | d[o + 1] << 8 : 0; };
+    auto u32 = [&](size_t o) -> uint32_t { return o + 4 <= d.size() ? u16(o) | u16(o + 2) << 16 : 0; };
+    if (d.size() < 0x40 || u16(0) != 0x5A4D)
+        return {};
+    size_t pe = u32(0x3C);
+    if (u32(pe) != 0x00004550 || u16(pe + 24) != 0x10B) // "PE\0\0", PE32
+        return {};
+    size_t nsec = u16(pe + 6), opt = pe + 24, sec = opt + u16(pe + 20);
+    Sha256 s;
+    uint8_t w[8];
+    auto put32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; i++)
+            w[i] = (uint8_t)(v >> (8 * i));
+        s.update(w, 4);
+    };
+    put32(u32(opt + 28)); // ImageBase
+    put32(u32(opt + 16)); // AddressOfEntryPoint
+    for (size_t i = 0; i < nsec; i++) {
+        size_t o = sec + i * 40;
+        if (o + 40 > d.size())
+            return {};
+        if (memcmp(&d[o], ".rsrc\0\0\0", 8) == 0)
+            continue;
+        uint32_t vsize = u32(o + 8), va = u32(o + 12), rsize = u32(o + 16), raw = u32(o + 20);
+        uint32_t n = vsize < rsize ? vsize : rsize;
+        if ((size_t)raw + n > d.size())
+            return {};
+        s.update(&d[o], 8);
+        put32(va);
+        put32(vsize);
+        s.update(d.data() + raw, n);
+    }
+    return hex_digest(s);
+}
+
 std::string sha256_file_hex(const std::wstring& path)
 {
     FILE* f = _wfopen(path.c_str(), L"rb");
@@ -97,12 +165,7 @@ std::string sha256_file_hex(const std::wstring& path)
     while ((r = fread(buf.data(), 1, buf.size(), f)) > 0)
         s.update(buf.data(), r);
     fclose(f);
-    uint8_t d[32];
-    s.final(d);
-    char hex[65];
-    for (int i = 0; i < 32; i++)
-        snprintf(hex + i * 2, 3, "%02x", d[i]);
-    return hex;
+    return hex_digest(s);
 }
 
 } // namespace sk

@@ -114,6 +114,11 @@ static const char* h_exe_sha256()
     static std::string h = exe_sha256();
     return h.c_str();
 }
+static const char* h_symbols_build()
+{
+    static std::string h = symbols_count() ? symbols_build() : std::string();
+    return h.c_str();
+}
 
 SkHost g_host = {
     SK_ABI_VERSION, sizeof(SkHost),
@@ -133,6 +138,7 @@ SkHost g_host = {
     h_config_set_str,
     ui_winproc_new,
     ui_winproc_disable,
+    h_symbols_build,
 };
 
 } // namespace sk

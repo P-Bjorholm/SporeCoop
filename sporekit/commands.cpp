@@ -73,6 +73,8 @@ static int c_info(void*, int, const char* const*, SkOut* o)
     outf(o, "sporekit %s instance=%d pid=%lu\n", SK_VERSION, instance_id(), GetCurrentProcessId());
     outf(o, "exe sha256=%s base=0x%08X\n", exe_sha256().c_str(), (unsigned)image_base());
     outf(o, "symbols=%u files=%s\n", (unsigned)symbols_count(), symbols_file_name());
+    if (symbols_count() && symbols_build() != exe_sha256())
+        outf(o, "symbols of build %s (same code as this exe)\n", symbols_build().c_str());
     outf(o, "frame=%llu fps=%.1f device=%p hwnd=%p\n", (unsigned long long)frame_index(), fps(),
          d3d_device(), game_window());
     outf(o, "mode=0x%08X (%s)\n", mode, game_mode_name(mode));

@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.0"
+#define SK_VERSION "0.3.1"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -52,6 +52,7 @@ std::string ini_str(const std::wstring& file, const char* section, const char* k
 
 // sha256.cpp
 std::string sha256_file_hex(const std::wstring& path);
+std::string pe_code_sha256_hex(const std::wstring& path); // code and data, without header and resources
 
 // symbols.cpp
 bool symbols_load(); // picks file by exe hash
@@ -59,6 +60,7 @@ uintptr_t sym(const char* name);
 uintptr_t image_base();
 uintptr_t rebase(uintptr_t va);
 std::string exe_sha256();
+std::string symbols_build(); // exe_sha256 of the build whose symbol files are loaded
 const char* symbols_file_name();
 size_t symbols_count();
 std::vector<std::pair<std::string, uintptr_t>> symbols_find(const std::string& needle,

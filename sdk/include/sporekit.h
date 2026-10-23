@@ -131,6 +131,11 @@ typedef struct SkHost {
      * The handler lives in sporekit: when the mod unloads it stays valid and does nothing. */
     void* (*ui_winproc)(SkMod* mod, SkUiMsgFn fn, void* user, int event_flags);
     void (*ui_winproc_disable)(void* proc);
+
+    /* ---- since 0.3.1 (check size) ---- */
+    /* hex SHA-256 of the build whose symbol files are loaded: exe_sha256, or the build with the
+     * same code (code_sha256) when no symbol file names this exact exe; "" without symbols */
+    const char* (*symbols_build)(void);
 } SkHost;
 
 typedef struct SkModInfo {

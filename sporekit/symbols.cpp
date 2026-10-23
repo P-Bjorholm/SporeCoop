@@ -1,4 +1,6 @@
-// Symbol database: name -> VA (for preferred image base), selected by exe SHA-256.
+// Symbol database: name -> VA (for preferred image base), selected by the exe's SHA-256, or by
+// its code_sha256 (sha256.cpp) when no file names this exact exe: a build that differs only in
+// the PE header, resources or a signature uses the symbols of the build with the same code.
 #include "core.h"
 
 #include <algorithm>
@@ -10,13 +12,14 @@ namespace sk {
 
 static std::unordered_map<std::string, uintptr_t> g_syms; // VA at preferred base
 static std::map<uintptr_t, std::string> g_by_addr;
-static std::string g_hash;
+static std::string g_hash, g_code_hash, g_build;
 static std::string g_files;
 static uintptr_t g_pref_base = 0x400000, g_base = 0x400000;
 
 uintptr_t image_base() { return g_base; }
 uintptr_t rebase(uintptr_t va) { return va - g_pref_base + g_base; }
 std::string exe_sha256() { return g_hash; }
+std::string symbols_build() { return g_build.empty() ? g_hash : g_build; }
 const char* symbols_file_name() { return g_files.c_str(); }
 size_t symbols_count() { return g_syms.size(); }
 
@@ -50,24 +53,31 @@ static void load_file(const std::wstring& path)
     SKLOG(SK_INFO, "symbols: %d entries from %s", n, narrow(path).c_str());
 }
 
-static std::string file_hash_header(const std::wstring& path)
+// the "exe_sha256=" and "code_sha256=" values in the first lines of a symbol file
+struct SymHeader {
+    std::string exe, code;
+};
+static SymHeader file_hash_header(const std::wstring& path)
 {
+    SymHeader r;
     FILE* f = _wfopen(path.c_str(), L"r");
     if (!f)
-        return {};
+        return r;
     char line[512];
-    std::string h;
+    auto value = [&](const char* key, std::string& out) {
+        const char* p = strstr(line, key);
+        if (!p || !out.empty())
+            return;
+        p += strlen(key);
+        while (*p && *p != '\n' && *p != '\r' && *p != ' ')
+            out += *p++;
+    };
     for (int i = 0; i < 10 && fgets(line, sizeof line, f); i++) {
-        const char* p = strstr(line, "exe_sha256=");
-        if (p) {
-            p += 11;
-            while (*p && *p != '\n' && *p != '\r' && *p != ' ')
-                h += *p++;
-            break;
-        }
+        value("exe_sha256=", r.exe);
+        value("code_sha256=", r.code);
     }
     fclose(f);
-    return h;
+    return r;
 }
 
 // ImageBase as written in the exe file. The header in memory cannot be used: when Windows
@@ -111,20 +121,46 @@ bool symbols_load()
           now_seconds() - t0);
 
     std::wstring dir = mods_dirw() + L"\\sporekit\\symbols\\";
+    struct Cand {
+        std::wstring name;
+        SymHeader h;
+    };
+    std::vector<Cand> cands;
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((dir + L"*.sym").c_str(), &fd);
-    std::vector<std::wstring> normal, overrides;
     if (h != INVALID_HANDLE_VALUE) {
-        do {
-            std::wstring p = dir + fd.cFileName;
-            if (file_hash_header(p) != g_hash)
-                continue;
-            if (wcsncmp(fd.cFileName, L"overrides", 9) == 0)
-                overrides.push_back(p);
-            else
-                normal.push_back(p);
-        } while (FindNextFileW(h, &fd));
+        do
+            cands.push_back({fd.cFileName, file_hash_header(dir + fd.cFileName)});
+        while (FindNextFileW(h, &fd));
         FindClose(h);
+    }
+    // 1. files for this exact exe; 2. else files of a build with the same code (one build only)
+    g_build.clear();
+    for (auto& c : cands)
+        if (c.h.exe == g_hash)
+            g_build = g_hash;
+    if (g_build.empty()) {
+        t0 = now_seconds();
+        g_code_hash = pe_code_sha256_hex(exe_path);
+        SKLOG(SK_INFO, "exe code_sha256=%s (%.2fs)", g_code_hash.c_str(), now_seconds() - t0);
+        for (auto& c : cands)
+            if (!g_code_hash.empty() && c.h.code == g_code_hash && !c.h.exe.empty()) {
+                g_build = c.h.exe;
+                break;
+            }
+        if (!g_build.empty())
+            SKLOG(SK_INFO, "symbols: no files for this exe; its code is the same as build %s, using those",
+                  g_build.c_str());
+    }
+    std::vector<std::wstring> normal, overrides;
+    for (auto& c : cands) {
+        if (g_build.empty() || c.h.exe != g_build)
+            continue;
+        std::wstring p = dir + c.name;
+        if (wcsncmp(c.name.c_str(), L"overrides", 9) == 0)
+            overrides.push_back(p);
+        else
+            normal.push_back(p);
     }
     std::sort(normal.begin(), normal.end());
     std::sort(overrides.begin(), overrides.end());
@@ -139,9 +175,9 @@ bool symbols_load()
     for (auto& [n, a] : g_syms)
         g_by_addr[a] = n;
     if (g_syms.empty()) {
-        SKLOG(SK_ERROR, "no symbol database for this SporeApp.exe build (%s); "
+        SKLOG(SK_ERROR, "no symbol database for this SporeApp.exe build (%s, code %s); "
                         "game-specific features are disabled",
-              g_hash.c_str());
+              g_hash.c_str(), g_code_hash.c_str());
         return false;
     }
     return true;
