@@ -17,6 +17,15 @@ Fixed entries move to the commit message (and a test).
   during `coop.tribe epic hit` (monitor: FROZE); not reproduced in 14 more runs. The game logs of
   that run were lost (now kept by lab.py). Hunt: `lab.py run tribe_play,chaos_tribe --repeat 10`.
 
+## Very bad network: a guest rejoin did not complete within 90 s
+
+* Nightly 2026-10-22, `SPORE_NET=awful` (250 ± 120 ms, 10 % loss, 2 % duplicates) chaos on tribe:
+  the first join took 28 s (60 s in total), after a leave + join the guest was not back in the
+  host's world 90 s later. `mobile` (120 ± 60 ms, 3 % loss) passes everything.
+* Replay: `SPORE_LANE=1 SPORE_NET=awful python3 tools/tests/coop_chaos.py --fixture tribe --minutes 5
+  --seed 264515564`; hunt: `tools/lab.py run chaos_tribe_awful --repeat 4 --retry 0`. Look at the
+  world transfer under loss (reliable window 160 for long round trips, RTO, the join handshake).
+
 ## Guest: "done" in its own editor does nothing
 
 * Cancel works; not related to DNA. Found 2026-10-22 while making own creations per player.
