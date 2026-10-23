@@ -26,6 +26,8 @@ build known to Spore ModAPI (Disk: 24 904 192 / 24 909 584; March2017: 24 885 24
    -noanalysis -readOnly` take ~7 s (decompile, callers, xrefs, byte scans). Calls Ghidra does not
    see (functions only reached by `call rel32` from code it did not disassemble, BT node tables in
    .data) are found by scanning the file for the 32-bit value or for E8/E9 rel32 targets.
+   A ready project on this machine: `out/ghidra-full/` (not in git, 350 MB); `out/ghidra-full/q.sh
+   <queries> <output>` runs one batch (query lines: dec/asm/xref/callers/scan, see its scripts/Q.java).
 3. **Runtime verification** via devkit: `mem.read`, `call`, the exception logger (`exc`),
    the watchdog thread (`hangdump`).
 
