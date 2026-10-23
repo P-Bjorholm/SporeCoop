@@ -33,8 +33,13 @@ def key_arg(k):
 
 
 class Bot:
-    def __init__(self, host, guest, fixture, seed, rate):
-        self.c = {'host': host, 'guest': guest}
+    def __init__(self, host, guest, fixture, seed, rate, extra=None, joins=None, ids=None, back_in=None):
+        """extra: more players {name: console} (coop_multi.py); joins: {name: join command};
+        ids: {name: player id}; back_in(name) -> True when a rejoined player is back in the world"""
+        self.c = {'host': host, 'guest': guest, **(extra or {})}
+        self.join_cmd = joins or {'guest': lane.JOIN}
+        self.ids = ids or {'host': 0, 'guest': 1}
+        self.back_in = back_in or (lambda name: wait_guest_in(self.c['host'], self.c[name], 90))
         self.fixture, self.rng, self.rate = fixture, random.Random(seed), rate
         self.log = []
         self.joins = 0
@@ -58,7 +63,7 @@ class Bot:
 
     def step(self):
         rng = self.rng
-        who = rng.choice(['host', 'guest'])
+        who = rng.choice(list(self.c))
         kind = rng.choices(['target', 'order', 'click', 'box', 'key', 'wheel', 'ui', 'pause', 'stage', 'churn',
                             'save', 'outage'], weights=[30, 15, 12, 8, 12, 5, 4, 2, 8, 1, 1, 1])[0]
         self.count[kind] = self.count.get(kind, 0) + 1
@@ -66,7 +71,7 @@ class Bot:
             t = self.targets(who)
             if t:
                 k, owner, x, y = rng.choice(t)
-                mine = owner == (0 if who == 'host' else 1)
+                mine = owner == self.ids.get(who, -1)
                 key = f'{k}:{"own" if mine else "partner"}'
                 self.count[key] = self.count.get(key, 0) + 1
                 self.do(who, f'click {x} {y}' + (' right' if rng.random() < 0.3 else ''))
@@ -96,13 +101,14 @@ class Bot:
             cmds = STAGE_CMDS.get(self.fixture, [])
             if cmds:
                 self.do(who, rng.choice(cmds).format(r=rng.randint(0, 3)))
-        elif kind == 'churn':  # the guest leaves and joins again
-            self.do('guest', 'coop.leave')
+        elif kind == 'churn':  # a guest leaves and joins again
+            g = rng.choice([n for n in self.c if n != 'host'])
+            self.do(g, 'coop.leave')
             time.sleep(rng.uniform(1, 4))
-            self.do('guest', lane.JOIN)
+            self.do(g, self.join_cmd[g])
             self.joins += 1
-            if not wait_guest_in(self.c['host'], self.c['guest'], 90):
-                self.log.append('  !! the guest did not get back into the host world')
+            if not self.back_in(g):
+                self.log.append(f'  !! {g} did not get back into the host world')
                 return False
         elif kind == 'outage':  # bad network only: the link drops for a few seconds
             import netem

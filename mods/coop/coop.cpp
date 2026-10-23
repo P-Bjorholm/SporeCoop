@@ -1687,7 +1687,7 @@ int give_selected_to(uint8_t to)
 }
 
 // tests (chaos bot): what can be clicked right now: "kind id owner sx sy" per visible unit
-std::string targets()
+std::string targets(bool all)
 {
     std::string out;
     char b[96];
@@ -1714,6 +1714,32 @@ std::string targets()
             (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
         },
         &u);
+    if (all) { // every synchronized object on screen (game bots aim at NPCs, citizens, ships ...)
+        net::Vec3 me{};
+        if (g_local && g_adapter)
+            me = modes::entity_pos(g_adapter, g_local);
+        struct Seen {
+            std::string key;
+            float d;
+            int x, y;
+        };
+        std::vector<Seen> seen;
+        int sw = 0, sh = 0;
+        H->screen_size(&sw, &sh);
+        for (auto* f : {npc::sync_entries, tribe::sync_entries, civ::sync_entries, squadron::sync_entries,
+                        cellsync::sync_entries})
+            for (auto& e : f()) {
+                float w[3] = {e.pos.x, e.pos.y, e.pos.z}, sc[2];
+                if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
+                    seen.push_back({e.key, net::dist(e.pos, me), (int)sc[0], (int)sc[1]});
+            }
+        // the nearest first, at most 80 (a console answer holds 8 KB; the tide pool has ~400 cells)
+        std::sort(seen.begin(), seen.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });
+        for (size_t i = 0; i < seen.size() && i < 80; i++) {
+            snprintf(b, sizeof b, "obj %s %.1f %d %d\n", seen[i].key.c_str(), seen[i].d, seen[i].x, seen[i].y);
+            out += b;
+        }
+    }
     return out;
 }
 
@@ -1895,9 +1921,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
-    H->command_add(M, "coop.targets", "coop.targets - clickable units on screen: kind id owner x y (tests)",
-                   [](void*, int, const char* const*, SkOut* out) {
-                       SAY("%s", targets().c_str());
+    H->command_add(M, "coop.targets",
+                   "coop.targets [all] - clickable units on screen: kind id owner x y; all: also every synced "
+                   "object: obj key distance x y (tests)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", targets(argc > 1 && !strcmp(argv[1], "all")).c_str());
                        return 0;
                    },
                    nullptr, MT);

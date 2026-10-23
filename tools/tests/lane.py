@@ -10,7 +10,9 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 SPORE = os.path.join(ROOT, 'tools', 'spore.sh')
 
 LANE = int(os.environ.get('SPORE_LANE', '1'))
-assert 1 <= LANE <= 5, 'lanes 1..5 (console ports 47800+, co-op ports 47810+)'
+# lanes 1..8: console ports (TCP) 47800..47815, co-op ports (UDP) 47810..47824 do not collide
+# (TCP and UDP ports are separate); LAN discovery finds hosts of lanes 1..5 only (the UI test)
+assert 1 <= LANE <= 8, 'lanes 1..8'
 HOST = 2 * LANE - 1   # SporeKit instance numbers: console port 47800 + N - 1
 GUEST = 2 * LANE
 PORT = 47810 + HOST - 1  # the host's co-op port
