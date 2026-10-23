@@ -432,6 +432,11 @@ def main():
         print(f'  damage taken: host {hs["damage_taken"]} hp in {hs["bites_taken"]} bites, guest {gs["damage_taken"]} hp in '
               f'{gs["bites_taken"]} bites', flush=True)
         print(f'  host NPCs chasing (samples): the host {chase[0]}, the guest {chase[1]}', flush=True)
+        # regression: the guest's cell on the host kept the level it was created at, so after a few
+        # level-ups the host's NPCs saw it as too small to hunt and chased only the host (620-2680
+        # samples vs 36-117, knockouts 3-16 vs 0-1 per session; docs/stability/cell.md)
+        ck(chase[0] + chase[1] < 60 or 3 * chase[1] >= chase[0],
+           f'the host\'s NPCs hunt the guest too (guest {chase[1]} >= host {chase[0]} / 3)')
         print(f'  eats while hurt (healed): host {heal["host"][0]} ({heal["host"][1]}), guest {heal["guest"][0]} '
               f'({heal["guest"][1]})', flush=True)
         print(f'  knockouts: host {ko_seen["host"]} guest {ko_seen["guest"]}; revives {hs["revives"]}/{gs["revives"]}, '
