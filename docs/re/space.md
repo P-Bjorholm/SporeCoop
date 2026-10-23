@@ -474,6 +474,20 @@ fix/space-lone-death). Not a hook problem: the debug hit (attacker null) and the
   state 2 with +0x7F0 set but no cinematic running for 5 s → MessagePost 0x67B2A95 → native
   Respawn (`respawns_forced` in `coop.status`; the old path is reproduced by
   `coop.space jumpto <star> force`).
+* **The fault itself, fixed natively (✔ runtime, lane 7, 2026-10-23, branch fix/space-death-fault):**
+  0x7CFCC0 is a generic `thiscall(holder)` "clear a set" (`mov ecx,[ecx]; jmp 0x7CFC10`, the impl
+  has vectors at +4/+8, +0x1C, +0x34, +0x4C, +0x64). The caller is
+  `cSimPlanetHighLOD_EndRespawnCaption` **0xFF59D0** (`add ecx,0x1E4; jmp 0x7CFCC0`), the only two
+  callers of which are 0x100C57A (end of CVG2SPG_short) and 0x100C5E7 (end of CVG2SPG), both with
+  `ecx = [cSimulatorSpaceGame+0x54]` (mpHighLODPlanetSim) and no check. The set at sim+0x1E4 is filled
+  by 0xFF5D90 (only caller 0xFDBBF8, after the respawn landing): it adds 0x9C377C26 there (0xFF5EE2)
+  and plays the caption. Off the planet the sim (and the set) is gone: nothing to clear.
+  `gamefixes.cpp` hooks 0xFF59D0 and skips it when `this` is null ("respawn caption without a planet
+  N" in `coop.status`). The handler then returns normally, the dispatch of 0x44F1189 goes on, and the
+  UFO handler 0xC3B6A0 respawns the dead ship natively 2 s after the OK (the watchdog does not fire:
+  `respawns_forced=0`). Crash stack of the old fault: `0100C57F 007E30B6 00C60660 00922514 0088564C
+  ...` (message dispatch). Before the fix the forced-jump step of `coop_space_death.py` faulted in 4
+  of 4 runs (it cleared the fault and passed); now the test fails on any fault of either game.
 * Calling Respawn 0xC38420 directly on a stuck ship also works (console `call`), but the message
   keeps the game's own "busy" check.
 * Not tested: a lethal hit by a real NPC while alone (the debug hit has no attacker; the attacker
