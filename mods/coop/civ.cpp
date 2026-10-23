@@ -41,7 +41,8 @@ static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_P
     a_CreateVehicle, a_SlotsLeft, a_VehicleCost, a_DesignKey, a_DesignId, a_SpawnVehicle, a_AddBuilding,
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
     a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
-    a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr, a_DestroyBuilding;
+    a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr, a_DestroyBuilding,
+    a_CombatantDamage;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -739,6 +740,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {&a_ExpansionGet, "Simulator::cCivExpansion::Get"},
         {&a_CinematicMgr, "Simulator::cCinematicManager::Get"},
         {&a_DestroyBuilding, "Simulator::cCity::DestroyBuilding"},
+        {&a_CombatantDamage, "Simulator::cCombatant::TakeDamage"},
     };
     g_ok = true;
     for (auto& s : syms)
@@ -1240,13 +1242,14 @@ static void* local_city_near(const net::Vec3& p)
 // the host does not have is removed (a mismatch must be seen on two passes in a row: an incremental
 // MSG_CIV_BUILD may be on its way)
 static std::unordered_map<void*, int> g_bfix_seen;
-static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ;
+static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
     auto local = vec_of((uint8_t*)city + kCityBuildings);
     std::vector<bool> used(local.size(), false);
     std::vector<size_t> missing;
+    std::vector<void*> ruin_now;
     int ruins = 0;
     for (size_t i = 0; i < n; i++) {
         uint32_t noun;
@@ -1260,6 +1263,8 @@ static void reconcile_buildings(void* city, size_t n,
                 net::dist(lp, p) > 4.f)
                 continue;
             used[k] = found = true;
+            if (ruin && F<int>(local[k], kBuildingState) != 2)
+                ruin_now.push_back(local[k]);
             ruins += ruin != (F<int>(local[k], kBuildingState) == 2);
         }
         if (!found)
@@ -1269,7 +1274,17 @@ static void reconcile_buildings(void* city, size_t n,
     for (size_t k = 0; k < local.size(); k++)
         if (!used[k] && type_for_noun(game::noun_id(local[k])))
             extra.push_back(local[k]);
-    g_ruins_differ = ruins; // shown only (a ruin on the host is a whole building here, docs/known-issues.md)
+    g_ruins_differ = ruins;
+    // a building the host's siege destroyed: the same damage here (the generic combatant damage
+    // with no attacker: hp 0, state 2; no capture damage or alarm, those come from the host)
+    static const float zero[3] = {0, 0, 0};
+    for (void* b : ruin_now) {
+        g_applying = true;
+        thiscall<int>(a_CombatantDamage, (uint8_t*)b + 0x120, F<float>(b, kBuildingState + 4) + 1.f, 0xFFFFFFFFu, 0,
+                      (const float*)zero, (void*)nullptr);
+        g_applying = false;
+        g_ruins_in++;
+    }
     int& seen = g_bfix_seen[city];
     if (missing.empty() && extra.empty()) {
         seen = 0;
@@ -1599,10 +1614,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_differ=%u incomplete=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_differ, g_incomplete);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete);
     return b;
 }
 

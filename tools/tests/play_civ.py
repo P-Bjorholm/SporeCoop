@@ -63,6 +63,8 @@ def civ_state(con):
                 pol=m.group(2), player=bool(m.group(3)), owner=int(m.group(4)), buildings=int(m.group(5)),
                 pos=tuple(float(m.group(i)) for i in (6, 7, 8)), capture=float(m.group(9)), capture_by=m.group(10),
                 convert=float(m.group(11)))
+            r = re.search(r'ruins=(\d+)', line)
+            cities[int(m.group(1))]['ruins'] = int(r.group(1)) if r else 0
         m = re.match(r'\s+veh #(\d+) \S+ pol=(\w+) owner=(-?\d+) purpose=(\d+) loco=(\d+) sel=(\d+) hp=(\S+) '
                      r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)(?: order=(-?\d+))?', line)
         if m and m.group(1) != '0':
@@ -690,6 +692,10 @@ def audit(game, hc, gc, final=False):
             if g2.get('pol') != c['pol'] or g2.get('owner') != c['owner']:
                 game.problem(f'city {i}: host pol {c["pol"]} owner {c["owner"]}, guest pol {g2.get("pol")} '
                              f'owner {g2.get("owner")}')
+        if g.get('ruins') != c.get('ruins'):
+            game.bump('ruins_differ')
+            if final:
+                game.problem(f'city {i}: {c["ruins"]} ruins on the host, {g.get("ruins")} on the guest')
         if abs(g['buildings'] - c['buildings']) > 0:
             game.bump('buildings_differ')
             if final:
