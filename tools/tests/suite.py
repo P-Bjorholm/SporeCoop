@@ -56,11 +56,13 @@ add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe
 
 
 def select(spec):
-    """'smoke' / 'full' / 'nightly' or comma-separated test names"""
+    """suites (smoke / full / nightly) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
-    if spec in ('smoke', 'full', 'nightly'):
-        return [t for t in T if spec in t['suites']]
-    want = [s.strip() for s in spec.split(',') if s.strip()]
-    bad = [w for w in want if w not in names]
-    assert not bad, f'unknown tests: {bad} (known: {sorted(names)})'
+    want = set()
+    for w in (x.strip() for x in spec.split(',') if x.strip()):
+        if w in ('smoke', 'full', 'nightly'):
+            want |= {t['name'] for t in T if w in t['suites']}
+        else:
+            assert w in names, f'unknown test: {w} (known: {sorted(names)})'
+            want.add(w)
     return [t for t in T if t['name'] in want]
