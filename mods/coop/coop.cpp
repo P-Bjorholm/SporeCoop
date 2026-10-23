@@ -1319,6 +1319,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
         bool have = r.buf.sample(now, s);
         SAY("remote %u '%s' puppet=%p state=%s age=%.2fs pos=(%.1f %.1f %.1f)\n", id, r.name.c_str(),
             r.puppet, have ? "yes" : "no", r.buf.age(now), s.pos.x, s.pos.y, s.pos.z);
+        // tests: both players are in the same world and place right now
+        SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
         if (r.puppet) {
             net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
             float rot_err = -1;

@@ -57,6 +57,7 @@ test:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
+	python3 tools/re_lint.py
 
 clean:
 	rm -rf $(B)

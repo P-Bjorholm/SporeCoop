@@ -23,9 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from twoinst import wait_guest_in  # noqa: E402
 from sporectl import Console, recompress_png  # noqa: E402
-
-APPDATA = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users/'
-                             + os.environ['USER'] + '/AppData/Roaming')
+import lane  # noqa: E402
 
 
 def up(inst):
@@ -40,7 +38,7 @@ def out(con, line):
 
 
 def shot(con, name):
-    path = os.path.join(ROOT, 'out', 'shots', name)
+    path = os.path.join(lane.out_dir('shots'), name)
     if con.call('shot ' + path)['ok']:
         recompress_png(path, 0.5)
     return path
@@ -73,7 +71,7 @@ def main():
     ap.add_argument('--fixture')
     ap.add_argument('--adventure', action='store_true', help='restart both and start the tutorial adventure on both')
     ap.add_argument('--planet')
-    ap.add_argument('--port', type=int, default=47810)
+    ap.add_argument('--port', type=int, default=lane.PORT)
     ap.add_argument('--move', default='1000,760')
     a = ap.parse_args()
     spore = os.path.join(ROOT, 'tools', 'spore.sh')
@@ -83,23 +81,23 @@ def main():
         subprocess.run([spore, 'deploy'], check=True, stdout=subprocess.DEVNULL)
         # the Galactic Adventures "play" button offers the next adventure of the profile's
         # campaign: give the guest the host's progress so both get the same adventure
-        src, dst = (os.path.join(APPDATA, p, 'Spore') for p in ('SporeKit-test', 'SporeKit-inst2'))
+        src, dst = lane.HOST_DIR, lane.GUEST_DIR
         for f in os.listdir(src):
             if f.endswith('.package'):
                 shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
-        subprocess.run([spore, 'run', '-i', '2'], check=True, stdout=subprocess.DEVNULL)
+        lane.run_guest()
         for _ in range(120):
-            if up(2):
+            if up(lane.GUEST):
                 break
             time.sleep(1)
         time.sleep(5)
-        subprocess.run([spore, 'run', '-p', 'test'], check=True, stdout=subprocess.DEVNULL)
+        lane.run_host()
         for _ in range(120):
-            if up(1):
+            if up(lane.HOST):
                 break
             time.sleep(1)
         procs = [subprocess.Popen([sys.executable, os.path.join(HERE, 'adventure_start.py'), '-i', str(i)])
-                 for i in (1, 2)]
+                 for i in (lane.HOST, lane.GUEST)]
         for p in procs:
             p.wait()
         a.keep_guest = True
@@ -107,22 +105,23 @@ def main():
         subprocess.run([spore, 'kill'], stdout=subprocess.DEVNULL)
         time.sleep(2)
         subprocess.run([spore, 'deploy'], check=True, stdout=subprocess.DEVNULL)
-        shutil.rmtree(os.path.join(APPDATA, 'SporeKit-test', 'Spore', 'Games'), ignore_errors=True)
-        subprocess.run([spore, 'fixture', 'restore', a.fixture, 'test'], check=True, stdout=subprocess.DEVNULL)
+        shutil.rmtree(os.path.join(lane.HOST_DIR, 'Games'), ignore_errors=True)
+        subprocess.run([spore, 'fixture', 'restore', a.fixture, lane.HOST_PROFILE], check=True,
+                       stdout=subprocess.DEVNULL)
         for d in ('Games', 'Games-sporecoop-backup'):
-            shutil.rmtree(os.path.join(APPDATA, 'SporeKit-inst2', 'Spore', d), ignore_errors=True)
-        subprocess.run([spore, 'run', '-i', '2'], check=True, stdout=subprocess.DEVNULL)
+            shutil.rmtree(os.path.join(lane.GUEST_DIR, d), ignore_errors=True)
+        lane.run_guest()
         for _ in range(120):
-            if up(2):
+            if up(lane.GUEST):
                 break
             time.sleep(1)
         time.sleep(5)
-        subprocess.run([spore, 'run', '-p', 'test'], check=True, stdout=subprocess.DEVNULL)
+        lane.run_host()
         for _ in range(120):
-            if up(1):
+            if up(lane.HOST):
                 break
             time.sleep(1)
-        h = Console(1)
+        h = Console(lane.HOST)
         for _ in range(180):
             if 'GalaxyGameEntry' in out(h, 'game.mode'):
                 break
@@ -135,7 +134,7 @@ def main():
             time.sleep(2)
         h.call('wait.frames 600 90000')
         a.keep_guest = True  # fresh guest already waits in the menu
-    host = Console(1)
+    host = Console(lane.HOST)
     hav = host.call('coop.avatar')
     assert hav['ok'], 'host is not playing: ' + hav.get('out', '')
     mode = hav['out'].split(':')[0]
@@ -143,22 +142,21 @@ def main():
     out(host, 'coop.leave')
     print(out(host, f'cheat coop host {a.port} Alice'))
     if not a.keep_guest:
-        if up(2):
-            Console(2).call('quit')
+        if up(lane.GUEST):
+            Console(lane.GUEST).call('quit')
             for _ in range(60):
-                if not up(2):
+                if not up(lane.GUEST):
                     break
                 time.sleep(1)
             time.sleep(3)
         for d in ('Games', 'Games-sporecoop-backup'):
-            shutil.rmtree(os.path.join(APPDATA, 'SporeKit-inst2', 'Spore', d), ignore_errors=True)
-        subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), 'run', '-i', '2'], check=True,
-                       stdout=subprocess.DEVNULL)
+            shutil.rmtree(os.path.join(lane.GUEST_DIR, d), ignore_errors=True)
+        lane.run_guest()
         for _ in range(120):
-            if up(2):
+            if up(lane.GUEST):
                 break
             time.sleep(1)
-    guest = Console(2)
+    guest = Console(lane.GUEST)
     for _ in range(180):
         m = out(guest, 'game.mode')
         if 'GalaxyGameEntry' in m or guest.call('coop.avatar')['ok']:

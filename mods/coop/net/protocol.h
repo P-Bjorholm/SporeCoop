@@ -71,7 +71,7 @@ enum MsgType : uint8_t {
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
 constexpr uint32_t kDiscoverQuery = 0x51435053; // 'SPCQ'
 constexpr uint32_t kDiscoverReply = 0x52435053; // 'SPCR'
-constexpr uint16_t kDiscoverPorts = 4;          // kDefaultPort .. kDefaultPort + 3
+constexpr uint16_t kDiscoverPorts = 10;         // kDefaultPort .. +9: test lanes 1..5 host on +2(N-1)
 
 struct DiscoverReply {
     uint16_t proto = kProtoVersion;

@@ -25,10 +25,10 @@ Resource::GetDatabaseByID=0x006B1F20 ; verified runtime: cdecl(id) -> IDatabase;
 Simulator::cStarManager::ReadStarsFromSaveDB=0x00BB8C60 ; verified ftrace+probe: thiscall(starMgr), reads stars.db from the save DB (0x4729A47) location; run on entering the galaxy menu
 SporeCoop::CurrentGameName=0x0167EF40 ; verified asm+runtime: eastl::string16 with the current save planet file (u"Scalinus.spo"), set by LoadGameByName
 Simulator::SpacePlayerData::ptr=0x016DEA6C ; verified asm of GetActiveStar (mov eax,[0x16DEA6C]; mov eax,[eax+8]); ModAPI m17 0x16DDA8C
-Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; most used global in cell code (1122 refs), m17 0x16B3C04
-Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; m17 0x16B3C08
-Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; m17 0x16B3C0C
-App::cScenarioMode::ptr=0x016C8A84 ; runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4
+Simulator::Cell::cCellGame::_ptr=0x016B4BE4 ; verified runtime (cellsync, every cell test); most used global in cell code (1122 refs), m17 0x16B3C04
+Simulator::Cell::cCellGFX::_ptr=0x016B4BE8 ; verified runtime (cell tests); m17 0x16B3C08
+Simulator::Cell::cCellUI::_ptr=0x016B4BEC ; verified runtime (cell tests); m17 0x16B3C0C
+App::cScenarioMode::ptr=0x016C8A84 ; verified runtime: mMode +0xCC == 2 in play mode, mpData +0x74; m17 0x16C7AA4
 UTFWin::SporeStdDrawable::SporeStdDrawable=0x008309B0 ; verified asm: writes vtables 0141B2D0/0141B2B8/0141B278, size 0x160
 UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x00830870 ; verified asm: called for SporeStdDrawable::mCurrentInfo (+0x7C)
 UTFWin::UILayout::UILayout=0x00810050 ; verified asm: vtable 01418CA8, zeroes +4..+0x14
@@ -99,7 +99,7 @@ Memory::operator_new_named=0x009262B0 ; verified cdecl(size, const char* name, 0
 Resource::DatabasePackedFile::ctor=0x008DA290 ; verified thiscall(db, const char16_t* path, ICoreAllocator*) ret 8
 Resource::ResourceManager_ptr=0x015FE88C ; verified global: cResourceManager* (RegisterDatabase vt+0x50 (bool add, db, priority) ret 0xC)
 Simulator::cCreatureAnimal::SetSpecies=0x00C038E0 ; verified thiscall(creature, cSpeciesProfile*, int age, bool keepState) ret 0xC
-Simulator::Cell::PreloadModel=0x00E624C0 ; cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
+Simulator::Cell::PreloadModel=0x00E624C0 ; verified runtime (coop_creations_cell.py): cdecl(ResourceKey by value: instance, type, group): adds a model to the preload set (G+0x70), called by the cell editor exit handler 0xE809A0
 Simulator::CreatureSelectionUI=0x00B6C930 ; verified cdecl(sel*, ?, ?, ?, float) plain ret: creature stage selection; a pack member (+0xB58 bit 1) reads (+0xE84)->+0x32C: null on puppets/proxies -> crash (coop guards it)
 Simulator::cCity::AddCaptureDamage=0x00BE9C50 ; verified cdecl(planetCtx, city, city+0x2F0 meter, ownerPol, float dmg, attackerPol, bool) caller add esp,0x1C; +0x748 += dmg*0.1, max 100 (docs/re/civ.md co-op A)
 Simulator::cCity::SetCaptureProgress=0x00BD7E40 ; verified thiscall(attackerPol, float pct) ret 8: +0x74C/+0x748 + meter

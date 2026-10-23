@@ -21,11 +21,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console, recompress_png  # noqa: E402
+import lane  # noqa: E402
 
 
 def sh(*args):
-    subprocess.run([os.path.join(ROOT, 'tools', 'spore.sh'), *args], check=True,
-                   stdout=subprocess.DEVNULL)
+    lane.sh(*args)
 
 
 def load(inst, results):
@@ -47,7 +47,7 @@ def wait_up(inst, t=120):
 
 
 def shot(con, name):
-    path = os.path.join(ROOT, 'out', 'shots', name)
+    path = os.path.join(lane.out_dir('shots'), name)
     r = con.call('shot ' + path)
     if r['ok']:
         recompress_png(path, 0.5)
@@ -61,36 +61,34 @@ def main():
         sh('kill')
         time.sleep(2)
         sh('deploy')
-        sh('fixture', 'restore', 'creature', 'test')
+        sh('fixture', 'restore', 'creature', lane.HOST_PROFILE)
         if guest_menu:
-            appdata = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/'
-                                         'drive_c/users/' + os.environ['USER'] + '/AppData/Roaming')
-            subprocess.run(['rm', '-rf', appdata + '/SporeKit-inst2/Spore/Games',
-                            appdata + '/SporeKit-inst2/Spore/Games-sporecoop-backup'])
+            subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
         else:
-            sh('fixture', 'restore', 'creature', 'inst2')
-        sh('run', '-i', '2')
-        assert wait_up(2), 'instance 2 did not start'
+            sh('fixture', 'restore', 'creature', lane.GUEST_PROFILE)
+        lane.run_guest()
+        assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
         time.sleep(5)
-        sh('run', '-p', 'test')
-        assert wait_up(1), 'instance 1 did not start'
+        lane.run_host()
+        assert wait_up(lane.HOST), f'instance {lane.HOST} did not start'
         res = {}
-        th = [threading.Thread(target=load, args=(i, res)) for i in ((1,) if guest_menu else (1, 2))]
+        th = [threading.Thread(target=load, args=(i, res))
+              for i in ((lane.HOST,) if guest_menu else (lane.HOST, lane.GUEST))]
         for t in th:
             t.start()
         for t in th:
             t.join()
-        for i in (1, 2):
+        for i in (lane.HOST, lane.GUEST):
             print(f'instance {i}:', res.get(i, '').splitlines()[:1])
-    host, guest = Console(1), Console(2)
-    print(host.call('cheat coop host 47810 Alice')['out'])
+    host, guest = Console(lane.HOST), Console(lane.GUEST)
+    print(host.call(lane.HOST_CMD)['out'])
     if guest_menu:
         for _ in range(120):
             if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
                 break
             time.sleep(1)
         guest.call('wait.frames 700 60000')
-    print(guest.call('cheat coop join 127.0.0.1:47810 Bob')['out'])
+    print(guest.call(lane.JOIN)['out'])
     if guest_menu:
         t0 = time.time()
         while time.time() - t0 < 240 and not guest.call('coop.avatar')['ok']:

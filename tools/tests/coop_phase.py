@@ -16,9 +16,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 
-APPDATA = os.path.expanduser('~/.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users/'
-                             + os.environ['USER'] + '/AppData/Roaming')
 SPORE = os.path.join(ROOT, 'tools', 'spore.sh')
 
 
@@ -47,19 +46,18 @@ def main():
     subprocess.run([SPORE, 'kill'], stdout=subprocess.DEVNULL)
     time.sleep(2)
     subprocess.run([SPORE, 'deploy'], check=True, stdout=subprocess.DEVNULL)
-    for prof, fx in (('SporeKit-test', 'tribe'), ('SporeKit-inst2', 'creature')):
+    for prof, fx in ((lane.HOST_PROFILE, 'tribe'), (lane.GUEST_PROFILE, 'creature')):
         for d in ('Games', 'Games-sporecoop-backup'):
-            shutil.rmtree(os.path.join(APPDATA, prof, 'Spore', d), ignore_errors=True)
-        subprocess.run([SPORE, 'fixture', 'restore', fx, 'test' if prof == 'SporeKit-test' else 'inst2'],
-                       check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([SPORE, 'run', '-i', '2'], check=True, stdout=subprocess.DEVNULL)
-    while not up(2):
+            shutil.rmtree(os.path.join(lane.APPDATA, 'SporeKit-' + prof, 'Spore', d), ignore_errors=True)
+        subprocess.run([SPORE, 'fixture', 'restore', fx, prof], check=True, stdout=subprocess.DEVNULL)
+    lane.run_guest()
+    while not up(lane.GUEST):
         time.sleep(1)
     time.sleep(5)
-    subprocess.run([SPORE, 'run', '-p', 'test'], check=True, stdout=subprocess.DEVNULL)
-    while not up(1):
+    lane.run_host()
+    while not up(lane.HOST):
         time.sleep(1)
-    host, guest = Console(1), Console(2)
+    host, guest = Console(lane.HOST), Console(lane.GUEST)
     for c, slot, planet, mode in ((guest, 'Game0', 'Scalinus', 'Creature'), (host, 'Game0', 'Cohrach', 'Tribe')):
         for _ in range(180):
             if 'GalaxyGameEntry' in c.call('game.mode')['out']:
@@ -70,8 +68,8 @@ def main():
     ok = wait_mode(guest, 'Creature') is not None and wait_mode(host, 'Tribe') is not None
     print('guest plays', mode_of(guest), '| host plays', mode_of(host))
     host.call('wait.frames 300 60000')
-    print(host.call('cheat coop host 47810 Alice')['out'])
-    print(guest.call('cheat coop join 127.0.0.1:47810 Bob')['out'])
+    print(host.call(lane.HOST_CMD)['out'])
+    print(guest.call(lane.JOIN)['out'])
     time.sleep(2)
     host.call('click 980 606')  # "game saved" box
     t = wait_mode(guest, 'Tribe')

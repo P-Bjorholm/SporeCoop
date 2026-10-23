@@ -11,6 +11,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sporectl import Console  # noqa: E402
+import lane  # noqa: E402
 import subprocess  # noqa: E402
 
 STAGE_ICON = {"cell": (720, 392), "creature": (800, 428), "tribe": (848, 496), "civ": (848, 578),
@@ -33,7 +34,7 @@ STEPS = {
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=sorted(STAGE_ICON))
-    ap.add_argument("-i", type=int, default=1)
+    ap.add_argument("-i", type=int, default=lane.HOST)
     ap.add_argument("--slot", default="480,290", help="empty planet slot in the galaxy menu")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
     a = ap.parse_args()
@@ -50,8 +51,9 @@ def main():
         c.cmd(f"click {x} {y}")
         c.cmd("wait.frames 80 60000")
         if a.shots:
+            path = os.path.join(lane.out_dir("shots"), f"wiz_{a.stage}_{n}.png")
             subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "..", "sporectl.py"), "-i",
-                            str(a.i), "shot", f"out/shots/wiz_{a.stage}_{n}.png", "--scale", "0.4"],
+                            str(a.i), "shot", path, "--scale", "0.4"],
                            stdout=subprocess.DEVNULL)
     t0 = time.time()
     while time.time() - t0 < 300:

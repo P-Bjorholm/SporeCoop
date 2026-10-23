@@ -46,7 +46,9 @@ def main():
         r2 = host.call(f'coop.tribe pincer {v} {guest_m[-1]} 2')['out']
         print('  host hit:', r1, '| guest hit:', r2)
         d = [float(a) - float(b) for a, b in re.findall(r'hp ([\d.]+) -> ([\d.]+)', r1 + ' ' + r2)]
-        ck(len(d) == 2 and d[1] > d[0] * 1.3, f'two players hitting one tribe deal more damage ({d})')
+        # base 2: the second player's hit is a pincer (x1.5); a hitter near its chief also gets x1.2
+        ck(len(d) == 2 and d[1] >= 2 * 1.5 - 0.01 and d[0] <= 2 * 1.2 + 0.01,
+           f'two players hitting one tribe deal more damage ({d})')
         ck('pincer attack' in host.call('coop.status')['out'], 'everybody is told about the pincer attack')
     # the epic: spawned, both players hit it, 80 food
     f0 = food(host)

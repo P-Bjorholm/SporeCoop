@@ -3,11 +3,26 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GAME="${SPORE_GAME:-$(cd "$ROOT/.." && pwd)}"
+# test lanes (docs/10-dev-pipeline.md): lane 1 = the real install in the "Games" bottle; lane N>1 =
+# its own bottle SporeLabN (own wineserver: a crash or quit there leaves the other lanes alone),
+# its own game folder (own mods, logs, SporeCoop.package) and instances 2N-1 (host) / 2N (guest)
+LANE="${SPORE_LANE:-1}"
+MAIN_GAME="$(cd "$(dirname "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)")/.." && pwd)"
+LAB="${SPORE_LAB:-$(dirname "$MAIN_GAME")/SPORE-lab}"
+if [[ "$LANE" == 1 ]]; then
+    GAME="${SPORE_GAME:-$MAIN_GAME}"
+    BOTTLE="${SPORE_BOTTLE:-Games}"
+else
+    GAME="${SPORE_GAME:-$LAB/lane$LANE}"
+    BOTTLE="${SPORE_BOTTLE:-SporeLab$LANE}"
+fi
+HOST_INST=$((2 * LANE - 1))
 BIN="$GAME/SporebinEP1"
 MODS="$BIN/mods"
-BOTTLE="${SPORE_BOTTLE:-Games}"
 BACKUP="$ROOT/out/backup"
+BOTTLES_DIR="$HOME/.var/app/com.usebottles.bottles/data/bottles/bottles"
+# fixtures are shared by every worktree: they live in the main checkout
+FIXTURES="${SPORE_FIXTURES:-$MAIN_GAME/SporeCoop/out/fixtures}"
 
 bottles() { flatpak run --command=bottles-cli com.usebottles.bottles "$@"; }
 
@@ -108,13 +123,15 @@ cmd_run() {
         prepare_profile "inst$inst"
     fi
     mkdir -p "$ROOT/out"
+    [[ -f "$BIN/SporeApp.exe" ]] || { echo "no game at $BIN (lane $LANE: spore.sh lane create $LANE)" >&2; exit 1; }
     nohup flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
         -e "$BIN/SporeApp.exe" -- "${args[@]}" > "$ROOT/out/run.$inst.log" 2>&1 &
     echo "started instance $inst ${profile:+profile $profile }(bottles log: out/run.$inst.log)"
 }
 
-# the Wine process command line starts with the Windows path, e.g. F:\...\SporeApp.exe
-GAME_RE='^[A-Z]:\\.*SporeApp\.exe'
+# the Wine process command line starts with the Windows path, e.g. F:\...\SPORE\SporebinEP1\SporeApp.exe:
+# only this lane's game folder matches
+GAME_RE="^[A-Z]:\\\\.*\\\\$(basename "$GAME")\\\\SporebinEP1\\\\SporeApp\\.exe"
 
 kill_tree() {
     local c
@@ -157,15 +174,70 @@ cmd_fixture() {
     local op="${1:-}" name="${2:-creature}" profile="${3:-test}"
     local prefix="$APPDATA_DIR/SporeKit-$profile/Spore"
     [[ "$profile" == "-" ]] && prefix="$APPDATA_DIR/Spore"
-    mkdir -p "$ROOT/out/fixtures"
+    mkdir -p "$FIXTURES" "$prefix"
     case "$op" in
-        save) tar -C "$prefix" -czf "$ROOT/out/fixtures/$name.tgz" Games && echo "saved fixture $name" ;;
-        restore) tar -C "$prefix" -xzf "$ROOT/out/fixtures/$name.tgz" && echo "restored fixture $name" ;;
-        *) echo "usage: spore.sh fixture save|restore [name] [profile|-]"; exit 1 ;;
+        save) tar -C "$prefix" -czf "$FIXTURES/$name.tgz" Games && echo "saved fixture $name" ;;
+        restore) rm -rf "$prefix/Games" && tar -C "$prefix" -xzf "$FIXTURES/$name.tgz" && echo "restored fixture $name" ;;
+        slot)
+            # warm reset: the fixture's Game0 goes into a new slot Game<slot> next to the loaded one
+            # (files of the running save must not change under the game)
+            local slot="${4:?slot number}" tmp
+            tmp=$(mktemp -d "$prefix/.fixture.XXXXXX")
+            tar -C "$tmp" -xzf "$FIXTURES/$name.tgz"
+            mkdir -p "$prefix/Games"
+            rm -rf "$prefix/Games/Game$slot"
+            mv "$tmp/Games/Game0" "$prefix/Games/Game$slot"
+            rm -rf "$tmp"
+            echo "fixture $name in Game$slot" ;;
+        *) echo "usage: spore.sh fixture save|restore [name] [profile|-] | slot name profile N"; exit 1 ;;
+    esac
+}
+
+# a lane = reflink copies (Btrfs: no extra space until files change) of the game folder and of
+# the bottle, with the game paths in the bottle registry pointed to the copy
+cmd_lane() {
+    local op="${1:-}" n="${2:-}"
+    [[ "$n" =~ ^[0-9]+$ && "$n" -ge 2 ]] || { echo "usage: spore.sh lane create|remove|info N (N >= 2)"; exit 1; }
+    local dir="$LAB/lane$n" bottle="$BOTTLES_DIR/SporeLab$n"
+    case "$op" in
+        create)
+            if [[ ! -f "$dir/SporebinEP1/SporeApp.exe" ]]; then
+                mkdir -p "$dir"
+                local e
+                for e in "$MAIN_GAME"/*; do
+                    case "$(basename "$e")" in SporeCoop) continue ;; esac
+                    cp -a --reflink=always "$e" "$dir/"
+                done
+                rm -rf "$dir/SporebinEP1/mods/logs"
+            fi
+            if [[ ! -f "$bottle/bottle.yml" ]]; then
+                cp -a --reflink=always "$BOTTLES_DIR/Games" "$bottle"
+                sed -i "s/^Name: .*/Name: SporeLab$n/; s/^Path: .*/Path: SporeLab$n/" "$bottle/bottle.yml"
+                # the game paths in the registry: Z:\home\...\SPORE\ -> the lane copy
+                local from to
+                from=$(printf '%s' "Z:$MAIN_GAME" | sed 's|/|\\\\|g')
+                to=$(printf '%s' "Z:$dir" | sed 's|/|\\\\|g')
+                sed -i "s|$(printf '%s' "$from" | sed 's|\\|\\\\|g')\\\\|$(printf '%s' "$to" | sed 's|\\|\\\\|g')\\\\|g" \
+                    "$bottle/system.reg" "$bottle/user.reg"
+                # test profiles only: the player's own Spore data is not copied
+                rm -rf "$bottle/drive_c/users/$USER/AppData/Roaming/Spore/Games"
+            fi
+            echo "lane $n: game $dir, bottle SporeLab$n, instances $((2 * n - 1))/$((2 * n))"
+            ;;
+        remove)
+            SPORE_LANE=$n "$0" kill >/dev/null || true
+            rm -rf "$dir" "$bottle"
+            echo "lane $n removed"
+            ;;
+        info)
+            echo "lane $n: game $dir ($( [[ -d $dir ]] && echo ok || echo missing)), bottle SporeLab$n ($( [[ -d $bottle ]] && echo ok || echo missing))"
+            ;;
+        *) echo "usage: spore.sh lane create|remove|info N"; exit 1 ;;
     esac
 }
 
 case "${1:-}" in
+    lane) shift; cmd_lane "$@" ;;
     install) cmd_install ;;
     uninstall) cmd_uninstall ;;
     deploy) cmd_deploy ;;
@@ -174,5 +246,5 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-1}" ;;
     fixture) shift; cmd_fixture "$@" ;;
-    *) echo "usage: spore.sh install|uninstall|deploy|run [-i inst] [-p profile]|kill|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
+    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile]|kill|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
 esac
