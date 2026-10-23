@@ -88,8 +88,9 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 ## Install
 
-You need the **GOG "SPORE Collection"** (Spore + Galactic Adventures) on Windows or on Linux with
-Wine (Bottles, Lutris, Proton). Every player installs the same SporeCoop version.
+You need **Spore with Galactic Adventures** on Windows or on Linux with Wine (Bottles, Lutris,
+Proton). The mod is tested with the **GOG "SPORE Collection"** build. Every player installs the
+same SporeCoop version.
 
 1. Download **`SporeCoop-0.5.0.zip`** from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest).
 2. Extract it into the game's **`SporebinEP1`** folder (next to `SporeApp.exe`).
@@ -98,9 +99,6 @@ Wine (Bottles, Lutris, Proton). Every player installs the same SporeCoop version
 
 The full guide — checking your game build, Linux, installing by hand, the internet, updating,
 uninstalling and troubleshooting — is in **[docs/INSTALL.md](docs/INSTALL.md)**.
-
-> Other builds of Spore (Steam, EA app, disc) are not supported yet: the game starts as usual and
-> co-op stays off.
 
 ## How to play
 
@@ -141,8 +139,9 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 
 ## FAQ
 
-**Does it work with the Steam or EA version?** Not yet: SporeCoop needs the GOG build's executable
-(`SHA-256 922af7c7…`). See the roadmap.
+**Does it work with the Steam or EA version?** SporeCoop is tested with the GOG build
+(`SporeApp.exe`, `SHA-256 922af7c7…`); other builds have not been tested yet. If you try one,
+please tell us how it went in an [issue](https://github.com/WoodyWizard/SporeCoop/issues).
 
 **Do all players need the game?** Yes, every player needs their own copy of SPORE Collection and
 the same SporeCoop version.
@@ -174,7 +173,7 @@ Next:
 
 - [ ] easier internet play (no VPN or port forwarding)
 - [ ] an installer with updates
-- [ ] support for the Steam and EA builds
+- [ ] tests with the Steam and EA builds
 - [ ] four-player tests, shared galaxy in Space, co-op adventures
 
 ## Building from source

@@ -18,18 +18,18 @@ others; your saves and creations are not touched.
 
 | | |
 |---|---|
-| Game | **SPORE Collection from GOG** (Spore + Galactic Adventures). The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
+| Game | **Spore + Galactic Adventures**; tested with the **SPORE Collection from GOG**. The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
 | System | Windows 10/11, or Linux with Wine 9+ (Bottles, Lutris, plain Wine; Proton works if the game runs from a GOG install). |
 | Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
 | Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
 
-Other builds of Spore (Steam, EA app, disc, Origin) have a different executable. The mod then stays
-switched off and the game runs as usual. Support for them is planned (see the roadmap in the
-README).
+The mod is tested with the GOG build. Other builds (Steam, EA app, disc) have not been tested
+yet; if you try one, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the result
+and `mods\logs\sporekit.log` helps.
 
 ## 2. Check your game build
 
-The mod is made for exactly this file:
+The tested build is this file:
 
 | | |
 |---|---|
@@ -55,7 +55,7 @@ Linux:
 sha256sum "SPORE/SporebinEP1/SporeApp.exe"
 ```
 
-`install.bat` checks this too and warns when the build differs.
+`install.bat` checks this too and tells you when your build is not the tested one.
 
 ## 3. Install on Windows
 

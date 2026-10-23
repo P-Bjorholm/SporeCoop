@@ -5,7 +5,7 @@
 The first public release: co-op in every stage of Spore, with a shared world, everybody's own
 creations and mechanics that only work together.
 
-Needs the GOG "SPORE Collection" build (`SporebinEP1\SporeApp.exe`, SHA-256 `922af7c7…`).
+Tested with the GOG "SPORE Collection" build (`SporebinEP1\SporeApp.exe`, SHA-256 `922af7c7…`).
 Install: [docs/INSTALL.md](https://github.com/WoodyWizard/SporeCoop/blob/main/docs/INSTALL.md) — extract the zip into `SporebinEP1`, run
 `install.bat`. All players need this same version.
 

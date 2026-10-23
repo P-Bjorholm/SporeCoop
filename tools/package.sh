@@ -23,12 +23,12 @@ if not exist SporeApp.exe (
   pause
   exit /b 1
 )
-rem the mod is made for the GOG 2016 build (docs: INSTALL.txt, section 2); other builds keep co-op off
+rem the mod is tested with the GOG 2016 build (INSTALL.txt, section 2)
 set WANT=922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e
 for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 SporeApp.exe).Hash.ToLower()" 2^>nul`) do set HAVE=%%h
 if defined HAVE if /i not "%HAVE%"=="%WANT%" (
-  echo WARNING: this SporeApp.exe is not the GOG build SporeCoop supports.
-  echo The game will run, but co-op stays off. See INSTALL.txt, section 2.
+  echo Note: this SporeApp.exe is not the GOG build SporeCoop was tested with.
+  echo It has not been tested yet - see INSTALL.txt, section 2.
   echo.
 )
 if not exist steam_api_orig.dll (
@@ -62,8 +62,8 @@ SporeCoop $VER - co-op for every stage of SPORE (GOG "SPORE Collection" build)
 https://github.com/WoodyWizard/SporeCoop
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
-All players need the same game build (GOG SporebinEP1\\SporeApp.exe, sha256 922af7c7...).
-Other builds load the game normally but co-op stays disabled.
+Tested build: GOG SporebinEP1\\SporeApp.exe, sha256 922af7c7... All players need the same SporeCoop version.
+SporeCoop is tested with the GOG build; other builds have not been tested yet.
 
 Host: main menu -> Co-op -> name -> Host, then load or start a game. The window shows the
 addresses for friends (over the internet forward UDP port 47810 or use a VPN such as
