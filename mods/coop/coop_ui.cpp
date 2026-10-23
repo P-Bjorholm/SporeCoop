@@ -171,7 +171,7 @@ struct Dialog {
     // connect page
     std::vector<Win> page_connect;
     Win name_edit = nullptr, addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
-    Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr;
+    Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[3] = {};
     std::string lan_addr[3];
     // lobby page
@@ -376,7 +376,12 @@ static void build_dialog()
                            load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5);
     D.host_btn = add_button(P, "host", {540, 422, 720, 462}, T("Host", "Создать"), do_host);
     D.host_hint = add_label(P, {40, 466, 720, 492}, "", kDim);
-    D.status = add_label(P, {40, 498, 720, 526}, "", kYellow);
+    D.status = add_label(P, {40, 498, 560, 526}, "", kYellow);
+    D.update_btn = add_button(P, "update", {570, 494, 720, 530}, "", [] {
+        if (A.update_do)
+            A.update_do();
+        g_dirty = true;
+    });
 
     // ---- lobby page ----
     auto& L = D.page_lobby;
@@ -486,8 +491,13 @@ static void refresh_connect()
             hint += (i ? ",  " : "") + ips[i] + ":" + port;
     }
     text(D.host_hint, hint.empty() ? "" : std::string(T("Friends connect to: ", "Друзья подключаются к: ")) + hint);
-    text(D.status, g_status);
-    color(D.status, g_status_color);
+    std::string up_line, up_btn;
+    bool up = A.update && A.update(up_line, up_btn);
+    // the session status wins; otherwise the update line (a new SporeCoop release)
+    text(D.status, g_status.empty() && up ? up_line : g_status);
+    color(D.status, g_status.empty() && up ? kGreen : g_status_color);
+    show(D.update_btn, up && !up_btn.empty());
+    text(D.update_btn, up_btn);
 }
 
 static void refresh_lobby()

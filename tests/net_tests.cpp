@@ -1,4 +1,5 @@
 // Native (Linux) tests for the portable coop netcode: make test
+#include "../updater/pack.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
@@ -402,12 +403,57 @@ static void test_refpack_untrusted()
     printf("  2000 random inputs (%d decoded), bomb rejected\n", ok);
 }
 
+// the updater: packs, paths, versions, the GitHub answer (updater/pack.h)
+static void test_updater()
+{
+    printf("updater: packs, paths, versions, release answer\n");
+    upd::Pack p;
+    p.version = "0.5.1";
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, {1, 2, 3}});
+    p.files.push_back({"SporebinEP1/mods/coop.ini", upd::kOnlyIfMissing, {'a'}});
+    auto bytes = upd::write_pack(p);
+    upd::Pack q;
+    std::string err;
+    CHECK(upd::parse_pack(bytes, q, err) && q.version == "0.5.1" && q.files.size() == 2 && q.files[0].data.size() == 3);
+    auto bad = bytes;
+    bad.back() ^= 1; // a damaged file
+    CHECK(!upd::parse_pack(bad, q, err));
+    bad = bytes;
+    bad.resize(bad.size() - 1); // truncated
+    CHECK(!upd::parse_pack(bad, q, err));
+    for (const char* evil : {"../steam_api.dll", "SporebinEP1/../../x.dll", "C:/Windows/x.dll", "/etc/x",
+                             "SporebinEP1\\mods\\x.dll", "SporebinEP1/SporeApp.exe", "SporebinEP1/mods/../x.dll",
+                             "SporebinEP1/mods/a:b.dll", "SporebinEP1/mods//x.dll"})
+        CHECK(!upd::allowed_path(evil));
+    for (const char* ok : {"SporebinEP1/steam_api.dll", "SporebinEP1/sporekit.dll", "SporebinEP1/mods/coop.dll",
+                           "SporebinEP1/mods/sporekit/symbols/gog2016_922af7c7.sym", "Data/SporeCoop.package"})
+        CHECK(upd::allowed_path(ok));
+    upd::Pack evil;
+    evil.version = "9";
+    evil.files.push_back({"SporebinEP1/SporeApp.exe", 0, {0}});
+    CHECK(!upd::parse_pack(upd::write_pack(evil), q, err));
+    CHECK(upd::compare_versions("0.5.1", "0.5.0") == 1 && upd::compare_versions("v0.5.0", "0.5.0") == 0 &&
+          upd::compare_versions("0.10.0", "0.9.9") == 1 && upd::compare_versions("1.0", "1.0.1") == -1);
+    const char* json = R"({"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.5.1","tag_name":"v0.5.1",
+      "assets":[{"name":"SporeCoop-0.5.1.zip","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.zip"},
+      {"name":"SporeCoop-0.5.1.pack","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.pack"},
+      {"name":"evil.pack","browser_download_url":"https://evil.example/x.pack"},
+      {"name":"SHA256SUMS.txt","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SHA256SUMS.txt"}]})";
+    upd::Release r;
+    CHECK(upd::parse_release(json, r) && r.version == "0.5.1" && r.tag == "v0.5.1");
+    CHECK(r.pack_url.find("github.com/WoodyWizard") != std::string::npos && r.sums_url.size() > 0);
+    std::string h(64, 'a');
+    CHECK(upd::sums_lookup(h + "  SporeCoop-0.5.1.pack\r\n" + std::string(64, 'b') + " *x.zip\n", "SporeCoop-0.5.1.pack") == h);
+    CHECK(upd::sums_lookup(h + "  other.pack\n", "SporeCoop-0.5.1.pack").empty());
+}
+
 int main()
 {
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
     test_refpack_untrusted();
+    test_updater();
     test_reliability();
     test_ackbits();
     test_bulk();

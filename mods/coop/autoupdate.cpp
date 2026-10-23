@@ -1,0 +1,187 @@
+#include "autoupdate.h"
+
+#include <windows.h>
+
+#include <atomic>
+#include <mutex>
+
+#include "../../updater/winupdate.h"
+
+namespace autoupdate {
+
+static const SkHost* H;
+static SkMod* M;
+static std::string g_version, g_url;
+static bool g_enabled;
+
+enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed };
+static std::mutex g_mu;
+static State g_state = Idle;
+static upd::Release g_rel;
+static std::string g_err;
+static std::atomic<uint32_t> g_got{0}, g_total{0};
+static bool g_told_available, g_told_ready, g_told_failed;
+static std::atomic<bool> g_busy{false};
+
+static void (*g_feed)(const std::string&) = nullptr;
+
+static std::wstring game_root()
+{
+    std::wstring m = upd::widen(H->mods_dir()); // ...\SporebinEP1\mods
+    for (int i = 0; i < 2; i++) {
+        size_t k = m.find_last_of(L"\\/");
+        if (k == std::wstring::npos)
+            return {};
+        m.resize(k);
+    }
+    return m;
+}
+
+static void set(State s, const std::string& err = {})
+{
+    std::lock_guard<std::mutex> l(g_mu);
+    g_state = s;
+    g_err = err;
+}
+
+static DWORD WINAPI check_thread(void*)
+{
+    upd::Release r;
+    std::string err;
+    set(Checking);
+    if (!upd::latest_release(g_url, r, err)) {
+        H->log(M, SK_INFO, "update check: %s", err.c_str());
+        set(Idle); // offline is normal: no message
+    } else {
+        std::lock_guard<std::mutex> l(g_mu);
+        g_rel = r;
+        g_state = upd::compare_versions(r.version, g_version) > 0 && !r.pack_url.empty() ? Available : UpToDate;
+        H->log(M, SK_INFO, "update check: latest %s, running %s", r.version.c_str(), g_version.c_str());
+    }
+    g_busy = false;
+    return 0;
+}
+
+static DWORD WINAPI apply_thread(void*)
+{
+    upd::Release r;
+    {
+        std::lock_guard<std::mutex> l(g_mu);
+        r = g_rel;
+    }
+    set(Downloading);
+    upd::Pack p;
+    std::string err;
+    bool ok = upd::download_pack(r, p, err, [](uint64_t got, uint64_t total) {
+        g_got = (uint32_t)got;
+        g_total = (uint32_t)total;
+    });
+    if (ok && upd::compare_versions(p.version, g_version) <= 0) {
+        ok = false;
+        err = "the release pack is not newer";
+    }
+    int later = 0;
+    if (ok)
+        ok = upd::apply_pack(game_root(), p, err, &later); // files the game holds open: next start
+    H->log(M, ok ? SK_INFO : SK_WARN, "update to %s: %s", r.version.c_str(), ok ? "installed" : err.c_str());
+    set(ok ? Ready : Failed, err);
+    g_busy = false;
+    return 0;
+}
+
+void init(const SkHost* host, SkMod* mod, const char* version)
+{
+    H = host;
+    M = mod;
+    g_version = version;
+    g_enabled = H->config_int(M, "update", "check", 1) != 0;
+    char b[512];
+    H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
+    g_url = b;
+    upd::cleanup_old(game_root()); // the files an update replaced last time
+    if (g_enabled && !g_busy.exchange(true))
+        CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
+}
+
+void set_feed(void (*f)(const std::string&)) { g_feed = f; }
+
+void tick()
+{
+    State s;
+    std::string v, err;
+    {
+        std::lock_guard<std::mutex> l(g_mu);
+        s = g_state;
+        v = g_rel.version;
+        err = g_err;
+    }
+    if (!g_feed)
+        return;
+    if (s == Available && !g_told_available) {
+        g_told_available = true;
+        g_feed("SporeCoop " + v + " is available: open Co-op and press Update");
+    } else if (s == Ready && !g_told_ready) {
+        g_told_ready = true;
+        g_feed("SporeCoop " + v + " is installed: restart Spore to use it");
+    } else if (s == Failed && !g_told_failed) {
+        g_told_failed = true;
+        g_feed("the update failed: " + err);
+    }
+}
+
+bool ui(std::string& line, std::string& button)
+{
+    std::lock_guard<std::mutex> l(g_mu);
+    switch (g_state) {
+    case Available:
+        line = "SporeCoop " + g_rel.version + " is available (you have " + g_version + ")";
+        button = "Update";
+        return true;
+    case Downloading: {
+        uint32_t got = g_got, total = g_total;
+        line = "Downloading SporeCoop " + g_rel.version + "... " +
+               (total ? std::to_string(got * 100ull / total) + " %" : std::to_string(got / 1024) + " KB");
+        return true;
+    }
+    case Ready:
+        line = "SporeCoop " + g_rel.version + " is installed: restart Spore to use it";
+        return true;
+    case Failed:
+        line = "Update failed: " + g_err;
+        button = "Try again";
+        return true;
+    default:
+        return false;
+    }
+}
+
+void start_update()
+{
+    {
+        std::lock_guard<std::mutex> l(g_mu);
+        if (g_state != Available && g_state != Failed)
+            return;
+        g_told_failed = false;
+    }
+    if (!g_busy.exchange(true))
+        CloseHandle(CreateThread(nullptr, 0, apply_thread, nullptr, 0, nullptr));
+}
+
+std::string command(const std::string& arg)
+{
+    if (arg == "check") {
+        if (!g_busy.exchange(true))
+            CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
+        return "checking " + g_url;
+    }
+    if (arg == "apply") {
+        start_update();
+        return "updating";
+    }
+    static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed"};
+    std::lock_guard<std::mutex> l(g_mu);
+    return std::string("update: ") + names[g_state] + " running=" + g_version + " latest=" + g_rel.version +
+           " check=" + (g_enabled ? "on" : "off") + " url=" + g_url + (g_err.empty() ? "" : " error=" + g_err);
+}
+
+} // namespace autoupdate

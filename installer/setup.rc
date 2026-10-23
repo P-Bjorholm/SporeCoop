@@ -1,0 +1,3 @@
+// the setup's icon (made from data/ui/coop_icon.png by tools/make_ico.py) and its manifest
+1 ICON "../build/setup.ico"
+1 24 "setup.manifest"

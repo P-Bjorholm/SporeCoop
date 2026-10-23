@@ -17,11 +17,11 @@ MH_OBJ  := $(patsubst %.c,$(B)/obj/%.o,$(MH_SRC))
 KIT_SRC := $(wildcard sporekit/*.cpp)
 KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 
-COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp)
+COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildcard updater/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: all loader sporekit coop res clean test
-all: loader sporekit coop res
+.PHONY: all loader sporekit coop res setup clean test
+all: loader sporekit coop res setup
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
@@ -50,12 +50,26 @@ $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ)
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
 $(B)/coop.dll: $(COOP_OBJ)
-	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi
+	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp
+
+# SporeCoopSetup.exe: install / update / uninstall (installer/, updater/)
+WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
+COOP_VERSION = $(shell sed -n 's/^#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
+setup: $(B)/SporeCoopSetup.exe
+$(B)/setup.ico: data/ui/coop_icon.png tools/make_ico.py
+	@mkdir -p $(B)
+	python3 tools/make_ico.py $< $@
+$(B)/obj/installer/setup_rc.o: installer/setup.rc installer/setup.manifest $(B)/setup.ico
+	@mkdir -p $(dir $@)
+	$(WINDRES) -i installer/setup.rc -o $@ --include-dir installer
+$(B)/SporeCoopSetup.exe: installer/setup.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
+	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $^ \
+		-lwinhttp -lcomctl32 -lshell32 -lole32 -ladvapi32 -luser32 -lgdi32
 
 # native Linux unit tests for portable netcode
 test:
 	@mkdir -p $(B)/host
-	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp tests/net_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
 	python3 tools/re_lint.py
 

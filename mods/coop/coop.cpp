@@ -1,6 +1,8 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
+#ifndef COOP_VERSION
 #define COOP_VERSION "0.5.0"
+#endif
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -26,6 +28,7 @@
 #include "tribe.h"
 #include "cellsync.h"
 #include "civ.h"
+#include "autoupdate.h"
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
@@ -665,6 +668,7 @@ void on_frame(void*, int, void*)
     cellsync::tick(now);
     civ::tick(now);
     squadron::tick(now);
+    autoupdate::tick();
     spacecoop::tick(now);
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
@@ -1723,6 +1727,8 @@ void init_ui()
         return n;
     };
     a.jump = [](std::string& to) { return g_sess.connected() && spacecoop::can_jump(to); };
+    a.update = autoupdate::ui;
+    a.update_do = autoupdate::start_update;
     a.jump_do = [] {
         H->run_outside_frame(
             [](void*) {
@@ -2075,6 +2081,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     spc.beacon = add_beacon;
     spacecoop::init(H, M, std::move(spc));
+    autoupdate::set_feed(feed);
+    autoupdate::init(H, M, COOP_VERSION);
+    H->command_add(M, "coop.update", "coop.update [check | apply] - SporeCoop updates from GitHub releases",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", autoupdate::command(argc > 1 ? argv[1] : "").c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.space",
                    "coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet]"
                    " - space co-op",
