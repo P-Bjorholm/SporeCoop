@@ -11,6 +11,7 @@
 #include <iphlpapi.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -209,8 +210,12 @@ void lan_scan(bool on)
 
 uint32_t build_id()
 {
-    // first 4 bytes of the exe sha256: peers must run the same game build
-    return (uint32_t)strtoul(std::string(H->exe_sha256()).substr(0, 8).c_str(), nullptr, 16);
+    // first 4 bytes of the sha256 of the game build: peers must run the same build. A build that
+    // only uses another build's symbols (same code, other exe hash) counts as that build.
+    std::string b = H->exe_sha256();
+    if (H->size >= offsetof(SkHost, symbols_build) + sizeof(void*) && H->symbols_build && *H->symbols_build())
+        b = H->symbols_build();
+    return (uint32_t)strtoul(b.substr(0, 8).c_str(), nullptr, 16);
 }
 
 void despawn(Remote& r)
