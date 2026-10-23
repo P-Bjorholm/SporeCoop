@@ -385,7 +385,7 @@ class Game:
     def target_for(self, pl, kind, st, centres, enemies):
         """(world point to look at, which screen object to right-click)"""
         if kind == 'gather':
-            return centres.get('p'), lambda o: o[0] in ('fruittree', 'o2C9CC91')
+            return centres.get('p'), lambda o: o[0] == 'fruittree'
         if kind == 'heal':  # eat at the own food mat (CitizenAction 0): hurt members heal there
             return centres.get('p'), lambda o: o[0] == 'o629BAFE'
         if kind in ('raid', 'social'):
