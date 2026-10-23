@@ -33,7 +33,13 @@ image base 0x400000. Its code layout is ModAPI's **March2017**: 2156 of the 2160
 * Some code did not move at all: the city planner (its AddBuilding return address 0xD1419C is the
   same), TimeOfDay, cell E68xxx..E7Fxxx.
 * Players of different builds cannot play together: the handshake compares the first 4 bytes of
-  the exe hash (REJ_BUILD).
+  the hash of the build whose symbols are loaded (REJ_BUILD).
+* `code_sha256` (`tools/exe_info.py`, same code in sporekit/sha256.cpp and installer/setup.cpp):
+  SHA-256 of ImageBase, the entry point and every section but `.rsrc` (name, address, size, raw
+  bytes). Symbol files carry it next to `exe_sha256`; an exe without its own files uses the files
+  whose `code_sha256` matches (a re-signed exe, other resources, another header timestamp).
+  GOG 2024: `5a8267b2…`. GOG 2016's is unknown (no copy of that exe here). A Steam exe with
+  SteamStub DRM keeps `.text` encrypted on disk, so it would not match even with the same code.
 
 ### 5.1.2 Windows relocates the exe
 

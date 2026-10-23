@@ -11,7 +11,8 @@
 9. [Playing together in all phases](09-coop-design.md) - the "one world, one team" concept, what's done, engine breakdowns in [re/](re/).
 10. [Development pipeline](10-dev-pipeline.md) - test lanes, the lab, warm resets, invariants, chaos bot, bad network, fixtures, git and knowledge rules. Bugs not fixed yet: [known-issues.md](known-issues.md).
 
-Target game version: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`,
-SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`, 24,888,320 bytes.
-This build is **not supported** by Spore ModAPI (it only knows Disk and Steam March2017),
-so addresses are ported separately - see section 5.
+Target game versions: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`:
+the 2016 build, SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`,
+24,888,320 bytes (not supported by Spore ModAPI, which only knows Disk and March2017, so its
+addresses are ported separately), and the 2024 build, SHA-256 `dc04aee5…`, 24,895,536 bytes, which
+has the March2017 layout - see section 5. Where each was tested: [INSTALL.md section 2](INSTALL.md#where-sporecoop-has-been-tested).

@@ -145,9 +145,18 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 
 ## FAQ
 
-**Does it work with the Steam or EA version?** SporeCoop is tested with the GOG build
-(`SporeApp.exe`, `SHA-256 922af7c7…`); other builds have not been tested yet. If you try one,
-please tell us how it went in an [issue](https://github.com/WoodyWizard/SporeCoop/issues).
+**Which game versions does it work with?** SporeCoop has been tested with:
+
+| Game build | System |
+|---|---|
+| GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux (Wine / Bottles) |
+| GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11 |
+
+The Steam, EA app and disc versions have not been tested; their `SporeApp.exe` is a different
+file, so co-op stays off with them unless its code is the same as one of the builds above. The
+full list (what was tested where) is in
+[INSTALL.md, section 2](docs/INSTALL.md#where-sporecoop-has-been-tested). If you try another
+build, please tell us how it went in an [issue](https://github.com/WoodyWizard/SporeCoop/issues).
 
 **Do all players need the game?** Yes, every player needs their own copy of SPORE Collection and
 the same SporeCoop version.

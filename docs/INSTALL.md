@@ -18,14 +18,15 @@ others; your saves and creations are not touched.
 
 | | |
 |---|---|
-| Game | **Spore + Galactic Adventures**; tested with the **SPORE Collection from GOG**. The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
+| Game | **Spore + Galactic Adventures**; tested with the **SPORE Collection from GOG** (2016 and 2024 builds, see section 2). The mod runs the Galactic Adventures executable `SporebinEP1\SporeApp.exe`. |
 | System | Windows 10/11, or Linux with Wine 9+ (Bottles, Lutris, plain Wine; Proton works if the game runs from a GOG install). |
 | Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
 | Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
 
-The mod is tested with the GOG build. Other builds (Steam, EA app, disc) have not been tested
-yet; if you try one, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the result
-and `mods\logs\sporekit.log` helps.
+The mod is tested with the GOG builds (2016 on Linux, 2024 on Windows 11): the full list is in
+[section 2](#where-sporecoop-has-been-tested). Other builds (Steam, EA app, disc) have not been
+tested yet; if you try one, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
+result and `mods\logs\sporekit.log` helps.
 
 ## 2. Check your game build
 
@@ -39,6 +40,27 @@ SporeCoop has the game addresses for these builds of `SPORE\SporebinEP1\SporeApp
 Players of one game must have the same build: the host turns away a guest with another
 `SporeApp.exe`. With any other build the game starts normally but without co-op
 (`mods\logs\sporekit.log` says "no symbol database for this SporeApp.exe build").
+
+Since 0.6.2 an exe that differs from one of these only in the PE header, the resources or a
+signature (the same code and data at the same addresses: the same `code_sha256`, see
+`tools/exe_info.py`) uses that build's addresses, and counts as that build for joining. The log
+then says "its code is the same as build ...".
+
+### Where SporeCoop has been tested
+
+| Game build | System | Tested |
+|---|---|---|
+| GOG 2016 (`922af7c7…`) | Linux, Wine / Bottles | Yes: SporeCoop was developed on it; every stage, 2-4 players, the stability runs of 0.6.0 |
+| GOG 2024 (`dc04aee5…`) | Windows 11 | Yes (0.6.1): every stage (cell, creature, tribe, civilization, space) as host + guest, two game instances on one PC |
+| GOG 2024 with a changed header (same `code_sha256`) | Windows 11 | Only with a modified copy of the GOG 2024 exe (0.6.2): it loads the GOG 2024 addresses and joins a GOG 2024 host |
+| GOG 2016 | Windows | Not tested. Before 0.6.1 every address was wrong on Windows (it moves the exe in memory), so 0.6.0 and older could not work there |
+| GOG 2024 | Linux, Wine | Not tested; expected to work like GOG 2016 under Wine |
+| Steam, EA app / Origin, disc | any | Not tested. Their `SporeApp.exe` is a different file; the game runs, co-op stays off unless its code matches a build above |
+| Two different PCs over the internet or a VPN | Windows | Not tested with 0.6.1 on Windows (the network code itself is the same as on Linux, where it was tested) |
+
+If you try a build or system that is not tested, an
+[issue](https://github.com/WoodyWizard/SporeCoop/issues) with the result and
+`mods\logs\sporekit.log` (it names the exe's `sha256` and `code_sha256`) helps.
 
 Where the game usually is:
 

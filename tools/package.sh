@@ -64,7 +64,8 @@ https://github.com/WoodyWizard/SporeCoop
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
 Supported builds: GOG SporebinEP1\\SporeApp.exe 2016 (sha256 922af7c7...) and 2024 (dc04aee5...).
-All players need the same SporeCoop version and the same game build.
+Tested: GOG 2016 on Linux (Wine), GOG 2024 on Windows 11; Steam, EA app and disc not tested
+(the full list: INSTALL.txt, section 2). All players need the same game build.
 
 Host: main menu -> Co-op -> name -> Host, then load or start a game. The window shows the
 addresses for friends (over the internet forward UDP port 47810 or use a VPN such as

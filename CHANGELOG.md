@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Game builds
+- A `SporeApp.exe` that differs from a supported build only in the PE header, the resources or a
+  signature now gets that build's addresses: symbol files carry a `code_sha256` (the code and
+  data sections and their addresses, `tools/exe_info.py`), and SporeKit uses it when no file
+  names the exact exe. Such a player counts as that build when joining. Tested with a modified
+  copy of the GOG 2024 exe (loaded at another base, joined a GOG 2024 host); a copy with one
+  changed code byte is still refused.
+- SporeCoopSetup tells such a build apart ("same code as the GOG 2024 build").
+- INSTALL.md lists which game builds and systems SporeCoop has been tested on.
+- SporeKit 0.3.1: `SkHost::symbols_build`.
+
 ## [0.6.1] - 2026-10-23
 
 Support for the current GOG build of Spore, and a fix that made the mod work on Windows at all.
