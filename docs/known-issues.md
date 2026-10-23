@@ -3,13 +3,15 @@
 Bugs found and not fixed yet. Each entry: what happens, how to reproduce it, what is known.
 Fixed entries move to the commit message (and a test).
 
-## Guest: rare first-chance fault in a planet render while a world loads
+## Guest: fault in the tribe setup with a null simulator object (seen once)
 
-* `exception 0xC0000005 at 0x00FB89D0 cTerrainStateMgr_GetTemperatureScore` (data 0x30, caller
-  0xF9E5EC: a planet render gets a null terrain state), guest only, while it loaded a received world
-  from the galaxy menu (2 of ~30 switches in `coop_stage_switch.py`, 2026-10-22). The game survives
-  it. Not seen in 14 switches since `world.cpp` starts the load outside the frame; if it comes back:
-  docs/re/space.md 8.2, and compare with the host (never seen there).
+* `exception 0xC0000005 at 0x00B12D32` (data 0x2B4) on a guest of a 4-player tribe churn
+  (`coop_multi.py`, 2026-10-23): the tribe setup 0xCD78E0, one step after a load, calls 0xB12CE0 on
+  `[0x167FAAC]` (getter 0xB3D350), which was null (it is null in the galaxy menu). Not reproduced on
+  2 players (`coop_rejoin_loop.py` plain, `--race`, `--reshare`, `--menu`: 0 of about 250 rounds).
+  Since 2026-10-23 a load leaves a stage only when it has been playable for 3 s (`world.cpp`
+  `kStageSettle`), which should avoid a quit during the setup; if it comes back, the fault log now
+  shows the call chain (`exc`: "calls:"). docs/re/space.md 8.3.
 
 ## Tribe: the host froze once while the epic creature was being killed
 

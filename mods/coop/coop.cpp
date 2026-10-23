@@ -1891,6 +1891,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
+    world::set_playing_probe([] { return g_local != nullptr; });
     shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

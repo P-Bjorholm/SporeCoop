@@ -340,42 +340,90 @@ bool share_now(uint8_t peer, std::string& err)
     H->log(M, SK_INFO, "world: sharing %s (%u files, %u bytes, id %08X) with player %u",
            narrow(slot).c_str(), (unsigned)o.files.size(), total, crc, peer);
     o.header_sent = false;
+    // a newer world replaces a transfer to the same player that is still running (a guest that left
+    // and joined again gets the same id): both used to send chunks in turn, the guest wrote the old
+    // one's chunks into the new world and dropped it (checksum mismatch). The guest starts over at
+    // the new offer; whatever of the old transfer is already on the way arrives before it.
+    for (auto& q : g_out)
+        if (q.peer == peer && !q.done) {
+            q.done = true;
+            H->log(M, SK_INFO, "world: the transfer to player %u is replaced by a newer one", peer);
+        }
     g_out.push_back(std::move(o));
     // offer is sent by tick() so it is ordered before the files
     (void)off;
     return true;
 }
 
-// A load requested while a stage runs goes through the galaxy menu (see load_slot)
+// Every load runs from the galaxy menu, outside the frame, once the menu has settled (see load_slot)
 struct ViaMenu {
     bool on = false;
     std::wstring slot;
     std::string planet;
-    double since = 0, menu_since = 0;
+    double since = 0, posted = 0;
 };
 static ViaMenu g_via_menu;
-static const double kMenuSettle = 3.0;
+static const double kMenuSettle = 3.0, kStageSettle = 3.0;
+static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
+static double g_stage_since;    // when the current stage mode began (0: not in a stage)
+static double g_playable_since; // when the local player got something to control in it (0: not yet)
+static uint32_t g_stage_mode;
+static bool (*g_playing)();
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err);
+static bool in_stage(uint32_t m);
+
+// the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
+static bool post_quit_to_menu(std::string& err)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm) {
+        err = "no message manager";
+        return false;
+    }
+    // MessagePost (4 arguments, as save_game): handled in the game's own message processing,
+    // outside our frame hook
+    skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0);
+    return true;
+}
 
 static void via_menu_tick()
 {
+    double now = H->time_seconds();
+    uint32_t mode = game::mode_id();
+    if (mode != modes::kMenu)
+        g_menu_since = 0;
+    else if (!g_menu_since)
+        g_menu_since = now;
+    if (!in_stage(mode))
+        g_stage_since = 0;
+    else if (!g_stage_since || mode != g_stage_mode)
+        g_stage_since = now;
+    g_stage_mode = mode;
+    if (!g_stage_since || (g_playing && !g_playing()))
+        g_playable_since = 0;
+    else if (!g_playable_since)
+        g_playable_since = now;
     if (!g_via_menu.on)
         return;
-    double now = H->time_seconds();
-    if (game::mode_id() == modes::kMenu) {
-        // the galaxy menu reads the stars of its slot and shows its planet when it opens: let it
-        // settle first (switching the slot under it right away faulted in its planet view)
-        if (!g_via_menu.menu_since) {
-            g_via_menu.menu_since = now;
-            H->log(M, SK_INFO, "world: in the galaxy menu %.1f s after leaving the stage", now - g_via_menu.since);
-        }
-        if (now - g_via_menu.menu_since < kMenuSettle)
+    // other modes (an adventure, an editor, before the first menu): load from there as before, but
+    // outside the frame; a load under way (kLoad) ends in a stage, which is left first
+    bool other = mode != modes::kMenu && mode != modes::kLoad && !in_stage(mode);
+    if (mode == modes::kMenu || other) {
+        // the galaxy menu reads the stars of its slot and builds the planets it shows when it opens
+        // (terrain spheres that draw their textures in render jobs over many frames): a load from
+        // inside Present disposed spheres whose jobs the render frame had already taken, and they
+        // were drawn without terrain (docs/re/space.md 8.3). Let the menu settle first.
+        if (!other && now - g_menu_since < kMenuSettle)
             return;
         // switching the save folder and starting the load reads files and builds UI: outside the
-        // frame (this tick also runs inside Present)
+        // frame (this tick runs inside Present)
         static ViaMenu v;
         v = g_via_menu;
         g_via_menu = ViaMenu{};
+        g_menu_since = 0; // a newer request settles again (the mode switches to the load later)
+        H->log(M, SK_INFO, "world: loading from %s %.1f s after the request", other ? modes::mode_name(mode) : "the galaxy menu",
+               now - v.since);
         H->run_outside_frame(
             [](void*) {
                 std::string err;
@@ -385,8 +433,28 @@ static void via_menu_tick()
             nullptr);
         return;
     }
-    g_via_menu.menu_since = 0;
-    if (now - g_via_menu.since > 30.0) {
+    if (in_stage(mode) && !g_via_menu.posted) {
+        // a stage runs (also after a load that was under way when the request came): leave it
+        // (once: a second quit message could arrive in the menu). Not before the stage has been
+        // playable for a few seconds: the game is in the stage mode at once while its loading screen
+        // runs, and the stage sets itself up after that (tribe: 0xCD78E0 points an object of the
+        // simulator, [0x167FAAC], at the tribe); a guest in a 4-player churn faulted there with that
+        // object null (0xB12D32, data 0x2B4; not reproduced: docs/re/space.md 8.3)
+        // (a stage without anything to control for the co-op adapter is left after 20 s)
+        bool settled = g_playable_since ? now - g_playable_since >= kStageSettle : now - g_stage_since >= 20.0;
+        if (!settled)
+            return;
+        std::string err;
+        if (!post_quit_to_menu(err)) {
+            g_via_menu = ViaMenu{};
+            g_feed("the world could not be loaded: " + err);
+            return;
+        }
+        g_via_menu.posted = now;
+        H->log(M, SK_INFO, "world: leaving the stage to the galaxy menu before loading %s", g_via_menu.planet.c_str());
+        return;
+    }
+    if (now - g_via_menu.since > 60.0) {
         g_via_menu = ViaMenu{};
         H->log(M, SK_WARN, "world: the game did not go to the galaxy menu, load cancelled");
         g_feed("the world could not be loaded: the game did not go to the galaxy menu");
@@ -623,6 +691,7 @@ static std::wstring pick_slot(uint32_t world_id, const std::string& planet_spo)
 // Point the save-folder database (resource DB 0x4729A47) to `slot` and load `planet_file`
 // the way the galaxy menu's Play button does (see docs/05-re-notes.md).
 void set_auto_load(bool on) { g_auto_load = on; }
+void set_playing_probe(bool (*probe)()) { g_playing = probe; }
 
 static bool in_stage(uint32_t m)
 {
@@ -637,29 +706,23 @@ static bool in_stage(uint32_t m)
 // from Cell the cell pool was freed under our adapter, and a space save loaded from Cell kept the
 // old CurrentGameName ("Karke.spo"), so the next save wrote the wrong planet. The game's quit
 // message 0x4715068 (handled by 0xB63610) saves the game and leaves any stage for the galaxy menu
-// (in space: the planet first); the save is loaded once the menu is up (~1 s + kMenuSettle).
+// (in space: the planet first); the save is loaded once the menu is up (~1 s + kMenuSettle). A
+// request that comes while the game is in the menu waits for the settle too and also loads outside
+// the frame: a world received in the menu right after it opened was loaded at once from inside
+// Present and the menu's planet faulted (docs/re/space.md 8.3).
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err)
 {
-    if (g_via_menu.on || in_stage(game::mode_id())) {
-        bool posted = g_via_menu.on;
-        if (!posted) {
-            uintptr_t get = H->sym("App::IMessageManager::Get");
-            void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
-            if (!mm) {
-                err = "no message manager";
-                return false;
-            }
-            // MessagePost (4 arguments, as save_game): handled in the game's own message
-            // processing, outside our frame hook
-            skg::vcall<void>(mm, 0x18 / 4, 0x4715068u, (void*)nullptr, (void*)nullptr, 0);
-            H->log(M, SK_INFO, "world: leaving the stage to the galaxy menu before loading %s",
-                   planet_file.c_str());
-        }
-        double since = posted ? g_via_menu.since : H->time_seconds();
-        g_via_menu = ViaMenu{true, slot, planet_file, since, 0}; // the newest request wins
-        return true;
+    if (!H->sym("Resource::GetDatabaseByID") || !H->sym("Simulator::cGamePersistenceManager::LoadGameByName")) {
+        err = "load symbols missing";
+        return false;
     }
-    return load_now(slot, planet_file, err);
+    // queued: via_menu_tick (every frame) leaves a running stage for the galaxy menu, waits there
+    // until the menu has settled and loads outside the frame; the newest request wins
+    double since = g_via_menu.on ? g_via_menu.since : H->time_seconds();
+    double posted = g_via_menu.on ? g_via_menu.posted : 0;
+    g_via_menu = ViaMenu{true, slot, planet_file, since, posted};
+    via_menu_tick();
+    return true;
 }
 
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err)
