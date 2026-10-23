@@ -111,6 +111,8 @@ uint32_t noun_id(void* obj) { return obj ? vcall<uint32_t>(obj, 0x20 / 4) : 0; }
 void* cast(void* obj, uint32_t type) { return obj ? vcall<void*>(obj, 0x0C / 4, type) : nullptr; }
 bool object_alive(void* obj) { return obj && !field<bool>(obj, 0x21); }
 
+uint32_t g_ufos_freed;
+
 bool ufo_listed(void* u)
 {
     // the game frees UFOs on its own (DestroyNPCUFOs 0x1009310 on every context switch, also our

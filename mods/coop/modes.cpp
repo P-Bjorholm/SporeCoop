@@ -185,10 +185,12 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
 // system destroys every NPC UFO, the puppets too) is only forgotten
 static void space_despawn(void* u)
 {
-    if (game::ufo_listed(u))
+    if (game::ufo_listed(u)) {
         game::destroy_creature(u);
-    else
+    } else {
+        game::g_ufos_freed++;
         game::puppet_unregister(u);
+    }
 }
 
 // the game removes NPC UFOs on its own: driving a freed puppet crashed the host (play_space.py,
@@ -196,7 +198,10 @@ static void space_despawn(void* u)
 // (a listed pointer may be a new UFO at a reused address: it must still be a Defender, type +0x714)
 static bool space_alive(void* u)
 {
-    return game::ufo_listed(u) && game::object_alive(u) && skg::field<int>(u, 0x714) == 6;
+    if (game::ufo_listed(u) && game::object_alive(u) && skg::field<int>(u, 0x714) == 6)
+        return true;
+    game::g_ufos_freed++;
+    return false;
 }
 
 static float space_tag(void*) { return 4.f; }

@@ -226,7 +226,14 @@ static void host_tick(double now)
 // ---------------- guest ----------------
 // the game frees NPC UFOs on its own (every context switch: DestroyNPCUFOs), the mirrors too:
 // a pointer is only used while it is in the UFO noun list
-static bool live(void* u) { return u && game::ufo_listed(u) && game::object_alive(u); }
+static bool live(void* u)
+{
+    if (u && game::ufo_listed(u) && game::object_alive(u))
+        return true;
+    if (u)
+        game::g_ufos_freed++;
+    return false;
+}
 
 static void destroy_mirror(void* u, bool explode)
 {
@@ -312,7 +319,11 @@ static void guest_tick(double now)
 {
     bool here = C.with_host && C.with_host();
     for (auto& [id, m] : g_mirrors) {
-        if (!m.u || !live(m.u))
+        if (m.u && !live(m.u)) { // freed by the game: spawned again with the next state
+            g_mirror_of.erase(m.u);
+            m.u = nullptr;
+        }
+        if (!m.u)
             continue;
         if (!here || now - m.seen > 3.0)
             continue;
@@ -408,11 +419,14 @@ std::string status()
 {
     char b[256];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "space(host): ships=%u hits_in=%u damage_out=%u\n", (unsigned)g_hid.size(), g_hits_in,
-                 g_damage_out);
+        snprintf(b, sizeof b, "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u\n",
+                 (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed);
     else
-        snprintf(b, sizeof b, "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u\n",
-                 (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in);
+        snprintf(b, sizeof b,
+                 "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
+                 "freed_by_game=%u\n",
+                 (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
+                 game::g_ufos_freed);
     return b;
 }
 
