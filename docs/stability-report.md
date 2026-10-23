@@ -44,7 +44,7 @@ round on the build with the fixes of the round before:
 | 1 | 3 of 5 | 2 of 5 | tribe setup fault 0xB12D32; "frozen" civ guest (a 14 s world load); the mod answered "Do you want to save your game?" and the host left the game |
 | 2 | 4 of 5 | 5 of 5 | tribe guests lost NPCs after 4 minutes (snapshot chunk over the packet limit) |
 | 3 | 5 of 5 | 4 of 5 | civ guest crashed on a vehicle the game had freed |
-| final (nightly) | | 5 of 5 long chaos runs, 4 bots | |
+| final nightly | (not part of nightly) | 5 of 5 (10-minute runs) | all play bots passed too |
 
 After round 2 the tribe 4-player run passed 3 of 3 more times. Typical numbers with 4 players:
 NPC / citizen p90 0.2-1.4 m on every guest, coverage 98-100 %, 500-800 actions and 3-8 rejoins
@@ -122,7 +122,7 @@ docs/known-issues.md lists them with reproductions. The ones a player can meet:
 ## Running it again
 
 ```
-tools/lab.py run nightly --lanes 8                               # everything, ~1.5 h
+tools/lab.py run nightly --lanes 8                               # everything, ~35 min on 8 lanes
 SPORE_LANE=1 SPORE_LANE_B=8 python3 tools/tests/coop_multi.py --fixture tribe --players 4 --minutes 8
 SPORE_LANE=5 python3 tools/tests/coop_chaos.py --fixture civ_npc --minutes 10 --churn 3
 SPORE_LANE=2 python3 tools/tests/play_cell.py --minutes 10 --seed 8
