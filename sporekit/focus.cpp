@@ -189,7 +189,7 @@ void place_test_window()
     if (mode == "grid") {
         RECT wr;
         GetWindowRect(w, &wr);
-        int ww = wr.right - wr.left, wh = wr.bottom - wr.top, n = instance_id() - 1;
+        int ww = wr.right - wr.left, wh = wr.bottom - wr.top, n = (instance_id() - 1) % 12; // 4x3 on 5760x3240
         int x = (n % 4) * ww, y = (n / 4) * wh;
         if (wr.left != x || wr.top != y) {
             SetWindowPos(w, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
