@@ -55,7 +55,7 @@ static std::map<uint16_t, Proxy> g_proxies;
 static std::unordered_map<void*, uint16_t> g_proxy_of;
 static std::map<uint64_t, void*> g_herds; // species instance/group -> herd for proxies
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
-static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0;
+static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -394,8 +394,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_host_by_id.find(q.net_id);
         if (it == g_host_by_id.end() || !g_seen_now.count(it->second))
             return;
+        void* npc = it->second;
         void* attacker = C.puppet_of(from);
-        game::apply_damage(it->second, teamplay::on_player_hit(it->second, from, q.damage), q.type, attacker);
+        float dmg = teamplay::on_player_hit(npc, from, q.damage);
+        // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
+        // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
+        // A guest's puppet is not it, so a guest's kill paid nothing. The pack shares its progress:
+        // the lethal hit lands as the host avatar's (one hit, the target dies, no aggro to move).
+        void* av = game::avatar();
+        if (av && !game::is_dead(npc) && game::health(npc) > 0 && game::health(npc) <= dmg) {
+            attacker = av;
+            g_kills_credited++;
+        }
+        game::apply_damage(npc, dmg, q.type, attacker);
         g_hits_applied++;
         break;
     }
@@ -483,8 +494,9 @@ std::string status()
         size_t known = 0;
         for (auto& [g, ks] : g_known)
             known += ks.size();
-        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u\n",
-                 (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied);
+        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u\n",
+                 (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
+                 g_kills_credited);
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)

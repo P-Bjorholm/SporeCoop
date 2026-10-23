@@ -76,6 +76,25 @@ def main():
     chat = host.call('coop.status')['out']
     ck('saved Bob' in chat, 'everybody sees "Alice saved Bob from death"')
 
+    # a guest's kill pays the pack's DNA (the game pays only kills by the host's own avatar:
+    # until 2026-10-23 a guest could hunt all day for nothing; docs/re/creature.md 2)
+    fam = re.search(r'key=0x([0-9A-F]+)', host.call('coop.avatar')['out'])
+    fam = fam.group(1).zfill(8) if fam else ''
+    mirrored = set(re.findall(r'#(\d+) .*spawned', guest.call('coop.npc list')['out']))
+    prey = [m.group(1) for m in re.finditer(r'#(\d+) species=([0-9A-F]+) hp=([\d.]+)',
+                                             host.call('coop.npc list')['out'])
+            if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
+    dna = lambda c: float(re.search(r'dna=([\d.]+)', c.call('coop.dna')['out']).group(1))  # noqa: E731
+    d0 = dna(host)
+    for cand in prey[:3]:
+        guest.call(f'coop.npc hit {cand} 100000')
+        time.sleep(1.5)
+        if dna(host) > d0:
+            break
+    d1 = dna(host)
+    time.sleep(1)
+    ck(d1 > d0, f'a kill by the guest pays DNA: host {d0} -> {d1} (prey {prey[:3]})')
+    ck(abs(dna(guest) - d1) < 0.5, f'the guest has the same DNA ({dna(guest)})')
     print('  host :', host.call('coop.team')['out'].splitlines()[-1])
     print('  guest:', guest.call('coop.team')['out'].splitlines()[-1])
     shot(host, 'team_host.png')
