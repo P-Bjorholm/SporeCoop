@@ -55,6 +55,11 @@ cmd_uninstall() {
 
 cmd_deploy() {
     mkdir -p "$MODS/sporekit/symbols" "$MODS/logs"
+    # a lane whose loader is gone (update_check.py restores the original files) starts the game
+    # without SporeKit: tests waited 90 s for a console that never came
+    if [[ "$LANE" != 1 && ! -f "$BIN/steam_api_orig.dll" ]] && ! is_ours "$BIN/steam_api.dll"; then
+        cmd_install
+    fi
     [[ -f "$BIN/steam_api_orig.dll" ]] && cp "$ROOT/build/steam_api.dll" "$BIN/steam_api.dll"
     cp "$ROOT/build/sporekit.dll" "$BIN/sporekit.dll" 2>/dev/null || {
         echo "sporekit.dll is locked (game running?) - skipped" >&2; }

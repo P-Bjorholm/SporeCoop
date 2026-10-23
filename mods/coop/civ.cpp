@@ -1809,6 +1809,22 @@ std::string debug(const std::vector<std::string>& a)
         }
         return out;
     }
+    if (a.size() >= 2 && a[0] == "buildings") { // buildings <host city index>: object, noun, state, hp, position
+        int ci = atoi(a[1].c_str());
+        void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        if (!city)
+            return "no such city";
+        std::string out;
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings)) {
+            net::Vec3 p;
+            game::object_position(bl, p);
+            char line[128];
+            snprintf(line, sizeof line, "building %p noun=%08X state=%d hp=%.0f pos=(%.0f %.0f %.0f)\n", bl,
+                     game::noun_id(bl), F<int>(bl, kBuildingState), F<float>(bl, kBuildingState + 4), p.x, p.y, p.z);
+            out += line;
+        }
+        return out;
+    }
     if (a.size() >= 2 && a[0] == "chunk") { // chunk <bytes>: smaller snapshot chunks (tests: many chunks)
         g_chunk_budget = std::clamp<size_t>((size_t)atoi(a[1].c_str()), 200, net::kMaxPacket - 48);
         g_max_chunk = 0;
