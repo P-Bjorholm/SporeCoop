@@ -1687,7 +1687,7 @@ int give_selected_to(uint8_t to)
 }
 
 // tests (chaos bot): what can be clicked right now: "kind id owner sx sy" per visible unit
-std::string targets(bool all)
+std::string targets(int all)
 {
     std::string out;
     char b[96];
@@ -1708,7 +1708,8 @@ std::string targets(bool all)
         decltype(add)* f;
     } u{&out, &add};
     tribe::for_each_owned(
-        [](void* c, uint8_t owner, void* p) { (*((U*)p)->f)("member", -1, owner, game::position(c)); }, &u);
+        [](void* c, uint8_t owner, void* p) { (*((U*)p)->f)("member", tribe::id_of(c), owner, game::position(c)); },
+        &u);
     civ::for_each_owned(
         [](void*, const net::Vec3& pos, uint8_t owner, bool city, void* p) {
             (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
@@ -1733,9 +1734,33 @@ std::string targets(bool all)
                 if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
                     seen.push_back({e.key, net::dist(e.pos, me), (int)sc[0], (int)sc[1]});
             }
+        if (all == 2) { // every game object on screen by noun id (huts, tools, plants, food: game bots)
+            struct O {
+                std::vector<Seen>* seen;
+                net::Vec3 me;
+                int sw, sh;
+            } o{&seen, me, sw, sh};
+            game::for_each_object(
+                [](void* obj, uint32_t noun, void* u) {
+                    auto* q = (O*)u;
+                    net::Vec3 p;
+                    float w[3], sc[2];
+                    if (!game::object_alive(obj) || !game::object_position(obj, p))
+                        return true;
+                    w[0] = p.x, w[1] = p.y, w[2] = p.z;
+                    if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < q->sw && sc[1] < q->sh) {
+                        char k[16];
+                        snprintf(k, sizeof k, "o%X", noun);
+                        std::string key = tribe::object_key(obj);
+                        q->seen->push_back({key.empty() ? std::string(k) : key, net::dist(p, q->me), (int)sc[0], (int)sc[1]});
+                    }
+                    return true;
+                },
+                &o);
+        }
         // the nearest first, at most 80 (a console answer holds 8 KB; the tide pool has ~400 cells)
         std::sort(seen.begin(), seen.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });
-        for (size_t i = 0; i < seen.size() && i < 80; i++) {
+        for (size_t i = 0; i < seen.size() && i < (all == 2 ? 250u : 80u); i++) {
             snprintf(b, sizeof b, "obj %s %.1f %d %d\n", seen[i].key.c_str(), seen[i].d, seen[i].x, seen[i].y);
             out += b;
         }
@@ -1922,10 +1947,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
     H->command_add(M, "coop.targets",
-                   "coop.targets [all] - clickable units on screen: kind id owner x y; all: also every synced "
-                   "object: obj key distance x y (tests)",
+                   "coop.targets [all|objs] - clickable units on screen: kind id owner x y; all: also every synced "
+                   "object: obj key distance x y; objs: also every game object: obj o<noun> distance x y (tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
-                       SAY("%s", targets(argc > 1 && !strcmp(argv[1], "all")).c_str());
+                       SAY("%s", targets(argc < 2 ? 0 : !strcmp(argv[1], "all") ? 1 : !strcmp(argv[1], "objs") ? 2 : 0).c_str());
                        return 0;
                    },
                    nullptr, MT);

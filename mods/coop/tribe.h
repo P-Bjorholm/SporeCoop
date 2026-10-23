@@ -44,6 +44,10 @@ bool center(net::Vec3& pos); // position of the player tribe
 // the epic creature was hit by a creature (host; from the creature damage filter)
 void note_animal_hit(void* animal, void* attacker_creature);
 // a chief of a player (bigger, "★" tag)
+// the member id (as in coop.tribe and coop.sync t<id>), 0 when not a tracked member
+uint16_t id_of(void* citizen);
+// tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
+std::string object_key(void* obj);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 

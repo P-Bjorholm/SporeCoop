@@ -244,6 +244,35 @@ int c_loadhook(void*, int, const char* const*, SkOut* out)
     SAY("LoadGame logging hook installed");
     return 0;
 }
+// memfind <hex dword> [max]: every aligned dword in committed read-write memory equal to the value
+// (who points at an object: RE of containers at runtime)
+int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc < 2) {
+        SAY("usage: coop.memfind <hex dword> [max]");
+        return 1;
+    }
+    uint32_t v = (uint32_t)strtoul(argv[1], nullptr, 16);
+    int max = argc > 2 ? atoi(argv[2]) : 20, n = 0;
+    MEMORY_BASIC_INFORMATION mi;
+    for (uint8_t* a = (uint8_t*)0x10000; a < (uint8_t*)0x7FFF0000 && VirtualQuery(a, &mi, sizeof mi) == sizeof mi;
+         a = (uint8_t*)mi.BaseAddress + mi.RegionSize) {
+        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+            !(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
+            continue;
+        uint32_t* p = (uint32_t*)mi.BaseAddress;
+        uint32_t* e = (uint32_t*)((uint8_t*)mi.BaseAddress + mi.RegionSize);
+        for (; p < e && n < max; p++)
+            if (*p == v) {
+                SAY("%p\n", (void*)p);
+                n++;
+            }
+        if (n >= max)
+            break;
+    }
+    SAY("%d found", n);
+    return 0;
+}
 } // namespace
 
 void coop_register_debug_commands2(const SkHost* host, SkMod* self)
@@ -262,6 +291,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
+                      c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,
                       SK_CMD_MAIN_THREAD);
 }
