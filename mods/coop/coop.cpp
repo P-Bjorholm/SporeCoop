@@ -1757,6 +1757,14 @@ std::string targets(int all)
                     return true;
                 },
                 &o);
+            tribe::for_each_tree_pos( // planet trees are no game objects (fruit trees: gather)
+                [](const net::Vec3& p, void* u) {
+                    auto* q = (O*)u;
+                    float w[3] = {p.x, p.y, p.z}, sc[2];
+                    if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < q->sw && sc[1] < q->sh)
+                        q->seen->push_back({"tree", net::dist(p, q->me), (int)sc[0], (int)sc[1]});
+                },
+                &o);
         }
         // the nearest first, at most 80 (a console answer holds 8 KB; the tide pool has ~400 cells)
         std::sort(seen.begin(), seen.end(), [](const Seen& a, const Seen& b) { return a.d < b.d; });

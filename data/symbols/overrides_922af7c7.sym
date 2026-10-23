@@ -157,6 +157,7 @@ Simulator::cRelationshipManager::CalculateRelationshipAbsolute=0x00D05A60 ; veri
 SporeCoop::cRelationshipManager_GetLevel=0x00D008D0 ; verified thiscall(mgr, float value) ret 4 -> 0..4 (thresholds mgr+0x10..+0x1C)
 SporeCoop::SocialSession_Get=0x00D9F500 ; verified cdecl(int idx = ai[+0x600][+0x1A8]) -> session (+0x8 player tribe, +0xC target tribe, +0xE8 minigame) or 0
 SporeCoop::cTribeUI_Get=0x00CD41E0 ; verified asm: mov eax,[0x169C2A8]; ret. The tribe game UI (docs/re/tribe.md 2); +0x390 = interaction mode byte (0 social, 1 attack)
+SporeCoop::Flora_Get=0x00B3D510 ; verified asm: mov eax,[0x167FB14]; ret. Planet flora object (name unknown, getter between cTerraformingManager::Get and cAnimalSpeciesManager::Get): +0x1E5F0/+0x1E5F4 = sorted vector of {u32 key, u32, patch} stride 0x19A8 (docs/re/tribe.md Trees); seen working at runtime
 SporeCoop::BT_SocialTick=0x00DA2FA0 ; verified cdecl BT tick of node 0xB46E8803, arg1 = performing creature, plain ret
 SporeCoop::BT_HealTick=0x00DB9B20 ; verified cdecl BT tick of node 0x562C0FB, arg1 = healer, arg6 = cCreatureBase** patient, plain ret
 SporeCoop::BT_GiftFoodTick=0x00DBC790 ; verified cdecl BT tick of node 0x4623E0C (table 0x1594B40), arg1 = citizen

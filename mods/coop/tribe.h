@@ -48,6 +48,8 @@ void note_animal_hit(void* animal, void* attacker_creature);
 uint16_t id_of(void* citizen);
 // tests: "hut<tribe index>[p]" for a tribe's hut, "" for anything else
 std::string object_key(void* obj);
+// tests: the position of every planet tree (cTreeData, fruit trees to gather from)
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, void* user), void* user);
 bool is_chief(void* citizen);
 void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* user);
 

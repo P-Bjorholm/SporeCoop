@@ -32,6 +32,8 @@ constexpr uintptr_t kOwnerTribeOff = 0x1014; // cCreatureCitizen::mpOwnerTribe
 constexpr uintptr_t kAgeOff = 0xB34;       // 0 baby, 1 adult
 constexpr uintptr_t kSelectedOff = 0x12C;  // spatial+0x6C IsSelected
 constexpr uintptr_t kCitizenVt = 0x0146B818;
+constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit trees), not a cGameData
+constexpr uintptr_t kTreeVt = 0x0145D160;    // cTreeData main vtable
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
     a_SetSelected, a_CreateCitizen, a_AddMember;
@@ -79,6 +81,57 @@ static net::Vec3 tribe_pos(void* t)
 {
     auto& p = F<float[3]>(t, kTribePosOff);
     return {p[0], p[1], p[2]};
+}
+
+// ---- planet trees (docs/re/tribe.md, "Trees"): the flora object keeps a sorted vector of patches,
+// each patch has three fixed_vectors of intrusive_ptr<cTreeData>; a tree's position is at +0x10.
+// Gather orders on a fruit tree name a cTreeData, which is no cGameData: it is found by position.
+static bool is_tree(void* t) { return t && !IsBadReadPtr(t, 0x20) && *(uintptr_t*)t == H->rebase(kTreeVt); }
+
+template <typename Fn>
+static void for_each_tree(Fn fn)
+{
+    static uintptr_t get = H->sym("SporeCoop::Flora_Get");
+    uint8_t* fl = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    if (!fl || IsBadReadPtr(fl + 0x1E5F0, 8))
+        return;
+    uint8_t* b = F<uint8_t*>(fl, 0x1E5F0);
+    uint8_t* e = F<uint8_t*>(fl, 0x1E5F4);
+    constexpr size_t kPatch = 0x19A8;
+    if (!b || e < b || (size_t)(e - b) % kPatch || (size_t)(e - b) / kPatch > 20000)
+        return;
+    for (uint8_t* el = b; el < e; el += kPatch) {
+        uint8_t* rec = el + 8;
+        for (uintptr_t vo : {0x44u, 0x9Cu, 0xF4u}) {
+            void** tb = F<void**>(rec, vo);
+            void** te = F<void**>(rec, vo + 4);
+            if (!tb || te < tb || te - tb > 64 || IsBadReadPtr(tb, (te - tb) * 4))
+                continue;
+            for (void** it = tb; it < te; ++it)
+                if (is_tree(*it))
+                    fn(*it, net::Vec3{F<float>(*it, 0x10), F<float>(*it, 0x14), F<float>(*it, 0x18)});
+        }
+    }
+}
+
+static void* find_tree(const net::Vec3& pos, float max_dist)
+{
+    void* best = nullptr;
+    float bd = max_dist;
+    for_each_tree([&](void* t, const net::Vec3& p) {
+        float d = net::dist(p, pos);
+        if (d < bd) {
+            bd = d;
+            best = t;
+        }
+    });
+    return best;
+}
+
+void for_each_tree_pos(void (*fn)(const net::Vec3& pos, void* user), void* user)
+{
+    if (g_ok)
+        for_each_tree([&](void*, const net::Vec3& p) { fn(p, user); });
 }
 
 // ---------------- host ----------------
@@ -155,7 +208,7 @@ static int SK_THISCALL h_SetSelected(void* spatial, int sel)
 }
 
 struct Target {
-    uint8_t kind = 0; // 0 none, 1 citizen id, 2 object by noun + position
+    uint8_t kind = 0; // 0 none, 1 citizen id, 2 object by noun + position, 3 tree by position
     uint16_t id = 0;
     uint32_t noun = 0;
     net::Vec3 pos;
@@ -170,6 +223,12 @@ static Target encode_target(void* t)
     if (it != g_gid_of.end()) {
         r.kind = 1;
         r.id = it->second;
+        return r;
+    }
+    if (is_tree(t)) { // a planet tree: no cGameData, the host finds its own copy by position
+        r.kind = 3;
+        r.noun = kTreeNoun;
+        r.pos = {F<float>(t, 0x10), F<float>(t, 0x14), F<float>(t, 0x18)};
         return r;
     }
     r.kind = 2;
@@ -396,6 +455,8 @@ static void* resolve_target(const Target& t)
     }
     if (t.kind == 2 && t.noun)
         return game::find_object(t.noun, t.pos, 8.f);
+    if (t.kind == 3)
+        return find_tree(t.pos, 1.f);
     return nullptr;
 }
 
