@@ -111,6 +111,24 @@ uint32_t noun_id(void* obj) { return obj ? vcall<uint32_t>(obj, 0x20 / 4) : 0; }
 void* cast(void* obj, uint32_t type) { return obj ? vcall<void*>(obj, 0x0C / 4, type) : nullptr; }
 bool object_alive(void* obj) { return obj && !field<bool>(obj, 0x21); }
 
+bool ufo_listed(void* u)
+{
+    // the game frees UFOs on its own (DestroyNPCUFOs 0x1009310 on every context switch, also our
+    // Defender puppets and mirrors): only a pointer still in the UFO noun list may be touched
+    // (docs/re/space.md 1). Reads only the list, never the object.
+    static uintptr_t get = H ? H->sym("Simulator::GetAllUFOs") : 0;
+    void* nm = noun_manager();
+    void* v = u && get && nm ? thiscall<void*>(get, nm) : nullptr;
+    if (!v)
+        return false;
+    void** b = field<void**>(v, 0);
+    void** e = field<void**>(v, 4);
+    for (void** it = b; it && it < e; ++it)
+        if (*it == u)
+            return true;
+    return false;
+}
+
 bool object_position(void* obj, net::Vec3& out)
 {
     void* sp = cast(obj, 0x1186577);

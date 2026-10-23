@@ -842,9 +842,12 @@ std::string debug(const std::vector<std::string>& a)
         std::string e = jump(a.size() > 1 ? (uint8_t)atoi(a[1].c_str()) : 0xFF);
         return e.empty() ? "jumping" : e;
     }
-    if (a[0] == "star") { // the own star id
+    if (a[0] == "star") { // the own star id; active: the planet the ship is at / flies to (PlanetID)
         uint32_t pl = C.my_place ? C.my_place() : 0;
-        snprintf(b, sizeof b, "place %08X star %u", pl, star_of(pl));
+        void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        void* rec = p && !IsBadReadPtr(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
+        snprintf(b, sizeof b, "place %08X star %u active %08X", pl, star_of(pl),
+                 rec && !IsBadReadPtr(rec, 0x188) ? F<uint32_t>(rec, 0x184) : 0u);
         return b;
     }
     if (a[0] == "land") { // tests: land on the active planet (the landing of Respawn)

@@ -224,9 +224,13 @@ static void host_tick(double now)
 }
 
 // ---------------- guest ----------------
+// the game frees NPC UFOs on its own (every context switch: DestroyNPCUFOs), the mirrors too:
+// a pointer is only used while it is in the UFO noun list
+static bool live(void* u) { return u && game::ufo_listed(u) && game::object_alive(u); }
+
 static void destroy_mirror(void* u, bool explode)
 {
-    if (!u || !game::object_alive(u))
+    if (!live(u))
         return;
     g_applying = true;
     if (explode) { // the game's own death: explosion, removal
@@ -266,7 +270,7 @@ static void guest_state(net::Reader& r)
         auto& m = g_mirrors[id];
         m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
         m.est.update(p, now);
-        if (m.u && (!game::object_alive(m.u) || F<int>(m.u, kState) == 2)) {
+        if (m.u && (!live(m.u) || F<int>(m.u, kState) == 2)) {
             g_mirror_of.erase(m.u);
             m.u = nullptr;
         }
@@ -308,7 +312,7 @@ static void guest_tick(double now)
 {
     bool here = C.with_host && C.with_host();
     for (auto& [id, m] : g_mirrors) {
-        if (!m.u || !game::object_alive(m.u))
+        if (!m.u || !live(m.u))
             continue;
         if (!here || now - m.seen > 3.0)
             continue;
@@ -363,7 +367,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int t = (int)r.u32();
         float dir[3] = {r.f32(), r.f32(), r.f32()};
         auto it = g_hid_rev.find(id);
-        if (!r.ok() || it == g_hid_rev.end() || F<int>(it->second, kState) == 2)
+        if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
         void* puppet = C.puppet_of ? C.puppet_of(from) : nullptr;
         g_applying = true;
@@ -444,7 +448,7 @@ std::string debug(const std::vector<std::string>& a)
             auto it = g_hid_rev.find(id);
             t = it == g_hid_rev.end() ? nullptr : it->second;
         }
-        if (!t)
+        if (!t || !live(t))
             return "no such ship";
         float dir[3] = {0, 0, 1};
         h_TakeDamage((uint8_t*)t + kCombat, (float)atof(a[2].c_str()), skg::cdecl_call<uint32_t>(a_PlayerEmpireID), 0,
@@ -465,7 +469,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "hurt") { // host: ship #id hits player <p>'s puppet
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
         void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[2].c_str())) : nullptr;
-        if (it == g_hid_rev.end() || !pup)
+        if (it == g_hid_rev.end() || !pup || !live(it->second))
             return "no such ship or puppet";
         float dir[3] = {0, 0, 1};
         h_TakeDamage((uint8_t*)pup + kCombat, 5.f, F<uint32_t>(it->second, kPol), 0, dir,

@@ -103,6 +103,8 @@ uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNo
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
 bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set
+// a cGameDataUFO pointer is still a live UFO noun (the game may have freed it: never read it before)
+bool ufo_listed(void* u);
 // nearest object of `noun` within max_dist of pos (nullptr if none)
 void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 

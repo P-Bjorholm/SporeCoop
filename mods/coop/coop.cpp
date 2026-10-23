@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <iphlpapi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -247,6 +248,8 @@ void drive_puppet(Remote& r, double now)
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s));
     if (r.puppet && r.puppet_adapter && r.puppet_adapter->alive && !r.puppet_adapter->alive(r.puppet)) {
+        LOG("puppet of %s removed by the game itself (mode %08X, place %08X): shown again", r.name.c_str(), g_mode,
+            g_world);
         r.puppet = nullptr; // removed by the game itself: show it again
         r.puppet_adapter = nullptr;
     }
@@ -1714,6 +1717,17 @@ std::string targets(bool all)
             (*((U*)p)->f)(city ? "city" : "vehicle", -1, owner, pos);
         },
         &u);
+    if (all) // partners off the screen: where they are projected (bots fly toward them)
+        for (auto& [id, r] : g_remotes)
+            if (r.puppet && r.puppet_adapter) {
+                net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+                float w[3] = {p.x, p.y, p.z}, sc[2] = {-1e9f, -1e9f};
+                if (!H->world_to_screen(w, sc) && sc[0] > -1e8f) {
+                    snprintf(b, sizeof b, "far player %d %d %d\n", id, (int)std::clamp(sc[0], -1e5f, 1e5f),
+                             (int)std::clamp(sc[1], -1e5f, 1e5f));
+                    out += b;
+                }
+            }
     if (all) { // every synchronized object on screen (game bots aim at NPCs, citizens, ships ...)
         net::Vec3 me{};
         if (g_local && g_adapter)
