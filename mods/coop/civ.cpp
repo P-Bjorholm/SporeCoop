@@ -140,6 +140,7 @@ struct GV {
     float hp = 0;
     double seen = 0;
     net::VelocityEstimate est; // vehicles snapshots carry no velocity
+    bool listed = false;       // seen in the game's vehicle list (a new one joins it a little later)
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
@@ -1467,6 +1468,7 @@ static void guest_state(net::Reader& r)
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);
             g.v = v = nullptr;
+            g.listed = false;
         }
         if (v)
             continue;
@@ -1498,6 +1500,7 @@ static void guest_state(net::Reader& r)
         if (!v)
             continue;
         g.v = v;
+        g.listed = false;
         g_gv_of[v] = id;
     }
     if (chunk + 1 < chunks)
@@ -1579,17 +1582,19 @@ static void guest_build(net::Reader& r)
 
 static void prune_gone()
 {
-    for (auto& [id, g] : g_gv)
-        if (g.v && !exists(g.v)) {
+    // guests only: the host's map is rebuilt from the vehicle list in host_tick, and a vehicle it has
+    // just bought for a guest is not in the list yet (dropping it lost the guest's ownership)
+    for (auto& [id, g] : g_gv) {
+        if (!g.v)
+            continue;
+        if (exists(g.v))
+            g.listed = true;
+        else if (g.listed) {
             g_gv_of.erase(g.v);
             g.v = nullptr;
+            g.listed = false;
         }
-    for (auto it = g_hv.begin(); it != g_hv.end();)
-        if (!exists(it->first)) {
-            g_hv_by_id.erase(it->second.id);
-            it = g_hv.erase(it);
-        } else
-            ++it;
+    }
 }
 
 void tick(double now)
