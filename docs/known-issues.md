@@ -48,6 +48,13 @@ Fixed entries move to the commit message (and a test).
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 9` and watch
   `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
 
+## coop_sync.py cell: the players' facing check rests on 2 samples
+
+* Lane 2, 2026-10-23 (branch fix/cell-npc-prey): `coop_sync.py cell` failed once on "cell/players:
+  90% facing within 15 deg" with `n=2`, p90 19.9, max 23.1 deg (positions fine, NPC cells fine), and
+  passed on the next run (p90 11.2, max 20.6). With two samples one sample taken mid-turn decides
+  the result. Probably the test, not the sync: take more player samples in the cell phase.
+
 ## coop_civ_play: the guest's "I'm ready" click was lost twice
 
 * Two of seven cold runs of `coop_civ_play.py` on lane 5 (2026-10-23, fixture `civ_npc`) failed at
