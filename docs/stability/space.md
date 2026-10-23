@@ -34,15 +34,27 @@ mouse wheel, the tool palette, the co-op window), choosing from what is on their
 Setup by console only where the game gives no input for it: the interstellar drive (the fixture's
 ship lacks it, the galaxy view is locked without it), pirates, battle damage.
 
-## Measurements (5 sessions with the final bot and mod, plus 9 earlier ones)
+## Measurements
 
-| seed | minutes | together | ship sync p50 / p90 / max | money checks (lasting diffs) | fights: host / guest shots | guest hits on host ships | jumps (F9) | deaths / respawns | disabled / repaired | faults, freezes |
+Sessions with the fixed mod (fixes 1-4 below); the bot grew between them (seeds 10-13 without ambush
+pirates, 14 on: the final bot). Earlier sessions (seeds 1-9) found bug 1 and shaped the bot.
+
+| seed | min | together | ship sync p50 / p90 / max | money: checks (lasting diffs), +1 000 000 events | shots host / guest | guest hits applied by the host | F9 jumps | deaths / respawns | disabled / repaired by the partner | faults, freezes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 10 | 10 | 217 s | 0.4 / 3.6 / 5.9 m | 187 (0), no money event | 119 / 23 | 8 (all applied) | 3 | 0 / 0 | host 1 / 1 (by the guest) | 0 |
-| 11 | 12 | 548 s | 0.1 / 2.0 / 7.3 m | 222 (0), 3 money events | 47 / 7 | 0 | 1 | 0 / 0 | 0 | 0 |
-| 12 | 12 | 275 s | 0.1 / 1.2 / 2.9 m | 224 (0), 2 money events | 68 / 23 | 0 | 4 | 0 / 0 | 0 | 0 |
-| 13 | 12 | 430 s | 0.2 / 2.3 / 4.0 m | 223 (0), 2 money events | 81 / 25 | 0 | 2 | 0 / 0 | 0 | 0 |
-| 14 | 12 | 228 s | 0.9 / 8.3 / 23.3 m | 224 (0), 2 money events | 196 / 89 | 83 (all applied) | 4 | host 2 / 2 | host 1 / 1 (by the guest) | 0 |
+| 10 | 10 | 217 s | 0.4 / 3.6 / 5.9 m | 187 (0), 0 | 119 / 23 | 8 | 3 | 0 / 0 | 1 / 1 | 0 |
+| 11 | 12 | 548 s | 0.1 / 2.0 / 7.3 m | 222 (0), 3 | 47 / 7 | 0 | 1 | 0 / 0 | 0 | 0 |
+| 12 | 12 | 275 s | 0.1 / 1.2 / 2.9 m | 224 (0), 2 | 68 / 23 | 0 | 4 | 0 / 0 | 0 | 0 |
+| 13 | 12 | 430 s | 0.2 / 2.3 / 4.0 m | 223 (0), 2 | 81 / 25 | 0 | 2 | 0 / 0 | 0 | 0 |
+| 14 | 12 | 228 s | 0.9 / 8.3 / 23.3 m | 224 (0), 2 | 196 / 89 | 83 | 4 | 2 / 2 | 1 / 1 | 0 |
+| 15 | 12 | 149 s | 0.4 / 2.6 / 7.2 m | 224 (0), 3 | 105 / 84 | 94 | 4 (of 25 clicks, see open issues) | 3 / 3 | 2 / 1 | 0 |
+| 15 again | 12 | 602 s | 0.0 / 2.4 / 9.7 m | 222 (0), 0 | 708 / 606 | 23 | 0 | 3 / 3 | 2 / 1 | 0 |
+| 16 | 12 | 267 s | 0.3 / 2.1 / 4.9 m | 224 (0), 3 | 25 / 6 | 0 | 1 | 0 / 0 | 0 | 0 |
+| 17 | 12 | 432 s | 0.4 / 2.8 / 412 m (one sample) | 222 (0), 0 | 270 / 209 | 141 | 1 | 6 / 6 | 6 / 2 | 0 |
+| 18 | 12 | 406 s | 0.2 / 2.2 / 4.7 m | 224 (0), 2 | 80 / 24 | 0 | 0 | 0 / 0 | 0 | 0 |
+
+In all: ~2 hours of play, 0 faults, 0 freezes or crashes, 0 money differences, every death
+respawned (1-6 s after OK on the death caption), every disabled ship either repaired by the partner
+or lost after 20 s and respawned.
 
 * "together": both in the same place (planet or system); NPC ship sync is measured only then
   (`coop.sync`, guest sample against the closer of two host samples, like `coop_sync.py`).
@@ -52,7 +64,12 @@ ship lacks it, the galaxy view is locked without it), pirates, battle damage.
   (the host's ship and, before fix 4, the guest's puppet killed them).
 * Money: host and guest `coop.res` every 3 s; a difference that lasts over two checks counts. None in
   any session, also right after +1 000 000 on either side.
-* Respawn after OK on the death caption: 1-3 s, then the respawn caption plays (also confirmed).
+* Respawn after OK on the death caption: 1-6 s, then the respawn caption plays (also confirmed).
+* The 412 m sync maximum of seed 17 is a single sample (a ship that had just been spawned or had
+  jumped); p90 stayed at 2.8 m.
+* Disabled ships were often lost: the partner has 20 s to come within 60 m and the bots were often
+  several hundred metres apart on a planet (their rescue flights take 10-30 s). That is the game
+  design, not a fault.
 * The game frees partner puppets and mirrors 5-20 times per session (`freed_by_game`), see bug 1.
 
 ## Problems found and fixed
@@ -77,7 +94,9 @@ ship lacks it, the galaxy view is locked without it), pirates, battle damage.
    were near), so pirates died on the host although the guest never fired. FireTool is dropped for
    puppets (`puppet_shots_blocked`); `coop_space_puppet.py` checks that a pirate nobody shoots keeps
    its health.
-5. Test infrastructure: `twoinst.warm_reset` returned while the guest was still in its old copy of the
+5. **"can't jump: ..." went to every player**: the co-op window's jump error was sent as a co-op
+   notice, so the partner read why *we* could not jump. It stays local now (toast and chat log).
+6. Test infrastructure: `twoinst.warm_reset` returned while the guest was still in its old copy of the
    world (it rejoins "together" at once and reloads the host's world seconds later): tests then lost
    the guest for ~10 s. It now waits for that reload. `coop.res` printed the leftover civilization
    money as a second "money" line in Space and `coop.res add money` changed that one.
@@ -95,5 +114,9 @@ ship lacks it, the galaxy view is locked without it), pirates, battle damage.
   meet other empires, missions and raids (`docs/known-issues.md`).
 * The guest's own ship is rarely shot by pirates (they choose the host), so the guest was never
   destroyed in play; its rescue path is covered by `coop_space_rescue.py`.
+* **Jump clicks without a jump** (seed 15, first run): the guest clicked "Jump to Alice" 25 times and
+  jumped 4 times. The reason was not recorded then (the "can't jump" message was broadcast as a
+  notice, not kept); since then the bot records the refusal reason from the co-op chat log, and the
+  next 4 sessions had no refusal. If it comes back: `jump_refused:<reason>` in the bot's counters.
 * `planet_misclicks`: in the system view a moon next to a planet often takes the click; the bot
   retries a few pixels away (the game's behaviour, not a mod bug).

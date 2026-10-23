@@ -179,6 +179,12 @@ class Player(threading.Thread):
     def open_palette(self, cat):
         """open the tool palette of this category (combat: the weapons, keys 1..9 pick the slot)"""
         state = self.palette_open()
+        if state is None and self.planner_open():
+            # a click on an own city (a shot that hit it) opened the city planner: done closes it
+            self.act(f'click {self.W - 25} {self.H - 22}')
+            self.count('planner_closed')
+            self.sleep(2)
+            state = self.palette_open()
         if state is None:
             self.count('palette_unknown')
         y = self.H - 151 if state else self.H - 51
@@ -473,8 +479,14 @@ class Player(threading.Thread):
         self.sleep(1.0)
         b = self.ui_button('Jump to')
         if b:
+            n0 = self.cmd('coop.status').count("can't jump")
             self.act(f'click {b[0]} {b[1]}')
             self.count('jumps_clicked')
+            self.sleep(0.8)
+            st = self.cmd('coop.status')
+            if st.count("can't jump") > n0:  # the window says why (chat log)
+                why = [l for l in st.splitlines() if "can't jump" in l][-1].split("can't jump: ")[-1]
+                self.count('jump_refused:' + why.replace(' ', '_')[:30])
         self.sleep(0.8)
         if self.ui_button('CO-OP LOBBY'):
             self.act('key f9')

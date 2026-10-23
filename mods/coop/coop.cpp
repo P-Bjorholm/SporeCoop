@@ -1797,8 +1797,10 @@ void init_ui()
         H->run_outside_frame(
             [](void*) {
                 std::string e = spacecoop::jump(0xFF);
-                if (!e.empty())
-                    notice("can't jump: " + e, -1);
+                if (!e.empty()) { // only here: the partner does not need to read why we can't jump
+                    feed("can't jump: " + e);
+                    chat_log("* can't jump: " + e);
+                }
             },
             nullptr);
     };
