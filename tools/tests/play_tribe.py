@@ -234,6 +234,7 @@ class Game:
         self.partner_selected = []
         self.sync_pos = {'t': [], 'n': []}
         self.sync_rot = {'t': [], 'n': []}
+        self.outliers = {}
         self.rejected0 = counter(status(host), 'rejected')
         self.attacked = {}
         self.both_attacked = 0
@@ -547,6 +548,11 @@ class Game:
                 continue
             e1, e2 = math.dist(gp, h1[k][0]), math.dist(gp, h2[k][0])
             self.sync_pos[k[0]].append(min(e1, e2))
+            if min(e1, e2) > 50 and k not in self.outliers:  # what is it on the host
+                info = [ln.strip() for ln in self.host.call('coop.npc list' if k[0] == 'n' else 'coop.tribe')['out']
+                        .splitlines() if re.match(rf'\s*#{k[1:]} ', ln)]
+                self.outliers[k] = f'host {[round(x) for x in h1[k][0]]} guest {[round(x) for x in gp]} {info[:1]}'
+                self.log.append(f'   sync outlier {k}: {self.outliers[k]}')
             self.sync_rot[k[0]].append(angle(gq, h1[k][1] if e1 <= e2 else h2[k][1]))
         if self.pending_gift and self.pending_gift[0] < time.time():
             _, mid, to = self.pending_gift
@@ -624,6 +630,8 @@ def main():
         if p:
             print(f'  sync {name:9}: samples {len(p):4} pos p50 {pct(p, .5):5.2f} p90 {pct(p, .9):5.2f} '
                   f'max {max(p):6.2f} m | facing p90 {pct(r, .9):5.1f} deg', flush=True)
+    for k, v in g.outliers.items():
+        print(f'  sync outlier {k}: {v}', flush=True)
     ck(ok, 'the games survived the play')
     ck(not g.partner_selected, f'nobody selects a partner\'s member ({g.partner_selected[:3]})')
     ck(g.food_mismatch <= max(1, len(fs) // 20), f'the shared food is the same on both ({g.food_mismatch} differences)')
