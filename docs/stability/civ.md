@@ -57,9 +57,13 @@ sent onto water gets no order on either).
 | 7 | 7 | + ruins | 10.9 | 413 (268/145) | **OK** | 1 capture, 4 ruins mirrored, 169 guest commands all executed |
 | 8 | 8 | same | 10.1 | 319 (168/151) | FAIL (bot) | a new city 8 s late on the guest, a bought vehicle given away at once: both checks too strict |
 | 9 | 9 | final | 10.9 | 266 (137/129) | **OK** | 1 capture by a joint siege (43 joint hits), 6 ruins mirrored, 93 guest commands all executed |
-| 10 | 10 | final | | | | |
+| 10 | 10 | + bot fixes | 10.5 | 294 (143/151) | FAIL (bot) | a node claimed by an NPC seen 1.5 s late (the guest was in the pause menu at the end) |
+| 11 | 11 | same | 10.9 | 233 (126/107) | FAIL (bot) | a purchase in a capital that had just passed to the host after a capture ("this city belongs to Alice"); the host log showed **+80..+100 money from the guest every few seconds** (bug 13) |
+| 12 | 12 | final (+ income fix) | 11.5 | 295 (165/130) | **OK** | 1 capture (joint siege, 25 hits), 9 vehicles bought, 53 guest commands all executed, money from the guest +0 (101 local gains blocked) |
 
-Typical numbers of the passing code (sessions 6b-9): vehicle position error p90 0.9-1.4 m
+Sessions with the final code: 12 OK; 7 and 9 OK with all fixes but the income one; the bot's
+false alarms of 6b, 8, 10, 11 are fixed in the bot. Typical numbers of the passing code (sessions
+6b-12): vehicle position error p90 0.9-1.4 m
 (2500-2900 samples, median 0.0), max 22-27 m (one moment per session, open: in session 9 an NPC vehicle on the far side of the
 planet, 22.7 m for three samples in a row); guest commands 60-169, all
 executed, 0 rejected; 5-6 new NPC cities founded on the host and replayed on the guest (60-210
@@ -101,7 +105,12 @@ audit; 0 faults, no freeze, largest snapshot chunk 1142-1152 bytes (limit 1152).
     vehicle slot left). Now the guest is told why (4115454).
 12. **Editing a building design said "evolve"**: the vote said "wants to evolve (Civilization)" and
     leaving the editor "evolved the species: everybody gets the new body". Texts fixed (b554d45).
-13. Test tooling: `coop.targets` lists every city and vehicle with ids; `coop.ui where / at`;
+13. **Money earned twice**: the guest's copy of the derricks (and cities) earned money too and every
+    local gain reached the host as a shared-money delta (~8000 extra in 10 minutes; both machines
+    agreed on the too-high total, so the money comparison could not see it). Found in the host log
+    of session 11. Guests ignore AddMoney for the player civ; `coop.res` shows `from_guests=`, the
+    bot fails above +500 (925c260).
+14. Test tooling: `coop.targets` lists every city and vehicle with ids; `coop.ui where / at`;
     `coop.civ slots / nouns / buildings / chunk`; `order=` per vehicle, `capture= ruins= hp=` per
     city; `spore.sh deploy` re-installs a lane's loader (update_check.py had removed it).
 
