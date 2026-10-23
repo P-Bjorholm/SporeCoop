@@ -118,22 +118,34 @@ def main():
     time.sleep(3)
     g6, _ = pool(guest)
     ck(g6['downed'] == 1 and g6['respawns'] == 0, 'still knocked out after 6 s')
-    time.sleep(8)
-    g7, go7 = pool(guest)
+    # the pool lives on after the respawn: the small cell drifts, gets pushed and eats what floats by
+    # (seen: 23 m away and body 0.62 four seconds later), so the respawn is checked on the first sample
+    for _ in range(40):
+        g7, go7 = pool(guest)
+        if g7['respawns']:
+            break
+        time.sleep(0.25)
     print(' ', go7.splitlines()[0])
     ck(g7['downed'] == 0 and g7['respawns'] == 1 and g7['hp'] == 6, f'respawn after 10 s (respawns {g7["respawns"]}, hp {g7["hp"]})')
     ck(g7['partner_dist'] is not None and 0 <= g7['partner_dist'] < 6, f'next to the partner (distance {g7["partner_dist"]})')
     ck(g7['body'] == 0.5 and g7['target'] < size0 * 0.6, f'small again (target size {size0} -> {g7["target"]})')
+    for _ in range(16):  # the game smooths the size towards the target
+        if g7['size'] is not None and g7['size'] < size0 * 0.75:
+            break
+        time.sleep(0.25)
+        g7, _ = pool(guest)
     ck(g7['size'] < size0 * 0.75, f'the body really shrank (size {g7["size"]})')
     ck('respawned small' in host.call('coop.status')['out'], 'everybody sees the respawn')
     shot(guest, 'cell_small.png')
     shot(host, 'cell_small_host.png')
     hk = host.call('coop.pool')['out']
     ck(re.search(r'ko\[1\]=3 .* op=1.00', hk) is not None, 'the host sees it up again (opaque)')
+    b0 = pool(guest)[0]['body'] or 0  # it may have eaten something on its own already
     guest.call('coop.pool food 20')
     time.sleep(1)
     g8, _ = pool(guest)
-    ck(g8['body'] is not None and 0.65 < g8['body'] < 0.75, f'eating grows it back (body {g8["body"]})')
+    grew = (g8['body'] or 0) - b0
+    ck(0.15 < grew < 0.3 or g8['body'] == 1.0, f'eating grows it back (body {b0} -> {g8["body"]}, +0.01 per food point)')
 
     guest.call('coop.pool hp 3')
     time.sleep(7)

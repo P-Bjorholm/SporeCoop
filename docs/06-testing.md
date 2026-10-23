@@ -105,3 +105,15 @@ around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, 
   bottles-cli behaves). So tests restart both instances together: the guest first, then the host.
 * A hung Wine process can be left half-dead (a zombie leader with live threads)
   and keep holding UDP port 47810. `spore.sh kill` finishes such processes off with `SIGKILL`.
+
+## 6.7 Reading console output in tests
+
+* Tests parse `coop.status` with regular expressions that span lines, e.g. coop_cell / coop_creations
+  / coop_vote expect the `puppet pos=… species=…` line **right after** the `remote <id> '<name>'`
+  line. New per-remote lines go after the puppet line (the `together <id> <0|1>` line that
+  `twoinst` waits for is the last line of each remote's block). On 2026-10-22 a `together` line
+  inserted between them made coop_cell report "sync samples taken: samples 0" on every run while the
+  partner cell was there and exact — it looked like a missing puppet / timing bug.
+* Cross-check before hunting a "missing puppet": the `remote … puppet=<ptr>` value, and in the cell
+  stage `local_gameplay_cells` (counts every foreground cell except the own avatar) = mirrors + 1
+  when the partner's cell exists.

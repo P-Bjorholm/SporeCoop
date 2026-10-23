@@ -14,14 +14,6 @@ Fixed entries move to the commit message (and a test).
 * **Idea:** leave to the galaxy menu first when the received world is of another stage (world.cpp);
   tribe → civ → space switches in game work.
 
-## Cell: the partner's cell is sometimes missing after the join
-
-* `coop_cell.py`: "sync samples taken" fails — the host has no puppet of the guest cell
-  (`samples 0`), the rest of the test works. Seen 2 of 2 runs on lane 3 while 3 lanes ran
-  (2026-10-22), rarely on lane 1 alone: timing-dependent (CPU load).
-* Hunt: `tools/lab.py run cell_coop --repeat 8 --retry 0`; look at the puppet creation in
-  modes.cpp (cell adapter spawn) vs the first cell states.
-
 ## Tribe: the host froze once while the epic creature was being killed
 
 * `coop_tribe_play.py` on branch feat/net-window, lane 2 (2026-10-22): the host stopped drawing
