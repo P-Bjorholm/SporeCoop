@@ -883,6 +883,125 @@ std::string status()
     return b + spaceext::status_all();
 }
 
+// tests / fixtures (docs/re/space.md 9.6): what the player's empire has, and test setup that the
+// tutorial does not allow early (a colony without the colony tool, a first contact without flying there)
+//   coop.space empire                          money, drive, colonies (PlanetID, stored spice), contacts
+//   coop.space empire colony <PlanetID> [spice] the record-level colony of docs/re/space.md 5.3
+//   coop.space empire contact <StarID>          the first contact with the empire of that star
+static std::string empire_cmd(const std::vector<std::string>& a)
+{
+    static uintptr_t spd_ptr = H->sym("Simulator::SpacePlayerData::ptr"),
+                     nouns = H->sym("Simulator::cGameNounManager::Get"),
+                     planet_rec = H->sym("Simulator::cStarManager::GetPlanetRecord"),
+                     add_star = H->sym("Simulator::cEmpire::AddStarOwnership"),
+                     add_planet = H->sym("SporeCoop::cEmpire_AddPlanet"),
+                     set_tech = H->sym("SporeCoop::cPlanetRecord_SetTechLevel"),
+                     fill = H->sym("SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel"),
+                     empire_of = H->sym("Simulator::cStarManager::GetEmpireForStar"),
+                     contacted = H->sym("SporeCoop::cEmpire_SetContactedByPlayer"),
+                     rel_get = H->sym("Simulator::cRelationshipManager::Get"),
+                     rel_apply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
+    void* emp = a_PlayerEmpire ? cdecl_call<void*>(a_PlayerEmpire) : nullptr;
+    void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+    if (!emp || !sm || !spd_ptr || !*(void**)spd_ptr)
+        return "not in space";
+    uint32_t pol = F<uint32_t>(emp, 0x84);
+    char b[200];
+    auto set_spice = [&](void* rec, float spice) { // every city of the player's cCivData on the planet
+        int n = 0;
+        auto civs = F<void**>(rec, 0x15C), civs_end = F<void**>(rec, 0x160);
+        for (auto c = civs; c && c < civs_end; c++)
+            if (*c && F<uint32_t>(*c, 0x14) == pol)
+                for (auto city = F<void**>(*c, 0x3C); city && city < F<void**>(*c, 0x40); city++)
+                    if (*city) {
+                        F<float>(*city, 0x1C) = spice; // cCityData mSpiceProduction (stored spice)
+                        n++;
+                    }
+        return n;
+    };
+    if (a.size() > 2 && a[1] == "colony") {
+        if (!planet_rec || !add_star || !add_planet || !set_tech || !fill || !a_GetStarRecord)
+            return "symbols missing";
+        uint32_t id = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        void* rec = thiscall<void*>(planet_rec, sm, id);
+        void* star = thiscall<void*>(a_GetStarRecord, sm, id & 0xFFFFFFu);
+        if (!rec || !star)
+            return "no such planet";
+        void* active = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        if (active && F<void*>(active, 0x13C) == rec)
+            return "not on the planet the ship is at"; // SetTechLevel would change the live planet too
+        if (F<int>(rec, 0x194) == 5)
+            return "already a colony";
+        if (F<uint32_t>(star, 0x54) != pol) { // the record-level star claim of 0xFE9AF3
+            thiscall<void>(add_star, emp, star);
+            F<uint32_t>(star, 0x54) = pol; // SetEmpireID
+            F<int>(star, 0x4C) = 5;        // SetTechLevel(5)
+            F<uint32_t>(star, 0x5C) |= 0x100;
+        }
+        cdecl_call<void>(set_tech, rec, 5);
+        cdecl_call<void>(fill, rec, 5); // the player's cCivData + a cCityData (pol = star empire id)
+        thiscall<void>(add_planet, emp, rec);
+        int n = set_spice(rec, a.size() > 3 ? (float)atof(a[3].c_str()) : 0.f);
+        snprintf(b, sizeof b, "colony %08X: tech %d, cities %d", id, F<int>(rec, 0x194), n);
+        return b;
+    }
+    if (a.size() > 2 && a[1] == "contact") {
+        if (!empire_of || !contacted || !rel_get || !rel_apply || !a_GetStarRecord)
+            return "symbols missing";
+        void* star = thiscall<void*>(a_GetStarRecord, sm, (uint32_t)strtoul(a[2].c_str(), nullptr, 16));
+        if (!star)
+            return "no such star";
+        uint32_t e = F<uint32_t>(star, 0x54);
+        if (e == 0xFFFFFFFFu || e == pol) // GetEmpireForStar would CREATE an empire for a free star
+            return e == pol ? "an own star" : "no empire at that star";
+        void* other = thiscall<void*>(empire_of, sm, star);
+        if (!other)
+            return "no empire";
+        thiscall<void>(contacted, other);
+        // the relationship event of the game's own first contact (message 0x3AC86B5 handler 0xFE3233)
+        thiscall<void>(rel_apply, cdecl_call<void*>(rel_get), F<uint32_t>(other, 0x84), pol, 0x05B6CF09u, 1.0f);
+        snprintf(b, sizeof b, "contact with %08X", F<uint32_t>(other, 0x84));
+        return b;
+    }
+    // the report
+    std::string s;
+    void* inv = inventory();
+    uint32_t drive[3] = {0x2569FAE8u, 0, 0}; // interstellardrive
+    bool has_drive = inv && vcall<bool>(inv, 0x74 / 4, drive);
+    void* spd = *(void**)spd_ptr;
+    auto col = F<void**>(spd, 0x20), col_end = F<void**>(spd, 0x24);
+    int ncol = col && col_end > col ? (int)(col_end - col) : 0;
+    std::string lines;
+    for (int i = 0; i < ncol && i < 64; i++) {
+        void* rec = col[i] ? F<void*>(col[i], 0x13C) : nullptr;
+        if (!rec)
+            continue;
+        float spice = 0;
+        auto civs = F<void**>(rec, 0x15C), civs_end = F<void**>(rec, 0x160);
+        for (auto c = civs; c && c < civs_end; c++)
+            if (*c && F<uint32_t>(*c, 0x14) == pol)
+                for (auto city = F<void**>(*c, 0x3C); city && city < F<void**>(*c, 0x40); city++)
+                    if (*city)
+                        spice += F<float>(*city, 0x1C);
+        snprintf(b, sizeof b, "colony %08X spice=%.0f\n", F<uint32_t>(rec, 0x184), spice);
+        lines += b;
+    }
+    // cPlayer (game nouns +0x74) +0x11D8: sorted {pol, flags} pairs, bit 1 = contacted (0xC7A890)
+    int ncon = 0;
+    void* nm = nouns ? cdecl_call<void*>(nouns) : nullptr;
+    void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+    if (player)
+        for (auto p = F<uint32_t*>(player, 0x11D8); p && p < F<uint32_t*>(player, 0x11DC); p += 2)
+            if (p[0] != pol && (p[1] & 2)) {
+                snprintf(b, sizeof b, "contact %08X\n", p[0]);
+                lines += b;
+                ncon++;
+            }
+    snprintf(b, sizeof b, "empire %08X money=%d drive=%d colonies=%d contacts=%d\n", pol, F<int>(emp, 0xD0),
+             (int)has_drive, ncol, ncon);
+    return b + lines;
+}
+
 // tests: coop.space down | hp | jump [id] | give <n> | spice add <n> | terra <a> <w> <t> | money
 std::string debug(const std::vector<std::string>& a)
 {
@@ -1039,6 +1158,8 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "added %08X: %s", h, vcall<bool>(inv, 0x74 / 4, tk.v) ? "ok" : "not in the inventory");
         return b;
     }
+    if (a[0] == "empire")
+        return empire_cmd(a);
     if (a[0] == "planet") {
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* rec = p ? F<void*>(p, 0x13C) : nullptr;

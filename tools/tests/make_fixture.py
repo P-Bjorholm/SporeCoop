@@ -8,13 +8,16 @@ Then describe it in tools/tests/fixtures.py (planet, stage, facts).
 A stage-new save: tools/tests/new_stage_game.py <stage> then make_fixture.py from that.
 """
 import argparse
+import os
+import sys
 import time
 
-import fixtures
-import lane
-from lane import sh
-from sporectl import Console
-from twoinst import wait_up
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+import fixtures  # noqa: E402
+import lane  # noqa: E402
+from lane import sh  # noqa: E402
+from sporectl import Console  # noqa: E402
+from twoinst import wait_up  # noqa: E402
 
 
 def main():
