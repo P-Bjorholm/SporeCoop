@@ -14,7 +14,6 @@ two games the way players do:
 
   SPORE_LANE=3 python3 tools/tests/coop_space_contracts.py
 """
-import os
 import re
 import time
 
@@ -183,10 +182,7 @@ def main():
     # ---- 2. the joint survey: "Jump there" by real clicks ----
     # the armada's end gives badge points: their panel ("2 badge points" + OK) takes the mouse, the
     # co-op window's buttons do not get clicks while it is up (docs/known-issues.md): Enter closes it
-    # SPORE_KEEP_BADGE=1: leave the panel up (coop_ui keeps the co-op window above game panels)
     for ui, c in ((uh, host), (ug, guest)):
-        if os.environ.get('SPORE_KEEP_BADGE') == '1':
-            break
         if ui.state().get('open') == '1':
             c.call(f'key {VK_F9}')
         time.sleep(0.5)
