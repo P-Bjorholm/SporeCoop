@@ -1,5 +1,6 @@
 #include "space_ext.h"
 #include <cstdlib>
+#include <map>
 
 #include "coop_ui.h"
 #include "game.h"
@@ -33,6 +34,21 @@ uint8_t my_id() { return C && C->sess ? C->sess->my_id() : 0; }
 std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "?"; }
 bool in_space() { return game::mode_id() == modes::kSpace; }
 bool russian() { return coop_ui::russian(); }
+
+static bool g_rivals;
+static std::map<uint16_t, Relation> g_rel; // (low id << 8 | high id) -> relation
+
+bool rivals() { return g_rivals; }
+Relation relation(uint8_t a, uint8_t b)
+{
+    if (!g_rivals || a == b)
+        return Relation::Ally;
+    auto it = g_rel.find(a < b ? (uint16_t)(a << 8 | b) : (uint16_t)(b << 8 | a));
+    return it == g_rel.end() ? Relation::Neutral : it->second;
+}
+void set_rivals(bool on) { g_rivals = on; }
+void set_relation(uint8_t a, uint8_t b, Relation r) { g_rel[a < b ? (uint16_t)(a << 8 | b) : (uint16_t)(b << 8 | a)] = r; }
+void clear_relations() { g_rel.clear(); }
 
 void notice(const std::string& text)
 {

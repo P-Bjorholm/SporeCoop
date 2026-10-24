@@ -72,6 +72,17 @@ void notice(const std::string& text); // a local toast + chat log line
 // player carries its id in the payload and the others ignore it
 void send(uint8_t kind, const net::Writer& body);
 
+// ---- rivals mode (owned by space_rivalry.cpp; other features only read it) ----
+// rivals(): the host's session option "players are rival empires" (own budgets, diplomacy per
+// player). relation(a, b) between two players: allies (the default, also when rivals() is off),
+// neutral or at war. The setters are for space_rivalry.cpp only.
+enum class Relation : uint8_t { Ally = 0, Neutral = 1, War = 2 };
+bool rivals();
+Relation relation(uint8_t a, uint8_t b);
+void set_rivals(bool on);
+void set_relation(uint8_t a, uint8_t b, Relation r);
+void clear_relations();
+
 // ---- wiring (spacecoop.cpp, coop.cpp, coop_ui.cpp) ----
 void init_all(const SkHost* h, SkMod* m, const spacecoop::Ctx* c);
 void tick_all(double now);
