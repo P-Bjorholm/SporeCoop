@@ -80,6 +80,23 @@ static net::Vec3 ufo_pos(void* u)
     return {p[0], p[1], p[2]};
 }
 
+// The distance that counts for a repair. On a planet the ships fly on spheres around the planet's
+// centre (the origin of the planet scene) whose radius is each player's own zoom (cGameDataUFO
+// mZoomAltitude, ~520 m zoomed in to ~970 m before leaving to the system on the home planet of the
+// space fixture, docs/re/space.md 0 and 7.10): two ships over the same spot at different zooms were 200 m
+// apart in 3D and never repaired, though the top-down camera showed them on top of each other
+// (coop_space_rescue.py on GOG 2024, where the retried landings left the two players at different
+// zooms). So on a planet: the distance along the lower sphere, ignoring the altitude.
+static float repair_distance(const net::Vec3& a, const net::Vec3& b)
+{
+    uint32_t place = C.my_place ? C.my_place() : 0;
+    float ra = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z), rb = std::sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+    if (!(place & 0x40000000u) || ra < 1.f || rb < 1.f)
+        return net::dist(a, b);
+    net::Vec3 ua{a.x / ra, a.y / ra, a.z / ra}, ub{b.x / rb, b.y / rb, b.z / rb};
+    return net::dist(ua, ub) * std::min(ra, rb);
+}
+
 static uint32_t star_of(uint32_t place)
 {
     if (place & 0x80000000u)
@@ -196,7 +213,7 @@ static void down_tick(double now)
     F<uint8_t>(u, kInvincible) = 1;
     bool close_by = false;
     for (auto& p : partners_here())
-        if (net::dist(p.pos, ufo_pos(u)) < g_repair_dist)
+        if (repair_distance(p.pos, ufo_pos(u)) < g_repair_dist)
             close_by = true;
     static double last = now;
     double dt = std::min(0.5, now - last);
@@ -1300,7 +1317,15 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "dist" && u) {
         std::string s;
         for (auto& p : partners_here(false)) {
-            snprintf(b, sizeof b, "%s %.1f m; ", p.name.c_str(), net::dist(p.pos, ufo_pos(u)));
+            // (3D; then the distance a repair measures: on a planet without the altitude; and on a
+            // planet the partner's height over ours: its zoom, ~15 m per wheel notch)
+            net::Vec3 me = ufo_pos(u);
+            int n = snprintf(b, sizeof b, "%s %.1f m; repair %.1f m; ", p.name.c_str(), net::dist(p.pos, me),
+                             repair_distance(p.pos, me));
+            if ((C.my_place ? C.my_place() : 0) & 0x40000000u)
+                snprintf(b + n, sizeof b - n, "alt %+.0f m; ",
+                         std::sqrt(p.pos.x * p.pos.x + p.pos.y * p.pos.y + p.pos.z * p.pos.z) -
+                             std::sqrt(me.x * me.x + me.y * me.y + me.z * me.z));
             s += b;
         }
         return s.empty() ? "no partner here" : s;

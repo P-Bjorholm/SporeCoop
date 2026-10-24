@@ -243,6 +243,7 @@ class Player(threading.Thread):
         self.count('rescue_flights')
         t0 = time.time()
         while time.time() - t0 < 20:
+            self.match_height()
             me, players, _ = self.targets()
             p = players.get(self.partner.pid)
             if not p:
@@ -287,6 +288,18 @@ class Player(threading.Thread):
             self.act(f'click {x} {y}')
             self.count('shots')
             self.sleep(self.rng.uniform(0.3, 0.7))
+        return True
+
+    def match_height(self):
+        """on a planet a ship flies at the height of its own zoom (~520..~970 m from the centre, ~15 m
+        per wheel notch): a partner far above or below is off the screen (above the camera) or seen
+        with parallax. Zoom to its height, as a player looks for it (docs/re/space.md 7.10)."""
+        m = re.search(r'alt ([-+]?\d+) m;', self.cmd('coop.space dist'))
+        if not m or abs(int(m.group(1))) < 30:
+            return False
+        self.zoom(max(-12, min(12, -round(int(m.group(1)) / 15))))  # wheel up (+) = lower
+        self.count('height_matched')
+        self.sleep(1.0)
         return True
 
     def partner_dist(self):
