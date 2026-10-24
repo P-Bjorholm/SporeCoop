@@ -196,12 +196,16 @@ uint8_t owner_of(void* c)
 // ---------------- hooks ----------------
 using BTTick_t = int(SK_CDECL*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 static BTTick_t o_BTTick;
+static uint32_t g_bt_skipped, g_bt_calls; // diagnostics (coop.tribe): mirrors' AI ticks skipped / all ticks
 // behaviour tree tick (shared by every creature kind): skipped for citizen mirrors on guests
 static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t self, uint32_t a5, uint32_t a6,
                              uint32_t a7, uint32_t a8)
 {
-    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe)
+    g_bt_calls++;
+    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe) {
+        g_bt_skipped++;
         return 0;
+    }
     return o_BTTick(a0, a1, a2, a3, self, a5, a6, a7, a8);
 }
 
@@ -1155,9 +1159,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete);
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls);
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -1328,16 +1332,24 @@ std::string list()
                 id = it == g_gid_of.end() ? 0 : it->second;
             }
             net::Vec3 v = game::velocity(c), sv{};
+            const drive::State* ds = nullptr;
             if (C.sess && C.sess->role() != net::Role::Host) { // the host's velocity in the snapshot
                 auto it = g_gm.find(id);
-                if (it != g_gm.end())
+                if (it != g_gm.end()) {
                     sv = it->second.vel;
+                    ds = &it->second.ds;
+                }
             }
             snprintf(b, sizeof b,
                      "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f\n", id,
                      c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv));
             out += b;
+            if (ds) { // guests: how the mirror is driven (drive::step)
+                snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,
+                         ds->nudges_kept, ds->teleports);
+                out += b;
+            }
         }
     }
     return out;

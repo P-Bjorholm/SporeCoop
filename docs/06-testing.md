@@ -150,10 +150,24 @@ console: `frame.limit <ms>|auto`. Off by default: cell physics is tuned for 30 f
 
 `tools/tests/coop_sync.py` compares, in every phase, the position and rotation of each
 synchronized object on the host and on the guest (command `coop.sync`: players, animals, cells,
-citizens, vehicles, ships). Each guest sample is compared with the closer of the two host samples
-around it. Typical values (90th percentile): cells 0.02 m, animals 0.2–0.7 m, citizens
-0.8 m / 6°, partner 1 m / 6° (lag equal to the smoothing time), vehicles 1.2 m, ships
-8.5 m at speeds around 100 m/s.
+citizens, vehicles, ships). It first waits until neither game's time is paused
+(`cGameTimeManager +0x48` bit 0, read through the console): the GOG 2024 guest keeps its game time
+paused for ~7 s after its world load in the tribe stage (black screen, no citizen `Update`, ~23 fps;
+the 2016 guest is already running when `start()` returns; both builds pause ~5 s in the creature
+stage). Each round reads the host twice 0.15 s apart, then the guest, then the host again; a guest
+pose counts as right when the host had it within that 0.15 s window (`LAG_WINDOW`: the 0.10 s
+interpolation delay plus one 20 Hz snapshot interval), i.e. its position is compared with the host's
+path and its facing with the host's turn over the window. The guest shows remote objects that late
+on purpose; a desync (wrong pose, stuck or drifting object) is far from the whole path and still
+fails. The old measure (no window, lag included) is printed as `raw p90`.
+
+Measured 2026-10-24 on the new fixtures (p90 windowed / raw), GOG 2024 lane 10 (3 runs) and GOG 2016
+lane 3: cells 0.00 m; cell players 0.01 m, 0.3-0.9° (raw 0.22-0.30 m, 16.5-21.5°: the host's cell
+turns every 4th round and the guest shows the turn ~0.1 s late, so one sample in eight sits at
+~20°, enough for the old p90 of two players to fail on both builds); creature NPCs 0.3-0.6 m, players
+0.4-0.9 m; tribe animals 0.4-0.8 m, citizens 0.4-0.6 m; civ vehicle 0.1-2.0 m, 0.9-5.8° (raw up to
+2.0 m, 29°: the fixture has one vehicle, it turns in place when the test reverses it); ships
+0.3-2.0 m (raw 1-11 m).
 
 `tools/tests/coop_npc_multi.py` (4 players from two lanes, nobody moves, ~4 min) checks the NPC
 sync of every guest over 40 s (p90 of the living NPCs <= 1.5 m; typical 0.25-0.45 m), that each

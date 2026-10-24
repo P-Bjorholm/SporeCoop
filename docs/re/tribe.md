@@ -199,6 +199,13 @@ citizen Update (0xC24BAB) and 0xD5842C/0xD6073A/0xD60821/0xD60B40 (other creatur
 **Suppress mirrors' AI by hooking 0xD995C0 and skipping when `self` (4th arg) is a mirror.**
 (Hooking 0xC249F0 and not calling the original would also kill locomotion/animation.)
 
+**After a world load (GOG 2024 guest, 2026-10-24) ✔ runtime:** the guest's game time stays paused
+(`cGameTimeManager::Get()` +0x48 = 3, bit 0 = paused) for ~7 s after the guest is in the world
+(black screen, ~23 fps): no citizen `Update` runs (BehaviorTreeTick 0 calls), so mirrors neither walk
+nor animate and only SetPosition (drive.h's nudge) moves them. The 2016 guest is already running at
+that point. Counters: `coop.tribe` on a guest prints `ai_skipped=<skipped>/<all BT ticks>` and a
+`drive err= nudges= kept= teleports=` line per mirror.
+
 Positioning a member directly: spatial at `c+0xC0`: SetPosition vt 0x38 `(const Vector3*)`,
 SetOrientation vt 0x3C `(const Quaternion*)`, GetPosition vt 0x2C - same as cCreatureAnimal
 (docs/05-re-notes.md 5.4; MoveTo 0xE0 / StopMovement 0xEC on the locomotive object for smooth
