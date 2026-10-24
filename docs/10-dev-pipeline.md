@@ -35,7 +35,11 @@ A lane is an independent copy of the whole setup, so several test pairs run at t
 * instances `2N-1` (host) / `2N` (guest): console ports 47800 + i − 1, co-op port 47810 + 2(N−1);
   test profiles `test` / `inst<2N>`; outputs under `out/laneN/`.
 * `SPORE_LANE=N` selects a lane for `tools/spore.sh`, every test and helper (`tools/tests/lane.py`).
-* Up to 5 lanes (ports); 3 run well on this machine.
+* Lanes 1..10 (ports, `tools/tests/lane.py`); at most 6 at once on this machine (`lab.py` caps it:
+  a GPU reset under more load, docs/06-testing.md 6.19). Since 2026-10-24 every lane is a copy of
+  the GOG 2024 install (`dc04aee5`, the only build supported from 0.8 on). The GOG 2016 exe is
+  kept in `~/Games/Modding/_ref/gog2016/SporeApp.exe` (a 2016 lane: copy it into a lane's
+  `SporebinEP1`).
 
 ## 10.3 The lab (`tools/lab.py`)
 

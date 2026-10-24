@@ -10,6 +10,9 @@ build known to Spore ModAPI (Disk: 24 904 192 / 24 909 584; March2017: 24 885 24
 
 ### 5.1.1 The GOG 2024 build (dc04aee5)
 
+**The only supported build from 0.8 on** (decided 2026-10-23, CLAUDE.md). `overrides_922af7c7.sym`
+and `gog2016_922af7c7.sym` are frozen: `tools/re_lint.py` only notes symbols missing there.
+
 The current GOG download (an update with PE timestamp 2024-09-30) ships another
 `SporeApp.exe`: 24 895 536 bytes, SHA-256 `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37`,
 image base 0x400000. Its code layout is ModAPI's **March2017**: 2156 of the 2160 high-confidence
