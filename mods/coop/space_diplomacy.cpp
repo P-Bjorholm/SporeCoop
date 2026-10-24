@@ -71,7 +71,9 @@ static std::vector<std::pair<uint8_t, Out>> g_in; // (origin, message) to replay
 static bool g_in_task;
 static std::unordered_map<uint32_t, double> g_recent; // npc pol -> time of the last own change
 static std::map<std::pair<uint32_t, uint32_t>, double> g_told; // (npc, event) -> last notice
-static double g_last_snap, g_now;
+static double g_last_snap;
+// wall clock (the feature tick does not run while the game is paused, e.g. with the co-op window open)
+static double now_s() { return H->time_seconds(); }
 static bool g_was_space, g_ask_pending;
 static uint32_t g_sent_contact, g_got_contact;
 static uint32_t g_sent_ev, g_sent_state, g_got_ev, g_got_state, g_snaps_sent, g_snaps_got, g_fixed, g_unknown,
@@ -276,9 +278,9 @@ static void tell(const std::string& who, uint32_t npc, uint32_t ev, const std::s
         return;
     auto key = std::make_pair(npc, ev);
     auto it = g_told.find(key);
-    if (it != g_told.end() && g_now - it->second < 20)
+    if (it != g_told.end() && now_s() - it->second < 20)
         return;
-    g_told[key] = g_now;
+    g_told[key] = now_s();
     g_last_notice = who + " " + t + " " + shown_name(npc, who, theirs);
     spaceext::notice(g_last_notice);
 }
@@ -317,7 +319,6 @@ static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b,
         (a == me || b == me) && !own_event(ev) && scale != 0.f) {
         uint32_t npc = a == me ? b : a;
         g_out.push_back({K_EVENT, npc, (uint8_t)(a == me), ev, scale, {}});
-        g_recent[npc] = g_now;
     }
     return r;
 }
@@ -344,7 +345,6 @@ static void state_hook(State_t orig, uint8_t what, void* mgr, void* e1, void* e2
         return; // nothing changed (war again, peace without a war, ...)
     uint32_t npc = pol_of(e1 == me ? other : e1);
     g_out.push_back({K_STATE, npc, (uint8_t)(e1 == me), what, 0, {}});
-    g_recent[npc] = g_now;
 }
 static void SK_THISCALL h_War(void* m, void* a, void* b) { state_hook(o_War, W_WAR, m, a, b); }
 static void SK_THISCALL h_Ally(void* m, void* a, void* b) { state_hook(o_Ally, W_ALLY, m, a, b); }
@@ -362,7 +362,6 @@ static void SK_THISCALL h_Contact(void* empire, int arg)
     g_depth--;
     if (watch && contacted(pol)) {
         g_out.push_back({K_CONTACT, pol, 0, 0, 0, {}});
-        g_recent[pol] = g_now;
     }
 }
 static bool busy(const Rec& r) { return r.flags || !r.ev.empty(); }
@@ -443,7 +442,7 @@ static void apply_contact(uint8_t from, const Out& m)
 
 // make the own record of (npc, player) equal to the host's: war / alliance through the game's
 // functions, the events by value. Returns true when something had to change.
-static bool reconcile(const Rec& h)
+static bool reconcile(const Rec& h, bool asked)
 {
     void* mgr = rel_mgr();
     void* me = my_empire();
@@ -454,8 +453,12 @@ static bool reconcile(const Rec& h)
         return false;
     }
     auto it = g_recent.find(h.npc);
-    if (it != g_recent.end() && g_now - it->second < 8)
+    if (!asked && it != g_recent.end() && now_s() - it->second < 8) {
+        char buf[96];
+        snprintf(buf, sizeof buf, "%08X: own change %.1f s ago, kept", h.npc, now_s() - it->second);
+        log_line(buf);
         return false; // our own change is on its way to the host
+    }
     bool changed = false;
     if ((h.flags & kContacted) && o_Contact && !contacted(h.npc)) {
         o_Contact(e, 0); // the game's first contact: name, personality events, map
@@ -490,6 +493,10 @@ static bool reconcile(const Rec& h)
                 thiscall<float>(a_Calc, mgr, h.npc, mp, 0);
         }
         changed = true;
+        char buf[96];
+        snprintf(buf, sizeof buf, "%08X: events set as the host has them (%u -> %u)", h.npc, (unsigned)mine.size(),
+                 (unsigned)h.ev.size());
+        log_line(buf);
     }
     if (r && (F<uint32_t>(r, 4) & 3) != hf) // the state calls need a record; set the bits as the host has them
         F<uint32_t>(r, 4) = (F<uint32_t>(r, 4) & ~3u) | hf;
@@ -497,19 +504,20 @@ static bool reconcile(const Rec& h)
 }
 
 static std::vector<Rec> g_snap_in; // chunks of the host's table until the last one
+static bool g_snap_asked;         // it answers our Resync: the host had our messages before it
 static void apply_snapshot()
 {
     uint32_t n = 0;
     std::vector<uint32_t> hostset;
     for (auto& h : g_snap_in) {
         hostset.push_back(h.npc);
-        if (reconcile(h))
+        if (reconcile(h, g_snap_asked))
             n++;
     }
     std::sort(hostset.begin(), hostset.end());
     for (auto& mine : my_table()) // ours only: events or a state the host's copy does not have
         if (!(mine.flags & kContacted) && busy(mine) && !std::binary_search(hostset.begin(), hostset.end(), mine.npc) &&
-            reconcile(Rec{mine.npc, 0, {}}))
+            reconcile(Rec{mine.npc, 0, {}}, g_snap_asked))
             n++;
     g_fixed += n;
     g_snaps_got++;
@@ -520,6 +528,7 @@ static void apply_snapshot()
 }
 
 static bool g_snap_ready;
+static void send_snapshot(uint8_t reply_to);
 static void inbox_task(void*)
 {
     g_in_task = false;
@@ -537,6 +546,12 @@ static void inbox_task(void*)
             apply_state(from, m);
         else if (m.kind == K_CONTACT)
             apply_contact(from, m);
+        else if (m.kind == K_ASK) {
+            log_line(spaceext::name_of(from) + " asks for the table");
+            g_applying = false;
+            send_snapshot(from);
+            g_applying = true;
+        }
     }
     if (g_snap_ready) {
         g_snap_ready = false;
@@ -553,7 +568,7 @@ static void schedule()
 }
 
 // ---------------- network ----------------
-static void send_snapshot()
+static void send_snapshot(uint8_t reply_to)
 {
     if (!spaceext::is_host() || !active())
         return;
@@ -564,6 +579,7 @@ static void send_snapshot()
     auto flush = [&](bool last) {
         net::Writer b;
         b.u8(last);
+        b.u8(reply_to); // 0xFF: the periodic table
         b.u16((uint16_t)chunk.size());
         for (auto* r : chunk) {
             b.u32(r->npc);
@@ -590,7 +606,7 @@ static void send_snapshot()
     }
     flush(true);
     g_snaps_sent++;
-    g_last_snap = g_now;
+    g_last_snap = now_s();
 }
 
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
@@ -623,9 +639,10 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         if (spaceext::is_host())
             return;
         bool last = r.u8() != 0;
+        uint8_t reply_to = r.u8();
         uint16_t n = r.u16();
         for (uint16_t i = 0; i < n && r.ok(); i++) {
-            Rec h{r.u32(), r.u32() & 3, {}};
+            Rec h{r.u32(), r.u32() & (3 | kContacted), {}};
             uint8_t k = r.u8();
             for (uint8_t j = 0; j < k && r.ok(); j++) {
                 uint32_t id = r.u32();
@@ -638,17 +655,19 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         }
         if (last) {
             g_snap_ready = true;
+            g_snap_asked = reply_to == spaceext::my_id();
             schedule();
         }
     } else if (kind == K_ASK) {
-        if (spaceext::is_host())
-            g_last_snap = -1e9; // the next tick sends the table
+        if (spaceext::is_host()) { // after the messages that came before it (same queue)
+            g_in.push_back({origin, Out{K_ASK, 0, origin, 0, 0, {}}});
+            schedule();
+        }
     }
 }
 
 static void tick(double now)
 {
-    g_now = now;
     bool sp = spaceext::in_space();
     if (!spaceext::connected()) {
         g_out.clear();
@@ -687,6 +706,7 @@ static void tick(double now)
         }
         w.str8(name_of_pol(m.npc));
         spaceext::send(m.kind, w);
+        g_recent[m.npc] = now_s(); // a host table sent before this arrives there must not undo it
         char buf[120];
         snprintf(buf, sizeof buf, "sent %s %08X for %08X '%s'",
                  m.kind == K_EVENT ? "event" : m.kind == K_STATE ? "state" : "contact", m.ev, m.npc,
@@ -695,7 +715,7 @@ static void tick(double now)
     }
     g_out.clear();
     if (spaceext::is_host() && active() && now - g_last_snap > 20)
-        send_snapshot();
+        send_snapshot(0xFF);
 }
 
 static void on_session_end()
@@ -735,7 +755,10 @@ static std::vector<spaceext::Row> rows()
     r.text = buf;
     if (!spaceext::is_host()) {
         r.button = ru ? "Сверить" : "Resync";
-        r.on_click = [] { spaceext::send(K_ASK, net::Writer()); };
+        r.on_click = [] {
+            spaceext::send(K_ASK, net::Writer());
+            log_line("asked the host for its table (Resync)");
+        };
     }
     v.push_back(r);
     if (!g_last_notice.empty()) {

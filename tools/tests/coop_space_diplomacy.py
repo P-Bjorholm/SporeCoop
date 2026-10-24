@@ -27,7 +27,7 @@ import lane
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, ROOT, shot, start, wait_guest_in
 
-GIFT, INSULT = '526E51F', '5F62736'
+GIFT = '526E51F'
 
 
 def sp(con, *a):
@@ -153,7 +153,7 @@ def main():
     same(host, guest, ck, 'after war and peace')
 
     # 5: drift, then the "Resync" button of the Space page (a real click)
-    print('  guest local insult:', sp(guest, 'diplomacy local apply', p1, INSULT, 2))
+    print('  guest local gift (not shared):', sp(guest, 'diplomacy local apply', p1, GIFT, 1))
     ck(rec(guest, p1) != rec(host, p1), 'a local change (not shared) makes the copies differ')
     rows = sp(guest, 'rows')
     print('  guest rows:', rows.replace('\n', ' | '))
@@ -169,7 +169,9 @@ def main():
     ck(st is not None and 'Resync' in st[f'sbtn{idx}']['text'], 'the Space page shows "Resync"')
     shot(guest, 'space_diplomacy_page.png')
     ui.click(f'sbtn{idx}')
-    ck(wait(lambda: rec(guest, p1) == rec(host, p1), 15), 'Resync: the guest has the host\'s relation again')
+    if not ck(wait(lambda: rec(guest, p1) == rec(host, p1), 15), 'Resync: the guest has the host\'s relation again'):
+        print('  guest log:', sp(guest, 'diplomacy log').splitlines()[-4:])
+        print('  host log:', sp(host, 'diplomacy log').splitlines()[-4:])
     ui.click('sback')
     guest.call(f'key {VK_F9}')
     same(host, guest, ck, 'after Resync')
