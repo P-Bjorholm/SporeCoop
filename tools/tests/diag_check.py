@@ -98,19 +98,22 @@ def main():
     if crash:
         # a fault in the frame: the game's own handler takes it and the game stops drawing: a hang
         # report after 30 s without frames
-        n0 = set(glob.glob(os.path.join(LOGDIR, 'report-*.txt')))
+        # (the game's own handler usually swallows a fault of its frame and stops drawing: a hang
+        # report after 30 s; sometimes the fault reaches the unhandled filter: a crash report)
+        n0 = set(glob.glob(os.path.join(LOGDIR, 'report-*.txt')) + glob.glob(os.path.join(LOGDIR, 'crash-*.txt')))
         try:
             c.call('call 0x1 cdecl')
         except (OSError, ValueError):
             pass
-        hang = []
+        got = []
         for _ in range(50):
             time.sleep(1)
-            hang = [p for p in set(glob.glob(os.path.join(LOGDIR, 'report-*.txt'))) - n0
-                    if 'hang' in open(p, errors='replace').readline()]
-            if hang:
+            got = [p for p in set(glob.glob(os.path.join(LOGDIR, 'report-*.txt')) +
+                                  glob.glob(os.path.join(LOGDIR, 'crash-*.txt'))) - n0
+                   if re.search(r'hang|crash', open(p, errors='replace').readline())]
+            if got:
                 break
-        ck(hang, f'a fault the game swallows (it stops drawing): a hang report ({[os.path.basename(p) for p in hang]})')
+        ck(got, f'a fault in the frame: a hang or a crash report ({[os.path.basename(p) for p in got]})')
         # a fault nobody handles (a thread of its own): the crash report and the minidump
         c = start_host(ck)
         n0 = set(glob.glob(os.path.join(LOGDIR, 'crash-*')))

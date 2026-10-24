@@ -311,10 +311,22 @@ static void write_minidump(const std::wstring& path, EXCEPTION_POINTERS* ep)
     CloseHandle(f);
 }
 
+static std::string report_base(bool crash)
+{
+    return std::string(crash ? "crash" : "report") + "-" + stamp() +
+           (instance_id() > 1 ? "-i" + std::to_string(instance_id()) : "");
+}
+
+static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep);
+
 std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep)
 {
+    return diag_write_report_as(report_base(ep != nullptr), reason, ep);
+}
+
+static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep)
+{
     std::string kind = ep ? "crash" : "report";
-    std::string base = kind + "-" + stamp() + (instance_id() > 1 ? "-i" + std::to_string(instance_id()) : "");
     CreateDirectoryW(logs_dir().c_str(), nullptr);
     std::wstring txt = logs_dir() + L"\\" + widen(base) + L".txt";
     std::string s;
@@ -421,15 +433,47 @@ static void exit_report(UINT code, const char* how)
     logf(&g_kit_mod, SK_ERROR, "%s; crash report: %s", why, p.c_str());
 }
 
+// the full report is written by a thread of its own: if the crashed thread holds a lock the report
+// needs (the heap's, the loader's, a game lock), the filter still returns after kReportWaitMs and
+// the short report written first stays
+static constexpr DWORD kReportWaitMs = 15000;
+struct CrashJob {
+    std::string base;
+    EXCEPTION_POINTERS* ep;
+};
+static DWORD WINAPI crash_report_thread(void* p)
+{
+    auto* j = (CrashJob*)p;
+    std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep);
+    logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str());
+    return 0;
+}
+
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
 {
-    if (g_crashed++ == 0) {
-        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX at 0x%08X %s",
-             ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0,
-             ep && ep->ContextRecord ? (unsigned)ep->ContextRecord->Eip : 0,
-             ep && ep->ContextRecord ? where(ep->ContextRecord->Eip).c_str() : "");
-        std::string p = diag_write_report("unhandled exception", ep);
-        logf(&g_kit_mod, SK_ERROR, "crash report: %s", p.c_str());
+    if (g_crashed++ == 0 && ep && ep->ExceptionRecord && ep->ContextRecord) {
+        DWORD code = ep->ExceptionRecord->ExceptionCode;
+        uintptr_t eip = ep->ContextRecord->Eip;
+        std::string w = where(eip);
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX at 0x%08X %s", code, (unsigned)eip, w.c_str());
+        // a short report at once (no locks but the file system's)
+        static CrashJob job;
+        job.base = report_base(true);
+        job.ep = ep;
+        char b[512];
+        snprintf(b, sizeof b,
+                 "SporeCoop crash %s (short: the full report is being written over this file)\n"
+                 "SporeKit " SK_VERSION ", game %s\nexception 0x%08lX %s at 0x%08X %s\n",
+                 job.base.c_str(), build_name(), code, code_name(code), (unsigned)eip, w.c_str());
+        CreateDirectoryW(logs_dir().c_str(), nullptr);
+        write_text(logs_dir() + L"\\" + widen(job.base) + L".txt", b);
+        HANDLE t = CreateThread(nullptr, 0, crash_report_thread, &job, 0, nullptr);
+        if (t) {
+            if (WaitForSingleObject(t, kReportWaitMs) != WAIT_OBJECT_0)
+                logf(&g_kit_mod, SK_ERROR, "the full crash report did not finish in %lu s (the short one stays)",
+                     kReportWaitMs / 1000);
+            CloseHandle(t);
+        }
     }
     return g_next_filter ? g_next_filter(ep) : EXCEPTION_CONTINUE_SEARCH;
 }
