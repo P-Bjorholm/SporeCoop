@@ -20,7 +20,7 @@ def food(con):
 
 
 def main():
-    host, guest = start('tribe', 'Game0/Cohrach')
+    host, guest = start('tribe')
     ck = Checks()
     t0 = time.time()
     while True:  # the split of the player tribe arrives with the first states
