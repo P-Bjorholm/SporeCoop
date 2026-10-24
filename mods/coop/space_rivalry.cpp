@@ -50,7 +50,7 @@ static uintptr_t a_TakeDamage, a_PlayerUFOGet, a_PlayerEmpire, a_PlayerEmpireID,
 constexpr uintptr_t kPol = 0x30, kCombat = 0x508, kState = 0x53C, kHp = 0x540, kType = 0x714;
 constexpr uint32_t kEnemyPol = 0xFFFFFFFFu; // "no empire": hostile to everybody, like pirates
 
-enum Kind : uint8_t { K_STATE = 50, K_REQ = 51, K_EVENT = 52, K_HIT = 53, K_MONEY = 54, K_MERGE_FIX = 55 };
+enum Kind : uint8_t { K_STATE = 50, K_REQ = 51, K_EVENT = 52, K_HIT = 53, K_MONEY = 54, K_MERGE_FIX = 55, K_ASK = 56, K_SET = 57 };
 enum Action : uint8_t { A_RIVALS = 1, A_ALLIES = 2, A_PROPOSE_ALLY = 3, A_ACCEPT = 4, A_WAR = 5, A_PROPOSE_PEACE = 6 };
 enum Event : uint8_t { E_RIVALS = 1, E_ALLIES = 2, E_PROPOSE_ALLY = 3, E_ALLIANCE = 4, E_WAR = 5, E_PROPOSE_PEACE = 6, E_PEACE = 7 };
 enum PropKind : uint8_t { P_ALLY = 1, P_PEACE = 2 };
@@ -73,6 +73,12 @@ static int g_last_reported = -1;
 static double g_last_attacked;
 static uint32_t g_hits_sent, g_hits_got, g_pvp_deaths, g_splits, g_merges, g_enemy_puppets;
 static float g_dmg_got;
+static uint32_t g_puppet_hits, g_restored;
+// a guest's budget after a (re)join or a world load: the host's copy of it is the true one (a
+// rejoining guest loads the host's save again, whose money is not its budget); no reports until then
+static bool g_budget_known, g_was_in_space;
+static double g_last_ask;
+static int g_last_hit_type, g_last_hit_att;
 
 // ---------------- the host's authority ----------------
 struct NameProp {
@@ -84,6 +90,7 @@ static std::vector<NameProp> g_props_names;
 static uint16_t g_split_seq, g_merge_seq;
 static int g_split_total, g_split_share;
 static std::map<uint8_t, int> g_merge_credit_of; // the budgets the last merge counted
+static std::map<std::string, int> g_budget_name;  // player name -> its last reported budget (rejoins)
 static std::vector<std::pair<uint8_t, std::string>> g_roster;
 static double g_last_state;
 
@@ -294,6 +301,7 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
             g_props_names.clear();
         }
         g_budget.clear();
+        g_budget_name.clear();
         g_last_reported = -1;
         host_broadcast();
         host_event(action == A_RIVALS ? E_RIVALS : E_ALLIES, origin, 0);
@@ -393,6 +401,7 @@ static void apply_pending_money()
         g_split_pending = false;
         add_money(g_split_delta);
         g_splits++;
+        g_budget_known = true;
         spaceext::notice(spaceext::tr("Your own budget: ", "Ваш бюджет: ") + std::to_string(*m));
     }
     if (g_merge_pending) {
@@ -542,8 +551,35 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         break;
     case K_MONEY: {
         int v = (int)r.u32();
-        if (r.ok() && spaceext::rivals())
+        if (r.ok() && spaceext::rivals()) {
             g_budget[origin] = v;
+            if (spaceext::is_host())
+                g_budget_name[spaceext::name_of(origin)] = v;
+        }
+        break;
+    }
+    case K_ASK: // a guest (re)joined or loaded the world: its budget, if the host knows it
+        if (spaceext::is_host() && spaceext::rivals()) {
+            auto it = g_budget_name.find(spaceext::name_of(origin));
+            net::Writer w;
+            w.u8(origin);
+            w.u8(it != g_budget_name.end());
+            w.u32(it != g_budget_name.end() ? (uint32_t)it->second : 0u);
+            spaceext::send(K_SET, w);
+        }
+        break;
+    case K_SET: {
+        uint8_t to = r.u8(), have = r.u8();
+        int v = (int)r.u32();
+        int* m = money_ptr();
+        if (!r.ok() || to != me() || origin != 0 || !spaceext::rivals() || !m || g_budget_known)
+            break;
+        if (have && v != *m) {
+            add_money(v - *m);
+            g_restored++;
+            spaceext::notice(spaceext::tr("Your own budget is back: ", "Ваш бюджет восстановлен: ") + std::to_string(*m));
+        }
+        g_budget_known = true;
         break;
     }
     case K_MERGE_FIX: {
@@ -558,12 +594,16 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 
 bool on_hit(void* ufo, void* attacker, float dmg, int type, const float* dir)
 {
-    if (!spaceext::connected() || !spaceext::rivals() || type == 10 || !attacker || attacker != my_ufo() ||
-        !spaceext::ctx().partners)
+    if (!spaceext::connected() || !spaceext::rivals() || !spaceext::ctx().partners)
         return false;
     for (auto& p : spaceext::ctx().partners()) {
         if (p.puppet != ufo)
             continue;
+        g_puppet_hits++; // (tests: any hit on a partner's ship here, also by NPCs or with no attacker)
+        g_last_hit_type = type;
+        g_last_hit_att = attacker == my_ufo() ? 1 : attacker ? 2 : 0;
+        if (type == 10 || !attacker || attacker != my_ufo())
+            return false;
         if (spaceext::relation(me(), p.id) != Relation::War)
             return false; // allies and neutrals: the game drops it (same political id, invincible puppet)
         net::Writer w;
@@ -615,8 +655,19 @@ static void tick(double now)
     puppets_tick();
     if (g_split_pending || g_merge_pending)
         apply_pending_money();
+    // a guest in a freshly loaded world (a rejoin loads the host's save): ask the host for its budget
+    bool sp = money_ptr() != nullptr;
+    if (sp && !g_was_in_space)
+        g_budget_known = false;
+    g_was_in_space = sp;
+    if (spaceext::is_host())
+        g_budget_known = true;
+    else if (spaceext::rivals() && sp && !g_budget_known && !g_split_pending && now - g_last_ask > 2.0) {
+        spaceext::send(K_ASK, net::Writer());
+        g_last_ask = now;
+    }
     // the own budget for everybody (the merge counts the host's last copy of it)
-    if (spaceext::rivals()) {
+    if (spaceext::rivals() && g_budget_known) {
         if (int* m = money_ptr()) {
             g_budget[me()] = *m;
             if (!spaceext::is_host() && ((*m != g_last_reported && now - g_last_report > 0.5) || now - g_last_report > 3.0)) {
@@ -643,6 +694,8 @@ static void session_end()
     g_budget.clear();
     g_have_state = false;
     g_split_pending = g_merge_pending = false;
+    g_budget_known = g_was_in_space = false;
+    g_budget_name.clear();
     g_last_reported = -1;
     g_rel_names.clear();
     g_props_names.clear();
@@ -752,9 +805,12 @@ static std::string status()
     s += " props";
     for (auto& p : g_props)
         s += " " + std::to_string(p.from) + ">" + std::to_string(p.to) + (p.kind == P_ALLY ? "ally" : "peace");
-    char b[200];
-    snprintf(b, sizeof b, " hits_sent=%u hits_got=%u dmg_got=%.1f pvp_deaths=%u enemy_puppets=%u splits=%u merges=%u\n",
-             g_hits_sent, g_hits_got, g_dmg_got, g_pvp_deaths, g_enemy_puppets, g_splits, g_merges);
+    char b[320];
+    snprintf(b, sizeof b,
+             " hits_sent=%u hits_got=%u dmg_got=%.1f pvp_deaths=%u enemy_puppets=%u splits=%u merges=%u puppet_hits=%u"
+             " (last type %d by %s) restored=%u\n",
+             g_hits_sent, g_hits_got, g_dmg_got, g_pvp_deaths, g_enemy_puppets, g_splits, g_merges, g_puppet_hits,
+             g_last_hit_type, g_last_hit_att == 1 ? "me" : g_last_hit_att == 2 ? "other" : "none", g_restored);
     return s + b;
 }
 
