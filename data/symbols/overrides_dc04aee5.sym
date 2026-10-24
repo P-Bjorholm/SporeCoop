@@ -166,6 +166,7 @@ SporeCoop::TimeOfDay_Apply=0x01021630 ; verified port from GOG 2016 0x01021630: 
 SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified port from GOG 2016 0x01021110 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::TimeOfDay_Unavailable=0x01020F30 ; verified port from GOG 2016 0x01020F30 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; verified port from GOG 2016 0x00FE0E00: Respawn calls 0xFE0E00 after TravelToStarSystem; plain ret; calls 0x1003530 (context 0)
+SporeCoop::cAppModeSpace_SystemToGalaxy=0x00FDA5D0 ; verified port from GOG 2016 0x00FDA5D0: delta 0; same prologue (sub esp,0xC; mov esi,ecx; or [[esi+0x15C]+0x50],4; IBakeManager vt 0x40 on [esi+0x16C]), 360 bytes, callers 0x1009EBC (same) and 0xC78161 (GOG 2016 0xC78141, +0x20)
 SporeCoop::cCreatureAnimal_IsEpic=0x00C0C240 ; verified port from GOG 2016 0x00C0C200 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::cSimPlanetHighLOD_EndRespawnCaption=0x00FF59D0 ; verified port from GOG 2016 0x00FF59D0: add ecx,0x1E4; jmp 0x7CFD30; only callers 0x100C57A / 0x100C5E7 (identical to old)
 SporeCoop::cTribeUI_Get=0x00CD4230 ; verified port from GOG 2016 0x00CD41E0: mov eax,[0x169B2C8]; ret (old global 0x169C2A8, -0xFE0); 161 callers
@@ -185,3 +186,6 @@ SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0
 SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
 SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
 SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)
+# the co-op jump (spacecoop.cpp travel_to, docs/re/space.md 7.3)
+Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): cdecl, push esi; mov esi,[esp+8]; test esi,esi; call 0x1020F30 (context); cmp eax,2; then GetActiveStarRecord 0x10210F0, 104 bytes as in GOG 2016
+Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210F0 (unchanged): cdecl, mov eax,[0x16DDA8C]; mov eax,[eax+8]; test; mov eax,[eax+0x48]; ret

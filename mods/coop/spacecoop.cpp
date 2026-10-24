@@ -298,9 +298,16 @@ void* star_record(uint32_t id)
     return r;
 }
 
+// coop.space jumpto <star> [force] [old]: "old" = the 0.6 jump (TravelToStarSystem), for comparisons
+static bool g_jump_old;
+
 static std::string travel_to(uint32_t star, bool force)
 {
-    if (!a_ModeSpace || !a_TravelSystem || !a_Context || !a_StarMgr || !a_GetStarRecord)
+    static uintptr_t to_galaxy = H->sym("SporeCoop::cAppModeSpace_SystemToGalaxy"),
+                     teleport = H->sym("Simulator::SpaceTeleportTo"),
+                     active_rec = H->sym("Simulator::GetActiveStarRecord");
+    if (!a_ModeSpace || !a_EnterSystem || !a_LeavePlanet || !a_Context || !a_StarMgr || !a_GetStarRecord ||
+        !to_galaxy || !teleport || !active_rec)
         return "symbols missing";
     void* u = my_ufo();
     // leaving the planet while the respawn caption still plays destroys the planet object its end
@@ -312,17 +319,47 @@ static std::string travel_to(uint32_t star, bool force)
     void* rec = star_record(star);
     if (!rec)
         return "no such star";
-    if (!mode || ctx < 0)
+    if (!mode || ctx < 0 || !u)
         return "can't travel now";
-    // the native sequence of cGameDataUFO::Respawn (docs/re/space.md 7.3)
+    if (rec == cdecl_call<void*>(active_rec)) {
+        if (ctx != 2)
+            return "already in that system";
+        thiscall<void>(a_EnterSystem, mode); // the galaxy view at that very star: just go in
+        g_jumps++;
+        return "";
+    }
+    // the player's own way (docs/re/space.md 7.3): planet -> system -> galaxy view, a free instant
+    // flight to the star (the space -flyto cheat), then into its system
     if (ctx == 0) {
         void* planet = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         if (planet && a_PlanetCleanup && a_PlanetCleanupMgr && *(void**)a_PlanetCleanupMgr)
             thiscall<void>(a_PlanetCleanup, *(void**)a_PlanetCleanupMgr, planet);
         thiscall<void>(a_LeavePlanet, mode, 0);
-    } else if (ctx == 2)
-        thiscall<void>(a_EnterSystem, mode);
-    thiscall<void>(a_TravelSystem, mode, rec, 1);
+        ctx = cdecl_call<int>(a_Context);
+    }
+    if (g_jump_old) {
+        if (ctx == 2)
+            thiscall<void>(a_EnterSystem, mode);
+        thiscall<void>(a_TravelSystem, mode, rec, 1);
+        g_jumps++;
+        return "";
+    }
+    if (ctx == 1) {
+        thiscall<void>(to_galaxy, mode);
+        ctx = cdecl_call<int>(a_Context);
+    }
+    if (ctx != 2)
+        return "can't reach the galaxy view";
+    // the flight costs energy (cSimulatorPlayerUFO::TravelToStar; with none left it damages the
+    // ship): the co-op jump is free, so the energy is put back afterwards
+    float energy = F<float>(u, 0x7F4);
+    F<float>(u, 0x7F4) = std::max(energy, F<float>(u, 0x7F8));
+    cdecl_call<void>(teleport, rec); // refunds the money, TravelToStar, snaps to the star
+    F<float>(u, 0x7F4) = energy;
+    bool there = cdecl_call<void*>(active_rec) == rec;
+    thiscall<void>(a_EnterSystem, mode); // the target's system, or back into the old one
+    if (!there)
+        return "the flight was refused";
     g_jumps++;
     return "";
 }
@@ -808,7 +845,12 @@ std::vector<syncdbg::Entry> nav_entries()
         }
     } else if (ctx == 1) {
         // the loaded cPlanet objects of the current system: cStarManager +0x50..+0x54 (the list
-        // RecordToPlanet 0xBB5B20 searches); cPlanet +0x04 position, +0x13C record (docs/re/space.md 7.9)
+        // RecordToPlanet 0xBB5B20 searches); cPlanet +0x04 position, +0x13C record (docs/re/space.md 7.9).
+        // The list also keeps the planets of the player's colonies in other systems (positions in
+        // their own system): only the active star's planets (PlanetID & 0xFFFFFF = StarID)
+        static uintptr_t active_rec = H->sym("Simulator::GetActiveStarRecord");
+        void* star = active_rec ? cdecl_call<void*>(active_rec) : nullptr;
+        uint32_t sid = star && !IsBadReadPtr(star, 0x74) ? F<uint32_t>(star, 0x70) : 0xFFFFFFFFu;
         void** b = F<void**>(sm, 0x50);
         void** e = F<void**>(sm, 0x54);
         for (void** it = b; it && it < e && v.size() < 64; ++it) {
@@ -816,7 +858,7 @@ std::vector<syncdbg::Entry> nav_entries()
             if (!p || IsBadReadPtr(p, 0x140))
                 continue;
             void* rec = F<void*>(p, 0x13C);
-            if (!rec || IsBadReadPtr(rec, 0x198))
+            if (!rec || IsBadReadPtr(rec, 0x198) || (F<uint32_t>(rec, 0x184) & 0xFFFFFFu) != sid)
                 continue;
             snprintf(key, sizeof key, "%c%08X", F<int>(rec, 0x194) == 5 ? 'C' : 'P', F<uint32_t>(rec, 0x184));
             auto& q = F<float[3]>(p, 0x04);
@@ -952,6 +994,61 @@ static std::string empire_cmd(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "contact with %08X", F<uint32_t>(other, 0x84));
         return b;
     }
+    // coop.space empire near [n]: the n nearest stars of NPC empires and the n nearest free stars
+    // (no empire, not the Grox) around the active star, for tests of the jump (docs/re/space.md 7.3):
+    // "npc|free <StarID> pol=<empire> d=<galaxy units> contact=<0|1> flags=<hex> visited=<star +0x5C & 0x30> planets=<+0xAC>"
+    if (a.size() > 1 && a[1] == "near") {
+        static uintptr_t active_rec = H->sym("Simulator::GetActiveStarRecord");
+        void* here = active_rec ? cdecl_call<void*>(active_rec) : nullptr;
+        if (!here)
+            return "no active star";
+        size_t n = a.size() > 2 ? (size_t)atoi(a[2].c_str()) : 3;
+        const float* h = &F<float>(here, 0x3C);
+        void* nm = nouns ? cdecl_call<void*>(nouns) : nullptr;
+        void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+        auto contact = [&](uint32_t e) { // the cPlayer contact flags (bit 1 contacted, bit 2 aware)
+            if (player)
+                for (auto p = F<uint32_t*>(player, 0x11D8); p && p < F<uint32_t*>(player, 0x11DC); p += 2)
+                    if (p[0] == e)
+                        return p[1];
+            return 0u;
+        };
+        std::vector<std::pair<float, void*>> npc, free_;
+        uint8_t* sb = F<uint8_t*>(sm, 0xC8);
+        uint8_t* se = F<uint8_t*>(sm, 0xCC);
+        for (uint8_t* sec = sb; sb && sec + 20 <= se; sec += 20)
+            for (void** it = F<void**>(sec, 0); it && it < F<void**>(sec, 4); ++it) {
+                void* r = *it;
+                if (!r || r == here || IsBadReadPtr(r, 0xB0))
+                    continue;
+                const float* q = &F<float>(r, 0x3C);
+                float d = sqrtf((q[0] - h[0]) * (q[0] - h[0]) + (q[1] - h[1]) * (q[1] - h[1]) +
+                                (q[2] - h[2]) * (q[2] - h[2]));
+                uint32_t e = F<uint32_t>(r, 0x54), fl = F<uint32_t>(r, 0x5C);
+                if (e == 0xFFFFFFFFu && !(fl & 0x8))
+                    free_.push_back({d, r});
+                else if (e != pol && F<int>(r, 0x4C) == 5 && !(fl & 0x8))
+                    npc.push_back({d, r});
+            }
+        uint32_t he = F<uint32_t>(here, 0x54);
+        snprintf(b, sizeof b, "here %08X pol=%08X contact=%d flags=%X visited=%d planets=%d\n", F<uint32_t>(here, 0x70),
+                 he, (contact(he) & 2) ? 1 : 0, contact(he), (F<uint32_t>(here, 0x5C) & 0x30) ? 1 : 0,
+                 (int)F<uint8_t>(here, 0xAC));
+        std::string out = b;
+        for (auto* v : {&npc, &free_}) {
+            std::sort(v->begin(), v->end());
+            for (size_t i = 0; i < v->size() && i < n; i++) {
+                void* r = (*v)[i].second;
+                uint32_t e = F<uint32_t>(r, 0x54);
+                snprintf(b, sizeof b, "%s %08X pol=%08X d=%.1f contact=%d flags=%X visited=%d planets=%d\n",
+                         v == &npc ? "npc" : "free", F<uint32_t>(r, 0x70), e, (*v)[i].first,
+                         (contact(e) & 2) ? 1 : 0, contact(e),
+                         (F<uint32_t>(r, 0x5C) & 0x30) ? 1 : 0, (int)F<uint8_t>(r, 0xAC));
+                out += b;
+            }
+        }
+        return out;
+    }
     // the report
     std::string s;
     void* inv = inventory();
@@ -1042,7 +1139,12 @@ std::string debug(const std::vector<std::string>& a)
         return "landing";
     }
     if (a[0] == "jumpto" && a.size() > 1) { // "force": even during a cinematic (tests: the old jump)
-        std::string e = travel_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0), a.size() > 2 && a[2] == "force");
+        bool force = false;
+        g_jump_old = false;
+        for (size_t i = 2; i < a.size(); i++)
+            force |= a[i] == "force", g_jump_old |= a[i] == "old";
+        std::string e = travel_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0), force);
+        g_jump_old = false;
         return e.empty() ? "jumping" : e;
     }
     if (a[0] == "goto" && u) { // put the own ship next to a partner (tests of the repair)

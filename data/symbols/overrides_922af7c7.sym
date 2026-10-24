@@ -248,6 +248,7 @@ SporeCoop::Space_GetActivePlanet=0x01021110 ; verified cdecl() -> SpacePlayerDat
 SporeCoop::PlanetModelCleanup=0x00B7D650 ; verified thiscall([0x167FADC], cPlanet*) ret 4: called by Respawn before LeavePlanet
 SporeCoop::PlanetModelMgr_ptr=0x0167FADC ; verified global, `this` of PlanetModelCleanup
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; likely thiscall(mode) ret: Respawn's landing, enters the active planet (context 0 via 0x1003530)
+SporeCoop::cAppModeSpace_SystemToGalaxy=0x00FDA5D0 ; verified decompile + runtime (coop jump): thiscall(mode) plain ret: solar system -> galaxy view (sim+0x50 |= 4, DestroyNPCUFOs(1,1,0), Space_LeaveSolarSystem(active star), context 2 via 0x1003330, 0x1007FA0, places the galaxy UFO, posts 0x5E37A3B -> 0xFDABE0); callers: zoom-out of the per-frame camera handler 0x1009C90 (at 0x1009EBC) and message 0x6527EAF in 0xC77EB0
 SporeCoop::GetPlayerHomePlanetRecord=0x01021220 ; verified cdecl() -> cPlanetRecord* (docs/re/space.md 7.1)
 # leaving a stage / loading a save while one runs (docs/re/space.md 8)
 App::IMessageManager::Get=0x0067DC80 ; verified cdecl() -> message manager (runtime: MessagePost vt 0x18 with kMsgSaveGame 0x1CD20F0 and the quit message 0x4715068)
