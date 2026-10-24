@@ -413,3 +413,19 @@ New ids for a new `space` fixture: planets of the home system with `coop.targets
 system view (`obj P<PlanetID>`); a planet of another star needs a generated record (a star near
 home that the tutorial points at, or one the ship visited); the nearest NPC empires: walk
 `cStarManager` +0x150 (docs/re/space.md 9.6).
+
+## 6.16 The galactic core (coop_space_finale.py)
+
+* Uses the `space` fixture; both players get the interstellar drive with `coop.space tool add
+  interstellardrive`. The host zooms out with the mouse wheel (`wheel 720 540 -5`, ~6 notches),
+  `coop.space finale goto near|core` flies like "Fly to" does (galaxy view: the free instant travel
+  of SpaceTeleportTo; a system: the Space page jump), the wheel in at the core enters its system,
+  a click at (720, 480) flies the ship into the centre and the wheel in opens the core.
+* Captions: confirm a caption only after it has been up for ~6 s, alternate Enter and a click on
+  the green check (1410, 1048); the core cinematic needs an Enter about every 8 s (scrolling texts)
+  and takes ~2 minutes. `coop.space finale` prints ctx / busy / cin (cinematic id, 2F7C7BDA =
+  SPG_CenterOfGalaxy), zone (1 far, 2 near, 3 gate), entered / staff / charges.
+* The core opens once per save, so every run needs a fresh fixture (a cold start restores it; a
+  warm reset reloads the fixture too). A run takes ~8-10 minutes.
+* `--alone`: the host presses "Enter now"; the guest is near the core but not at the gate and gets
+  Steve's gift by message.
