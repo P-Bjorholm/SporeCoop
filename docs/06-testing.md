@@ -235,6 +235,20 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   while the death caption is up and `movie=1` while any cinematic runs. A test that waits for a
   respawn without pressing OK waits forever (that was the "respawn never came" of
   `coop_space_play.py`, 2026-10-22; see docs/re/space.md 7.2.1).
+* `movie=1` that never goes away (no HUD, Enter does nothing, clicks lost) right after a join was
+  the galaxy menu's intro cinematic GGE_Intro carried into the stage by a load from the menu
+  (docs/re/space.md 7.9, fixed in world.cpp). The mod ends it now; `coop.status` prints "cinematic
+  <id> playing (menu intro)" while it runs and "menu intro ended N" after. The intro starts ~16 s
+  after the menu appears and runs ~10 s, so a test that joins or loads in that window meets it:
+  `twoinst.start(fixture, join_in_intro=True)` starts the guest once the host is in its world and
+  joins at the start of the guest's intro (deterministic; `coop_space_guest_ui.py`, ~1 min to ready,
+  1.5 min in all). A host that loaded before the intro gets it in Space ~17 s after its menu (ended
+  by the mod after 1 s).
+* GOG 2024 lanes: for up to ~80 s after the load, zooming in at the home planet does not land
+  (measured on lane 10: the first zoom that landed came 50 s after `start()` returned, also with the
+  intro fix disabled; not investigated further). `coop_space_rescue.py` retries the first landing
+  for 150 s. The 2024 lanes run at ~66-69 fps, the 2016 lanes at ~31 fps: `wait.frames N` waits half
+  as long on 2024.
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.

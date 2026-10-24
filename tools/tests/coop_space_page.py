@@ -3,7 +3,7 @@
 the page lists where each partner is, and its "Jump there" button (a real click) takes the player
 to the partner's star system; "< Lobby" goes back. The guest's side: no cinematic left over from the
 join (a guest stuck in the galaxy menu's intro had no HUD and its clicks were eaten, docs/re/space.md
-10), its own jump is not refused, and its real clicks open its Space page.
+7.9), its own jump is not refused, and its real clicks open its Space page.
 
   SPORE_LANE=2 python3 tools/tests/coop_space_page.py
 """

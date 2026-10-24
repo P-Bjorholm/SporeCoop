@@ -2,7 +2,7 @@
 """A guest who joins while its galaxy menu plays the intro cinematic (GGE_Intro) gets a normal game:
 no movie left over in Space (the HUD is there), its real clicks reach the co-op window, and its Space
 page works. Before the fix the intro stayed "playing" after the world load: no HUD, every click
-eaten by the cinematic's input lock, jumps refused ("a cinematic is playing"); docs/re/space.md 10.
+eaten by the cinematic's input lock, jumps refused ("a cinematic is playing"); docs/re/space.md 7.9.
 
   SPORE_LANE=10 python3 tools/tests/coop_space_guest_ui.py
 """

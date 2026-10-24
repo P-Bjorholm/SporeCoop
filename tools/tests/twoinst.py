@@ -236,7 +236,7 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
     same build: warm_reset() instead of a restart (~10 s instead of ~40 s).
     join_in_intro: the guest joins while its galaxy menu plays the intro cinematic GGE_Intro (cold
-    start only; the race behind the stuck guest movie, docs/re/space.md 10)."""
+    start only; the race behind the stuck guest movie, docs/re/space.md 7.9)."""
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()

@@ -127,6 +127,18 @@ Fixed entries move to the commit message (and a test).
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
 
+## Space (GOG 2024): zooming in does not land in the first minute after a load
+
+* On lane 10 (GOG 2024, `space` fixture), right after `twoinst.start('space')` the ship of the host
+  and of the guest flies to the home planet on a click but zooming in (wheel at the ship) does not
+  land on it; the same zoom lands 50-80 s later. Also with the menu intro fix disabled (so not the
+  intro of docs/re/space.md 7.9, which only lasts ~10 s); `movie=0` and the HUD answers meanwhile.
+  Made round 1 of `coop_space_rescue.py` fail ("both on the home planet"); the test retries the first
+  landing for 150 s now. Not seen on GOG 2016 lanes (rescue round 1 passed there); cause unknown
+  (tutorial state of the fixture, planet LOD loading at ~66 fps?). Reproduce: SPORE_LANE=10, `start
+  ('space')`, then `Player.land(home)` at once. (The guest "movie" that made the guest's clicks
+  vanish on this fixture, described on feat/space-trade, is fixed: docs/re/space.md 7.9.)
+
 ## Space: `coop.space jumpto` into another system arrives without planets
 
 * `coop.space jumpto 0x00460038` (and `0x0046102D`) from a planet and from the galaxy view put the

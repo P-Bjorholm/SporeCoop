@@ -425,7 +425,7 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
 static bool in_stage(uint32_t m);
 
 // The galaxy menu's intro cinematic "GGE_intro" (camera flight over the galaxy, ~10 s, started ~16 s
-// after the menu came up; docs/re/space.md 10). A load started from the menu while it plays left it
+// after the menu came up; docs/re/space.md 7.9). A load started from the menu while it plays left it
 // "playing" in the next stage forever: cCinematicManager +0x2C stays 2, the HUD is hidden and the
 // input lock it holds (cGameInputManager +0x110) eats every click; nothing in a stage ends it (the
 // menu's handler of its end message is gone, Enter only ends captions). The mod ends it natively
