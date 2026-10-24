@@ -119,12 +119,24 @@ Fixed entries move to the commit message (and a test).
 
 ## Space: no test save after the tutorial missions
 
-* The `space` fixture starts at the first mission ("Fly to planet Dunoselka"): the ship has no
-  interstellar drive (the galaxy view stays locked; tests add it with `coop.space tool add
-  interstellardrive`), no terraforming tools, the colonies have no spice stored and no other empire
-  has been met. So the game bot (`play_space.py`, docs/stability/space.md) can not collect or sell
-  spice, terraform, take missions or meet raids. A fixture made after the tutorial (scan the wreck,
-  meet a neighbour, a colony with spice) would cover them: play it once, then `make_fixture.py`.
+* The `space` fixture starts at the first mission ("Fly to planet Vulpica", the wreck): the ship has
+  no interstellar drive (tests add it with `coop.space tool add interstellardrive`), no
+  terraforming tools, no colony besides home and no other empire has been met. `space_empire`
+  (docs/06-testing.md 6.15) adds the drive, money, two colonies with spice and two contacts, made
+  with test commands; it is still inside the tutorial (travel to stars that are not own stars is
+  refused there), and has no raids, missions or trade. A save played through the tutorial would
+  still be better.
+
+## Space: `coop.space jumpto` into another system arrives without planets
+
+* `coop.space jumpto 0x00460038` (and `0x0046102D`) from a planet and from the galaxy view put the
+  ship into that star's system, but the system had no planets: only the sun was drawn, and
+  `coop.targets all` still listed the planets of the system left behind (the planet list of
+  `cStarManager` +0x50 was not reloaded). Zooming out to the galaxy and back in did not load them
+  either. The star records had their planets (star +0x84, 3 and 8 records). Seen 2026-10-23,
+  lane 8, single player, inside the tutorial. The co-op "jump to partner" uses the same
+  `travel_to` (TravelToStarSystem 0xFDD380, docs/re/space.md 7.3): check whether a jump to a
+  partner in another (not yet visited) system shows its planets. Not saved into any fixture.
 
 ## Civilization: single vehicle sync outliers of 20-27 m
 
