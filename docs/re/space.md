@@ -869,3 +869,49 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   own-ship filter, then the game).
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
+
+## 10. Co-op contracts (✔ runtime, lane 3, GOG 2016, 2026-10-23; `space_contracts.cpp`)
+
+### 10.1 Star records: name, type, planets
+* `cStarRecord` **+0x60 `mName`** (eastl::string16: +0x60 begin, +0x64 end, UTF-16) ✔ runtime: the
+  fixture's home star 0x460035 reads "Fibucius", its neighbours "Argis-2", "Gerbus", "Aspytory" (the
+  names the galaxy view shows). +0x48 `StarType` (ModAPI: 1 galactic core, 2 black hole, 3
+  proto-planetary disk, 4.. real stars), +0xAC planet count (byte), +0x84 `vector<cPlanetRecord*>`
+  (ModAPI layout, not needed so far). Ids from the network: `spacecoop::star_record` (the table
+  lookup; `GetStarRecord` faults on an id that is not a star).
+* `cEmpire` **+0x88** = `vector<cStarRecord*>` of the empire's stars: `GetStars` is `lea eax,[ecx+0x88];
+  ret` at 0x00C30A10 (GOG 2016) and 0x00C30A30 (GOG 2024) ✔ objdump of both exes. The mod reads the
+  field directly (no symbol).
+* Neighbour stars: the sector table of §9.1 (`cStarManager` +0xC8), sorted by the distance of +0x3C.
+  Neighbours were 0.3 to 1 galaxy units away; `TravelToStarSystem` (§7.3, `coop.space jumpto`)
+  reaches any of them without the interstellar drive and without money.
+
+### 10.2 Spawning an armada
+* `SpawnUFO(8 /*AmbushPirate*/, &pol /*0xFFFFFFFF: no empire*/, nullptr)` ✔ objdump + runtime: with a
+  null model key and a type != 0 SpawnUFO uses the default key {0xCB89C3D6, 0x476A98C7, [0x15B8504]}
+  (0x102AD33..0x102AD56); the ships look like ordinary pirates. Teleport (loco vt +0x44) puts them
+  around the host's ship (60 m ring, 15 m above), in a system and on a planet.
+* Type 8 has 100 HP in this save (`coop.fleet list`); the armada sets max HP and HP to 150 right
+  after the spawn, and the guests' mirrors (squadron.cpp) show the host's HP.
+* Waves: crew + wave number ships (two players: 3, then 4), 8 s between the waves. A wave comes only
+  while the host and another member of the crew are in the same place (`modes` place: the system or
+  one planet) of the contract's star for 3 s, because the host's NPC ships are mirrored only to
+  guests in the host's place.
+* Tracking: the host keeps the pointers of the wave and checks them every 0.25 s against
+  `GetAllUFOs` (§9.4): listed with state != 2, HP > 0 and type 8 = alive; otherwise (also: gone from
+  the list while the host is still in the same place) = destroyed. A place change of the host drops
+  the pointers (the game frees NPC UFOs on every context switch) and the rest of the wave comes back
+  when the crew is together there again.
+
+### 10.3 Rewards
+* Money: `cEmpire::AddMoney` on the host only (shared budget, shared.cpp gives the total to every
+  guest within a second ✔ runtime: 100 000 -> 115 000 -> 140 000 on both games); in rivals mode
+  every member of the crew adds it locally.
+* Tools: `cPlayerInventory::AddItemByKey` with {FNV-1 of the file name, type, group of a tool in the
+  inventory} (§9.3), on every member of the crew; `HasTool` (vt +0x74) after it is true ✔ runtime.
+  File names in `spacetools~` (0x30608F0B), hashes checked against the index of the game's packages
+  (Spore_Game / EP1 .package): laserlevel1..3 0x6DB01899.., pulselevel1..3 0x7B76E38F / 0x7B76E38C /
+  0x7B76E38D, protonmissilelevel1..3 0xFC220278 / 0xFC22027B / 0xFC22027A, antimattermissile
+  0xF06A8152, shield 0x4542380A, cloak 0x44808DE7, atmospheregenerator 0x931426A0, gravitationwave
+  0xA43B6F38, monolith 0x14A7D231, allylaser1..3 0x47E65D39.., allymissile1..3 0x0068DF06 /
+  0x0068DF05 / 0x0068DF04 (378 resources in the group; the other names are not known).

@@ -289,6 +289,15 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
   deterministic, so the same seed gives a similar, not the same, session).
 
+* Co-op contracts (`coop_space_contracts.py`): `coop.space contracts` prints the state as
+  `key=value` (state, crew, wave, ships_left, ships_up, targets, money, tool, rewards ...);
+  `contracts period 0` stops the automatic offers, `limit <s>` shortens the time limit of the next
+  contracts (the timeout case), `offer armada here` / `offer survey <n>`, `ships` prints the armada
+  pointers that `coop.fleet list` prints next to the ids `coop.fleet shoot` takes, `notices` the
+  last notices of the feature, `money` the empire's money, `tool <hex>` whether a tool is in the
+  cargo. The rows of the F9 Space page are `coop.space rows`; row n is the widget `sbtn<n>` of
+  `coop.uistate` (a real click: coop_ui.Ui.click).
+
 ## 6.13 Playing the Tribe stage through real input (play_tribe.py)
 
 Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
