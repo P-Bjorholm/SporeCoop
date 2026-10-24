@@ -112,9 +112,18 @@ def comm_contact(ck, con, who, pol):
     ck(f'contact {pol:08X}' in sp(con, 'empire'), f'{who}: coop.space empire lists the contact')
 
 
+def bob_row(con):
+    """(index, button) of the guest's place row of the page (space_map.cpp: "Bob: at <star> | Fly there"), or None"""
+    for m in re.finditer(r'^(\d+): Bob: [^|]*?(?: \| (.*))?$', sp(con, 'rows'), re.M):
+        return int(m.group(1)), m.group(2) or ''
+    return None
+
+
 def partner_row(host, text, t=30):
+    """text 'away': the guest's row offers "Fly there"; 'here': together, no button"""
     for _ in range(t):
-        if text in sp(host, 'rows'):
+        b = bob_row(host)
+        if b and (b[1] == 'Fly there') == (text == 'away'):
             return True
         time.sleep(1)
     print('  host rows:', sp(host, 'rows').replace('\n', ' | '))
@@ -130,15 +139,16 @@ def same_planets(ck, host, guest, star_id):
 
 
 def page_jump(ck, ui, con, who):
-    """F9, "Space >" unless the window reopens on the Space page, "Jump there", F9 (real clicks)"""
+    """F9, "Space >" unless the window reopens on the Space page, "Fly there", F9 (real clicks)"""
     if ui.state().get('open') != '1':
         con.call(f'key {VK_F9}')
     st = ui.wait(lambda s: s['open'] == '1' and (s['page'] == 'space' or s['space']['vis']), 20, 'co-op window')
     if st and st['page'] != 'space':
         ui.click('space')
-    st = ui.wait(lambda s: s['page'] == 'space' and s['sbtn0']['vis'], 10, 'Space page')
-    ck(st is not None and 'Jump' in st['sbtn0']['text'], f'{who}: the Space page offers the jump')
-    ui.click('sbtn0')
+    n = (bob_row(con) or (0,))[0]
+    st = ui.wait(lambda s: s['page'] == 'space' and s[f'sbtn{n}']['vis'], 10, 'Space page')
+    ck(st is not None and 'Fly' in st[f'sbtn{n}']['text'], f'{who}: the Space page offers the jump (row {n})')
+    ui.click(f'sbtn{n}')
     time.sleep(2)
     if ui.state().get('open') == '1':
         con.call(f'key {VK_F9}')
@@ -162,7 +172,7 @@ def main():
     pol, flags = arrived(ck, guest, 'guest', n1, 'system -> unvisited NPC system')
     ck(flags & 0x20, f'guest: the empire {pol:08X} knows of the player now (flags {flags:X})')
     shot(guest, 'space_jump_npc.png')
-    ck(partner_row(host, 'Bob: in another star system'), 'the host sees the guest leave')
+    ck(partner_row(host, 'away'), 'the host sees the guest leave')
     comm_contact(ck, guest, 'guest', pol)
     settle(guest, 'guest')
 
@@ -170,7 +180,7 @@ def main():
     ui = Ui(host, 'host')
     page_jump(ck, ui, host, 'host (system)')
     arrived(ck, host, 'host', n1, 'Jump there (system)')
-    ck(partner_row(host, 'Bob: in your system'), 'the host is together with the guest again')
+    ck(partner_row(host, 'here'), 'the host is together with the guest again')
     same_planets(ck, host, guest, n1)
 
     # 3. the guest lands, then jumps from the planet into an empty unvisited system
@@ -185,7 +195,7 @@ def main():
     pol, _ = arrived(ck, guest, 'guest', f1, 'planet -> unvisited empty system')
     ck(pol == 0xFFFFFFFF, 'the empty system has no empire')
     shot(guest, 'space_jump_free.png')
-    ck(partner_row(host, 'Bob: in another star system'), 'the host sees the guest leave the planet')
+    ck(partner_row(host, 'away'), 'the host sees the guest leave the planet')
 
     # 4. the host zooms out to the galaxy view and jumps to the guest from there (page button)
     for _ in range(4):
@@ -195,7 +205,7 @@ def main():
     ck(place(host)[0] == 0, f'host: in the galaxy view ({place(host)[0]:08X})')
     page_jump(ck, ui, host, 'host (galaxy view)')
     arrived(ck, host, 'host', f1, 'Jump there (galaxy view -> unvisited empty system)')
-    ck(partner_row(host, 'Bob: in your system'), 'together in the empty system')
+    ck(partner_row(host, 'here'), 'together in the empty system')
     same_planets(ck, host, guest, f1)
 
     # 5. the guest zooms out and jumps from the galaxy view into a second unvisited NPC system
@@ -208,7 +218,7 @@ def main():
     pol, flags = arrived(ck, guest, 'guest', n2, 'galaxy view -> unvisited NPC system')
     ck(flags & 0x20, f'guest: the second empire {pol:08X} knows of the player (flags {flags:X})')
     comm_contact(ck, guest, 'guest', pol)
-    ck(partner_row(host, 'Bob: in another star system'), 'the host sees the guest leave again')
+    ck(partner_row(host, 'away'), 'the host sees the guest leave again')
 
     st = host.call('coop.status')['out']
     ck('together 1 1' in st or 'players=2' in st, 'host: the session still has both players')
