@@ -4,6 +4,10 @@ Co-op mod for Spore (GOG 2016 build, `SporeApp.exe` 24 888 320 bytes, and the GO
 24 895 536 bytes, see docs/05-re-notes.md 5.1.1) on the SporeKit framework, run under Wine/Bottles
 on Linux and on Windows. Overview: README.md, docs/01-architecture.md … docs/10-dev-pipeline.md.
 
+**Builds after 0.7 (decided 2026-10-23):** the GOG 2024 build (`dc04aee5`) is the only supported
+build from 0.8 on. 0.7.x is the last release for GOG 2016 (`922af7c7`): new code needs symbols for
+GOG 2024 only, tests run on GOG 2024 lanes; the GOG 2016 files stay frozen until they are removed.
+
 ## 1. Knowledge first: write down what you learn
 
 The project lives on reverse-engineered knowledge. Not knowing costs hours; looking it up costs

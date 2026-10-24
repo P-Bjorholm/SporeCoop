@@ -37,6 +37,10 @@ SporeCoop has the game addresses for these builds of `SPORE\SporebinEP1\SporeApp
 | GOG 2016 (the build SporeCoop was developed on) | 24 888 320 bytes | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
 | GOG 2024 update (the current GOG download) | 24 895 536 bytes | `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37` |
 
+**0.7.x is the last version for the GOG 2016 build.** From 0.8 SporeCoop supports only the current
+GOG build (the 2024 update; GOG Galaxy and the GOG installers give you that one): with the 2016
+build co-op stays off. Update the game, or stay on SporeCoop 0.7.
+
 Players of one game must have the same build: the host turns away a guest with another
 `SporeApp.exe`. With any other build the game starts normally but without co-op
 (`mods\logs\sporekit.log` says "no symbol database for this SporeApp.exe build").

@@ -10,6 +10,10 @@ each other, help each other, trade and finish the game together. Everything is o
 
 **0.7 cannot play with 0.6.x** (the network protocol changed): every player needs 0.7.0.
 
+**0.7.x is the last version for the old GOG 2016 build** (`SporeApp.exe` `922af7c7…`). From 0.8 only
+the current GOG build (the 2024 update, `dc04aee5…`, the code of the March 2017 patch that Spore
+ModAPI also targets) is supported: update the game through GOG.
+
 ### Space: new
 - **Partners on the galaxy map**: a name tag in the partner's colour on their star (or on their
   ship while they fly in the galaxy view), an arrow at the screen edge when they are out of view;
