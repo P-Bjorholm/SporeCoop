@@ -1184,7 +1184,7 @@ std::string debug(const std::vector<std::string>& a)
 
 } // namespace spacecoop
 
-// ---------------- the Space page: where the partners are (an example of a space_ext feature) ----------------
+// ---------------- the Space page: a partner's disabled ship (space_map.cpp has the partners' places) ----------------
 namespace spacecoop {
 static std::vector<spaceext::Row> squad_rows()
 {
@@ -1199,6 +1199,8 @@ static std::vector<spaceext::Row> squad_rows()
             s = g_last_star[p.id];
         spaceext::Row r;
         bool down = g_partner_down.count(p.id) != 0;
+        if (!down)
+            continue; // where the partner is: the row of space_map.cpp
         if (s && s == here)
             r.text = p.name + spaceext::tr(": in your system", ": в вашей системе");
         else if (!p.place)
