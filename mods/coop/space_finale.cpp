@@ -48,7 +48,7 @@ constexpr uint32_t kFlagEnteredCore = 0x0681C28E; // cPlayer flag: SPG_CenterOfG
 constexpr uint32_t kFlagCoreTools = 0x061F1454;   // cPlayer flag: Steve's gift received (once)
 constexpr uint32_t kMsgCoreTools = 0x06526395;    // "player gets tools" (sent by the cinematic)
 constexpr uint32_t kAchievement42 = 0xF88C1342;   // achievement "42" (spg-42.prop)
-constexpr uint32_t kCinematicCore = 0x2F7C7BDA;   // id of SPG_CenterOfGalaxy (cCinematicManager +0x148)
+// (while SPG_CenterOfGalaxy plays: cCinematicManager +0x148 = 0x2F7C7BDA, the `cin` of the status)
 constexpr uint32_t kToolStaff = 0x72E076A7;       // genesisdevice = the Staff of Life
 constexpr uint32_t kToolDrive = 0x2569FAE8;       // interstellardrive
 constexpr int kStarCore = 1;                      // cStarRecord +0x48 type: the galactic core
@@ -56,12 +56,13 @@ constexpr int kStarCore = 1;                      // cStarRecord +0x48 type: the
 static const SkHost* H;
 static SkMod* M;
 static uintptr_t a_Enter, a_HasFlag, a_StarMgr, a_Context, a_ActiveStarRec, a_PlayerUFOGet, a_Teleport, a_ModeSpace,
-    a_ToGalaxy, a_LeavePlanet, a_EnterSystem, a_PlanetCleanup, a_PlanetCleanupMgr, a_MsgMgr, a_AchMgr, a_AchAdd,
-    a_CinematicMgr, a_SpaceGame, a_ActivePlanet, a_TimeMgr;
+    a_EnterSystem, a_MsgMgr, a_AchMgr, a_AchAdd,
+    a_CinematicMgr, a_SpaceGame, a_TimeMgr;
 
 struct Peer {
     uint8_t zone = Z_NONE, flags = 0;
     uint32_t star = 0; // its active star (StarID)
+    uint32_t prev = 0; // the last star before the core (the system next to it)
     float dist = 0;    // from the galaxy centre
     double t = 0;      // last state
     bool told_near = false, told_gate = false, told_entered = false;
@@ -72,7 +73,7 @@ static std::map<uint8_t, std::string> g_reached_by; // who entered the core in t
 static uint32_t g_core;                              // StarID of the core (0 = not found yet)
 static double g_core_scan;
 static uint8_t g_zone, g_flags, g_sent_zone = 0xFF, g_sent_flags = 0xFF;
-static uint32_t g_star;
+static uint32_t g_star, g_prev; // active star, the last one that was not the core
 static float g_dist;
 static double g_next_eval, g_next_send;
 static bool g_waiting, g_alone, g_go, g_reward_pending;
@@ -82,7 +83,7 @@ static uint32_t g_waits, g_entries, g_entries_with, g_rewards, g_reward_skipped,
 // a flight to a partner at the core: galaxy view first (the core is not a solar system), then the
 // free instant galaxy travel of the `space -flyto` cheat, then into the system if the partner is there
 struct Fly {
-    uint32_t star = 0;
+    uint32_t star = 0, sys = 0; // target star; in a system: the system to jump to instead (next to the core)
     bool enter = false;
     double next = 0, until = 0;
     int steps = 0;
@@ -90,7 +91,8 @@ struct Fly {
 static Fly g_fly;
 
 // ---------------- the game ----------------
-static int context() { return a_Context ? cdecl_call<int>(a_Context) : -1; }
+// (GetCurrentContext reads SpacePlayerData, which exists only in the Space stage: it faults earlier)
+static int context() { return a_Context && spaceext::in_space() ? cdecl_call<int>(a_Context) : -1; }
 
 static void* player()
 {
@@ -140,7 +142,7 @@ static void* inventory()
 // charges of a tool in the cargo, -1 = no such tool
 static int tool_charges(uint32_t hash)
 {
-    void* inv = inventory();
+    void* inv = spaceext::in_space() ? inventory() : nullptr;
     if (!inv)
         return -1;
     uint32_t key[3] = {hash, 0, 0};
@@ -159,6 +161,8 @@ static int tool_charges(uint32_t hash)
 // the core star: the one star record of type 1 (StarType::GalacticCore), at the galaxy centre
 static void* core_record()
 {
+    if (!spaceext::in_space())
+        return nullptr;
     if (g_core)
         if (void* r = spacecoop::star_record(g_core))
             return r;
@@ -247,6 +251,8 @@ static void evaluate()
     g_zone = zone;
     g_flags = flags;
     g_star = star;
+    if (star && star != g_core)
+        g_prev = star;
     g_dist = dist;
 }
 
@@ -394,42 +400,45 @@ static void fly_step(void*)
     void* rec = spacecoop::star_record(g_fly.star);
     void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
     int ctx = context();
-    if (!rec || !mode || ++g_fly.steps > 8) {
+    if (!rec || !mode || ctx < 0 || ++g_fly.steps > 4) {
         g_fly = Fly();
         return;
     }
-    if (ctx == 0) { // planet -> system (as spacecoop's jump does)
-        void* planet = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
-        if (planet && a_PlanetCleanup && a_PlanetCleanupMgr && *(void**)a_PlanetCleanupMgr)
-            thiscall<void>(a_PlanetCleanup, *(void**)a_PlanetCleanupMgr, planet);
-        thiscall<void>(a_LeavePlanet, mode, 0);
-    } else if (ctx == 1) {
-        if (active_star_record() == rec) { // already there
-            g_fly = Fly();
-            return;
-        }
-        thiscall<void>(a_ToGalaxy, mode); // system -> galaxy view (the native zoom-out)
-    } else if (ctx == 2) {
+    if (ctx == 2) { // the galaxy view: the free instant travel of the `space -flyto` cheat
         if (active_star_record() != rec) {
-            cdecl_call<void>(a_Teleport, rec); // free instant galaxy travel (refunds the cost)
+            cdecl_call<void>(a_Teleport, rec);
             g_flights++;
-            if (!g_fly.enter) {
-                g_fly = Fly();
+            if (g_fly.enter) {
+                g_fly.next = H->time_seconds() + 1.5;
                 return;
             }
-        } else if (g_fly.enter) {
+        } else if (g_fly.enter)
             thiscall<void>(a_EnterSystem, mode);
-            g_fly = Fly();
-            return;
-        } else {
-            g_fly = Fly();
-            return;
-        }
+        g_fly = Fly();
+        return;
     }
-    g_fly.next = H->time_seconds() + 1.5;
+    // in a system or on a planet: the jump of the Space page (spacecoop: the native sequence of the
+    // respawn) into the partner's system, or for a partner at the gate into the system it came
+    // from, next to the core (the core is no solar system); a system -> galaxy switch by the mod
+    // (0xFDA5D0 outside the game's zoom update) broke a later caption (docs/re/space.md 10.4)
+    uint32_t sys = g_fly.sys ? g_fly.sys : g_fly.star;
+    void* sysrec = spacecoop::star_record(sys);
+    if (sysrec && active_star_record() != sysrec) {
+        std::string e = spacecoop::travel_to_star(sys);
+        if (e.empty())
+            g_flights++;
+        else
+            spaceext::notice(std::string(spaceext::tr("Can't fly there: ", "Не долететь: ")) + e);
+    }
+    if (g_fly.sys)
+        spaceext::notice(spaceext::tr("The galactic core is close: zoom out to the galaxy view and fly into it "
+                                      "(or \"Fly to\" again there).",
+                                      "Ядро галактики близко: отдалите камеру до карты галактики и летите в него "
+                                      "(или снова \"Лететь к\" там)."));
+    g_fly = Fly();
 }
 
-static std::string fly_to_star(uint32_t star, bool enter)
+static std::string fly_to_star(uint32_t star, bool enter, uint32_t sys = 0)
 {
     if (!spaceext::in_space())
         return "not in space";
@@ -439,11 +448,14 @@ static std::string fly_to_star(uint32_t star, bool enter)
         return spaceext::tr("you need the interstellar drive", "нужен межзвёздный двигатель");
     if (spacecoop::disabled())
         return "the ship is disabled";
+    if (context() != 2 && star == g_core && !spacecoop::star_record(sys))
+        return spaceext::tr("zoom out to the galaxy view first", "сначала отдалите камеру до карты галактики");
     g_fly = Fly();
     g_fly.star = star;
+    g_fly.sys = sys;
     g_fly.enter = enter;
     g_fly.next = 0;
-    g_fly.until = H->time_seconds() + 40;
+    g_fly.until = H->time_seconds() + 30;
     return "";
 }
 
@@ -457,8 +469,8 @@ static std::string fly_to(uint8_t id)
         for (auto& p : spaceext::ctx().partners())
             if (p.id == id)
                 in_system = (p.place & 0x80000000u) != 0;
-    bool core = it->second.zone == Z_GATE;
-    return fly_to_star(it->second.star, in_system && !core);
+    bool gate = it->second.zone == Z_GATE;
+    return fly_to_star(it->second.star, in_system && !gate, gate ? it->second.prev : 0);
 }
 
 static void fly_tick(double now)
@@ -485,6 +497,7 @@ static void send_state()
     w.u8(g_zone);
     w.u8(g_flags);
     w.u32(g_star);
+    w.u32(g_prev);
     w.f32(g_dist);
     spaceext::send(K_STATE, w);
     g_sent_zone = g_zone;
@@ -497,7 +510,7 @@ static void on_message(uint8_t kind, uint8_t from, net::Reader& r)
     if (kind == K_STATE) {
         Peer& p = g_peer[from];
         uint8_t zone = r.u8(), flags = r.u8();
-        uint32_t star = r.u32();
+        uint32_t star = r.u32(), prev = r.u32();
         float dist = r.f32();
         if (!r.ok())
             return;
@@ -505,6 +518,7 @@ static void on_message(uint8_t kind, uint8_t from, net::Reader& r)
         p.zone = zone;
         p.flags = flags;
         p.star = star;
+        p.prev = prev;
         p.dist = dist;
         p.t = H->time_seconds();
         if (zone >= Z_NEAR && !p.told_near && zone != Z_GATE) {
@@ -704,14 +718,7 @@ static uint32_t star_at_distance(float d)
     return best;
 }
 
-static void galaxy_step(void*)
-{
-    void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
-    if (mode && context() == 1 && !busy())
-        thiscall<void>(a_ToGalaxy, mode);
-}
-
-// coop.space finale [core | goto core|near|<StarID> [enter] | galaxy | enter | alone | reward]
+// coop.space finale [core | goto core|near|<StarID> [enter] | enter | alone | reward]
 static std::string debug(const std::vector<std::string>& a)
 {
     if (a.empty())
@@ -733,10 +740,6 @@ static std::string debug(const std::vector<std::string>& a)
         std::string e = fly_to_star(s, a.size() > 2 && a[2] == "enter");
         return e.empty() ? "flying to " + std::to_string(s) : e;
     }
-    if (a[0] == "galaxy") { // tests: system -> galaxy view
-        H->run_outside_frame(galaxy_step, nullptr);
-        return "to the galaxy view";
-    }
     if (a[0] == "enter") { // tests: what the zoom-in into the core star does (goes through the wait)
         void* core = core_record();
         if (!core || active_star_record() != core || context() != 2)
@@ -753,7 +756,7 @@ static std::string debug(const std::vector<std::string>& a)
         schedule_reward("test");
         return "reward";
     }
-    return "usage: coop.space finale [core | goto core|near|<star> [enter] | galaxy | enter | alone | reward]";
+    return "usage: coop.space finale [core | goto core|near|<star> [enter] | enter | alone | reward]";
 }
 
 static bool init(const SkHost* h, SkMod* m)
@@ -769,20 +772,15 @@ static bool init(const SkHost* h, SkMod* m)
     a_PlayerUFOGet = S("Simulator::cSimulatorPlayerUFO::Get");
     a_Teleport = S("Simulator::SpaceTeleportTo");
     a_ModeSpace = S("Simulator::cAppModeSpace::ptr");
-    a_ToGalaxy = S("Simulator::cAppModeSpace::LeaveSolarSystemToGalaxy");
-    a_LeavePlanet = S("Simulator::cAppModeSpace::LeavePlanet");
     a_EnterSystem = S("Simulator::cAppModeSpace::EnterSolarSystem");
-    a_PlanetCleanup = S("SporeCoop::PlanetModelCleanup");
-    a_PlanetCleanupMgr = S("SporeCoop::PlanetModelMgr_ptr");
     a_MsgMgr = S("App::IMessageManager::Get");
     a_AchMgr = S("Pollinator::cAchievementsManager::Get");
     a_AchAdd = S("Pollinator::cAchievementsManager::AddProgress");
     a_CinematicMgr = S("Simulator::cCinematicManager::Get");
     a_SpaceGame = S("Simulator::cSimulatorSpaceGame::ptr");
-    a_ActivePlanet = S("SporeCoop::Space_GetActivePlanet");
     a_TimeMgr = S("Simulator::cGameTimeManager::Get");
     if (!a_Enter || !a_HasFlag || !a_StarMgr || !a_Context || !a_ActiveStarRec || !a_PlayerUFOGet || !a_Teleport ||
-        !a_ModeSpace || !a_ToGalaxy || !a_LeavePlanet || !a_EnterSystem || !a_MsgMgr || !a_SpaceGame)
+        !a_ModeSpace || !a_EnterSystem || !a_MsgMgr || !a_SpaceGame)
         return false;
     return H->hook_create(M, (void*)a_Enter, (void*)h_Enter, (void**)&o_Enter) == 0;
 }

@@ -51,6 +51,9 @@ int spice(std::string& to);
 int give_spice(int n);
 bool can_jump(std::string& to);
 std::string jump(uint8_t to); // "" = ok, else why not
+// jump into the system of a StarID (the jump's native sequence; from a planet, a system or the
+// galaxy view); "" = ok, else why not. For space features (space_finale.cpp)
+std::string travel_to_star(uint32_t star);
 // the cStarRecord of a StarID (starRecord+0x70), nullptr when it is not a star of this galaxy
 // (the game's own GetStarRecord faults then)
 void* star_record(uint32_t id);

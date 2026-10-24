@@ -869,3 +869,79 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   own-ship filter, then the game).
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
+
+## 10. The galactic core (✔ static analysis + runtime, lane 5, GOG 2016, 2026-10-23; feature `space_finale.cpp`)
+
+How the game finds, opens and rewards the core, and what the co-op finale builds on.
+
+### 10.1 The core star
+* The core is an ordinary `cStarRecord` of **type 1** (`+0x48`, StarType::GalacticCore) at the
+  galaxy centre (0, 0) (✔ runtime: StarID 8519680 = 0x820000, sector 2080 of 4096, index 0; the
+  galaxy centre global `0x16DC9F8` (GOG 2024 `0x16DBA18`) is (0, 0, 0)). There is one; find it by a
+  scan of the star table `cStarManager +0xC8` (vector of 20-byte sectors = vector<cStarRecord*> +
+  8 bytes; all sectors are filled after the load, ~2000 of them non-empty).
+* The "approaching the core" zone: `cStarManager +0x1D0` = 100 (radius, 2D distance from the
+  centre), `+0x1CC` = 70, `+0x1C8` = 3 (✔ runtime). Inside it the travel range shrinks
+  (`0xFFC6A0`: range lerps down to +0x1C8 near the centre) **unless the player has flag
+  0x61F1454** (Steve's gift), and the first jump inside plays `SPG_TravelNearCore` with the event
+  0x5F776D6 "As you approach the galactic core, it gets harder to plot a course..." (TravelToStar
+  0x10022BF). The Grox live around it (squadron.cpp mirrors their ships like any NPC UFO).
+* Travel: `cSimulatorPlayerUFO::TravelToStar` has no range check (the range is a UI limit), so
+  `SpaceTeleportTo(coreRecord)` 0x10228C0 (galaxy view only) puts the ship at the core star:
+  active star = the core, `ufo+0x74C` (arrived) set. That is "at the gate".
+
+### 10.2 Entering the core
+* In the galaxy view the zoom update **0x01009C90** (cSimulatorSpaceGame, every frame) checks a
+  zoom-in at the active star: `0x10422F0` allows it when the ship arrived (+0x74C) and the star is
+  a black hole with the wormhole tool, or **the core and `cPlayer::HasFlag(0x681C28E)` is false**,
+  and no comm screen / pause. Black hole -> wormhole 0xFDD4E0; **core -> `0x01002DD0`**
+  (`SporeCoop::Space_EnterGalacticCore`, cdecl, no args): `SetFlag(0x681C28E)`, full health and
+  energy, chronicle event 0x57BAFFD3, then `PlayCinematic("SPG_CenterOfGalaxy")`. With the flag
+  set the core cannot be entered again (the zoom-in does nothing). The flag is also the comm
+  condition "EnteredGalacticCore" (0x8B, table at 0x1402C88): aliens talk about the trip.
+  Runtime: the mouse wheel at the screen centre in the galaxy view at the core reaches
+  0x01002DD0 (`coop_space_finale.py`); the hook sees it once per zoom-in ~.
+* `cPlayer` = `cGameNounManager::Get()+0x74` (0xF67D40 is `mov eax,[ecx+0x74]`). Its flags:
+  hash set at +0x1120 (buckets) / +0x1124 (count): **`HasFlag` 0xC77440 / `SetFlag` 0xC77D70**
+  (GOG 2024 0xC77460 / 0xC77D90), thiscall(player, id) `ret 4`.
+
+### 10.3 The cinematic SPG_CenterOfGalaxy and Steve's gift
+* The script is the cinematics ArgScript file (Spore_Game.package group 0x40890200 instance
+  0xF83E63C9, type 0x24A0E52, text): states SPG_CenterOfGalaxy .. _TransitionToGalaxy. It sends
+  messages handled by **`cPlayer` 0xC77EB0** (GOG 2024 0xC77ED0, listener = player+0x34):
+  0x6667038 / 0x6666683 place the UFO, 0x6524498 journey effect, **0x6526395 "player gets tools"**,
+  0x6527231 reverse travel effect, **0x6527EAF** -> `cAppModeSpace::LeaveSolarSystemToGalaxy`
+  0xFDA5D0 (back to the galaxy view, the session goes on there).
+* The texts (table 0x974299BE "cinematics_spg"): 0x067B778C "Greetings my friend! You have
+  traveled very far...", 0x067B7833 "I'm Steve. You are now to be given the power...", 0x06526580
+  "You have been awarded the Staff of Life." (this build calls him Steve, not Steko). The player
+  has to confirm three times: `wait -forContinue` after each scrolling text and `wait -forNext`
+  after the award text (Enter works). The whole cinematic takes ~2-3 minutes.
+* **0x6526395**: if `!HasFlag(0x61F1454)`: `cPlayerInventory` 0xFF3CA0 adds every tool of the
+  list at **inventory +0x60..+0x64** (5 tool objects in the tested save, prepared at load) with its
+  charges, `SetRareAsFound(0xA9E151E4)`, event 0xDE5EDDE2, `SetFlag(0x61F1454)`. The Staff of Life
+  is the tool **genesisdevice** (key {0x72E076A7, 0, 0}; text 0x0BA5C1BF!0x0C7C683C "Staff of
+  Life"). Sending this message with `IMessageManager` MessageSend (vt 0x14, (id, nullptr, nullptr))
+  gives a partner the gift natively, once (the game's own flag).
+* Achievement "42" ("Find the center of the galaxy", spg-42.prop, id 0xF88C1342):
+  `cAchievementsManager::Get()->AddProgress(0xF88C1342, 1)` 0x676E50 (`ret 8`); the game calls it
+  in EnterSolarSystem (0xFDD8CB) for a star of type 1.
+* While the cinematic plays: `cCinematicManager +0x2C` != 0 and `+0x148` = 0x2F7C7BDA (the id of
+  SPG_CenterOfGalaxy; the UFO controller 0x105F2E0 checks it).
+
+### 10.4 What the co-op finale does with it (`space_finale.cpp`)
+* Zones per player (0.5 s): far / near (inside +0x1D0) / gate (active star = core), flags entered
+  (0x681C28E), staff (0x61F1454), waiting; sent as MSG_SPACE 40 every 3 s and on a change.
+* Hook 0x01002DD0: while partners in space are not at the gate the call is dropped (the core
+  stays closed, the player is told, the partners get MSG_SPACE 41 "waits for you"); the Space page
+  has "Enter now". When everybody is at the gate the mod calls the original outside the frame.
+  After the original set the flag: MSG_SPACE 42 "entered".
+* On 42: a partner at the gate enters too (the original, its own cinematic); the others get the
+  gift (message 0x6526395 + AddProgress) and can still visit the core later. A K_STATE with the
+  entered flag from a partner (a late joiner) gives the gift as well.
+* "Fly to <name>" (only to a partner in the near zone or at the gate): planet -> LeavePlanet,
+  system -> 0xFDA5D0 (galaxy view), then SpaceTeleportTo(partner's star), EnterSolarSystem when
+  the partner is in that system. Needs the interstellar drive. No view change while a cinematic
+  or caption plays or the game is paused (`cGameTimeManager +0x48` bit 0): a view switch under the
+  tutorial caption of a freshly added drive, then Enter, crashed the game in UI code (AV at
+  0xCCCCCCCC, stack 0x847EFA (0x847EC0) <- 0x84930F <- App::Canvas::Tick) ~.

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """The galaxy core together (mods/coop/space_finale.cpp, docs/re/space.md 10).
 
-Both players get the interstellar drive (the fixture has none), the host flies to the galaxy view,
-next to the core (in the Grox zone: the guest is told and its Space page offers "Fly to Alice"),
+Both players get the interstellar drive (the fixture has none), the host zooms out to the galaxy
+view (mouse wheel) and flies next to the core (in the Grox zone: the guest is told and its Space page offers "Fly to Alice"),
 then to the core star itself (the gate). The host zooms into the core with the mouse wheel like a
 player: the core waits for the guest (the guest is called). The guest presses "Fly to Alice" on the
-Space page (real clicks): system -> galaxy view -> the core's gate; the core opens for both, both
+Space page (real clicks): into the system next to the core, zooms out, "Fly to Alice" again: the
+core's gate; the core opens for both, both
 games play SPG_CenterOfGalaxy and Steve gives both the Staff of Life. Then the session goes on
 (both fly, the partner rows update), the guest leaves and joins again and sees that the core was
 reached (and still has the staff).
@@ -95,11 +96,16 @@ def get_drive(con, who, ck):
 
 
 def to_galaxy(con, who, ck):
-    sp(con, 'finale galaxy')
-    ok = wait(lambda: fin(con).get('ctx') == '2', 30)
-    ck(ok, f'{who}: in the galaxy view')
-    time.sleep(2)
-    settle(con, who)
+    """zoom out with the mouse wheel like a player (the drive allows it) until the galaxy view"""
+    for _ in range(10):
+        if fin(con).get('ctx') == '2':
+            break
+        con.call('wheel 720 540 -5')
+        time.sleep(1.5)
+    ok = wait(lambda: fin(con).get('ctx') == '2', 20)
+    ck(ok, f'{who}: zoomed out to the galaxy view')
+    time.sleep(3)
+    settle(con, who)  # the drive's first galaxy view shows a tutorial caption
 
 
 def press_through(cons, until, timeout=240):
@@ -165,8 +171,8 @@ def main():
         ck(b is not None, 'guest: the Space page has the "Fly to Alice" button')
         if b:
             gui.click(b)
-        ok = wait(lambda: fin(guest).get('zone') == '2' and fin(guest).get('ctx') in ('1', '2'), 60)
-        ck(ok, f'guest: flew next to Alice ({fin(guest)["line"]})')
+        ok = wait(lambda: fin(guest).get('zone') == '2' and fin(guest).get('ctx') == '1', 60)
+        ck(ok, f'guest: jumped into Alice's system near the core ({fin(guest)["line"]})')
         guest.call(f'key {VK_F9}')
         settle(guest, 'guest')
 
@@ -216,12 +222,24 @@ def main():
         press_through([host], lambda: fin(host).get('busy') == '0' and fin(host).get('ctx') == '2'
                       and fin(host).get('staff') == '1')
     else:
-        # the guest flies to Alice with real clicks: F9, "Space >", "Fly to Alice"
+        # the guest flies to Alice with real clicks: F9, "Space >", "Fly to Alice": from its system into
+        # the system next to the core (the one Alice came from), then it zooms out like a player and
+        # presses "Fly to Alice" again: in the galaxy view that goes straight to the gate
         gui = Ui(guest, 'guest')
         open_space_page(gui, guest, ck, 'guest')
         shot(guest, 'finale_page.png')
         b = fly_button(gui)
         ck(b is not None, 'guest: the Space page has the "Fly to Alice" button')
+        if b:
+            gui.click(b)
+        guest.call(f'key {VK_F9}')
+        ok = wait(lambda: fin(guest).get('zone') == '2' and fin(guest).get('ctx') == '1', 40)
+        ck(ok, f'guest: jumped into the system next to the core ({fin(guest)["line"]})')
+        settle(guest, 'guest')
+        to_galaxy(guest, 'guest', ck)
+        open_space_page(gui, guest, ck, 'guest')
+        b = fly_button(gui)
+        ck(b is not None, 'guest: "Fly to Alice" in the galaxy view')
         if b:
             gui.click(b)
         guest.call(f'key {VK_F9}')
