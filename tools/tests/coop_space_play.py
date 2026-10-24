@@ -19,7 +19,7 @@ def stat(con, key):
 
 
 def main():
-    host, guest = start('space', 'Game0/Maraya')
+    host, guest = start('space')
     ck = Checks()
     time.sleep(5)
     print('  host', sp(host, 'star'), '| guest', sp(guest, 'star'))

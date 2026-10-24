@@ -220,3 +220,8 @@ Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2
 Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
 SporeCoop::cGameNounManager_GetPlayer=0x00F67D40 ; verified port from GOG 2016 0x00F67D40: unique byte-pattern match (mov eax,[ecx+0x74]; ret)
 SporeCoop::VectorMapUint_At=0x00F41940 ; verified asm: the call target in the contact setter 0xC7BD20 (|= 2) of this build (GOG 2016 0xC7BD00 -> 0xF41940)
+# space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
+SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0x00C70850: the same 14 instructions (calls and absolute addresses masked), tools: port by instruction text 2026-10-23
+SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
+SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
+SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)

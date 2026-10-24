@@ -16,6 +16,7 @@ ship is repaired (rescues=1); also with HP 0.5 (the second bug)."""
 import re
 import time
 
+import fixtures
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
@@ -37,7 +38,7 @@ def main():
     ph = Player('host', lane.HOST, 0, 1, time.time() + 1200, stats)
     pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1200, stats)
     ph.partner, pg.partner = pg, ph
-    home = '00B16021'  # Maraya, the fixture's home planet
+    home = fixtures.FIXTURES['space']['home']  # the fixture's home planet (PlanetID)
     for rnd, left in enumerate((5, 0.5)):
         pg.end = time.time() + 600
         while field(sp(guest, 'hp'), 'state') == 2 or field(sp(guest, 'hp'), 'movie') == 1:
