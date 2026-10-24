@@ -2,6 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -40,7 +41,7 @@ constexpr uint32_t kIdMainMenu = 0x0615A5FF, kIdShare = 0x0615B616;
 constexpr uint32_t kDialogLayout = 0x34A6339E; // the game's account dialog (frame, logo, close)
 constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, kGreen = 0xFF8CF08C,
                    kRed = 0xFFFF7A6A, kYellow = 0xFFFFD866;
-constexpr float kW = 760, kH = 560;
+constexpr float kW = 760, kH = 600; // 560 + a footer row (version, "Report a problem")
 constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
 static int g_space_first; // the first row shown (pages of kSpaceRows rows)
@@ -167,6 +168,16 @@ static void ensure_menu_button()
     });
     g_menu_btn = b;
     g_menu_parent = menu;
+    // the version under the item: a player's screenshot of the menu tells which SporeCoop runs
+    if (Win old = sui::find(menu, kIdMenuButton + 1))
+        sui::remove_child(menu, old);
+    if (A.version_line) {
+        std::string v = A.version_line();
+        v = v.substr(0, v.find("  -  "));
+        if (Win l = sui::label(menu, {r.x1 + 6, r.y2 - 4, r.x2 + 90, r.y2 + 14}, v, sui::font(share), kDim,
+                               sui::kAlignLeft))
+            sui::set_ids(l, kIdMenuButton + 1, 0);
+    }
     H->log(M, SK_INFO, "ui: co-op item added to the main menu");
 }
 
@@ -176,6 +187,7 @@ struct Dialog {
     uint32_t font_body = 0, font_button = 0;
     Win like_button = nullptr; // gold "Login" button of the layout
     Win subtitle = nullptr;
+    Win version = nullptr, report_btn = nullptr; // every page: the version line, "Report a problem"
     // connect page
     std::vector<Win> page_connect;
     Win name_edit = nullptr, addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
@@ -308,6 +320,30 @@ static void do_host()
     set_status("", kYellow);
 }
 
+// "Report a problem": SporeKit writes mods\logs\report-<time>.txt (environment, co-op state, the
+// last log lines, faults); the folder opens with the file selected so the player can attach it
+static void do_report()
+{
+    std::string p = A.report ? A.report() : "";
+    if (p.empty()) {
+        set_status(T("This SporeKit cannot write reports (update SporeCoop)", "Этот SporeKit не умеет писать отчёты (обновите SporeCoop)"),
+                   kRed);
+        return;
+    }
+    set_status(std::string(T("Report saved: ", "Отчёт сохранён: ")) + p.substr(p.find_last_of("\\/") + 1) +
+                   T(" - attach it to an issue on GitHub", " - приложите его к issue на GitHub"),
+               kGreen);
+    std::wstring w(p.begin(), p.end()); // the path is ASCII-safe enough for /select; UTF-8 below if not
+    int n = MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0);
+    if (n > 0) {
+        w.resize(n);
+        MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, w.data(), n);
+        w.resize(n - 1);
+    }
+    std::wstring args = L"/select,\"" + w + L"\"";
+    ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+}
+
 static void do_send_chat()
 {
     std::string t = sui::edit_text(D.chat_edit);
@@ -363,6 +399,10 @@ static void build_dialog()
 
     std::vector<Win> common;
     D.subtitle = add_label(common, {0, 70, kW, 96}, T("CO-OP", "КООПЕРАТИВ"), kGold, sui::kAlignCenter);
+    // every page: which SporeCoop and game build run, and a report for bug reports
+    D.version = add_label(common, {40, 548, 500, 570}, A.version_line ? A.version_line() : "", kDim);
+    D.report_btn = add_button(common, "report", {510, 542, 720, 574}, T("Report a problem", "Сообщить об ошибке"),
+                              do_report);
 
     // ---- connect page ----
     auto& P = D.page_connect;
@@ -701,6 +741,8 @@ static void refresh()
     show(D.space_btn, space && !g_space_page);
     text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
                      : lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
+    if (A.version_line)
+        text(D.version, A.version_line());
     if (A.lan_scan)
         A.lan_scan(!lobby);
     if (lobby && g_space_page)

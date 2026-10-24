@@ -126,3 +126,37 @@ The command-line switch `-sporekit-instance:N` (N≥2; Bottles filters environme
   (`Global\SporeEdi` and others).
 
 This way a host and a guest run on one machine for a full test.
+
+## 2.7 Diagnostics (SporeKit 0.3.4, `sporekit/diag.cpp`)
+
+For bug reports of players, who send a file, not a debugger session:
+
+* **Logs are kept.** `log_init` moves the previous `sporekit[.N].log` to
+  `mods\logs\previous\<name>-<time of its last line>.log` (the newest 10 of each name).
+* **The environment is in the log.** At boot: Windows (or `Wine x on Linux`, with the emulated
+  Windows version), RAM, the game's 32-bit address space in use and the exe's large-address flag
+  (a 4GB patch), `game build: GOG 2024 / Steam (the GOG 2024 code) / GOG 2016 / unknown`; after 30
+  frames the GPU (adapter, driver, resolution) and other DLLs that hook the game (Steam, Discord,
+  NVIDIA, EA overlays, RivaTuner, ReShade, dgVoodoo, OBS, Spore ModAPI, a d3d9/dxgi/dinput8 from the
+  game folder). Console: `env`.
+* **Crash reports.** SporeKit's unhandled-exception filter stays on top (a later
+  `SetUnhandledExceptionFilter`, also the NULL of `__report_gsfailure`, becomes the next filter in its
+  chain) and writes `mods\logs\crash-<time>.txt` + a minidump `.dmp`: the exception (code, address
+  with module+offset or the exe's symbol, read/write address), registers, the call chain (frame
+  pointers, then return addresses on the stack, with names), every mod's `diag_context`, the
+  first-chance faults, every module, the last 300 log lines. The game's own handler catches faults
+  of its main loop (a fault in the frame never reaches the filter, the game stops drawing instead),
+  so two more paths: `ExitProcess` / `TerminateProcess` of the game within 15 s after a fault (or
+  with an error code) write the crash report of the last fault, and the watchdog writes a `report`
+  "hang" once when there are no frames for 30 s while the game window has the focus.
+* **Reports on request.** Console `report [reason]`, the mods' `H->diag_report` (the co-op window's
+  "Report a problem" button): the same without an exception.
+* **Faults in our code.** A first-chance fault inside `sporekit.dll` or a DLL under `mods\` fires
+  `SK_EV_FAULT` (on the main thread at the next frame, arg "address module+offset"): SporeCoop tells
+  the player once per run where to find the report.
+* **API (since 0.3.4, check `size`):** `kit_version`, `build_name`, `diag_report(reason, out, cap)`,
+  `diag_context(mod, fn, user)` (a text block of the mod's state, built by the mod on the frame: a
+  crash report must not read game objects), `logs_dir`.
+* Tests: `tools/tests/diag_check.py [--crash]` (suite `diag`); `crash.test thread|main` makes the game
+  crash (thread: an unhandled fault; main: one the game's handler swallows).
+

@@ -33,6 +33,8 @@ enum SkEvent {
     SK_EV_SHUTDOWN = 5,     /* App::cSporeApp::Shutdown */
     SK_EV_DEVICE_LOST = 6,  /* before IDirect3DDevice9::Reset */
     SK_EV_DEVICE_RESET = 7, /* after IDirect3DDevice9::Reset */
+    SK_EV_FAULT = 8,        /* since 0.3.4: a fault inside SporeKit or a mod's DLL was caught (first chance);
+                             * on the main thread at the next frame. arg = const char* "address module+offset" */
     SK_EV_COUNT
 };
 
@@ -136,6 +138,17 @@ typedef struct SkHost {
     /* hex SHA-256 of the build whose symbol files are loaded: exe_sha256, or the build with the
      * same code (code_sha256) when no symbol file names this exact exe; "" without symbols */
     const char* (*symbols_build)(void);
+
+    /* ---- since 0.3.4 (check size) ---- */
+    const char* (*kit_version)(void);
+    const char* (*build_name)(void); /* "GOG 2024", "Steam (the GOG 2024 code)", "GOG 2016", "unknown build ..." */
+    /* writes mods\logs\report-<time>.txt (environment, every mod's diag_context, faults, modules, the
+     * last log lines); its path into out. Returns the path length. Main thread. */
+    int (*diag_report)(const char* reason, char* out, int cap);
+    /* a text block of the mod's own state for crash and diag reports; fn's string stays valid until
+     * its next call. fn NULL removes it. Removed automatically when the mod unloads. */
+    void (*diag_context)(SkMod* mod, const char* (*fn)(void* user), void* user);
+    const char* (*logs_dir)(void); /* Windows path of mods\logs */
 } SkHost;
 
 typedef struct SkModInfo {

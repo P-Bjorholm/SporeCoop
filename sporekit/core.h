@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.3"
+#define SK_VERSION "0.3.4"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -168,6 +168,21 @@ std::string probe_report(bool clear);
 void probe_clear_all();
 std::string ftrace_set(const std::string& substr);
 
+// exceptions.cpp (more below)
+void exceptions_pump(); // every frame: SK_EV_FAULT for a fault caught in SporeKit / mod code
+bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t); // the last fault seen (copies)
+// diag.cpp
+const char* build_name();     // "GOG 2024", "Steam (the GOG 2024 code)", ...
+std::string diag_env();       // the environment, several lines
+std::string foreign_hooks();  // overlays / wrappers / ModAPI loaded in the game
+std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep); // path of the .txt
+std::string diag_logs_dir();
+void diag_context(SkMod* mod, const char* (*fn)(void*), void* user);
+void diag_context_remove(SkMod* mod);
+void diag_install();          // the crash filter, ExitProcess log
+void diag_after_device();     // GPU and other hooks into the log (once)
+void diag_hang_report(const char* why); // the watchdog: no frames while focused (once per run)
+void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
 // watchdog.cpp
 void watchdog_start();
 void watchdog_mark(const char* stage);

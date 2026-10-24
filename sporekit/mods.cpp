@@ -56,6 +56,7 @@ static bool load_into(SkMod* m, std::string& err)
         err = "mod refused to initialise (returned NULL)";
         hooks_remove_all(m);
         unsubscribe_all(m);
+        diag_context_remove(m);
         commands_remove_all(m);
         ui_winprocs_disable_mod(m);
         FreeLibrary(m->module);
@@ -74,6 +75,7 @@ static void unload_from(SkMod* m)
         m->info->on_unload();
     hooks_remove_all(m);
     unsubscribe_all(m);
+    diag_context_remove(m);
     commands_remove_all(m);
     ui_winprocs_disable_mod(m);
     FreeLibrary(m->module);

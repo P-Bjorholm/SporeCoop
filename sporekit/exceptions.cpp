@@ -39,6 +39,40 @@ static bool exe_return_address(uint32_t v)
 }
 
 static std::mutex g_mu;
+// the last fault (copies): a crash report when the game ends right after it (its own handler
+// caught the exception and closed the game, so the unhandled-exception filter never ran)
+static EXCEPTION_RECORD g_last_er;
+static CONTEXT g_last_ctx;
+static std::atomic<double> g_last_t{-1};
+
+bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t)
+{
+    if (g_last_t.load() < 0)
+        return false;
+    std::lock_guard<std::mutex> lk(g_mu);
+    *er = g_last_er;
+    *ctx = g_last_ctx;
+    *t = g_last_t.load();
+    return true;
+}
+// a fault inside SporeKit or a mod (a DLL under mods\): told to the mods at the next frame
+static std::atomic<bool> g_mod_fault{false};
+static char g_mod_fault_text[256];
+
+static bool in_our_code(uintptr_t eip, std::string& name)
+{
+    HMODULE m = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (LPCWSTR)eip, &m) || !m)
+        return false;
+    wchar_t p[MAX_PATH];
+    GetModuleFileNameW(m, p, MAX_PATH);
+    std::wstring w = p;
+    for (auto& c : w)
+        c = (wchar_t)towlower(c);
+    name = narrow(w.substr(w.find_last_of(L"\\/") + 1));
+    return w.find(L"sporekit.dll") != std::wstring::npos || w.find(L"\\mods\\") != std::wstring::npos;
+}
 static std::vector<ExcRec> g_recs; // unique by (code, eip)
 static std::atomic<uint32_t> g_total{0};
 
@@ -57,6 +91,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     CONTEXT* c = ep->ContextRecord;
     uintptr_t eip = c->Eip;
     std::lock_guard<std::mutex> lk(g_mu);
+    g_last_er = *ep->ExceptionRecord;
+    g_last_ctx = *c;
+    g_last_t = now_seconds();
     for (auto& r : g_recs)
         if (r.code == code && r.eip == eip) {
             r.count++;
@@ -99,6 +136,11 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
                 r.rets[n++] = *q;
     }
     g_recs.push_back(r);
+    std::string mod;
+    if (!g_mod_fault.load() && in_our_code(eip, mod)) {
+        snprintf(g_mod_fault_text, sizeof g_mod_fault_text, "0x%08X %s", (unsigned)eip, r.where.c_str());
+        g_mod_fault = true;
+    }
     // logging takes the log mutex only; safe enough for a first-chance handler
     logf(&g_kit_mod, SK_ERROR,
          "exception 0x%08lX at 0x%08X %s (data 0x%08X) tid=%lu eax=%08X ebx=%08X ecx=%08X edx=%08X "
@@ -108,7 +150,25 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
     if (r.rets[0])
         logf(&g_kit_mod, SK_ERROR, "  calls: %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X", r.rets[0], r.rets[1],
              r.rets[2], r.rets[3], r.rets[4], r.rets[5], r.rets[6], r.rets[7], r.rets[8], r.rets[9]);
+    if (r.rets[0]) { // the same chain with names (the exe's symbols)
+        std::string named;
+        for (int i = 0; i < 6 && r.rets[i]; i++) {
+            std::string n = symbols_reverse(r.rets[i]);
+            named += (i ? " < " : "") + (n.empty() ? std::string("?") : n);
+        }
+        logf(&g_kit_mod, SK_ERROR, "  called from: %s", named.c_str());
+    }
     return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void exceptions_pump()
+{
+    if (!g_mod_fault.exchange(false))
+        return;
+    char t[256];
+    memcpy(t, g_mod_fault_text, sizeof t);
+    logf(&g_kit_mod, SK_WARN, "a fault in SporeKit / mod code was caught: %s (the mods are told)", t);
+    fire(SK_EV_FAULT, t);
 }
 
 void exceptions_install()

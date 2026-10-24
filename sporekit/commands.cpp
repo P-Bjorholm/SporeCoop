@@ -592,6 +592,25 @@ void register_builtin_commands()
     command_add(k, "help", "list commands [filter]", c_help, nullptr, A);
     command_add(k, "ping", "liveness check (any thread)", c_ping, nullptr, A);
     command_add(k, "info", "versions, exe hash, frame, mode, mods", c_info, nullptr, M);
+    command_add(k, "env", "the environment: game build, Windows / Wine, memory, GPU, other hooks, mods",
+                [](void*, int, const char* const*, SkOut* out) {
+                    outf(out, "%s", diag_env().c_str());
+                    return 0;
+                },
+                nullptr, M);
+    command_add(k, "crash.test", "crash.test [thread|main] - make the game crash (tests of the crash report)",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    outf(out, "crashing");
+                    diag_crash_test(argc > 1 ? argv[1] : "thread");
+                    return 0;
+                },
+                nullptr, M);
+    command_add(k, "report", "report [reason] - write mods\\logs\\report-<time>.txt for a bug report",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    outf(out, "%s", diag_write_report(argc > 1 ? argv[1] : "requested", nullptr).c_str());
+                    return 0;
+                },
+                nullptr, M);
     command_add(k, "frame.limit", "frame.limit <ms>|auto - frame time cap (33 = the game's 30 fps, 0 = none)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
                     if (argc < 2)

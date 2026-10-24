@@ -126,6 +126,8 @@ static DWORD WINAPI watchdog_thread(void*)
         if (!dumped && GetTickCount() - since > limit) {
             dump_main_stack(frame_index() == 0 ? "no boot progress" : "no frames");
             dumped = true;
+            if (frame_index() > 0)
+                diag_hang_report("hang: no frames for 30 s while the game window has the focus");
         }
     }
 }

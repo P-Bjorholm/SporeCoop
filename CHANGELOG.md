@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Finding problems
+- **Crash reports:** when the game crashes, `mods\logs\crash-<date-time>.txt` and a minidump next to
+  it: what crashed, where (module and function), the call chain, the co-op session, the other
+  overlays and mods in the game, and the last log lines. A game that stops drawing for 30 s writes a
+  `report` too.
+- **Logs are kept:** the logs of the last 10 runs stay in `mods\logs\previous\` (restarting the game
+  after a crash used to overwrite the crash's log).
+- **"Report a problem"** in the co-op window (F9) writes a report and opens its folder.
+- **The version in the game:** under the Co-op item of the main menu and at the bottom of the co-op
+  window (with the game build: GOG 2024, Steam, ...).
+- The log starts with the environment: Windows or Wine, memory and the 4GB flag, the graphics card,
+  and other programs that hook the game (Steam / Discord / NVIDIA overlays, RivaTuner, ReShade, ModAPI).
+- A fault inside SporeCoop's own code is told in the game once, with where the report is.
+- SporeKit 0.3.4: `env`, `report`, `crash.test` console commands; mod API `kit_version`, `build_name`,
+  `diag_report`, `diag_context`, `logs_dir`, event `SK_EV_FAULT` (docs/02-modkit.md 2.7).
+- Tests: `diag_check.py` (suite `diag`), `coop_creature_death.py` (dying alone and skipping the
+  respawn cutscene, a player report that did not reproduce) with the `coop.team die` test command.
+
 ## [0.7.2] - 2026-10-24
 
 **No Co-op item on Windows with the Steam overlay** ([issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)).

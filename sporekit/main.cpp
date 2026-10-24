@@ -114,6 +114,22 @@ static const char* h_exe_sha256()
     static std::string h = exe_sha256();
     return h.c_str();
 }
+static const char* h_kit_version() { return SK_VERSION; }
+static const char* h_build_name() { return build_name(); }
+static int h_diag_report(const char* reason, char* out, int cap)
+{
+    std::string p = diag_write_report(reason, nullptr);
+    if (out && cap > 0)
+        snprintf(out, (size_t)cap, "%s", p.c_str());
+    return (int)p.size();
+}
+static void h_diag_context(SkMod* mod, const char* (*fn)(void*), void* user) { diag_context(mod, fn, user); }
+static const char* h_logs_dir()
+{
+    static std::string d = diag_logs_dir();
+    return d.c_str();
+}
+
 static const char* h_symbols_build()
 {
     static std::string h = symbols_count() ? symbols_build() : std::string();
@@ -139,6 +155,11 @@ SkHost g_host = {
     ui_winproc_new,
     ui_winproc_disable,
     h_symbols_build,
+    h_kit_version,
+    h_build_name,
+    h_diag_report,
+    h_diag_context,
+    h_logs_dir,
 };
 
 } // namespace sk
@@ -167,6 +188,7 @@ static void late_boot(uintptr_t caller)
     watchdog_mark("symbols");
     if (symbols_pending())
         symbols_try_unpacked();
+    SKLOG(SK_INFO, "game build: %s", build_name());
     watchdog_mark("mods");
     gamehooks_install();
     mods_load_all();
@@ -248,8 +270,11 @@ extern "C" __declspec(dllexport) int __cdecl sporekit_boot(HMODULE loader)
     exceptions_install();
     watchdog_mark("hooks_init");
     hooks_init();
+    diag_install(); // the crash report, the environment into the log
     watchdog_mark("symbols");
     symbols_load();
+    if (!symbols_pending())
+        SKLOG(SK_INFO, "game build: %s", build_name());
     // [sporekit] defer_symbols=1: the late boot of a packed exe on any exe (tests of the path)
     bool late = symbols_pending() || ini_int(ini, "sporekit", "defer_symbols", 0) != 0;
     watchdog_mark("instance");

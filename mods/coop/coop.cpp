@@ -879,10 +879,65 @@ void keepalive_stop()
 
 void menu_tick(double now);
 
+// ---- diagnostics (SporeKit 0.3.4+: crash / problem reports, docs/02-modkit.md 2.7) ----
+// the co-op state for a report, built on the frame (a crash report must not read game objects):
+// two buffers, the report reads the last complete one
+static std::string g_diag_buf[2];
+static std::atomic<int> g_diag_cur{0};
+static double g_diag_t = -100;
+static bool g_fault_told;
+
+static bool host_has_diag() { return H->size >= offsetof(SkHost, logs_dir) + sizeof(void*) && H->diag_report; }
+
+static void diag_tick(double now)
+{
+    if (now - g_diag_t < 2.0)
+        return;
+    g_diag_t = now;
+    char b[160];
+    snprintf(b, sizeof b, "SporeCoop " COOP_VERSION ", name '%s', game mode 0x%08X, world 0x%08X\n", g_name.c_str(),
+             game::mode_id(), g_world);
+    std::string s = b;
+    s += g_sess.status() + world::status();
+    for (auto& [id, r] : g_remotes)
+        s += "remote " + std::to_string(id) + " '" + r.name + "' puppet " + (r.puppet ? "yes" : "no") + "\n";
+    size_t first = g_chat.size() > 8 ? g_chat.size() - 8 : 0;
+    for (size_t i = first; i < g_chat.size(); i++)
+        s += "chat: " + g_chat[i] + "\n";
+    int next = 1 - g_diag_cur.load();
+    g_diag_buf[next] = std::move(s);
+    g_diag_cur = next;
+}
+
+static const char* diag_context_fn(void*) { return g_diag_buf[g_diag_cur.load()].c_str(); }
+
+// a fault inside SporeKit or coop.dll was caught (SK_EV_FAULT): tell the player once per run where
+// the report is, a mod bug is behind it
+static void on_fault(void*, int, void* arg)
+{
+    H->log(M, SK_WARN, "a fault in the mod's code was caught: %s", arg ? (const char*)arg : "?");
+    if (g_fault_told)
+        return;
+    g_fault_told = true;
+    feed("SporeCoop caught an error in its own code (logged). If something goes wrong: F9, \"Report a problem\"");
+}
+
+std::string make_report(const char* reason)
+{
+    if (!host_has_diag())
+        return "";
+    g_diag_t = -100;
+    diag_tick(H->time_seconds()); // the state right now
+    char path[MAX_PATH * 2] = {0};
+    H->diag_report(reason, path, sizeof path);
+    return path;
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
     g_last_frame = now;
+    diag_tick(now);
     notify::tick(now);
     creations::tick(now);
     g_sess.update();
@@ -2208,6 +2263,13 @@ void init_ui()
     };
     a.jump = [](std::string& to) { return g_sess.connected() && spacecoop::can_jump(to); };
     a.update = autoupdate::ui;
+    a.version_line = [] {
+        std::string s = "SporeCoop " COOP_VERSION;
+        if (host_has_diag() && H->build_name)
+            s += std::string("  -  ") + H->build_name();
+        return s;
+    };
+    a.report = [] { return make_report("from the co-op window"); };
     a.update_do = autoupdate::start_update;
     a.jump_do = [] {
         H->run_outside_frame(
@@ -2362,6 +2424,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
     H->subscribe(M, SK_EV_FRAME, on_frame, nullptr);
+    if (host_has_diag() && H->diag_context) {
+        H->subscribe(M, SK_EV_FAULT, on_fault, nullptr);
+        H->diag_context(M, diag_context_fn, nullptr);
+        H->log(M, SK_INFO, "SporeCoop %s on SporeKit %s, game %s", COOP_VERSION, H->kit_version(), H->build_name());
+    }
     keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
     const int MT = SK_CMD_MAIN_THREAD;

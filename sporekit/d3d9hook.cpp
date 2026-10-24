@@ -201,6 +201,9 @@ static void frame_common()
     vcursor_tick();
     cheats_flush_pending();
     pump_main_tasks();
+    exceptions_pump();
+    if (g_frame == 30)
+        diag_after_device();
     fire(SK_EV_FRAME, &dt);
 }
 

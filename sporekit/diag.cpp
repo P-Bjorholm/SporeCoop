@@ -1,0 +1,519 @@
+// Diagnostics for players' bug reports (docs/02-modkit.md 2.7):
+//  - the environment: SporeKit / game build, Windows or Wine, memory (Spore is a 32-bit game: its
+//    address space is the usual limit), the exe's large-address flag (4GB patch), the GPU, other
+//    DLLs that hook the game (overlays, wrappers, ModAPI)
+//  - a crash report when the game dies of an exception nobody handles: logs/crash-<time>.txt
+//    (exception, registers, the call chain with symbol names, every module, the last 300 log lines,
+//    the first-chance faults, the mods' own state) and a minidump crash-<time>.dmp next to it
+//  - a report on request (console `report`, the co-op window): the same without the exception
+//  - ExitProcess is logged (a game that closes itself leaves its exit code in the log)
+#include "core.h"
+
+#include <d3d9.h>
+
+#include <atomic>
+#include <cstdio>
+#include <mutex>
+
+namespace sk {
+
+// ---------------- the game build ----------------
+const char* build_name()
+{
+    static std::string name;
+    std::string b = symbols_build(), e = exe_sha256();
+    if (b.rfind("922af7c7", 0) == 0)
+        name = "GOG 2016";
+    else if (b.rfind("dc04aee5", 0) == 0)
+        name = e.rfind("dc04aee5", 0) == 0   ? "GOG 2024"
+               : e.rfind("3010a413", 0) == 0 ? "Steam (the GOG 2024 code)"
+                                             : "the GOG 2024 code (" + e.substr(0, 8) + ")";
+    else if (symbols_pending())
+        name = "a packed exe (waiting for its code)";
+    else
+        name = "unknown build " + e.substr(0, 8) + " (co-op off)";
+    return name.c_str();
+}
+
+// ---------------- the environment ----------------
+static std::string os_text()
+{
+    char b[256];
+    typedef LONG(WINAPI * RtlGetVersion_t)(OSVERSIONINFOW*);
+    typedef const char*(CDECL * wine_get_version_t)();
+    typedef void(CDECL * wine_get_host_version_t)(const char**, const char**);
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    OSVERSIONINFOW v{};
+    v.dwOSVersionInfoSize = sizeof v;
+    if (auto f = nt ? (RtlGetVersion_t)(void*)GetProcAddress(nt, "RtlGetVersion") : nullptr)
+        f(&v);
+    auto wv = nt ? (wine_get_version_t)(void*)GetProcAddress(nt, "wine_get_version") : nullptr;
+    if (wv) {
+        const char *sys = "?", *rel = "?";
+        if (auto hv = (wine_get_host_version_t)(void*)GetProcAddress(nt, "wine_get_host_version"))
+            hv(&sys, &rel);
+        snprintf(b, sizeof b, "Wine %s on %s %s (Windows %lu.%lu.%lu emulated)", wv(), sys, rel, v.dwMajorVersion,
+                 v.dwMinorVersion, v.dwBuildNumber);
+    } else
+        snprintf(b, sizeof b, "Windows %lu.%lu build %lu", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber);
+    return b;
+}
+
+static std::string memory_text()
+{
+    MEMORYSTATUSEX m{};
+    m.dwLength = sizeof m;
+    GlobalMemoryStatusEx(&m);
+    auto* base = (uint8_t*)GetModuleHandleW(nullptr);
+    auto* nt = (IMAGE_NT_HEADERS32*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+    bool laa = (nt->FileHeader.Characteristics & IMAGE_FILE_LARGE_ADDRESS_AWARE) != 0;
+    char b[256];
+    snprintf(b, sizeof b, "RAM %llu MB (%llu free), game address space %llu of %llu MB used, large-address flag %s",
+             m.ullTotalPhys >> 20, m.ullAvailPhys >> 20, (m.ullTotalVirtual - m.ullAvailVirtual) >> 20,
+             m.ullTotalVirtual >> 20, laa ? "on (4GB patch)" : "off");
+    return b;
+}
+
+static std::string g_gpu; // read once on the main thread (a report from another thread must not call D3D)
+
+static std::string gpu_text()
+{
+    if (!g_gpu.empty())
+        return g_gpu;
+    auto* dev = (IDirect3DDevice9*)d3d_device();
+    if (!dev)
+        return "GPU: no device yet";
+    IDirect3D9* d3d = nullptr;
+    D3DADAPTER_IDENTIFIER9 id{};
+    if (FAILED(dev->GetDirect3D(&d3d)) || !d3d)
+        return "GPU: ?";
+    HRESULT hr = d3d->GetAdapterIdentifier(D3DADAPTER_DEFAULT, 0, &id);
+    d3d->Release();
+    if (FAILED(hr))
+        return "GPU: ?";
+    int w = 0, h = 0;
+    screen_size(&w, &h);
+    char b[512];
+    snprintf(b, sizeof b, "GPU %s (driver %s %u.%u.%u.%u), %dx%d", id.Description, id.Driver,
+             HIWORD(id.DriverVersion.HighPart), LOWORD(id.DriverVersion.HighPart), HIWORD(id.DriverVersion.LowPart),
+             LOWORD(id.DriverVersion.LowPart), w, h);
+    if (GetCurrentThreadId() == main_thread_id())
+        g_gpu = b;
+    return b;
+}
+
+struct Module {
+    std::string name, path;
+    uintptr_t base;
+    uint32_t size;
+};
+static std::vector<Module> modules()
+{
+    std::vector<Module> v;
+    typedef BOOL(WINAPI * Enum_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
+    typedef BOOL(WINAPI * Info_t)(HANDLE, HMODULE, void*, DWORD);
+    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+    auto en = (Enum_t)(void*)GetProcAddress(k, "K32EnumProcessModules");
+    auto inf = (Info_t)(void*)GetProcAddress(k, "K32GetModuleInformation");
+    if (!en || !inf)
+        return v;
+    HMODULE mods[512];
+    DWORD need = 0;
+    if (!en(GetCurrentProcess(), mods, sizeof mods, &need))
+        return v;
+    for (DWORD i = 0; i < need / sizeof(HMODULE) && i < 512; i++) {
+        wchar_t p[MAX_PATH];
+        GetModuleFileNameW(mods[i], p, MAX_PATH);
+        struct {
+            void* base;
+            DWORD size;
+            void* entry;
+        } mi{};
+        inf(GetCurrentProcess(), mods[i], &mi, sizeof mi);
+        std::string path = narrow(p);
+        v.push_back({path.substr(path.find_last_of("\\/") + 1), path, (uintptr_t)mi.base, (uint32_t)mi.size});
+    }
+    return v;
+}
+
+static std::string lower(std::string s)
+{
+    for (auto& c : s)
+        c = (char)tolower((unsigned char)c);
+    return s;
+}
+
+// DLLs of other programs that hook the game (the usual suspects of crashes and lost frames)
+std::string foreign_hooks()
+{
+    static const struct {
+        const char* dll;
+        const char* what;
+    } known[] = {{"gameoverlayrenderer", "Steam overlay"},  {"discordhook", "Discord overlay"},
+                 {"discord_hook", "Discord overlay"},       {"rtsshooks", "RivaTuner / MSI Afterburner"},
+                 {"nvspcap", "NVIDIA overlay"},             {"igo32", "EA / Origin overlay"},
+                 {"reshade", "ReShade"},                    {"dgvoodoo", "dgVoodoo"},
+                 {"modapi", "Spore ModAPI"},                {"sporemodapi", "Spore ModAPI"},
+                 {"fraps", "Fraps"},                        {"obs-", "OBS capture"},
+                 {"graphics-hook", "OBS capture"}};
+    std::string out;
+    std::string game = lower(narrow(game_dir()));
+    for (auto& m : modules()) {
+        std::string n = lower(m.name), p = lower(m.path);
+        for (auto& k : known)
+            if (n.find(k.dll) != std::string::npos && out.find(k.what) == std::string::npos)
+                out += std::string(out.empty() ? "" : ", ") + k.what;
+        // a d3d9 / dxgi / dinput8 from the game folder: a wrapper (DXVK, ReShade, dgVoodoo, ...)
+        if ((n == "d3d9.dll" || n == "dxgi.dll" || n == "dinput8.dll" || n == "d3d11.dll") &&
+            p.rfind(game, 0) == 0)
+            out += std::string(out.empty() ? "" : ", ") + m.name + " from the game folder";
+    }
+    return out.empty() ? "none found" : out;
+}
+
+std::string diag_env()
+{
+    std::string s;
+    s += "SporeKit " SK_VERSION ", game " + std::string(build_name()) + " (exe " + exe_sha256().substr(0, 16) +
+         "), frames from " + frame_source() + "\n";
+    s += os_text() + "\n";
+    s += memory_text() + "\n";
+    s += (g_gpu.empty() ? std::string("GPU: not read yet") : g_gpu) + "\n";
+    s += "other hooks: " + foreign_hooks() + "\n";
+    s += "game mode: " + std::string(game_mode_name(game_mode_id())) + ", frame " + std::to_string(frame_index()) +
+         ", up " + std::to_string((int)now_seconds()) + " s\n";
+    std::string mods;
+    for (SkMod* m : mods_list())
+        mods += m->name + (m->info && m->info->version ? std::string(" ") + m->info->version : "") + "  ";
+    s += "mods: " + (mods.empty() ? std::string("none") : mods) + "\n";
+    return s;
+}
+
+// ---------------- the mods' own state for reports ----------------
+struct Ctx {
+    SkMod* mod;
+    const char* (*fn)(void*);
+    void* user;
+};
+static std::mutex g_ctx_mu;
+static std::vector<Ctx> g_ctx;
+
+void diag_context(SkMod* mod, const char* (*fn)(void*), void* user)
+{
+    std::lock_guard<std::mutex> lk(g_ctx_mu);
+    for (auto it = g_ctx.begin(); it != g_ctx.end();)
+        it = it->mod == mod ? g_ctx.erase(it) : std::next(it);
+    if (fn)
+        g_ctx.push_back({mod, fn, user});
+}
+
+void diag_context_remove(SkMod* mod) { diag_context(mod, nullptr, nullptr); }
+
+// ---------------- reports ----------------
+static std::string where(uintptr_t a)
+{
+    std::string s = symbols_reverse(a);
+    if (!s.empty())
+        return "SporeApp.exe " + s;
+    HMODULE m = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCWSTR)a, &m) &&
+        m) {
+        wchar_t n[MAX_PATH];
+        GetModuleFileNameW(m, n, MAX_PATH);
+        std::string p = narrow(n);
+        char off[24];
+        snprintf(off, sizeof off, "+0x%X", (unsigned)(a - (uintptr_t)m));
+        return p.substr(p.find_last_of("\\/") + 1) + off;
+    }
+    return "?";
+}
+
+static bool readable(const void* p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return false;
+    return (uintptr_t)p + n <= (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+}
+
+// executable code of a loaded module just before v: a likely return address
+static bool code_return(uint32_t v)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (v < 0x10000 || !VirtualQuery((void*)(uintptr_t)v, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        mbi.Type != MEM_IMAGE || !(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)))
+        return false;
+    const uint8_t* c = (const uint8_t*)(uintptr_t)v;
+    if (!readable(c - 7, 7))
+        return false;
+    return c[-5] == 0xE8 || (c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0) ||
+           (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10) || (c[-7] == 0xFF && (c[-6] & 0x38) == 0x10);
+}
+
+static std::string stamp()
+{
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    char b[32];
+    snprintf(b, sizeof b, "%04d%02d%02d-%02d%02d%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    return b;
+}
+
+static const char* code_name(DWORD c)
+{
+    switch (c) {
+    case EXCEPTION_ACCESS_VIOLATION: return "access violation";
+    case EXCEPTION_STACK_OVERFLOW: return "stack overflow";
+    case EXCEPTION_ILLEGAL_INSTRUCTION: return "illegal instruction";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO: return "integer divide by zero";
+    case EXCEPTION_PRIV_INSTRUCTION: return "privileged instruction";
+    case 0xC0000409: return "stack buffer overrun / fast fail";
+    case 0xC0000374: return "heap corruption";
+    case 0xE06D7363: return "C++ exception";
+    case 0x80000003: return "breakpoint";
+    default: return "exception";
+    }
+}
+
+static std::wstring logs_dir() { return mods_dirw() + L"\\logs"; }
+
+std::string diag_logs_dir() { return narrow(logs_dir()); }
+
+static void write_text(const std::wstring& path, const std::string& s)
+{
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    DWORD w = 0;
+    WriteFile(f, s.data(), (DWORD)s.size(), &w, nullptr);
+    CloseHandle(f);
+}
+
+static void write_minidump(const std::wstring& path, EXCEPTION_POINTERS* ep)
+{
+    typedef BOOL(WINAPI * Dump_t)(HANDLE, DWORD, HANDLE, int, void*, void*, void*);
+    HMODULE dh = LoadLibraryW(L"dbghelp.dll");
+    auto dump = dh ? (Dump_t)(void*)GetProcAddress(dh, "MiniDumpWriteDump") : nullptr;
+    if (!dump)
+        return;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    struct {
+        DWORD tid;
+        EXCEPTION_POINTERS* ep;
+        BOOL client;
+    } info{GetCurrentThreadId(), ep, FALSE};
+    // MiniDumpWithIndirectlyReferencedMemory | MiniDumpScanMemory: small, with the stacks' targets
+    dump(GetCurrentProcess(), GetCurrentProcessId(), f, 0x40 | 0x10, ep ? &info : nullptr, nullptr, nullptr);
+    CloseHandle(f);
+}
+
+std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep)
+{
+    std::string kind = ep ? "crash" : "report";
+    std::string base = kind + "-" + stamp() + (instance_id() > 1 ? "-i" + std::to_string(instance_id()) : "");
+    CreateDirectoryW(logs_dir().c_str(), nullptr);
+    std::wstring txt = logs_dir() + L"\\" + widen(base) + L".txt";
+    std::string s;
+    s += "SporeCoop " + kind + " " + stamp() + (reason && *reason ? std::string(" (") + reason + ")" : "") + "\n";
+    s += "Please attach this file (and the .dmp next to it, if there is one) to an issue:\n";
+    s += "https://github.com/WoodyWizard/SporeCoop/issues\n\n";
+    s += "== Environment\n" + diag_env() + "\n";
+    if (ep && ep->ExceptionRecord && ep->ContextRecord) {
+        EXCEPTION_RECORD* er = ep->ExceptionRecord;
+        CONTEXT* c = ep->ContextRecord;
+        char b[512];
+        s += "== Exception\n";
+        snprintf(b, sizeof b, "0x%08lX %s at 0x%08X %s (thread %lu%s)\n", er->ExceptionCode,
+                 code_name(er->ExceptionCode), (unsigned)c->Eip, where(c->Eip).c_str(), GetCurrentThreadId(),
+                 GetCurrentThreadId() == main_thread_id() ? ", the game's main thread" : "");
+        s += b;
+        if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2) {
+            snprintf(b, sizeof b, "%s of address 0x%08X\n",
+                     er->ExceptionInformation[0] == 0 ? "read" : er->ExceptionInformation[0] == 1 ? "write" : "execute",
+                     (unsigned)er->ExceptionInformation[1]);
+            s += b;
+        }
+        snprintf(b, sizeof b, "eax=%08lX ebx=%08lX ecx=%08lX edx=%08lX esi=%08lX edi=%08lX ebp=%08lX esp=%08lX\n\n",
+                 c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+        s += b;
+        s += "== Call chain (frame pointers, then return addresses found on the stack)\n";
+        uintptr_t fp = c->Ebp;
+        for (int i = 0; i < 24 && readable((void*)fp, 8); i++) {
+            uintptr_t ret = ((uintptr_t*)fp)[1], next = ((uintptr_t*)fp)[0];
+            if (!ret)
+                break;
+            snprintf(b, sizeof b, "  %08X %s\n", (unsigned)ret, where(ret).c_str());
+            s += b;
+            if (next <= fp)
+                break;
+            fp = next;
+        }
+        s += "  -- stack scan:\n";
+        const uint32_t* sp = (const uint32_t*)(uintptr_t)c->Esp;
+        int n = 0;
+        for (int i = 0; i < 2048 && n < 40 && readable(sp + i, 4); i++)
+            if (code_return(sp[i])) {
+                snprintf(b, sizeof b, "  [esp+%03X] %08X %s\n", i * 4, sp[i], where(sp[i]).c_str());
+                s += b;
+                n++;
+            }
+        s += "\n";
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_ctx_mu);
+        for (auto& c : g_ctx) {
+            const char* t = c.fn ? c.fn(c.user) : nullptr;
+            s += "== " + c.mod->name + "\n" + (t ? t : "") + "\n";
+        }
+    }
+    s += "== Faults caught before (first chance; most are harmless and handled by the game)\n" +
+         exceptions_report() + "\n";
+    s += "== Modules\n";
+    for (auto& m : modules()) {
+        char b[600];
+        snprintf(b, sizeof b, "  %08X %8X %s\n", (unsigned)m.base, m.size, m.path.c_str());
+        s += b;
+    }
+    s += "\n== The last log lines\n";
+    for (auto& l : log_tail(300))
+        s += l + "\n";
+    write_text(txt, s);
+    if (ep)
+        write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep);
+    return narrow(txt);
+}
+
+// ---------------- the unhandled-exception filter ----------------
+// SporeKit's filter stays on top: a later SetUnhandledExceptionFilter (the game's, the CRT's, or
+// the NULL of __report_gsfailure) becomes the next filter in the chain instead of replacing it
+static LPTOP_LEVEL_EXCEPTION_FILTER g_next_filter;
+static std::atomic<int> g_crashed{0};
+using SetUEF_t = LPTOP_LEVEL_EXCEPTION_FILTER(WINAPI*)(LPTOP_LEVEL_EXCEPTION_FILTER);
+static SetUEF_t o_SetUEF_k32, o_SetUEF_kb;
+using ExitProcess_t = void(WINAPI*)(UINT);
+static ExitProcess_t o_ExitProcess;
+using TerminateProcess_t = BOOL(WINAPI*)(HANDLE, UINT);
+static TerminateProcess_t o_TerminateProcess;
+
+// the game ends: after a fault of the last kFaultExitSec (its own handler caught it and closes the
+// game, the unhandled filter never runs) or with an error code, a crash report of that fault
+static constexpr double kFaultExitSec = 15.0;
+static void exit_report(UINT code, const char* how)
+{
+    if (g_crashed.load())
+        return;
+    EXCEPTION_RECORD er;
+    CONTEXT ctx;
+    double t = -1;
+    bool fault = exceptions_last(&er, &ctx, &t) && now_seconds() - t < kFaultExitSec;
+    if (!fault && !code)
+        return;
+    g_crashed++;
+    char why[160];
+    snprintf(why, sizeof why, "the game ends (%s %u)%s", how, code,
+             fault ? ", seconds after a fault: the report shows that fault" : "");
+    EXCEPTION_POINTERS ep{&er, &ctx};
+    std::string p = diag_write_report(why, fault ? &ep : nullptr);
+    logf(&g_kit_mod, SK_ERROR, "%s; crash report: %s", why, p.c_str());
+}
+
+static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
+{
+    if (g_crashed++ == 0) {
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX at 0x%08X %s",
+             ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0,
+             ep && ep->ContextRecord ? (unsigned)ep->ContextRecord->Eip : 0,
+             ep && ep->ContextRecord ? where(ep->ContextRecord->Eip).c_str() : "");
+        std::string p = diag_write_report("unhandled exception", ep);
+        logf(&g_kit_mod, SK_ERROR, "crash report: %s", p.c_str());
+    }
+    return g_next_filter ? g_next_filter(ep) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI h_SetUEF(LPTOP_LEVEL_EXCEPTION_FILTER f)
+{
+    if (f == crash_filter)
+        return o_SetUEF_kb ? o_SetUEF_kb(f) : o_SetUEF_k32(f);
+    LPTOP_LEVEL_EXCEPTION_FILTER prev = g_next_filter;
+    g_next_filter = f;
+    return prev;
+}
+
+static void WINAPI h_ExitProcess(UINT code)
+{
+    logf(&g_kit_mod, code ? SK_WARN : SK_INFO, "the game exits (ExitProcess %u) after %d s, frame %llu", code,
+         (int)now_seconds(), (unsigned long long)frame_index());
+    exit_report(code, "ExitProcess");
+    o_ExitProcess(code);
+}
+
+static BOOL WINAPI h_TerminateProcess(HANDLE h, UINT code)
+{
+    if (h == GetCurrentProcess() || GetProcessId(h) == GetCurrentProcessId()) {
+        logf(&g_kit_mod, SK_WARN, "the game terminates itself (TerminateProcess %u) after %d s", code,
+             (int)now_seconds());
+        exit_report(code, "TerminateProcess");
+    }
+    return o_TerminateProcess(h, code);
+}
+
+// the watchdog saw no frames for 30 s while the game window has the focus: a hang report, once
+void diag_hang_report(const char* why)
+{
+    static std::atomic<int> once{0};
+    HWND w = (HWND)game_window();
+    if (!w || IsIconic(w) || GetForegroundWindow() != w || once++)
+        return;
+    std::string p = diag_write_report(why, nullptr);
+    logf(&g_kit_mod, SK_ERROR, "hang report: %s", p.c_str());
+}
+
+static DWORD WINAPI crash_thread(void*)
+{
+    volatile int* p = (int*)0x10;
+    *p = 1;
+    return 0;
+}
+
+// tests: crash.test thread (a fault nobody handles, in a thread of its own) | main (in the frame)
+void diag_crash_test(const char* where_)
+{
+    if (where_ && !strcmp(where_, "main")) {
+        volatile int* p = nullptr;
+        *p = 1;
+        return;
+    }
+    CreateThread(nullptr, 0, crash_thread, nullptr, 0, nullptr);
+}
+
+void diag_install()
+{
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll"), kb = GetModuleHandleW(L"kernelbase.dll");
+    void* a = k32 ? (void*)GetProcAddress(k32, "SetUnhandledExceptionFilter") : nullptr;
+    void* b = kb ? (void*)GetProcAddress(kb, "SetUnhandledExceptionFilter") : nullptr;
+    g_next_filter = SetUnhandledExceptionFilter(crash_filter);
+    if (b && b != a)
+        hook_create(&g_kit_mod, b, (void*)h_SetUEF, (void**)&o_SetUEF_kb);
+    if (a)
+        hook_create(&g_kit_mod, a, (void*)h_SetUEF, (void**)&o_SetUEF_k32);
+    if (void* e = k32 ? (void*)GetProcAddress(k32, "ExitProcess") : nullptr)
+        hook_create(&g_kit_mod, e, (void*)h_ExitProcess, (void**)&o_ExitProcess);
+    if (void* e = k32 ? (void*)GetProcAddress(k32, "TerminateProcess") : nullptr)
+        hook_create(&g_kit_mod, e, (void*)h_TerminateProcess, (void**)&o_TerminateProcess);
+    logf(&g_kit_mod, SK_INFO, "%s; %s", os_text().c_str(), memory_text().c_str());
+}
+
+void diag_after_device()
+{
+    static bool once;
+    if (once)
+        return;
+    once = true;
+    logf(&g_kit_mod, SK_INFO, "%s; other hooks: %s", gpu_text().c_str(), foreign_hooks().c_str());
+}
+
+} // namespace sk

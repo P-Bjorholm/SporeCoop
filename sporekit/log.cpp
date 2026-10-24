@@ -1,5 +1,6 @@
 #include "core.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <deque>
@@ -14,11 +15,49 @@ static FILE* g_file = nullptr;
 static std::deque<std::string> g_ring;
 static const size_t kRing = 2000;
 
+// The log of the previous run is kept: a player who restarts the game after a crash still has
+// the log of the crash. logs\previous\<name>-<time of its last line>.log, the newest kKeep of
+// each name (sporekit, sporekit.2, ...)
+static const int kKeep = 10;
+
+static void keep_previous(const std::wstring& path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa) || (!fa.nFileSizeLow && !fa.nFileSizeHigh))
+        return;
+    size_t slash = path.find_last_of(L"\\/");
+    std::wstring dir = path.substr(0, slash) + L"\\previous", file = path.substr(slash + 1);
+    std::wstring stem = file.substr(0, file.rfind(L".log"));
+    CreateDirectoryW(dir.c_str(), nullptr);
+    FILETIME lt;
+    SYSTEMTIME st;
+    FileTimeToLocalFileTime(&fa.ftLastWriteTime, &lt);
+    FileTimeToSystemTime(&lt, &st);
+    wchar_t name[96];
+    swprintf(name, 96, L"-%04d%02d%02d-%02d%02d%02d.log", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
+             st.wSecond);
+    MoveFileExW(path.c_str(), (dir + L"\\" + stem + name).c_str(), MOVEFILE_REPLACE_EXISTING);
+    // the oldest go (names sort by time)
+    std::vector<std::wstring> old;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\" + stem + L"-*.log").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do
+            old.push_back(fd.cFileName);
+        while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    std::sort(old.begin(), old.end());
+    for (size_t i = 0; i + kKeep < old.size(); i++)
+        DeleteFileW((dir + L"\\" + old[i]).c_str());
+}
+
 void log_init(const std::wstring& path)
 {
     std::lock_guard<std::mutex> lk(g_mu);
     if (g_file)
         fclose(g_file);
+    keep_previous(path);
     g_file = _wfopen(path.c_str(), L"w");
 }
 

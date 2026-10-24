@@ -51,6 +51,6 @@ fi
 if [[ $what == all || $what == coop ]]; then
   COOP=(mods/coop/*.cpp mods/coop/net/*.cpp updater/*.cpp)
   compile cpp "${COOP[@]}"
-  "$CXX" $LDDLL -o "$B/coop.dll" $(objs "${COOP[@]}") -lws2_32 -luser32 -liphlpapi -lwinhttp
+  "$CXX" $LDDLL -o "$B/coop.dll" $(objs "${COOP[@]}") -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
   echo "built $B/coop.dll"
 fi

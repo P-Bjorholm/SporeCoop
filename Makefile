@@ -50,7 +50,7 @@ $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ)
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
 $(B)/coop.dll: $(COOP_OBJ)
-	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp
+	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 
 # SporeCoopSetup.exe: install / update / uninstall (installer/, updater/)
 WINDRES := $(LLVM_MINGW)/bin/i686-w64-mingw32-windres
