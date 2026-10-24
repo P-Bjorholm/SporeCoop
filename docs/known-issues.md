@@ -179,6 +179,22 @@ Fixed entries move to the commit message (and a test).
   1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
   its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
 
+## Space map: a guest's colonies last only until it rejoins
+
+* Every player flies in a copy of the host's save: a colony the guest founds exists only in the
+  guest's running game. When the guest leaves and joins again it loads the host's world and the
+  colony is gone (`coop_space_map.py` checks exactly this). The host's own colonies survive (they
+  are in the save the guests get). Shared colony ownership is not done (docs/re/space.md 5.3).
+* The names of stars nobody named differ between the copies (docs/re/space.md 10.1): the roster
+  sends the owner's names, the map shows mine for stars without a roster name.
+* The test colony is founded with `coop.space map colonize` (the tool's effect without the aiming
+  check): the real aiming refused every planet of the `space` fixture but the home planet ("Can't use
+  in this system", "Colonies must be placed near spice"). A fixture with a planet with spice
+  geysers would let the test aim like a player.
+* The map is overlay text (a ring of dots, a name tag), not the game's own star marks; tags are not
+  hidden behind the game's own galaxy panels (the star info card), only under the pause menu, the
+  co-op window, comm screens and cinematics.
+
 ## Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp)
 
 * Only stars nobody owns in my galaxy are mirrored. A partner's colony in a system that is mine or
