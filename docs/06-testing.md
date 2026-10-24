@@ -320,7 +320,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   but the home planet ("near spice").
 * The tags vanish under the pause menu (Esc in the galaxy view opens it at once) and come back with
   a second Esc.
-* Runs (2026-10-23): lane 2 (GOG 2016) passed 5 times in a row (one ~3.5 min each). Lane 1 (GOG
+* Runs (2026-10-23): lane 2 (GOG 2016) passed 6 times in a row, the last with the final code (~3.5 min each). Lane 1 (GOG
   2024) once: rosters, the tags in the galaxy view, hiding under the pause menu and the rejoin
   passed; the guest's part failed: after the drive's badge a caption with letterbox bars stayed on
   the guest for over a minute through Enter (`a cinematic is playing`), so it never picked the
