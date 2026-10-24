@@ -169,18 +169,21 @@ Fixed entries move to the commit message (and a test).
 
 ## Space contracts: what is not done (space_contracts.cpp, 2026-10-23)
 
-* The armada's star is a star of the host's own empire or a star a player is at now: the guests'
-  colonies come with the roster of feature 1 (`space_map.h`, branch feat/space-map), not merged
-  into this branch yet. `coop.space contracts offer armada <StarID>` names any star.
-* The armada spawns where the host is (the host's NPC ships are the shared ones, squadron.cpp): with
-  three or four players the host has to be one of the two ships at the star; two guests alone at
-  the star wait for the host. The armada ships of a failed contract stay as ordinary pirates.
+* The armada attacks a colony of the host only: its waves are the game's raids, and a raid needs a
+  planet of the raided empire in the host's save; the guests' colonies (feature 1's roster,
+  `space_map.h`) are not in it. The host's NPC ships are the shared ones (squadron.cpp), so with three
+  or four players the host has to be one of the two ships on the colony.
+* The colony's turrets fight the raid too (on the homeworld they shot down 20 plain raid ships in
+  ~25 s); the armada's ships have double HP, but a well-defended colony may still win a wave nearly
+  alone. A raid the pirates win fails the contract; a raid still running at a timeout goes on as an
+  ordinary raid.
+* SpawnUFO pirates do not fight (docs/re/space.md 17.2): an armada anywhere else than on an own colony
+  (a neutral star, a partner's colony) would need the UFO AI's target selection, not found.
+* While the game's badge panel ("2 badge points" + OK, after a defended raid) is up, the co-op
+  window's buttons (all F9 pages) get no clicks; Enter closes the panel.
 * A partner who leaves the session fails a running contract when the crew gets smaller than two
   (no grace time for a rejoin); a rejoining player sees the current contract within 5 s and can
   accept a running one again. Not covered by the test: a partner leaving, a rejoin.
-* An armada ship that leaves on its own (a pirate that flies off while the host stays in the same
-  place) counts as destroyed: the host cannot tell it from a destroyed one once it is gone from the
-  UFO list.
 * Joint terraforming contracts (a planet to a T-score together) are not done: the fixture has no
   terraforming tools to test them with.
 * The reward tool is chosen from the host's cargo (the first one of the list it lacks); a guest who

@@ -858,7 +858,8 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   ship may also shoot back at an attacker on its own (TakeDamage step 9, auto-retaliation).
 * Pirates spawned with `SpawnUFO`: type 2 (raider) attack the player only around its colonies; on
   other planets they fly off and vanish after ~30 s without a shot. Type 8 (ambush pirate) attack
-  the player anywhere (✔ runtime, `coop.fleet spawn <type>`).
+  the player anywhere (✔ runtime, `coop.fleet spawn <type>`; but not on the homeworld of the
+  2026-10-23 fixture, where they flew off too: §17.2).
 * Right after landing the player's ship takes no damage for a few seconds (the planet
   invulnerability counter `cSimulatorPlayerUFO` +0x24, §7.2) ~.
 
@@ -875,7 +876,8 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 ### 17.1 Star records: name, type, planets
 * `cStarRecord` **+0x60 `mName`** (eastl::string16: +0x60 begin, +0x64 end, UTF-16) ✔ runtime: the
   fixture's home star 0x460035 reads "Fibucius", its neighbours "Argis-2", "Gerbus", "Aspytory" (the
-  names the galaxy view shows). +0x48 `StarType` (ModAPI: 1 galactic core, 2 black hole, 3
+  names the galaxy view shows). `cPlanetRecord` +0x18 `mName` (string16, ✔ "Madas", the fixture's
+  homeworld), +0x184 PlanetID, +0x194 tech level (5 on the homeworld). +0x48 `StarType` (ModAPI: 1 galactic core, 2 black hole, 3
   proto-planetary disk, 4.. real stars), +0xAC planet count (byte), +0x84 `vector<cPlanetRecord*>`
   (ModAPI layout, not needed so far). Ids from the network: `spacecoop::star_record` (the table
   lookup; `GetStarRecord` faults on an id that is not a star).
@@ -886,30 +888,53 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   Neighbours were 0.3 to 1 galaxy units away; `TravelToStarSystem` (§7.3, `coop.space jumpto`)
   reaches any of them without the interstellar drive and without money.
 
-### 17.2 Spawning an armada
-* `SpawnUFO(8 /*AmbushPirate*/, &pol /*0xFFFFFFFF: no empire*/, &key)`. **Not with a null key**: SpawnUFO
-  then takes the default key {0xCB89C3D6, 0x476A98C7, [0x15B8504]} (0x102AD33..0x102AD56) and every
-  such ship (and every guest mirror of it) costs one caught access violation at 0x00E98DD0
-  (`cPlanetGfx_Create+0x8F0` by the nearest symbol, data 0x4; ✔ runtime, 7 ships = 7 faults on
-  each game). The game's own pirates: a raid without an attacker empire copies its UFO key from
-  **`(*(cGameNounManager + 0x74)) + 0x1280`** (0xC5C8B3: `0xF67D40` = `mov eax,[ecx+0x74]; ret`,
-  `0xC758F0` = `lea eax,[ecx+0x1280]; ret`; GOG 2024: 0xC5C8F3, 0xF67D40, 0xC75910, the same
-  fields ✔ objdump of both). With that key: no fault ✔ runtime. (An empire's ships take
-  `cEmpire` 0xC327F0, the cached key at empire +0xB8, as the ambush spawner 0xFF8B89 does.)
-* Teleport (loco vt +0x44) puts them around the host's ship (60 m ring, 15 m above). ? After a hot
-  reload of coop.dll plus a rejoin, spawned UFOs stayed at (0, 0, 700) and survived a system jump
-  (not in the NPC list?): seen once, a fresh game was fine.
-* Type 8 has 100 HP in this save (`coop.fleet list`); the armada sets max HP and HP to 150 right
-  after the spawn, and the guests' mirrors (squadron.cpp) show the host's HP.
-* Waves: crew + wave number ships (two players: 3, then 4), 8 s between the waves. A wave comes only
-  while the host and another member of the crew are in the same place (`modes` place: the system or
-  one planet) of the contract's star for 3 s, because the host's NPC ships are mirrored only to
-  guests in the host's place.
-* Tracking: the host keeps the pointers of the wave and checks them every 0.25 s against
-  `GetAllUFOs` (§9.4): listed with state != 2, HP > 0 and type 8 = alive; otherwise (also: gone from
-  the list while the host is still in the same place) = destroyed. A place change of the host drops
-  the pointers (the game frees NPC UFOs on every context switch) and the rest of the wave comes back
-  when the crew is together there again.
+### 17.2 The armada: the game's own raids (✔ runtime, GOG 2016, lane 3)
+* **Raid on demand**: `SporeCoop::Space_StartRaid` = **0x0100E620** (the `raid -start N` cheat routine,
+  caller 0x102527E; the same address and body in GOG 2024 ✔ objdump): thiscall, `this` not used,
+  `(int unused, cPlanetRecord* colony, int numBombers)`, `ret 0xC`, returns bool. Body: mission
+  manager 0xFEB880, `CreateMission(0xA4B0A2DF, colony, owner of the star, 0)` 0xFEC420, Cast
+  0x3960C0A, SetAttackerEmpire(0) 0xC5B520, SetTargetPlanet 0xC472C0, SetNumBombers 0xC5B540, Accept
+  0xC486F0. On the homeworld with the player there: `numBombers` bombers (type 4, 250 HP) and 4
+  raiders (type 2, 50 HP) per bomber spawn at once, far from the ship, and attack the colony; the
+  colony's turrets alone shot down 4 + 16 of them in ~25 s; the mission ends with state 5 (defended,
+  spacecoop pays its +2000 with a partner there). Each ship's `+0x800` is the raid mission (id +0x78
+  = 0xA4B0A2DF, state +0x84, target cPlanet +0x1E8 -> record +0x13C -> PlanetID +0x184).
+* A raid needs a planet of the raided empire: the armada targets a colony of the host (record
+  +0x194 == 5, the homeworld counts). The guests' colonies are not in the host's save.
+* What did not work (✔ runtime, so nobody tries again):
+  * `SpawnUFO(8 /*AmbushPirate*/, &pol 0xFFFFFFFF, key)` pirates do not fight: in the system view
+    they stand still, on a planet they fly straight up and away and vanish after ~30 s (also with
+    `coop.fleet spawn 8`, on the homeworld of the new fixture; docs 9.4's "type 8 attacks anywhere"
+    did not hold there). Not changed by `cSimulatorSpaceGame::AddNPCUFO` **0x010098E0** (thiscall(sg,
+    ufo) `ret 4`: push_back into the NPC UFO vector +0x78 with AddRef; the ambush spawner 0xFF8BC8
+    calls it), by `ufo+0x7B0` = a star record (the ambush spawner writes one there), by the
+    combatant's "attacked by" vt +0x1C **0xC37AE0** (thiscall(combatant, attacker combatant) `ret 4`,
+    stores the attacker UFO at combatant +0x208 = ufo +0x710 with AddRef), nor by writing the pending
+    target (combatant +0x48 = ufo +0x550) and mDestination every 0.3 s.
+  * SpawnUFO's ships are not freed by a context switch: they came along from the system view to a
+    planet (not in the NPC list), so the mod would have to remove them itself.
+  * **Null model key**: SpawnUFO then takes the default key {0xCB89C3D6, 0x476A98C7, [0x15B8504]}
+    (0x102AD33..0x102AD56) and every such ship, and every guest mirror of it, costs one caught access
+    violation at 0x00E98DD0 (`cPlanetGfx_Create+0x8F0` by the nearest symbol, data 0x4). The game's
+    pirate model: a raid without an attacker empire copies its UFO key from **`(*(cGameNounManager +
+    0x74)) + 0x1280`** (0xC5C8B3: 0xF67D40 = `mov eax,[ecx+0x74]; ret`, 0xC758F0 = `lea eax,[ecx+0x1280];
+    ret`; GOG 2024 0xC5C8F3 / 0xF67D40 / 0xC75910, the same fields); an empire's ships take
+    `cEmpire` 0xC327F0 (the cached key at empire +0xB8), as the ambush spawner 0xFF8B89 does.
+  * With the pirate key a Teleport (loco vt +0x44) right after SpawnUFO did not hold in the system
+    view (the ship stayed at the spawn spot (0, 0, 700)); writing mNextPosition +0x718 and
+    mDestination +0x750 too made it hold.
+* The waves (space_contracts.cpp): `crew + wave - 1` bombers (two players: 2 bombers + 8 raiders,
+  then 3 + 12), started when the host and another member of the crew are on the colony for 3 s,
+  10 s between the waves. Each raid ship gets double max HP / HP on first sight (the guests' mirrors
+  show the host's HP). The wave's outcome is the raid's own end state, seen by spacecoop's
+  `cMission::SetState` hook (`spacecoop::set_raid_listener`): 5 = won, 6 = the pirates won (the
+  contract fails). Ships killed by one big hit leave the UFO list before a state 2 is seen, so ship
+  counting cannot tell destroyed from flown off. If the host leaves the planet during a wave, the
+  game runs the raid on off-screen; the mod starts the wave again when the crew is back.
+* Captions in the test: landing on the planet shows tutorial captions that wait for OK ("Something
+  is showing up on the ship's radar...", "You have discovered a wild planet..."), and the defended
+  raid gives badge points: the panel "2 badge points" + OK takes the mouse, the co-op window's
+  buttons get no clicks until it is closed (Enter).
 
 ### 17.3 Rewards
 * Money: `cEmpire::AddMoney` on the host only (shared budget, shared.cpp gives the total to every
