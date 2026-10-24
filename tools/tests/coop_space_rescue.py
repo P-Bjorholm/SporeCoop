@@ -44,7 +44,10 @@ def main():
         while field(sp(guest, 'hp'), 'state') == 2 or field(sp(guest, 'hp'), 'movie') == 1:
             pg.captions()  # a ship lost between the rounds: confirm its captions, it respawns at home
         for p in (ph, pg):
-            if p.ctx() == 'system':
+            # GOG 2024 (lane 10): right after the load the zoom does not land for up to ~80 s
+            # (docs/known-issues.md): try again
+            t1 = time.time()
+            while p.ctx() == 'system' and time.time() - t1 < 150:
                 p.land(home)
         ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet',
            f'round {rnd + 1}: both on the home planet ({sp(guest, "dist")})')
