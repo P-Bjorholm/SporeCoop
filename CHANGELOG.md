@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- INSTALL.md: the GOG 2024 build passed a smoke test under Wine / Bottles on Linux (0.6.2, two games on one PC, Creature stage).
+
 ## [0.6.2] - 2026-10-23
 
 Builds with the same code as a supported one, and a list of where SporeCoop has been tested.
