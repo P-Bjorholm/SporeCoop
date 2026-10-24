@@ -34,7 +34,7 @@ def status(con, key):
 
 
 def main():
-    host, guest = start('civ', 'Game0/Agrauel')
+    host, guest = start('civ')
     ck = Checks()
     time.sleep(4)
     hc, hv = civ(host)

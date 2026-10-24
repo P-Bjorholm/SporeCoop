@@ -40,14 +40,32 @@ window: it finds a free planet slot by itself (each slot ring of the galaxy menu
 window with id 0x02E5A4A8 in `coop.ui tree`; `--slot N` picks the N-th, `--slot X,Y` a point),
 hovers before clicking and checks that "Choose A Stage" opened. The wizard after it clicks fixed
 points; a run that ends with "FAILED: still GalaxyGameEntry" can simply be repeated.
+The caption window "Choose A Stage" exists (and has its own visible bit) while the chooser is
+closed; only its parents tell: closed `fl=0x2` at an off-screen rect, open `fl=0x3`. Until
+2026-10-23 the check looked for the caption alone, so a first click that did nothing (a fresh
+profile right after the galaxy intro) passed it and the wizard clicked into the void (two runs of
+two failed); now every window of the `coop.ui find` chain must be visible.
 
-The fixtures (tools/tests/fixtures.py lists planet and checked facts):
+The fixtures (tools/tests/fixtures.py lists planet and checked facts; tests take the planet from
+there, never hard-code it: a fixture made anew gets a random planet name). All but `creature` were
+made anew on 2026-10-23 (the old ones were lost with the game folder), on lanes 7/8 (GOG 2016 build):
 
 | Fixture | Planet | What it has | Made by |
 |---|---|---|---|
-| `creature`, `cell`, `tribe`, `space` | see fixtures.py | a game of that stage | `new_stage_game.py`, `space_setup.py` |
-| `civ` | Game0/Agrauel | the player city only | `new_stage_game.py civ` |
-| `civ_npc` | Game0/Taldon | the player city (with its free vehicle) and three cities of other nations (nearest about 400 m away, the planet radius is about 500), intro text dismissed, $3000 | `new_stage_game.py civ --npc-cities 3`, `coop.save`, `spore.sh fixture save civ_npc test` (2026-10-23) |
+| `creature` | Game0/Scalinus | the host's red species at its nest (recovered from lane 1's test profile, so a few minutes played) | (old) |
+| `cell` | Game0/Cadian | a new Cell game, ~330 cells in the pool, food 0, no weapon | `new_stage_game.py cell` |
+| `tribe` | Game0/Zorispe | the player tribe (3 members) and one NPC tribe (it appears ~40 s after the intro caption, which is confirmed) | `new_stage_game.py tribe`, OK the caption, wait for `coop.tribe` to list 2 tribes |
+| `civ` | Game0/Arigine | the player city only, intro text dismissed | `new_stage_game.py civ`, click 1410 1044 |
+| `civ_npc` | Game0/Tavael | the player city (with its free vehicle) and three cities of other nations (nearest about 430 m away, the planet radius is about 500), intro text dismissed, $3000 | `new_stage_game.py civ --npc-cities 3` |
+| `space` | Game0/Madas | in the home system (PlanetID 00460035), first mission ("Fly to planet Vulpica", P02460035, then scan the wreck there), $100 000, no interstellar drive | `space_setup.py` |
+| `space_empire` | Game0/Madas | `space` + drive, $1 100 000, two colonies with spice, contact with two NPC empires (6.15) | `make_fixture.py space space_empire --cmd ...` (6.15) |
+
+After each: `coop.save`, Enter on the "game saved" box, `spore.sh fixture save <name> test`. Both
+players' creations (`creations-host.package` / `creations-guest.package`, the host's 11 creatures, the
+guest's newest one is the Kirgle with the white bow of coop_guest_editor.py) were recovered on
+2026-10-23 from lane 8's test profiles: they were byte copies made by `restore_creations` at the last
+cold start (host and guest written in the same millisecond); the game later rewrites a loaded
+package (same creations, ~150 bytes of the index differ), so other lanes had a different md5.
 
 A new Civilization game has no other cities at first: they appear one by one when the player has
 claimed spice and has money, after a timer (docs/re/civ.md "NPC cities"; about 18 minutes of play
@@ -277,7 +295,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   planet often takes the click). Inputs per view: docs/re/space.md 9.2.
 * The space fixture's ship has no interstellar drive: the galaxy view stays locked. Tests give it
   with `coop.space tool add interstellardrive` (a badge cinematic and a tutorial caption follow:
-  confirm them with Enter).
+  confirm them with Enter). `space_empire` (6.15) has it, plus colonies, contacts and money.
 * Just after landing, damage to the player's ship is ignored for a few seconds (`coop.space hit`
   and relayed NPC hits alike); wait or retry.
 * `coop.space hp` prints `hp <n> max <n> ...` (no `hp=`): a parser that looks for `hp=` gets
@@ -361,3 +379,50 @@ Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):
   (replies get mixed: a `coop.uistate` answer parsed as `coop.civ`).
 * `update_check.py` restores lane 6 to the original game (no loader); `spore.sh deploy` installs
   the loader again in such a lane.
+
+## 6.15 The `space_empire` fixture (Space features beyond the tutorial)
+
+Made 2026-10-23 on lane 8 from `space` with one command (the planet and star ids belong to the
+`space` fixture's galaxy; after a new `space` fixture pick new ones, see below):
+
+```bash
+SPORE_LANE=8 python3 tools/tests/make_fixture.py space space_empire \
+  --cmd "coop.space tool add interstellardrive" --cmd "coop.space tool add interstellardrive_upgrade4" \
+  --cmd "coop.space tool add energyupgrade5" --cmd "coop.space tool add placecolony" \
+  --cmd "cheat moreMoney" \
+  --cmd "coop.space empire colony 01460035 25" --cmd "coop.space empire colony 00460014 40" \
+  --cmd "coop.space empire contact 0046102D" --cmd "coop.space empire contact 00460038" \
+  --cmd "coop.space spice make 20" \
+  --cmd "wait.frames 300" --cmd "key enter" --cmd "wait.frames 200" --cmd "key enter" --cmd "wait.frames 200"
+```
+
+What it has (checked by the facts in fixtures.py, `coop.space empire` prints it all):
+* the ship in the home system (Madas, PlanetID 00460035), the interstellar drive (the galaxy view
+  opens), drive upgrade 4, energy upgrade 5, the colony tool (one charge), $1 100 000;
+* two colonies besides the home planet: P01460035 (home system) and Gabar P00460014 (the tutorial's
+  beacon star, now an own star `H00460014` in `coop.targets all`); after a load they hold 10 and 5
+  spice (the game clamps the stored spice at load: 5 per city, the value given is lost), the home
+  planet 11; visiting P01460035 shows a generated colony (several cities, a spice geyser);
+* first contact with the empires 80001FCC (home star 0046102D, 5.4 galaxy units away) and
+  80001F53 (00460038, 5.9), the two nearest NPC empires; no comm screen was seen, no war, no
+  alliance, no missions from them;
+* 20 spice of the home planet's kind in the cargo (`coop.space spice`).
+
+What it does not have, and why:
+* **The tutorial is not done**: the mission is still "scan the wreck" on Vulpica (P02460035).
+  The first zoom-out to the galaxy plays the tutorial caption about the beacon (Enter). While the
+  mission chain is open, galaxy clicks on stars that are not own stars show a red "Distance: 1 (pc)"
+  and the ship does not go there (also with drive upgrade 4); the beacon star and own stars work. ?
+  whether this is the tutorial lock or the drive range.
+* **Colonies only through `coop.space empire colony`**: with the colony tool the game refused every
+  spot on Vulpica ("Colonies must be placed near spice."): unvisited planets have no spice nodes;
+  planets far from home get a spice kind (record +0x198) only when generated.
+* **Contacts only through `coop.space empire contact`**: `coop.space jumpto <StarID>` into an NPC
+  empire's system arrived in a system without planets (only the sun; `coop.targets all` kept the
+  previous system's planets; docs/known-issues.md) and no first contact came.
+* No raids, no missions of other empires, no trade route, no terraforming tools.
+
+New ids for a new `space` fixture: planets of the home system with `coop.targets all` in the
+system view (`obj P<PlanetID>`); a planet of another star needs a generated record (a star near
+home that the tutorial points at, or one the ship visited); the nearest NPC empires: walk
+`cStarManager` +0x150 (docs/re/space.md 9.6).

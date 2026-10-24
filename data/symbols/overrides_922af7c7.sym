@@ -322,3 +322,8 @@ Simulator::cCreatureCitizen::vftable=0x0146B818 ; verified main vtable of cCreat
 Simulator::cTreeData::vftable=0x0145D160 ; verified cTreeData main vtable (second base 0x145D150, size 0x80, docs/re/tribe.md); was kTreeVt in tribe.cpp
 UTFWin::SporeStdDrawable::vftable=0x0141B2D0 ; verified main vtable written by the SporeStdDrawable ctor 0x8309B0 (others 0141B2B8/0141B278); was hard-coded in sui.cpp
 Simulator::cGamePersistenceManager::LoadGame=0x00B271A0 ; likely vtable[4] of the persistence manager, first parameter field is the save name (string16); debug hook only (debug.cpp loadhook)
+# space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6; runtime lane 8 2026-10-23)
+SporeCoop::cPlanetRecord_SetTechLevel=0x00C70850 ; verified cdecl(cPlanetRecord*, int level): +0x194, star tech; called with (rec, 5) on a planet that is not the active one, the planet became a colony record (docs/re/space.md 5.2, 9.6)
+SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97040 ; verified cdecl(cPlanetRecord*, int level): level 5 -> a cCivData (pol = star mEmpireID, +0x15C) with cCityData, record flag 0x40 in +0x2C (runtime 2026-10-23)
+SporeCoop::cEmpire_AddPlanet=0x00C34FB0 ; verified thiscall(cEmpire*, cPlanetRecord*) ret 4: player empire -> SpacePlayerData colonies (+0x20) grew by one, then AddStarOwnership (runtime 2026-10-23)
+SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A70 ; verified thiscall(cEmpire*): cPlayer (game nouns +0x74) flag bits 2 (0xC7BD00) and 4 (0xC7BD20) for the empire pol (+0x84); afterwards cPlayer::PlayerContactedEmpire(pol) = 1 (runtime 2026-10-23)

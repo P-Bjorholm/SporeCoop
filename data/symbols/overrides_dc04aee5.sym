@@ -181,3 +181,8 @@ UTFWin::SporeStdDrawable::vftable=0x0141A978 ; verified port from GOG 2016 0x014
 UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x008308F0 ; verified port from GOG 2016 0x00830870 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 UTFWin::UILayout::UILayout=0x008100A0 ; verified port from GOG 2016 0x00810050 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::GetActivePlanetRecord=0x01021150 ; verified port from GOG 2016 0x01021150 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns [planet+0x13C] or 0
+# space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
+SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0x00C70850: the same 14 instructions (calls and absolute addresses masked), tools: port by instruction text 2026-10-23
+SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
+SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
+SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)

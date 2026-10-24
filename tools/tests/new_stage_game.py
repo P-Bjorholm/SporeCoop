@@ -62,6 +62,15 @@ def find_slot(c, index):
     raise SystemExit(f"no planet slot in the galaxy menu (got {last})")
 
 
+def chooser_open(c):
+    """the "Choose A Stage" ring is shown: its caption window AND every parent are visible (flag
+    bit 0). The caption exists, visible itself, while the chooser is closed: its parents then have
+    fl=0x2, so a check for the caption alone passed after a click that did nothing."""
+    out = c.cmd('coop.ui find "Choose A Stage"')
+    flags = [int(m, 16) for m in re.findall(r"fl=0x([0-9A-Fa-f]+)", out)]
+    return len(flags) >= 3 and all(f & 1 for f in flags[:3])
+
+
 def city_count(c):
     return sum(1 for line in c.cmd("coop.civ").splitlines() if line.startswith("city "))
 
@@ -132,7 +141,7 @@ def main():
         c.cmd("wait.frames 15 10000")
         c.cmd(f"click {sx} {sy}")
         c.cmd("wait.frames 150 60000")
-        if "no window" not in c.cmd('coop.ui find "Choose A Stage"'):
+        if chooser_open(c):
             break
         if "," not in a.slot:
             sx, sy = find_slot(c, int(a.slot))
