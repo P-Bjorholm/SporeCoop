@@ -870,9 +870,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
 
-## 10. Co-op contracts (✔ runtime, lane 3, GOG 2016, 2026-10-23; `space_contracts.cpp`)
+## 17. Co-op contracts (feature 7) (✔ runtime, lane 3, GOG 2016, 2026-10-23; `space_contracts.cpp`)
 
-### 10.1 Star records: name, type, planets
+### 17.1 Star records: name, type, planets
 * `cStarRecord` **+0x60 `mName`** (eastl::string16: +0x60 begin, +0x64 end, UTF-16) ✔ runtime: the
   fixture's home star 0x460035 reads "Fibucius", its neighbours "Argis-2", "Gerbus", "Aspytory" (the
   names the galaxy view shows). +0x48 `StarType` (ModAPI: 1 galactic core, 2 black hole, 3
@@ -886,11 +886,19 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   Neighbours were 0.3 to 1 galaxy units away; `TravelToStarSystem` (§7.3, `coop.space jumpto`)
   reaches any of them without the interstellar drive and without money.
 
-### 10.2 Spawning an armada
-* `SpawnUFO(8 /*AmbushPirate*/, &pol /*0xFFFFFFFF: no empire*/, nullptr)` ✔ objdump + runtime: with a
-  null model key and a type != 0 SpawnUFO uses the default key {0xCB89C3D6, 0x476A98C7, [0x15B8504]}
-  (0x102AD33..0x102AD56); the ships look like ordinary pirates. Teleport (loco vt +0x44) puts them
-  around the host's ship (60 m ring, 15 m above), in a system and on a planet.
+### 17.2 Spawning an armada
+* `SpawnUFO(8 /*AmbushPirate*/, &pol /*0xFFFFFFFF: no empire*/, &key)`. **Not with a null key**: SpawnUFO
+  then takes the default key {0xCB89C3D6, 0x476A98C7, [0x15B8504]} (0x102AD33..0x102AD56) and every
+  such ship (and every guest mirror of it) costs one caught access violation at 0x00E98DD0
+  (`cPlanetGfx_Create+0x8F0` by the nearest symbol, data 0x4; ✔ runtime, 7 ships = 7 faults on
+  each game). The game's own pirates: a raid without an attacker empire copies its UFO key from
+  **`(*(cGameNounManager + 0x74)) + 0x1280`** (0xC5C8B3: `0xF67D40` = `mov eax,[ecx+0x74]; ret`,
+  `0xC758F0` = `lea eax,[ecx+0x1280]; ret`; GOG 2024: 0xC5C8F3, 0xF67D40, 0xC75910, the same
+  fields ✔ objdump of both). With that key: no fault ✔ runtime. (An empire's ships take
+  `cEmpire` 0xC327F0, the cached key at empire +0xB8, as the ambush spawner 0xFF8B89 does.)
+* Teleport (loco vt +0x44) puts them around the host's ship (60 m ring, 15 m above). ? After a hot
+  reload of coop.dll plus a rejoin, spawned UFOs stayed at (0, 0, 700) and survived a system jump
+  (not in the NPC list?): seen once, a fresh game was fine.
 * Type 8 has 100 HP in this save (`coop.fleet list`); the armada sets max HP and HP to 150 right
   after the spawn, and the guests' mirrors (squadron.cpp) show the host's HP.
 * Waves: crew + wave number ships (two players: 3, then 4), 8 s between the waves. A wave comes only
@@ -903,7 +911,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   the pointers (the game frees NPC UFOs on every context switch) and the rest of the wave comes back
   when the crew is together there again.
 
-### 10.3 Rewards
+### 17.3 Rewards
 * Money: `cEmpire::AddMoney` on the host only (shared budget, shared.cpp gives the total to every
   guest within a second ✔ runtime: 100 000 -> 115 000 -> 140 000 on both games); in rivals mode
   every member of the crew adds it locally.

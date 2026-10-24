@@ -1,4 +1,4 @@
-// Co-op contracts (docs/09-coop-design.md, Space 0.7 feature 7; the game side in docs/re/space.md 10):
+// Co-op contracts (docs/09-coop-design.md, Space 0.7 feature 7; the game side in docs/re/space.md 17):
 // jobs made for two or more players, with a reward for each of them. The host offers a contract every
 // few minutes (and on demand: `coop.space contracts offer <armada|survey>`); every player sees it on the
 // F9 Space page and as a notice, accepts it there, and the host runs it and pays when it is done.
@@ -112,7 +112,7 @@ void* star_record(uint32_t id)
     return r && !IsBadReadPtr(r, 0xB0) ? r : nullptr;
 }
 
-// cStarRecord +0x60 mName (eastl::string16: begin, end), docs/re/space.md 10.1
+// cStarRecord +0x60 mName (eastl::string16: begin, end), docs/re/space.md 17.1
 std::string star_name(uint32_t id)
 {
     std::string s;
@@ -669,6 +669,20 @@ int crew_with_me()
     return n;
 }
 
+// the model of the game's own pirates: a raid without an attacker empire takes it from
+// (*(cGameNounManager + 0x74)) + 0x1280 (0xC5C8B3: 0xF67D40 `mov eax,[ecx+0x74]`, 0xC758F0 `lea eax,
+// [ecx+0x1280]`; GOG 2024 0xC5C8F3 / 0xF67D40 / 0xC75910, same fields; docs/re/space.md 17.2). A null
+// key (SpawnUFO's default model) faults in the model setup once per ship, on the host and on the
+// guests' mirrors.
+const void* pirate_key(void* me)
+{
+    void* nm = game::noun_manager();
+    uint8_t* o = nm && !IsBadReadPtr((uint8_t*)nm + 0x74, 4) ? F<uint8_t*>(nm, 0x74) : nullptr;
+    if (o && !IsBadReadPtr(o + 0x1280, 12) && F<uint32_t>(o, 0x1280))
+        return o + 0x1280;
+    return (uint8_t*)me + 0x780; // the own ship's model (mDesiredModelKey), as coop.fleet spawn does
+}
+
 void spawn_wave(int n, double t)
 {
     void* me = my_ufo();
@@ -679,8 +693,7 @@ void spawn_wave(int n, double t)
     const float r = 60.f; // around the host's ship
     for (int i = 0; i < n; i++) {
         uint32_t pol = 0xFFFFFFFFu; // no empire: pirates
-        // model null: the game's default UFO model (SpawnUFO 0x102ACC0, docs/re/space.md 10.2)
-        void* u = cdecl_call<void*>(a_SpawnUFO, kPirate, &pol, (void*)nullptr);
+        void* u = cdecl_call<void*>(a_SpawnUFO, kPirate, &pol, pirate_key(me));
         if (!u)
             continue;
         float a = 6.2831853f * (float)i / (float)n;

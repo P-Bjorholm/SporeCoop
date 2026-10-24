@@ -114,6 +114,14 @@ def main():
     ok = wait(lambda: int(st(host)['ships_up']) > 0, 30)
     ck(ok, f'both ships at the star: the first wave comes ({st(host)["ships_up"]} ships)')
     shot(host, 'contracts_armada_wave.png')
+    fleet = host.call('coop.fleet list')['out']
+    me = [float(x) for x in re.search(r'\(me\) pos=\((\S+) (\S+) (\S+)\)', fleet).groups()]
+    near = []
+    for p in re.findall(r'armada (\S+)', sp(host, 'contracts ships')):
+        m = re.search(re.escape(p) + r' type=8 .*pos=\((\S+) (\S+) (\S+)\)', fleet)
+        if m:
+            near.append(sum((float(a) - b) ** 2 for a, b in zip(m.groups(), me)) ** 0.5)
+    ck(near and max(near) < 300, f'the armada ships are around the host ({[round(d) for d in near]} m)')
     t0, waves_seen, guest_shots = time.time(), set(), 0
     while time.time() - t0 < 180 and st(host)['state'] == 'active':
         s = st(host)
@@ -134,7 +142,7 @@ def main():
         time.sleep(1.5)
     s = st(host)
     print('  host:', sp(host, 'contracts'))
-    ck(s['state'] == 'done' and '2' in waves_seen, f'both waves destroyed: the contract is done (waves {sorted(waves_seen)})')
+    ck(s['state'] == 'done' and '2/2' in waves_seen, f'both waves destroyed: the contract is done (waves {sorted(waves_seen)})')
     ck(guest_shots > 0, f'the guest shot armada ships ({guest_shots} shots)')
     ok = wait(lambda: st(guest)['state'] == 'done' and st(guest)['rewards'] != '0', 10)
     ck(ok, 'the guest sees the contract done')
