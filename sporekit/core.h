@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.1"
+#define SK_VERSION "0.3.2"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -53,9 +53,15 @@ std::string ini_str(const std::wstring& file, const char* section, const char* k
 // sha256.cpp
 std::string sha256_file_hex(const std::wstring& path);
 std::string pe_code_sha256_hex(const std::wstring& path); // code and data, without header and resources
+std::string pe_data_sha256_hex(const std::wstring& path); // every section but .text/.bind/.rsrc (packed exes)
+std::string mem_text_sha256_hex(HMODULE mod, uintptr_t preferred_base); // .text in memory, relocations undone
 
 // symbols.cpp
 bool symbols_load(); // picks file by exe hash
+// a packed exe (Steam DRM) whose data is that of a known build: symbols wait for the unpacked
+// code (symbols_try_unpacked from the first call of the game's own code)
+bool symbols_pending();
+bool symbols_try_unpacked(); // true: the code in memory is the build's, its symbols are loaded
 uintptr_t sym(const char* name);
 uintptr_t image_base();
 uintptr_t rebase(uintptr_t va);

@@ -606,6 +606,16 @@ PlanetIDs for the new stars (docs/known-issues.md).
 * After several hot reloads (`lab.py reload`) the co-op session of the running games was gone ("offline",
   seen once 2026-10-23): restart the games for checks on both games.
 
+## 6.18.1 The Steam build (manual, docs/05-re-notes.md 5.1.2)
+
+Not part of the lab: the Steam exe starts only through the Steam client. Procedure (2026-10-24,
+passed): install the mod into the Steam game's `SporebinEP1` by hand (INSTALL.md section 5), set
+`background_mode=1` in its `mods\sporekit.ini`, `steam steam://rungameid/24720`, `agent-ws assign
+<window of steam_app_24720> sporecoop`, a GOG 2024 lane host (lane 2: instance 3, co-op port 47812)
+in the creature fixture, then on the Steam game (console instance 1) `cheat coop join
+127.0.0.1:47812 Steamy`: the world loads, `coop.avatar` controls the creature, `coop.status` shows the
+host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterwards.
+
 ## 6.19 GPU load: a GPU reset took the whole desktop down (2026-10-24)
 
 * With up to 18 test games at once (9 lanes; the GOG 2024 lanes draw ~66 fps, the GOG 2016 ones

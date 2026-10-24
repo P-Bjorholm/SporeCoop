@@ -1,6 +1,8 @@
 # SporeKit symbol overrides for the GOG 2024 build (SporeApp.exe 24 895 536 bytes, ModAPI March2017 layout).
 # exe_sha256=dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37
 # code_sha256=5a8267b23a1b916d7e920942d8375ea7fdb2d10a12aca0e603168a8a649f5f8f (tools/exe_info.py: an exe with this code and another exe_sha256 uses these files too)
+# data_sha256=ae1f385a50edee3b3159289eb7074556756b8f6d60a76d111172aba836f1eda9 (every section but .text/.bind/.rsrc: the Steam build since its October 2024 update is this exe with an encrypted .text and a SteamStub .bind section, exe_sha256 3010a413...)
+# text_sha256=c87891fec96a9ada6550cb6ff6b9366cb0a46261e6fbf3cd9414e28fb0b0256e (the .text of this exe: a packed exe whose unpacked .text in memory has this hash uses these symbols)
 # Every symbol the mod uses, ported from overrides_922af7c7.sym (2026-10-23) and checked against the
 # disassembly of this exe (prologue, ret N, field offsets, constants, callers/callees). What each
 # function does is documented in overrides_922af7c7.sym; addresses in the notes below are of this build

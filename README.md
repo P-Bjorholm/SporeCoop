@@ -151,9 +151,12 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 |---|---|
 | GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux (Wine / Bottles) |
 | GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11, Linux (Wine / Bottles) |
+| Steam, Spore + Galactic Adventures (`3010a413…`, since 0.7.1) | Linux (Steam + Proton) |
 
-The Steam, EA app and disc versions have not been tested; their `SporeApp.exe` is a different
-file, so co-op stays off with them unless its code is the same as one of the builds above. The
+The Steam version is the GOG 2024 game under Steam's DRM: SporeCoop waits until the game has
+unpacked itself and checks the code, so Steam and GOG players can play together. The EA app and
+disc versions have not been tested; their `SporeApp.exe` is a different file, so co-op stays off
+with them unless its code is the same as one of the builds above. The
 full list (what was tested where) is in
 [INSTALL.md, section 2](docs/INSTALL.md#where-sporecoop-has-been-tested). If you try another
 build, please tell us how it went in an [issue](https://github.com/WoodyWizard/SporeCoop/issues).
@@ -192,7 +195,7 @@ Known issues: [docs/known-issues.md](docs/known-issues.md).
 Next:
 
 - [ ] easier internet play (no VPN or port forwarding)
-- [ ] tests with the Steam and EA builds
+- [ ] tests with the EA app build, and of the Steam build on Windows
 - [ ] four-player tests of the 0.7 Space features, co-op adventures
 
 ## Building from source

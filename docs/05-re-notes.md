@@ -52,6 +52,33 @@ the preferred base from that header, so `rebase()` did nothing and every symbol 
 it now reads ImageBase from the exe file (`symbols.cpp file_image_base`). The log line
 `base=0x00410000 (preferred 0x00400000)` shows it is right.
 
+### 5.1.2 The Steam build (3010a413): GOG 2024 under SteamStub (2026-10-24)
+
+Steam's `SporebinEP1\SporeApp.exe` since the October 2024 update: 25 066 744 bytes, SHA-256
+`3010a413f9a4a05ee9c4de24756c1c94c7fb218f70cad29bcf5bc0b4abfa2466` (ModAPI's DllModAPI.cpp lists
+this size as a "steam patched" March2017 exe). Section by section against the GOG 2024 exe: `.rdata`,
+`.data`, `.tls`, `CONST`, `.rsrc`, `.reloc` are byte for byte the same, `.text` (same size) differs on
+every page (encrypted), and an 8th section `.bind` (0x29CD0 bytes, SteamStub) holds the entry point
+(RVA 0x190E310; GOG's entry point is RVA 0xDE11E1). After the unpacker ran, the `.text` in memory
+(relocations undone) has exactly the SHA-256 of the GOG 2024 file's `.text` (✔ runtime, Proton,
+2026-10-24).
+* SporeKit (0.3.2): the symbol header of `overrides_dc04aee5.sym` carries `data_sha256` (every section
+  but .text/.bind/.rsrc, `tools/exe_info.py`) and `text_sha256` (the GOG 2024 .text). An exe without
+  files of its own and without the same `code_sha256` whose `data_sha256` matches is "pending": the
+  boot (run by the loader at the exe's entry point, i.e. inside the unpacker) does everything that
+  does not need game addresses and hooks kernel32 `GetSystemTimeAsFileTime` / `GetStartupInfoW`. Their
+  first call from `.text` is the game's own CRT start (`__security_init_cookie` at 0x11E1588 calls
+  GetSystemTimeAsFileTime from 0x11E15C5), after the unpacking and before WinMain: there the in-memory
+  `.text` hash is checked, the symbols are loaded, then the lifecycle hooks and the mods. A different
+  hash leaves co-op off as before. `[sporekit] defer_symbols=1` runs the same late boot on any exe
+  (tests of the path on GOG lanes).
+* Testing: the Steam game runs only under Steam (the unpacker needs the Steam client; Steam may stay
+  in offline mode); launch it with `steam steam://rungameid/24720` and move its window
+  (`steam_app_24720`) with `agent-ws assign`. A Spore window that never had the focus does not draw
+  (frame 2 forever): for tests set `background_mode=1` in the Steam install's `mods\sporekit.ini`
+  (remove it afterwards). Its console is instance 1 (127.0.0.1:47800): use GOG lanes >= 2 for the
+  other players.
+
 ## 5.2 Method
 
 1. **Porting ModAPI addresses (March2017 → GOG 2016)** - `tools/addrport/port_modapi.py`.

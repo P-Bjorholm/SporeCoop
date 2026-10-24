@@ -15,6 +15,8 @@ static std::map<uintptr_t, std::string> g_by_addr;
 static std::string g_hash, g_code_hash, g_build;
 static std::string g_files;
 static uintptr_t g_pref_base = 0x400000, g_base = 0x400000;
+// a packed exe (Steam DRM): the build its data belongs to, and that build's unpacked .text hash
+static std::string g_pending_build, g_pending_text, g_data_hash;
 
 uintptr_t image_base() { return g_base; }
 uintptr_t rebase(uintptr_t va) { return va - g_pref_base + g_base; }
@@ -55,7 +57,7 @@ static void load_file(const std::wstring& path)
 
 // the "exe_sha256=" and "code_sha256=" values in the first lines of a symbol file
 struct SymHeader {
-    std::string exe, code;
+    std::string exe, code, data, text;
 };
 static SymHeader file_hash_header(const std::wstring& path)
 {
@@ -75,6 +77,8 @@ static SymHeader file_hash_header(const std::wstring& path)
     for (int i = 0; i < 10 && fgets(line, sizeof line, f); i++) {
         value("exe_sha256=", r.exe);
         value("code_sha256=", r.code);
+        value("data_sha256=", r.data);
+        value("text_sha256=", r.text);
     }
     fclose(f);
     return r;
@@ -103,11 +107,53 @@ static uintptr_t file_image_base(const wchar_t* path, uintptr_t fallback)
     return nt->OptionalHeader.ImageBase;
 }
 
+struct Cand {
+    std::wstring name;
+    SymHeader h;
+};
+static std::vector<Cand> g_cands;
+static std::wstring g_dir;
+
+// the files of build g_build: the ported/ModAPI ones first, then the hand-written overrides
+static bool load_build()
+{
+    std::vector<std::wstring> normal, overrides;
+    for (auto& c : g_cands) {
+        if (g_build.empty() || c.h.exe != g_build)
+            continue;
+        std::wstring p = g_dir + c.name;
+        if (wcsncmp(c.name.c_str(), L"overrides", 9) == 0)
+            overrides.push_back(p);
+        else
+            normal.push_back(p);
+    }
+    std::sort(normal.begin(), normal.end());
+    std::sort(overrides.begin(), overrides.end());
+    for (auto& p : normal) {
+        load_file(p);
+        g_files += narrow(p.substr(g_dir.size())) + " ";
+    }
+    for (auto& p : overrides) {
+        load_file(p);
+        g_files += narrow(p.substr(g_dir.size())) + " ";
+    }
+    for (auto& [n, a] : g_syms)
+        g_by_addr[a] = n;
+    if (g_syms.empty()) {
+        SKLOG(SK_ERROR, "no symbol database for this SporeApp.exe build (%s, code %s); "
+                        "game-specific features are disabled",
+              g_hash.c_str(), g_code_hash.c_str());
+        return false;
+    }
+    return true;
+}
+
 bool symbols_load()
 {
     g_syms.clear();
     g_by_addr.clear();
     g_files.clear();
+    g_pending_build.clear();
     HMODULE exe = GetModuleHandleW(nullptr);
     g_base = (uintptr_t)exe;
 
@@ -120,30 +166,26 @@ bool symbols_load()
           narrow(exe_path).c_str(), g_hash.c_str(), (unsigned)g_base, (unsigned)g_pref_base,
           now_seconds() - t0);
 
-    std::wstring dir = mods_dirw() + L"\\sporekit\\symbols\\";
-    struct Cand {
-        std::wstring name;
-        SymHeader h;
-    };
-    std::vector<Cand> cands;
+    g_dir = mods_dirw() + L"\\sporekit\\symbols\\";
+    g_cands.clear();
     WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((dir + L"*.sym").c_str(), &fd);
+    HANDLE h = FindFirstFileW((g_dir + L"*.sym").c_str(), &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do
-            cands.push_back({fd.cFileName, file_hash_header(dir + fd.cFileName)});
+            g_cands.push_back({fd.cFileName, file_hash_header(g_dir + fd.cFileName)});
         while (FindNextFileW(h, &fd));
         FindClose(h);
     }
     // 1. files for this exact exe; 2. else files of a build with the same code (one build only)
     g_build.clear();
-    for (auto& c : cands)
+    for (auto& c : g_cands)
         if (c.h.exe == g_hash)
             g_build = g_hash;
     if (g_build.empty()) {
         t0 = now_seconds();
         g_code_hash = pe_code_sha256_hex(exe_path);
         SKLOG(SK_INFO, "exe code_sha256=%s (%.2fs)", g_code_hash.c_str(), now_seconds() - t0);
-        for (auto& c : cands)
+        for (auto& c : g_cands)
             if (!g_code_hash.empty() && c.h.code == g_code_hash && !c.h.exe.empty()) {
                 g_build = c.h.exe;
                 break;
@@ -152,35 +194,43 @@ bool symbols_load()
             SKLOG(SK_INFO, "symbols: no files for this exe; its code is the same as build %s, using those",
                   g_build.c_str());
     }
-    std::vector<std::wstring> normal, overrides;
-    for (auto& c : cands) {
-        if (g_build.empty() || c.h.exe != g_build)
-            continue;
-        std::wstring p = dir + c.name;
-        if (wcsncmp(c.name.c_str(), L"overrides", 9) == 0)
-            overrides.push_back(p);
-        else
-            normal.push_back(p);
+    if (g_build.empty()) {
+        // 3. a packed exe: its data sections are those of a known build, its code is encrypted in
+        // the file (Steam's SteamStub DRM since the October 2024 update): wait for the unpacked code
+        g_data_hash = pe_data_sha256_hex(exe_path);
+        for (auto& c : g_cands)
+            if (!g_data_hash.empty() && c.h.data == g_data_hash && !c.h.exe.empty() && !c.h.text.empty()) {
+                g_pending_build = c.h.exe;
+                g_pending_text = c.h.text;
+                SKLOG(SK_INFO, "symbols: a packed exe with the data of build %s (data_sha256=%s): "
+                               "waiting for the game's unpacked code",
+                      g_pending_build.c_str(), g_data_hash.c_str());
+                return false;
+            }
     }
-    std::sort(normal.begin(), normal.end());
-    std::sort(overrides.begin(), overrides.end());
-    for (auto& p : normal) {
-        load_file(p);
-        g_files += narrow(p.substr(dir.size())) + " ";
-    }
-    for (auto& p : overrides) {
-        load_file(p);
-        g_files += narrow(p.substr(dir.size())) + " ";
-    }
-    for (auto& [n, a] : g_syms)
-        g_by_addr[a] = n;
-    if (g_syms.empty()) {
-        SKLOG(SK_ERROR, "no symbol database for this SporeApp.exe build (%s, code %s); "
-                        "game-specific features are disabled",
-              g_hash.c_str(), g_code_hash.c_str());
+    return load_build();
+}
+
+bool symbols_pending() { return !g_pending_build.empty() && g_build.empty(); }
+
+bool symbols_try_unpacked()
+{
+    if (!symbols_pending())
+        return false;
+    double t0 = now_seconds();
+    std::string mem = mem_text_sha256_hex(GetModuleHandleW(nullptr), g_pref_base);
+    bool ok = !mem.empty() && mem == g_pending_text;
+    SKLOG(ok ? SK_INFO : SK_ERROR, "symbols: the unpacked code %s build %s (text_sha256=%s, %.2fs)",
+          ok ? "is the code of" : "is NOT the code of", g_pending_build.c_str(), mem.c_str(), now_seconds() - t0);
+    std::string build = g_pending_build;
+    g_pending_build.clear();
+    if (!ok) {
+        SKLOG(SK_ERROR, "no symbol database for this SporeApp.exe build (%s); game-specific features are disabled",
+              g_hash.c_str());
         return false;
     }
-    return true;
+    g_build = build;
+    return load_build();
 }
 
 std::vector<std::pair<std::string, uintptr_t>> symbols_find(const std::string& needle, size_t limit)

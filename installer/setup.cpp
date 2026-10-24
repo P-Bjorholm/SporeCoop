@@ -27,6 +27,8 @@ namespace {
 constexpr const char* kGog2016Sha = "922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e";
 constexpr const char* kGog2024Sha = "dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37";
 constexpr const char* kGog2024Code = "5a8267b23a1b916d7e920942d8375ea7fdb2d10a12aca0e603168a8a649f5f8f"; // code_sha256
+constexpr const char* kSteamSha = "3010a413f9a4a05ee9c4de24756c1c94c7fb218f70cad29bcf5bc0b4abfa2466";
+constexpr const char* kGog2024Data = "ae1f385a50edee3b3159289eb7074556756b8f6d60a76d111172aba836f1eda9"; // data_sha256
 constexpr UINT WM_DONE = WM_APP + 1, WM_INFO = WM_APP + 2;
 
 struct Options {
@@ -111,8 +113,9 @@ std::vector<uint8_t> read_file(const std::wstring& path)
 }
 
 // code_sha256 (the definition is in sporekit/sha256.cpp and tools/exe_info.py): ImageBase,
-// AddressOfEntryPoint, then every section but .rsrc (name, address, size, raw bytes)
-std::string code_sha(const std::vector<uint8_t>& d)
+// AddressOfEntryPoint, then every section but .rsrc (name, address, size, raw bytes).
+// data: data_sha256 instead (no entry point, no .text and no .bind: a packed exe, Steam's DRM)
+std::string code_sha(const std::vector<uint8_t>& d, bool data = false)
 {
     auto u16 = [&](size_t o) -> uint32_t { return o + 2 <= d.size() ? d[o] | d[o + 1] << 8 : 0; };
     auto u32 = [&](size_t o) -> uint32_t { return o + 4 <= d.size() ? u16(o) | u16(o + 2) << 16 : 0; };
@@ -128,12 +131,15 @@ std::string code_sha(const std::vector<uint8_t>& d)
             m.push_back((uint8_t)(v >> (8 * i)));
     };
     put32(u32(opt + 28)); // ImageBase
-    put32(u32(opt + 16)); // AddressOfEntryPoint
+    if (!data)
+        put32(u32(opt + 16)); // AddressOfEntryPoint
     for (size_t i = 0; i < nsec; i++) {
         size_t o = sec + i * 40;
         if (o + 40 > d.size())
             return {};
         if (memcmp(&d[o], ".rsrc\0\0\0", 8) == 0)
+            continue;
+        if (data && (!memcmp(&d[o], ".text\0\0\0", 8) || !memcmp(&d[o], ".bind\0\0\0", 8)))
             continue;
         uint32_t vsize = u32(o + 8), va = u32(o + 12), rsize = u32(o + 16), raw = u32(o + 20);
         uint32_t n = vsize < rsize ? vsize : rsize;
@@ -279,6 +285,10 @@ void refresh()
         game = L"Game: Spore Galactic Adventures, GOG 2024 build (supported)";
     else if (code_sha(exe) == kGog2024Code)
         game = L"Game: Spore Galactic Adventures, same code as the GOG 2024 build (should work, not tested)";
+    else if (upd::sha256_hex(exe) == kSteamSha)
+        game = L"Game: Spore Galactic Adventures, Steam build (supported)";
+    else if (code_sha(exe, true) == kGog2024Data)
+        game = L"Game: Spore Galactic Adventures, the GOG 2024 build under Steam's DRM (should work)";
     else
         game = L"Game: Spore Galactic Adventures, a build SporeCoop has not been tested with yet";
     SetWindowTextW(g_game, game.c_str());

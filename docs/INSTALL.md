@@ -36,6 +36,13 @@ SporeCoop has the game addresses for these builds of `SPORE\SporebinEP1\SporeApp
 |---|---|---|
 | GOG 2016 (the build SporeCoop was developed on) | 24 888 320 bytes | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
 | GOG 2024 update (the current GOG download) | 24 895 536 bytes | `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37` |
+| Steam (since its October 2024 update; Spore + Galactic Adventures) | 25 066 744 bytes | `3010a413f9a4a05ee9c4de24756c1c94c7fb218f70cad29bcf5bc0b4abfa2466` |
+
+The Steam `SporeApp.exe` is the GOG 2024 build with Steam's DRM wrapper (the game code is encrypted
+in the file and unpacked when the game starts). Since 0.7.1 SporeCoop recognises it, waits for the
+unpacked code, checks that it is the GOG 2024 code and then uses the GOG 2024 addresses: Steam and
+GOG 2024 players can play together. The log says "the unpacked code is the code of build dc04aee5...".
+Steam's own game folder is `steamapps\common\<Spore folder>`: install into its `SporebinEP1` as for GOG.
 
 **0.7.x is the last version for the GOG 2016 build.** From 0.8 SporeCoop supports only the current
 GOG build (the 2024 update; GOG Galaxy and the GOG installers give you that one): with the 2016
@@ -59,7 +66,9 @@ then says "its code is the same as build ...".
 | GOG 2024 with a changed header (same `code_sha256`) | Windows 11 | Only with a modified copy of the GOG 2024 exe (0.6.2): it loads the GOG 2024 addresses and joins a GOG 2024 host |
 | GOG 2016 | Windows | Not tested. Before 0.6.1 every address was wrong on Windows (it moves the exe in memory), so 0.6.0 and older could not work there |
 | GOG 2024 (`dc04aee5…`) | Linux, Wine / Bottles | Yes (0.7.0): the full automated suite (every stage, every Space feature, host + guest, real clicks) on copies of the current GOG install; before that a smoke test of the 0.6.2 release zip |
-| Steam, EA app / Origin, disc | any | Not tested. Their `SporeApp.exe` is a different file; the game runs, co-op stays off unless its code matches a build above |
+| Steam (`3010a413…`) | Linux, Steam + Proton (offline mode) | Yes (0.7.1): the mod recognises the unpacked code, every feature is on, a Steam guest joined a GOG 2024 host in the Creature stage (world transfer, avatar, the host's NPCs), no faults |
+| Steam | Windows | Not tested yet (the same exe and the same unpacking; a user's log showed 0.7.0 turning co-op off there, the case 0.7.1 fixes) |
+| EA app / Origin, disc | any | Not tested. Their `SporeApp.exe` is a different file; the game runs, co-op stays off unless its code matches a build above |
 | Two different PCs over the internet or a VPN | Windows | Not tested with 0.6.1 on Windows (the network code itself is the same as on Linux, where it was tested) |
 
 If you try a build or system that is not tested, an

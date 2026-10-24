@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-24
+
+**The Steam version works.** Steam's `SporeApp.exe` (since its October 2024 update) is the GOG 2024
+game wrapped in Steam's DRM: the game code is encrypted in the file and unpacked when the game
+starts, so SporeCoop found no addresses for it and turned co-op off ("no symbol database for this
+SporeApp.exe build", [issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Now SporeKit
+recognises the exe by its data, waits for the unpacked code, checks that it is exactly the GOG 2024
+code and then uses the GOG 2024 addresses. Steam and GOG players can play together.
+
+- Tested on Linux with Steam (offline mode) and Proton: every feature on, a Steam guest joined a GOG
+  2024 host in the Creature stage (world transfer, own creature, the host's NPCs), no faults. Not
+  tested yet on Windows.
+- Install as for GOG: into the Steam game's `SporebinEP1` (`SporeCoopSetup.exe` and `install.bat`
+  now name the Steam build). 0.7.0 and 0.7.1 can play together (the network protocol did not change).
+- SporeKit 0.3.2: `data_sha256` / `text_sha256` in symbol files, the late boot for packed exes,
+  `[sporekit] defer_symbols=1` for tests; `tools/exe_info.py` prints both hashes.
+
 ## [0.7.0] - 2026-10-23
 
 "A galaxy together": the Space stage becomes a game of two (to four) rulers of one galaxy who see

@@ -154,6 +154,104 @@ std::string pe_code_sha256_hex(const std::wstring& path)
     return hex_digest(s);
 }
 
+// Packed exes (the Steam build's SteamStub DRM: .text encrypted in the file, a .bind section with
+// the unpacker, the entry point moved there) keep every other section of the build they were made
+// from: "data_sha256" identifies the build from the file (ImageBase and every section but .text,
+// .bind and .rsrc, in table order: name, VirtualAddress, VirtualSize, raw bytes) and "text_sha256"
+// (the .text bytes, relocations undone) proves the unpacked code in memory is that build's code.
+std::string pe_data_sha256_hex(const std::wstring& path)
+{
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f)
+        return {};
+    std::vector<uint8_t> d;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len > 0) {
+        d.resize((size_t)len);
+        d.resize(fread(d.data(), 1, d.size(), f));
+    }
+    fclose(f);
+    auto u16 = [&](size_t o) -> uint32_t { return o + 2 <= d.size() ? d[o] | d[o + 1] << 8 : 0; };
+    auto u32 = [&](size_t o) -> uint32_t { return o + 4 <= d.size() ? u16(o) | u16(o + 2) << 16 : 0; };
+    if (d.size() < 0x40 || u16(0) != 0x5A4D)
+        return {};
+    size_t pe = u32(0x3C);
+    if (u32(pe) != 0x00004550 || u16(pe + 24) != 0x10B)
+        return {};
+    size_t nsec = u16(pe + 6), opt = pe + 24, sec = opt + u16(pe + 20);
+    Sha256 s;
+    uint8_t w[4];
+    auto put32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; i++)
+            w[i] = (uint8_t)(v >> (8 * i));
+        s.update(w, 4);
+    };
+    put32(u32(opt + 28)); // ImageBase
+    for (size_t i = 0; i < nsec; i++) {
+        size_t o = sec + i * 40;
+        if (o + 40 > d.size())
+            return {};
+        if (!memcmp(&d[o], ".rsrc\0\0\0", 8) || !memcmp(&d[o], ".text\0\0\0", 8) || !memcmp(&d[o], ".bind\0\0\0", 8))
+            continue;
+        uint32_t vsize = u32(o + 8), va = u32(o + 12), rsize = u32(o + 16), raw = u32(o + 20);
+        uint32_t n = vsize < rsize ? vsize : rsize;
+        if ((size_t)raw + n > d.size())
+            return {};
+        s.update(&d[o], 8);
+        put32(va);
+        put32(vsize);
+        s.update(d.data() + raw, n);
+    }
+    return hex_digest(s);
+}
+
+// SHA-256 of the main module's .text in memory as the file of the unpacked build has it:
+// min(VirtualSize, SizeOfRawData) bytes, every HIGHLOW relocation inside it moved back to the
+// preferred base. "" when the module has no .text
+std::string mem_text_sha256_hex(HMODULE mod, uintptr_t preferred_base)
+{
+    auto* base = (uint8_t*)mod;
+    auto* dos = (IMAGE_DOS_HEADER*)base;
+    auto* nt = (IMAGE_NT_HEADERS32*)(base + dos->e_lfanew);
+    auto* sec = IMAGE_FIRST_SECTION(nt);
+    uint32_t va = 0, n = 0;
+    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; i++)
+        if (!memcmp(sec[i].Name, ".text\0\0\0", 8)) {
+            va = sec[i].VirtualAddress;
+            n = sec[i].Misc.VirtualSize < sec[i].SizeOfRawData ? sec[i].Misc.VirtualSize : sec[i].SizeOfRawData;
+        }
+    if (!va || !n || IsBadReadPtr(base + va, n))
+        return {};
+    std::vector<uint8_t> t(base + va, base + va + n);
+    uint32_t delta = (uint32_t)((uintptr_t)base - preferred_base);
+    auto& rd = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+    if (delta && rd.VirtualAddress && rd.Size) {
+        uint8_t* p = base + rd.VirtualAddress;
+        uint8_t* end = p + rd.Size;
+        while (p + 8 <= end) {
+            auto* b = (IMAGE_BASE_RELOCATION*)p;
+            if (b->SizeOfBlock < 8)
+                break;
+            auto* e = (uint16_t*)(p + 8);
+            for (uint32_t k = 0; k < (b->SizeOfBlock - 8) / 2; k++) {
+                uint32_t rva = b->VirtualAddress + (e[k] & 0xFFF);
+                if ((e[k] >> 12) == IMAGE_REL_BASED_HIGHLOW && rva >= va && rva + 4 <= va + n) {
+                    uint32_t v;
+                    memcpy(&v, &t[rva - va], 4);
+                    v -= delta;
+                    memcpy(&t[rva - va], &v, 4);
+                }
+            }
+            p += b->SizeOfBlock;
+        }
+    }
+    Sha256 s;
+    s.update(t.data(), t.size());
+    return hex_digest(s);
+}
+
 std::string sha256_file_hex(const std::wstring& path)
 {
     FILE* f = _wfopen(path.c_str(), L"rb");

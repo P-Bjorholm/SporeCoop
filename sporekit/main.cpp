@@ -145,6 +145,69 @@ SkHost g_host = {
 
 using namespace sk;
 
+// ---- a packed exe (Steam DRM): the game-specific part of the boot waits for the unpacked code ----
+// The loader runs the boot at the exe's entry point, which in a SteamStub exe is the unpacker in
+// .bind: the game's .text is still encrypted there. The first call the game's own CRT start code
+// makes (__security_init_cookie: GetSystemTimeAsFileTime; GetStartupInfoW as a second chance),
+// coming from .text, is after the unpacking and before anything of the game runs: the symbols
+// are checked and loaded there, then the lifecycle hooks and the mods (docs/05-re-notes.md 5.1.2).
+static bool g_late_done;
+static uintptr_t g_text_lo, g_text_hi;
+using GetSystemTimeAsFileTime_t = void(WINAPI*)(LPFILETIME);
+using GetStartupInfoW_t = void(WINAPI*)(LPSTARTUPINFOW);
+static GetSystemTimeAsFileTime_t o_GetSystemTimeAsFileTime;
+static GetStartupInfoW_t o_GetStartupInfoW;
+
+static void late_boot(uintptr_t caller)
+{
+    if (g_late_done || caller < g_text_lo || caller >= g_text_hi)
+        return;
+    g_late_done = true;
+    SKLOG(SK_INFO, "the game's code runs (first call from 0x%08X): the game-specific boot", (unsigned)caller);
+    watchdog_mark("symbols");
+    if (symbols_pending())
+        symbols_try_unpacked();
+    watchdog_mark("mods");
+    gamehooks_install();
+    mods_load_all();
+    watchdog_mark("game");
+    SKLOG(SK_INFO, "late boot complete");
+}
+
+static void WINAPI h_GetSystemTimeAsFileTime(LPFILETIME ft)
+{
+    late_boot((uintptr_t)__builtin_return_address(0));
+    o_GetSystemTimeAsFileTime(ft);
+}
+
+static void WINAPI h_GetStartupInfoW(LPSTARTUPINFOW si)
+{
+    late_boot((uintptr_t)__builtin_return_address(0));
+    o_GetStartupInfoW(si);
+}
+
+static bool late_boot_install()
+{
+    auto* base = (uint8_t*)GetModuleHandleW(nullptr);
+    auto* nt = (IMAGE_NT_HEADERS32*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+    auto* sec = IMAGE_FIRST_SECTION(nt);
+    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; i++)
+        if (!memcmp(sec[i].Name, ".text\0\0\0", 8)) {
+            g_text_lo = (uintptr_t)base + sec[i].VirtualAddress;
+            g_text_hi = g_text_lo + sec[i].Misc.VirtualSize;
+        }
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    void* a = k32 ? (void*)GetProcAddress(k32, "GetSystemTimeAsFileTime") : nullptr;
+    void* b = k32 ? (void*)GetProcAddress(k32, "GetStartupInfoW") : nullptr;
+    bool ok = g_text_lo && a && b &&
+              hook_create(&g_kit_mod, a, (void*)h_GetSystemTimeAsFileTime, (void**)&o_GetSystemTimeAsFileTime) == 0 &&
+              hook_create(&g_kit_mod, b, (void*)h_GetStartupInfoW, (void**)&o_GetStartupInfoW) == 0;
+    SKLOG(ok ? SK_INFO : SK_ERROR, "late boot: %s (game code 0x%08X..0x%08X)",
+          ok ? "waiting for the game's first call" : "cannot watch for the game's code", (unsigned)g_text_lo,
+          (unsigned)g_text_hi);
+    return ok;
+}
+
 extern "C" __declspec(dllexport) int __cdecl sporekit_boot(HMODULE loader)
 {
     (void)loader;
@@ -187,17 +250,26 @@ extern "C" __declspec(dllexport) int __cdecl sporekit_boot(HMODULE loader)
     hooks_init();
     watchdog_mark("symbols");
     symbols_load();
+    // [sporekit] defer_symbols=1: the late boot of a packed exe on any exe (tests of the path)
+    bool late = symbols_pending() || ini_int(ini, "sporekit", "defer_symbols", 0) != 0;
     watchdog_mark("instance");
     instance_install();
     focus_install_hooks();
     watchdog_mark("d3d9");
     d3d9_install();
-    gamehooks_install();
+    if (!late)
+        gamehooks_install();
     register_builtin_commands();
     cheats_register_builtin();
     int port = ini_int(ini, "sporekit", "console_port", 47800) + (g_instance - 1);
     watchdog_mark("console");
     console_start(port);
+    if (late && late_boot_install()) {
+        SKLOG(SK_INFO, "boot complete (the game-specific part waits for the game's code)");
+        return 0;
+    }
+    if (late)
+        gamehooks_install();
     watchdog_mark("mods");
     mods_load_all();
     watchdog_mark("game");
