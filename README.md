@@ -6,7 +6,8 @@
   <a href="https://github.com/WoodyWizard/SporeCoop/releases/latest"><img src="https://img.shields.io/github/v/release/WoodyWizard/SporeCoop?label=download&color=8ea6ff" alt="Latest release"></a>
   <a href="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml"><img src="https://github.com/WoodyWizard/SporeCoop/actions/workflows/build.yml/badge.svg" alt="Build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-74c867" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/game-SPORE%20Collection%20(GOG)-f0b44a" alt="SPORE Collection (GOG)">
+  <img src="https://img.shields.io/badge/game-Spore%20GA%20(GOG%20%7C%20Steam)-f0b44a" alt="Spore Galactic Adventures (GOG | Steam)">
+  <img src="https://img.shields.io/badge/OS-Windows%20%7C%20Linux-5aa9e6" alt="Windows | Linux">
   <img src="https://img.shields.io/badge/players-2%E2%80%934-ff7a5f" alt="2–4 players">
 </p>
 
@@ -29,7 +30,7 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 ## Contents
 
 - [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
-  [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
+  [Compatibility](#compatibility) · [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
   [Building from source](#building-from-source) · [Credits](#credits)
 
 ## Features
@@ -88,14 +89,15 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 ## Install
 
-You need **Spore with Galactic Adventures** on Windows or on Linux with Wine (Bottles, Lutris,
-Proton). The mod is tested with the **GOG "SPORE Collection"** build. Every player installs the
-same SporeCoop version.
+You need **Spore with Galactic Adventures** from **GOG** or **Steam**, on Windows or on Linux with
+Wine (Bottles, Lutris, Proton). Which versions are tested: [Compatibility](#compatibility). Every
+player installs the same SporeCoop version.
 
 1. Download **`SporeCoopSetup.exe`** from [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest)
    and run it (on Linux: inside the game's Wine prefix, e.g. Bottles *Run Executable...*).
-2. It finds the game, shows whether your build is the tested one, and **Install** downloads the
-   newest release from GitHub and checks it.
+2. It finds the game (GOG or Steam), shows which build you have, and **Install** downloads the
+   newest release from GitHub and checks it. Steam: if it does not find the game, choose the
+   Spore folder in `steamapps\common` (the one with `SporebinEP1`).
 3. Start Spore: the galaxy menu now has a **Co-op** item.
 
 **Updates** come from this repository's releases: SporeCoop checks for a new version when the game
@@ -105,6 +107,33 @@ turns the check off). The setup updates and uninstalls too. Prefer files? The re
 
 The full guide (checking your game build, Linux, installing by hand, the internet, updating,
 uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+## Compatibility
+
+SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where it has been tested:
+
+| Game version | `SporeApp.exe` | Windows 11 | Linux (Wine / Proton) |
+|---|---|---|---|
+| **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
+| **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
+| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❔ not tested | ✅ up to 0.7.0: SporeCoop was developed on it ² |
+| EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
+
+¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
+[issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
+frames from the game loop; tested by simulating that case, not yet with the real overlay.
+² 0.7.x is the last version for the GOG 2016 build; from 0.8 only the current GOG build (and Steam,
+which is the same game): update the game through GOG.
+
+**Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
+2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
+needs the same SporeCoop protocol: 0.7.0, 0.7.1 and 0.7.2 play together, 0.6.x cannot join 0.7.
+
+**Not tested yet:** two PCs over the internet with Windows on 0.7 (the network code is the same
+as on Linux, where it was tested), the EA app and disc versions. Which build you have:
+`SporeCoopSetup.exe` shows it, or see [INSTALL.md, section 2](docs/INSTALL.md#2-check-your-game-build).
+Tried another version? Please tell us in an [issue](https://github.com/WoodyWizard/SporeCoop/issues)
+with `mods\logs\sporekit.log`.
 
 ## How to play
 
@@ -135,7 +164,7 @@ uninstalling, troubleshooting) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 **Example: two friends over the internet**
 
 ```
-Alice and Bob install Tailscale and SporeCoop 0.6.0.
+Alice (GOG) and Bob (Steam) install Tailscale and the same SporeCoop version.
 Alice: Co-op → "Alice" → Host → loads her Tribe save.
        The window says: friends connect to 100.64.12.7:47810
 Bob:   Co-op → "Bob" → 100.64.12.7 → Join.
@@ -145,24 +174,15 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 
 ## FAQ
 
-**Which game versions does it work with?** SporeCoop has been tested with:
+**Which game versions does it work with?** The current GOG and Steam versions of Spore + Galactic
+Adventures, on Windows and Linux: see [Compatibility](#compatibility). The Steam version is the GOG
+2024 game under Steam's DRM: SporeCoop waits until the game has unpacked itself and checks the code,
+so Steam and GOG players can play together. The EA app and disc versions are not supported yet
+(their `SporeApp.exe` is a different file: the game runs, co-op stays off). Every test, build by
+build: [INSTALL.md, section 2](docs/INSTALL.md#where-sporecoop-has-been-tested).
 
-| Game build | System |
-|---|---|
-| GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux (Wine / Bottles) |
-| GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11, Linux (Wine / Bottles) |
-| Steam, Spore + Galactic Adventures (`3010a413…`, since 0.7.1) | Linux (Steam + Proton), Windows 11 |
-
-The Steam version is the GOG 2024 game under Steam's DRM: SporeCoop waits until the game has
-unpacked itself and checks the code, so Steam and GOG players can play together. The EA app and
-disc versions have not been tested; their `SporeApp.exe` is a different file, so co-op stays off
-with them unless its code is the same as one of the builds above. The
-full list (what was tested where) is in
-[INSTALL.md, section 2](docs/INSTALL.md#where-sporecoop-has-been-tested). If you try another
-build, please tell us how it went in an [issue](https://github.com/WoodyWizard/SporeCoop/issues).
-
-**Do all players need the game?** Yes, every player needs their own copy of SPORE Collection and
-the same SporeCoop version.
+**Do all players need the game?** Yes, every player needs their own copy of Spore + Galactic
+Adventures (GOG or Steam) and the same SporeCoop version.
 
 **What happens to my saves?** Nothing: the host saves before sending its world; guests keep the
 host's world in a separate save slot, and a guest's own save of the same planet is moved to
@@ -184,7 +204,7 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.7.0: co-op in every stage for up to 4 players, and a Space stage built for playing
+Version 0.7 (latest 0.7.2): co-op in every stage for up to 4 players, and a Space stage built for playing
 together (the F9 window's **Space** page: partners on the map, allied colonies, trade, contracts,
 shared diplomacy, the galactic core together, rivals mode). Tested automatically on real game
 instances: 50+ scenario tests with real clicks, bots that play every stage through real input for
