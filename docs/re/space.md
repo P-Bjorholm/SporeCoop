@@ -882,6 +882,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   or the attacker's id is -1); TakeDamage itself returns on `attackerPol == own pol` (§2.1 step 4).
 * **The political id is just `cGameData+0x30`**: `SetPoliticalID` (vt+0x48) 0x00804880 is `mov eax,
   [esp+4]; mov [ecx+0x30],eax; ret 4`. Writing it on a live UFO works at once.
+* GOG 2024 (dc04aee5, static check by byte pattern): the same friendly-fire test sits at 0x00CBC1EC
+  (`cmp ebx,-1; je; mov edx,[edi]; mov eax,[edx+0x10]; call eax; cmp ebx,eax`) and SetPoliticalID is
+  the same store at 0x00804910, so +0x30 is the political id there too (not run on that build).
 * The puppet of a player we are at war with gets political id **-1** (0xFFFFFFFF, "no empire", like
   the pirates of `coop.fleet spawn`): the laser (palette "combat", key 1, a click on the ship) then
   hits it, TakeDamage 0xC3CEA0 is called on it with `type 1`, attacker = our UFO's combatant, about
