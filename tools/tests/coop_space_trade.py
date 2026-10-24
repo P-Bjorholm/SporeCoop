@@ -8,8 +8,9 @@
  3. spice sale: at a star where the guest has a colony the host's page offers "Sell 10" at twice the
     market value; a real click sells: the money of both games (one shared budget) grows by the
     price, the 10 spice leave the host's cargo and arrive in the guest's cargo
- 4. rivals mode (own budgets, the partner pays after accepting): only when space_rivalry is in
-    the build (feature 10), else reported as untested
+ 4. rivals mode (own budgets): the guest offers spice, the host accepts by a real click and pays
+    from its own budget; an open offer is declined when the mode ends. Only when space_rivalry is
+    in the build (feature 10), else reported as untested
 
   SPORE_LANE=10 python3 tools/tests/coop_space_trade.py
 """
@@ -97,43 +98,39 @@ def click_row(ui, con, text, pick=None, tries=8):
 
 
 def rivals(ck, host, guest, ui):
-    """rivals mode: own budgets; the host offers spice at 1.5x, the guest accepts on its own page
-    (a real click) and pays from its budget"""
+    """rivals mode: own budgets. The guest offers spice to the host's colony at 1.5x (the guest's
+    "Offer" row, pressed through the console: on the new GOG 2024 fixture the guest's game sits in
+    a HUD-less movie state where UI clicks do not arrive, see docs/known-issues.md), the host
+    accepts on its own page by a real click and pays from its own budget"""
     print('  rivals:', sp(host, 'rivalry mode rivals'))
-    ck(wait(lambda: 'rivals=1' in sp(guest, 'rivalry') or 'mode rivals' in sp(guest, 'rivalry'), 20),
-       'rivals mode is on for the guest')
-    print('  guest rivalry:', sp(guest, 'rivalry').replace('\n', ' | ')[:200])
-    print('  spice:', sp(host, 'trade spice 0 10'), sp(host, 'trade spice 1 10'))
-    deal = sp(host, 'trade deal')
-    print('  host deal:', deal)
+    ck(wait(lambda: 'rivals=1' in sp(guest, 'rivalry'), 20), 'rivals mode is on for the guest')
+    print('  spice:', sp(guest, 'trade spice 0 10'), sp(guest, 'trade spice 1 10'))
+    deal = sp(guest, 'trade deal')
+    print('  guest deal:', deal)
     dm = re.search(r'spice (\S+) .* x(\d+) price (\d+)', deal)
-    ck(dm is not None, 'rivals: the host can offer spice to the guest\'s colony')
+    ck(dm is not None, 'rivals: the guest can offer spice to the host\'s colony')
     if not dm:
         return
     inst, n, price = dm.group(1), int(dm.group(2)), int(dm.group(3))
-    h0, g0, c0, gc0 = money(host), money(guest), cargo(host, inst), cargo(guest, inst)
-    print(f'  before: host money {h0} cargo {c0}, guest money {g0} cargo {gc0}; {n} x {price}')
-    ck(click_row(ui, host, 'Offer'), 'the offer row is clicked')
-    ck(cargo(host, inst) == c0 - n, f'the offered spice is held back ({cargo(host, inst)})')
-    gui = Ui(guest, 'guest')
-    ck(open_space_page(gui, guest), 'F9: the guest opens the Space page')
-    ck(wait(lambda: row_of(guest, 'offers')[0] is not None, 15), 'the guest\'s page shows the offer')
-    shot(guest, 'space_trade_offer.png')
-    ck(click_row(gui, guest, 'offers'), 'the guest accepts by a click')
+    h0, g0, c0, hc0 = money(host), money(guest), cargo(guest, inst), cargo(host, inst)
+    print(f'  before: host money {h0} cargo {hc0}, guest money {g0} cargo {c0}; {n} x {price}')
+    rn, rt = row_of(guest, 'Offer')
+    print(f'  guest row {rn}: {rt}', sp(guest, 'press', rn) if rn is not None else '')
+    ck(rn is not None and wait(lambda: cargo(guest, inst) == c0 - n), f'the offered spice is held back ({cargo(guest, inst)})')
+    ck(wait(lambda: row_of(host, 'offers')[0] is not None, 15), 'the host\'s page shows the offer')
+    shot(host, 'space_trade_offer.png')
+    ck(click_row(ui, host, 'offers'), 'the host accepts by a click')
     total = n * price
-    ck(wait(lambda: money(host) == h0 + total), f'the host got {total} ({money(host) - h0})')
-    ck(wait(lambda: money(guest) == g0 - total), f'the guest paid {total} from its own budget ({money(guest) - g0})')
-    ck(wait(lambda: cargo(guest, inst) == gc0 + n), f'the spice is in the guest\'s cargo ({cargo(guest, inst)})')
-    gui.click('sback')
-    guest.call(f'key {VK_F9}')
+    ck(wait(lambda: money(guest) == g0 + total), f'the guest got {total} ({money(guest) - g0})')
+    ck(wait(lambda: money(host) == h0 - total), f'the host paid {total} from its own budget ({money(host) - h0})')
+    ck(wait(lambda: cargo(host, inst) == hc0 + n), f'the spice is in the host\'s cargo ({cargo(host, inst)})')
     # an offer left open when the host ends rivals mode is declined: the spice comes back
-    print('  spice:', sp(host, 'trade spice 0 10'), sp(host, 'trade spice 1 10'))
-    c1 = cargo(host, inst)
-    print('  offer:', sp(host, 'trade sell'))
-    ck(wait(lambda: 'offers=1' in sp(guest, 'trade')), 'a second offer waits on the guest')
+    c1 = cargo(guest, inst)
+    print('  offer:', sp(guest, 'trade sell'))
+    ck(wait(lambda: 'offers=1' in sp(host, 'trade')), 'a second offer waits on the host')
     print('  allies:', sp(host, 'rivalry mode allies'))
-    ck(wait(lambda: 'pending=0' in sp(host, 'trade') and cargo(host, inst) == c1), 
-       f'back in allies mode the open offer is declined and the spice is back ({cargo(host, inst)} == {c1})')
+    ck(wait(lambda: 'pending=0' in sp(guest, 'trade') and cargo(guest, inst) == c1),
+       f'back in allies mode the open offer is declined and the spice is back ({cargo(guest, inst)} == {c1})')
 
 
 def main():
@@ -161,13 +158,15 @@ def main():
     ck(ammo(host) == 7, f'the host has 7 charges left ({ammo(host)})')
 
     # ---- 2. no room: the rest comes back ----
+    back0 = int(re.search(r'charges_back=(\d+)', sp(host, 'trade')).group(1))
     print('  guest bomb:', sp(guest, 'trade ammo', BOMB, 97))
     ck(click_row(ui, host, 'Give 5', pick='Anti-Matter Bomb'), 'the gift row is clicked again')
     ck(wait(lambda: ammo(guest) == 99), f'the guest is full: 99 ({ammo(guest)})')
     ck(wait(lambda: ammo(host) == 5), f'3 charges came back to the host: 5 ({ammo(host)})')
     st = sp(host, 'trade')
     print('  host trade:', st)
-    ck('charges_back=3' in st, 'the host counted 3 charges back')
+    back = int(re.search(r'charges_back=(\d+)', st).group(1))
+    ck(back - back0 == 3, f'the host counted 3 charges back ({back - back0})')
 
     # ---- 3. a spice sale to the guest's colony ----
     star = int(re.search(r'star (\d+)', sp(host, 'star')).group(1))

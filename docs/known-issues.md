@@ -181,10 +181,17 @@ Fixed entries move to the commit message (and a test).
 
 ## Space trade: open ends (space_trade.cpp, 2026-10-23)
 
-* **Rivals mode payment is untested**: the offer / accept / pay flow (kinds 74-76) is written for
-  `spaceext::rivals()` but space_rivalry.cpp (feature 10) was not in the branch when
-  coop_space_trade.py ran, so the test only covers the shared-budget sale. In rivals mode without
-  own budgets the two AddMoney calls cancel out.
+* **Rivals mode is tested only in a local merge**: space_rivalry.cpp (feature 10) is not in this
+  branch; coop_space_trade.py passed its rivals part (offer, accept by a real click, both own
+  budgets, an open offer declined when the host ends rivals mode) on a throwaway merge with
+  feat/space-rivalry 9642dae (lane 10, GOG 2024, 2026-10-23). Without space_rivalry the test
+  prints "rivals mode: UNTESTED".
+* **The guest's UI clicks do not arrive on the new space fixture (GOG 2024, lane 10)**: after the
+  join the guest's game sits in a HUD-less movie state (`coop.space hp` shows `movie=1`, Enter
+  does not end it), the co-op window opens with F9 but a click on "Space >" changes nothing. The
+  same state makes coop_space_page / coop_space_death / coop_space_rescue fail on lane 10, also on
+  the plain feat/space-map build (not caused by space_trade). coop_space_trade.py therefore lets
+  the host do every real click and presses the guest's offer row through `coop.space press`.
 * **A gift or sale on its way when the own session ends comes back** (the sender cannot know
   whether the partner already got it): leaving right after "Give" can duplicate the charges.
   A partner who leaves before answering is handled (the sender gets it back).
