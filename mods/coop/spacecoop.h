@@ -51,6 +51,8 @@ int spice(std::string& to);
 int give_spice(int n);
 bool can_jump(std::string& to);
 std::string jump(uint8_t to); // "" = ok, else why not
+// the same travel to any star system by StarID (space_map: a partner's colony), free
+std::string travel(uint32_t star); // "" = ok, else why not
 // the cStarRecord of a StarID (starRecord+0x70), nullptr when it is not a star of this galaxy
 // (the game's own GetStarRecord faults then)
 void* star_record(uint32_t id);

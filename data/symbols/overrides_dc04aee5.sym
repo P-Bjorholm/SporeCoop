@@ -198,3 +198,12 @@ SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0
 SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
 SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
 SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)
+Simulator::cCommManager::Get=0x00B3D5A0 ; verified port from GOG 2016 0x00B3D570: cdecl() -> [0x167EB44], three getters before cCinematicManager::Get 0xB3D5D0 -> [0x167EB50] as in GOG 2016
+Simulator::cCommManager::IsCommScreenActive=0x00AE9310 ; verified port from GOG 2016 0x00AE92E0: identical code (cmp [ecx+0x20],0; calls 0x1002A70 / 0x1075530 / 0x10666B0 / 0x1068360), plain ret
+SporeCoop::cSimulatorPlayerUFO_TravelCost=0x00FFC390 ; verified port from GOG 2016 0x00FFC390 (unchanged): same code, called at 0x1002090 (TravelToStar) and 0x10228E2 (SpaceTeleportTo), ret 8
+Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210F0 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns cStar+0x48
+Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): same code (context == 2 check, cost 0xFFC390 refunded, TravelToStar), plain ret
+Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
+Simulator::cPlanetModel::Get=0x00B3D450 ; verified port from GOG 2016 0x00B3D420: cdecl() -> [0x167EAF8] (ModAPI March2017 address)
+Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x00B7F040: identical code (cmp [esi+0x20],0; [esi+0x24] vt+0xC; 0xF92760), ret 4

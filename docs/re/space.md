@@ -1114,3 +1114,85 @@ functions, then, if the events differ, `ResetRelationship` + operator[] for each
 events, and clears its own records the host does not have. A periodic table does not touch an
 empire the guest itself changed in the last 8 s; an answer to a request does (the host handles the
 request after the guest's earlier messages).
+
+## 10. Galaxy map, roster, colonies of partners (✔ runtime, `space_map.cpp`, lane 2 GOG 2016, 2026-10-23)
+
+Found while writing feature #1/#2 of 0.7 (partners and their colonies on the galaxy map) and the
+roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.py`).
+
+### 10.1 The own empire, read from memory (✔ runtime, ModAPI layout confirmed)
+* `cEmpire` (GetPlayerEmpire 0x10211B0): cIdentityColorable at +0x0C (mIDColorID +0x10, cached
+  colour ColorRGB floats **+0x30** (the space fixture: 0.69 0.35 0.48 = FFB1587B)), **mEmpireName**
+  string16 **+0x3C** ("Fishtistic Empire"), mPoliticalID +0x84, mStars vector<cStarRecord*> +0x88,
+  mHomeStar +0xB0 (StarID), mHomePlanet +0xB4 (PlanetID), money +0xD0.
+* `cStarRecord`: position +0x3C, mEmpireID +0x54, **mName string16 +0x60**, StarID +0x70,
+  **mPlanets vector<cPlanetRecord*> +0x84** (empty for a star whose system was never generated).
+* `cPlanetRecord`: **mName string16 +0x18**, type +0x28 (1 rock/T0, 2-4 terrestrial, 5 the home
+  planet in the fixture ~), scores +0xB0/+0xB4/+0xB8, **mCommodityNodes +0xE4** (spice geysers; 0 on
+  every planet of the fixture but the home planet, 13 there), mCivData +0x15C (cCivData pol +0x14,
+  mCities vector +0x3C), PlanetID +0x184, tech level +0x194 (5 = empire colony), spice key +0x198.
+* The colonies of the own empire: every planet of `mStars` with tech level 5 and a cCivData of the
+  player's political id (`SpacePlayerData+0x20` holds the same as cPlanet*, the records need no
+  loaded planet).
+* **Spice keys** `{FNV-1("spiceN"), 0x00B1B104 prop, 0x034D97FA SpaceTrading}`: 0x1CA01562 spice1 Red,
+  0x1CA01561 spice2 Blue, 0x1CA01560 spice3 Yellow, 0x1CA01567 spice4 Green, 0x1CA01566 spice5 Pink,
+  0x1CA01565 spice6 Purple (the prop files' texts "Red Spice" ..., Spore_Game.package and
+  PatchData.package; no spice7+).
+* **Star names are not stable:** the names of stars nobody named are made up when the galaxy loads:
+  star 4587540 was "Indentia", "Tatiar", "Ipheb" in three loads of the same save; two players see
+  different names for the same star. The roster carries the owner's names (Colony::star_name).
+* **One empire:** a guest plays the host's save, so at the start both players have the same empire
+  (same political id, home, colonies, colour). A colony founded later exists only in the founder's
+  copy; a rejoining guest loads the host's world again and its own colonies are gone
+  (`own_colony()` in space_map.h: the partner's colonies that are not mine).
+
+### 10.2 The galaxy view on the screen (✔ runtime)
+* `SkHost::world_to_screen` with the star record's position +0x3C gives the star's pixel in the
+  galaxy view exactly (the test compares the drawn tag with the star: equal). It returns 0 also for
+  points in front of the camera but outside the view (a star 8 units away at the default zoom), so
+  off-screen directions are found by walking the segment from the own ship (on screen) to the target.
+* In the galaxy view a partner's `PlayerState.pos` is its ship in galaxy coordinates (the same space
+  as the stars; parked at a star it is within 0.15 of the star's position).
+* `SpaceTeleportTo(cStarRecord*)` 0x10228C0 (galaxy view only) puts the own ship at the star at once,
+  the view stays the galaxy view (✔ runtime: the tag click next to a partner in flight).
+* Galaxy flight price `cSimulatorPlayerUFO_TravelCost` **0xFFC390** (thiscall(playerUFO, from, to)
+  ret 8 → int; own stars and allies' stars cheaper): **0 for every star** in this game (the fixture,
+  6 stars tried), so TravelToStar and SpaceTeleportTo cost nothing; a mod that sets a price would be
+  charged by space_map's colony trips too.
+* Hiding: `cCommManager::IsCommScreenActive` 0xAE92E0 (thiscall(`cCommManager::Get` 0xB3D570), bool)
+  for comm screens; `cCinematicManager+0x2C` for cinematics; coop.cpp already skips the world labels
+  under the pause menu (`menu_up`) and the co-op window. (A native mark, the star's own ownership
+  ring, would need a fake owner in `cStarRecord+0x54`: that is feature #4's allied empire, not this
+  one's; the map draws overlay text: a dotted ring of 10 `•` at 14 px around a colony star and a
+  `▼ Name` tag 36 px above the partner's star.)
+
+### 10.3 The colony tool (✔ runtime)
+* Tool key `{0x733B280C (FNV-1 "placecolony"), 0, 0}` (`coop.space tool add placecolony`), the
+  "Colony Incredi-Pak" in the colony palette (tab W-306, row 2 slot 1).
+* Aiming refuses: "Can't use in this system" (star 4587540 of the fixture, empire FFFFFFFF, reason ?)
+  and "Colonies must be placed near spice" (Vulpica: no commodity nodes) with red placement rings.
+* `cPlaceColonyToolStrategy::OnHit` **0x105B930** (thiscall, `this` unused, (cSpaceToolData* tool,
+  Vector3* pos, int hitType, int) ret 0x10) is the tool's effect without the aiming check: charge,
+  ground clear, the delayed drop (callback 0x1058C60 → CreateColony). The drop's caption waits for
+  OK; after it the planet has tech level 5 and 1 city (~14 s in the test). `coop.space map colonize`
+  fires it at the ground under the ship: `cPlanetModel::GetHeightAt` 0xB7F040 (thiscall(model
+  `cPlanetModel::Get` 0xB3D420, Vector3* dir) ret 4 → float: the terrain's distance from the planet
+  centre; planet coordinates are centred on the planet).
+* **A colony at the planet's centre faults in a loop** (0xC0000005 x4559 at 0xB7ED00 =
+  GetGravity+0x7A0, calls 0xFF90A2 CreateColony / 0x1058CE6 the drop callback; the guest froze).
+  The terrain cursor object (noun 0x18C40BC) sits at 0,0,0 while the mouse is not over the ground,
+  and the planet's animals (0x18EB45E) read 0,0,0 through cSpatialObject in Space: neither gives a
+  ground point.
+* SpaceToolHit (ModAPI SimulatorEnums): 0 combatant, 1 ground, 2 water, 3 air (the hitType of the
+  OnHit functions of §7.6 and 7.8).
+
+### 10.4 The roster on the wire (`space_map.cpp`)
+* MSG_SPACE kind 10 `K_ROSTER`: u32 version, u8 part, u8 parts; part 0 starts with the head (home
+  star, home planet, place, galaxy position, empire name, star name, colour, political id, money),
+  every part then has u8 n colonies (PlanetID, planet name, star name, spice key, spice name, cities,
+  flags). Parts are cut at 1000 bytes (an empire of 250 colonies fits in ~20 parts). A roster is
+  taken when all parts of one version arrived.
+* Kind 11 `K_ROSTER_REQ`: a player who (re)joined or entered Space asks everybody for theirs.
+* Sent on a change (read every second; the ship's galaxy position and the money do not count as a
+  change), every 5 s anyway, and when a new player is in the session. Rosters of players who left
+  are dropped (the session's player list).
