@@ -330,6 +330,26 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   Enter first (the test's `captions()`). One run takes ~6 minutes (cold start ~45 s, armada ~90 s,
   survey ~60 s, timeout 25 s), 2026-10-23 on lane 3.
 
+### Shared diplomacy (coop_space_diplomacy.py)
+* `coop.space diplomacy list` (the empires with a name, events or a state; `list all` every one,
+  60 lines at most), `near [n]` (the NPC empires nearest to the home star: `home=<StarID>` to fly
+  to), `table` (records with events: `rec <pol> flags=<1 war, 2 alliance, 16 met, 32 contacted> rel=..
+  <event>=<value>...`; compare two games with it), `log`, `sync`, and the game's own functions:
+  `apply <pol> [event] [scale]` (default the gift event), `war|ally|peace|break|contact <pol>`;
+  `local ...` does the same without sharing (tests: make the copies differ).
+* The test runs on `space_empire`: it checks the fixture's two contacts in both copies, then flies
+  to the two nearest empires not met yet; the host's first-contact talk is `coop.space empire
+  contact <StarID hex>` (spacecoop.cpp, the same calls as the game's handler, shared by the hooks).
+* A cold start under load once left one caught fault on both games at 0x11ECE4F (a null object in
+  code called from 0xA0F687, a logger-like routine, outside any diplomacy code); the next cold run
+  had none. `ck.faults` counts it because `exc` counts since the process started.
+* The test takes ~3.5 min after a cold start of the pair (~45 s): the jumps to two empires' home
+  stars take ~5 s each, the rejoin ~15 s. It passed twice in a row on lane 4 (GOG 2016).
+* Use an event that stays in the map to make copies differ: CommunicatedMean 0x5F62736 applied by
+  hand changed the relation once and left no event, so the tables looked equal again.
+* The `diplomacy list` output of all 2120 empires is cut by the console (~16 KB): the command
+  shows only the interesting ones.
+
 ## 6.13 Playing the Tribe stage through real input (play_tribe.py)
 
 Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):

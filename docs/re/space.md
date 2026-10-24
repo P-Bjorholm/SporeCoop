@@ -656,7 +656,7 @@ on the receiver; all safe in any context (no planet needed).
 * Exact meaning of OnHit hitType 0..3 and of record+0xB8 (water [ModAPI] ?).
 * Whether `TravelToStarSystem` is safe during comm screens / cinematics; FE0E00 details.
 * Mission state 0/4 meaning; how the UI picks the tracked mission.
-* Political ids identical across two saves of the same galaxy (needed for shared relationships).
+* ~~Political ids identical across two saves of the same galaxy~~: yes for the copies of one save (§10.3).
 
 ## 8. Loading a save while a stage runs (leaving space)
 
@@ -1038,3 +1038,79 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * A guest that rejoins reloads the host's save, so its money becomes the save's value: the guest asks
   the host (K_ASK) for its last reported budget (kept by player name) after every world load in rivals
   mode and reports nothing until the answer (K_SET).
+
+## 10. Diplomacy: relations with NPC empires (✔ disassembly of both builds + runtime, lane 4, 2026-10-23; `space_diplomacy.cpp`, test `coop_space_diplomacy.py`)
+
+### 10.1 Where the state lives
+* `cRelationshipManager::Get` (0xB3D390 / GOG 2024 0xB3D3C0) is a mode switch; in the Space mode
+  (0x1654C05) it is the star manager's manager, in tribe/civ it is `SpacePlayerData+0x0C`.
+* **+0x24 `map<pair<pol, pol>, cRelationshipData>`** (EASTL rbtree: root +0x30, size +0x38; node:
+  right +0, left +4, parent +8, key +0x10/+0x14, data **+0x18**). The pair is normalized by
+  0xD00B50: in Space a pair with the player is stored as **(other, player)**. `0xD01AE0(a, b)`
+  returns this map for two empire ids (high bit set, `IsEmpirePol` 0xBA6780 = `pol >> 31`) and a
+  per-planet map (mgr +0x9C) on a planet when one side is not an empire.
+* `cRelationshipData`: +0x00 cached value, **+0x04 flags (bit 0 war, bit 1 alliance)** (IsAtWar
+  0xD01F50/0xD01F80 `flags & 1`, IsAllied 0xD01FE0/0xD02020 `flags >> 1 & 1`), **+0x08
+  `map<eventId, float>`** (root +0x14 of the record, node key +0x10, value +0x14). The relation
+  (CalculateRelationship 0xD00940, clamped) is the sum of the event values.
+* **Every NPC empire has a record with the player from the start** (2120 empires and 2120 records
+  in the new-game fixture), with no events. A record with no events is not a contact.
+* War / alliance also live in `cEmpire` enemies +0x5C / allies +0x70 (AddEnemy 0xC34730, AddAlly
+  0xC347C0, remove ally 0xC32970), kept by the four state functions below.
+* **Contact** has two levels in the `cPlayer` flags of §9.6 (`cGameNounManager::Get()+0x74`
+  **+0x11D8..+0x11DC**, sorted `{u32 pol, u32 flags}`): **0x20 = met** (0xC7AA10 / 0xC7AA30, set
+  0xC7BDA0 / 0xC7BDC0 `(pol, bool)` by MakeContact below, on arriving at the empire's star) and
+  **0x02 = contacted** (PlayerContactedEmpire 0xC7A890, set with 0x04 by
+  `cEmpire_SetContactedByPlayer` 0xC30A70 / 0xC30A90 from the first-contact talk, §9.6). In the
+  `space_empire` fixture the two contacted empires have 0x02 (and 0x20).
+
+### 10.2 Functions (both builds, overrides files)
+| function | GOG 2016 / GOG 2024 | notes |
+|---|---|---|
+| `ApplyRelationship(polA, polB_cause, eventId, scale)` | 0xD06280 / 0xD06280 | thiscall `ret 0x10`, float ST0; = 0xD01AE0 + ApplyEvent |
+| **ApplyEvent** `(map, polA, polB, eventId, scale)` | 0xD05DD0 / 0xD05DD0 | `ret 0x14`; the core of every event (also DeclareWar's and the FoughtEnemy cascade 0xD062B0's); creates the record (0xD05770), adds the tuning value (0xD01720, `space_npc_relationship_effects` 0x568DE14 per archetype) into the event map, erases it when ~0 |
+| DeclareWar / DeclareAlliance / DeclarePeace / BreakAlliance `(cEmpire* e1, cEmpire* e2 = 0: player)` | 0xD065E0, 0xD06960, 0xD03920, 0xD01E60 / 0xD065E0, 0xD06960, 0xD03920, 0xD01E70 | `ret 8`; flags in both orders of the pair (only if the record exists), cEmpire vectors; DeclareWar with e2 != player adds StartedWar 0x5F8A1AD, DeclareAlliance calls DeclarePeace first |
+| ResetRelationship(a, b) | 0xD05870 / 0xD05870 | `ret 8`: creates the record if missing, clears its events (flags kept) |
+| map<u32,float>::operator[] | 0xC8C6D0 / 0xC8C6E0 | `ret 4` → float* (used by ApplyEvent on the record's event map) |
+| **cEmpire_MakeContact(int)** | 0xC32430 / 0xC32450 | thiscall(empire) `ret 4`: first contact: returns if met, else sets flag 0x20 and applies the personality events 0x5B6FCC9 / 0x5B6FCD4 (+ archetype, super power, Grox ones); called on arriving at the empire's star (0xC7A234), landing on its planet (0xC75660), by the universe sim (0x1014A59) |
+| cEmpire_SetContactedByPlayer() | 0xC30A70 / 0xC30A90 | thiscall plain ret; flags 0x02 and 0x04; one caller, the first-contact message handler 0xFE3233 (which then applies 0x5B6CF09 by ApplyRelationship) |
+| cStarManager::GetEmpire(pol) | 0xBA94A0 / 0xBA94C0 | `ret 4`; `map<pol, cEmpire*>` at star manager +0x150 (node value +0x14); cEmpire pol +0x84, name string16 +0x3C, home StarID +0xB0 |
+
+Event ids (ModAPI `RelationshipEvents`) found at the call sites of ApplyRelationship: gift (comm
+screen) 0x526E51F at 0x102CBC9 (after `AddMoney(-amount)`), break alliance 0x526E521, mission
+complete / failed / rejected / aborted 0x526E519 / 51C / 51D / 51E (cMission 0xC46xxx, raids
+0xC5BC08), destroy UFO 0x591F833 (0xC3D92D), destroy ally UFO 0x526E542, destroy building 0x526E53C,
+trade 0x667AF08 (spice sale 0x1038CF2), cheat good / bad 0x526E5DC / 0x526E5F3. Computed by every
+copy on its own: personality 0x5B6FCC9 / 0x5B6FCD4 and archetype 0x5FF85B2..B4 (MakeContact),
+super power 0x601DF2A, allied with Grox 0x68B2938, embassy 0x580E23B, the empire AI's be nice /
+be nasty 0x577909A / B (0xFE9xxx), avoided contact 0x5B942D0. CommunicatedMean 0x5F62736 applied
+by hand changed the relation once but left no event in the map (✔ runtime).
+
+### 10.3 Findings at runtime (lane 4, GOG 2016, new-game fixture `space`)
+* **Political ids are identical in both copies**: the player 0x800021CA and the 2120 NPC empires
+  (same ids and home stars) on host and guest, because the guest loads the host's save. The empires
+  exist from the start of the Space game, so empires contacted after the join have the same ids
+  too (checked for two contacts made after the join). ? Empires born later (an uplifted civilization, a colony split)
+  would take `NextPoliticalID` 0xBA6760 on each copy and could differ: not seen.
+* **Empire names and species are chosen per copy**: until contact every NPC empire is named
+  "unknown"; after the contact each copy picks its own (the same empire was "Chitis Empire" on the
+  guest, "Mustachio Empire" on the host): the species comes from each player's own creations.
+  Notices therefore show both names: "Alice formed an alliance with Kirgle Empire (Alice: Judge
+  Empire)".
+* Arriving at an NPC empire's home star (`coop.space jumpto <home StarID>`) is enough for the first
+  contact (MakeContact from the star visit); a badge cinematic may block the jump first (Enter).
+* The game's debug cheats (`space -addAllies`, `ari -war`, `raid ...`) are not registered in the
+  retail build (`cheat` returns false); `moreMoney` is.
+
+### 10.4 Recipe: shared diplomacy (implemented)
+Hook ApplyEvent, the four state functions, MakeContact and SetContactedByPlayer. A call that is not a replay
+(`g_applying`) and not nested in another hooked call (`g_depth`) and pairs the player with an NPC
+empire is sent: an event as `{npc, player first, id, scale}` (not the computed ones above), a state
+change only when the flags really changed, a contact (level met or talk) when its flag went on. The partner replays
+through ApplyRelationship / the state function / MakeContact with its own player. The host sends
+its table (records with events or a state, plus the met flag) every 20 s and in answer to a guest's
+request (on entering Space and the "Resync" button); a guest sets war/alliance through the state
+functions, then, if the events differ, `ResetRelationship` + operator[] for each of the host's
+events, and clears its own records the host does not have. A periodic table does not touch an
+empire the guest itself changed in the last 8 s; an answer to a request does (the host handles the
+request after the guest's earlier messages).

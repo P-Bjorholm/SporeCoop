@@ -53,6 +53,7 @@ add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees par
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
+add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent
