@@ -559,9 +559,16 @@ them); `coop.targets all` lists only the active star's planets.
 the guest generated different planets for the same unvisited star (0046101B: 4 and 6, then 1 and 8
 planets in two sessions). `spacecoop.cpp` hooks `RequirePlanetsForStar`: while it generates (star+0xAC
 == 0) the RNG dword is seeded with `StarID * 0x9E3779B1 ^ bits(x) ^ rot16(bits(z)) | 1` (star+0x3C/+0x44)
-and restored afterwards (`planets_seeded` in `coop.space`). Since then both games list the same
-PlanetIDs. ? whether names (cSpaceNames) and spice kinds (`cSpaceTrading::AssignPlanetSpice`) come from
-the same RNG: not compared.
+and restored afterwards (`planets_seeded` in `coop.space`). The seed alone was not enough (one session:
+6 and 9 planets): the planet names, `cSpaceNames::GenerateRandomName` 0x5ED000 (called twice per planet
+by the generator), draw from the same RNG a number of times that depends on the names the game made
+before. The hook of GenerateRandomName puts the RNG back after each name while the generation runs, so
+the names do not move the sequence (they may still differ between the games, ? not compared). Since then
+both games list the same PlanetIDs. Stars near home already have their planets in the save (both games
+the same). ? spice kinds (`cSpaceTrading::AssignPlanetSpice`) and the NPC colonies' data
+(FillPlanetDataForTechLevel 0xB97040) were not compared.
+* `coop.targets all` only prints objects on the screen; `coop.space planets` prints every loaded planet
+  of the active star (PlanetIDs, cStarManager +0x50).
 
 Partner's star: send `starRecord+0x70` (StarID), resolve with `cStarManager::GetStarRecord` 0xBA6EB0
 (same galaxy layout → same ids).
