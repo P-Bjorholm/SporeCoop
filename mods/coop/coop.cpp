@@ -2007,6 +2007,11 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
         SAY("no partner");
         return 1;
     }
+    if (argc > 1 && !strcmp(argv[1], "die") && g_local && g_mode == modes::kCreature) { // tests: a lethal hit
+        game::apply_damage(g_local, 1e6f, 0, nullptr); // the game's damage path (death, caption, respawn)
+        SAY("lethal hit applied");
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "hp") && g_local && g_mode == modes::kCreature) { // tests
         game::set_health(g_local, (float)atof(argv[2]));
         SAY("hp set");

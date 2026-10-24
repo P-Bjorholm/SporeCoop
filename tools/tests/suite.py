@@ -41,6 +41,7 @@ add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back

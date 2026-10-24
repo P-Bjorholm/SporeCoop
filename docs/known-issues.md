@@ -397,3 +397,15 @@ Fixed entries move to the commit message (and a test).
   by real vehicles are covered). Space: raids and missions (no live mission in
   the fixture), spice trading with NPC stores (selling to a partner colony is covered by coop_space_trade.py), terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).
+
+## Creature stage: a crash after dying and skipping the cutscene (player report, not reproduced)
+
+* Reddit, 2026-10-24: "in the second phase (playing alone), every time I die and skip the cutscene my
+  game crashes". Build, system and SporeCoop version not known yet.
+* Not reproduced on GOG 2024 under Wine (SporeCoop 0.7.2, alone with the mod loaded): 16 deaths
+  through the game's damage path (`coop.team die`) with the death caption and the respawn cutscene
+  skipped by Esc during the caption, clicks on the cutscene, Esc after OK and Enter spam, with frames
+  from Present and from the game loop (`frames=loop`): no fault, the creature always respawned.
+  Regression test: `tools/tests/coop_creature_death.py` (suite `creature_death`).
+* Next: the player's `mods\logs\sporekit.log` (a crash inside the mod is logged with its module and
+  address; "exception ... calls:"), the game build (GOG / Steam) and Windows or Linux.
