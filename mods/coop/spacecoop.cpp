@@ -274,6 +274,17 @@ std::string jump(uint8_t to)
     return e;
 }
 
+std::string travel(uint32_t star)
+{
+    if (!in_space())
+        return "not in space";
+    if (g_down)
+        return "the ship is disabled";
+    if (star == star_of(C.my_place ? C.my_place() : 0))
+        return "already there";
+    return travel_to(star);
+}
+
 // cStarManager::GetStarRecord faults on an id that is not a star of this galaxy (seen with id 1,
 // 2026-10-23: GetStarRecord+0x32): look the record up in its table (+0xC8, 20-byte sectors whose
 // first dword is the record array, StarID = sector << 12 | index) and check the record's own id
@@ -296,17 +307,6 @@ void* star_record(uint32_t id)
     if (!r || IsBadReadPtr(r, 0x74) || F<uint32_t>(r, 0x70) != id)
         return nullptr;
     return r;
-}
-
-std::string travel(uint32_t star)
-{
-    if (!in_space())
-        return "not in space";
-    if (g_down)
-        return "the ship is disabled";
-    if (star == star_of(C.my_place ? C.my_place() : 0))
-        return "already there";
-    return travel_to(star);
 }
 
 static std::string travel_to(uint32_t star, bool force)

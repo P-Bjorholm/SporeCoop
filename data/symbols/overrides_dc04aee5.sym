@@ -216,3 +216,5 @@ SporeCoop::StartRaidCheat=0x0100E620 ; verified port from GOG 2016 0x0100E620: u
 Simulator::cStarManager::RequirePlanetsForStar=0x00BB4C90 ; verified port from GOG 2016 0x00BB4C60: unique byte-pattern match, ret N as in GOG 2016
 SporeCoop::cPlanetRecord_AddCivData=0x00B8F010 ; verified asm: the AddCivData call at the end of 0xB96E90 (FillPlanetDataForTechLevel 0xB97090 -> level 5) of this build (GOG 2016 0x00B8EFA0 at the same place), ret 4
 Simulator::cStarRecord::GetPlanetRecords=0x00BBA900 ; verified port from GOG 2016 0x00BBA8D0 (ModAPI March2017 address of the same name)
+Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
