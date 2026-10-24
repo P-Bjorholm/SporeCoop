@@ -869,3 +869,73 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   own-ship filter, then the game).
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
+
+## 10. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
+
+### 10.1 Tools in the inventory (✔ decompile; ~ runtime marked)
+* `cSpaceToolData` **is** a `cSpaceInventoryItem` (first base, size 0x2A0, ModAPI layout holds):
+  the item pointer of `GetItem` / `GetTool` (vt+0x68) is the tool; the safe cast is the
+  ISimulatorSerializable sub-object at +0x0C, vt+0x0C `Cast(0x707459F0)`. Item vt+0x18 key
+  (`&item+0x5C`, tools `{instance, 0, 0}`, spice too), **vt+0x28 = the localized name**
+  (`LocalizedString(+0x34)::GetText`, char16_t*, 0xC870F0), vt+0x2C the detail text (+0x48).
+* `cToolManager::LoadTool` 0x104E350 (both builds): new tool, `+0x18` price = prop 0xF0609ECE,
+  `+0x7C` charges = prop **0xF0609ED9 (initial charges)**; max charges +0x1A0 come from prop
+  0x02B24D49 (99 for every consumable), "uses ammo" (flag 0x20 of +0x174) from prop 0xF0609ED3.
+* Base TakeItem 0xC87F70 (vt+0x7C under the player's 0xFF40B0): a tool with "uses ammo" and a
+  count other than -1 is **split**: `ConsumeAmmo(count)` on the tool (only if it has that many,
+  else nothing happens but it still returns true), `AddAmmo(count)` on `*out` if any; the player
+  wrapper then posts 0x635AE7E (item changed) / 0x5E793AD (removed) and **0x57F3749** (the
+  palettes refresh). AddItem 0xFF4780 merges a tool into the same tool with AddAmmo (clamped) and
+  refuses (returns 0) a tool whose prerequisite tool key (0x104BE90) the inventory lacks: an
+  upgrade replaces its older version (item position copied, old one removed).
+* AddAmmo 0x104CBE0 clamps at +0x1A0 and does nothing at or above the max; ConsumeAmmo 0x104CC10
+  does not clamp. Same addresses and bytes in the GOG 2024 build.
+* The 363 tool props (`spacetools~` 0x30608F0B in PatchData.package / Spore_Game.package, binary
+  props: big-endian header, string16 values little-endian, keys 16 bytes) have the internal name in
+  prop 0x00B2CCCA. The 37 with charges ("uses ammo"): Antimatter Bomb 144DF50A, Planet Buster Bomb
+  05475298, Genesis Device 72E076A7, terraforming Asteroid BBE8451A, Ice Comet A1C9D86E, Atmosphere
+  Freezer 07ADE670, Atmosphere Generator 931426A0, Drought Generator 04A8669D, Ice Storm 138722CD,
+  Meteor Shower A86778EC, Volcano 4FC5AB9D, colony and city tools Place Colony 733B280C, Monolith
+  14A7D231, Bio Protector F55D419A, Bio Stabilizer B7D22F27, Happiness Booster 4A1E2E7B, Loyalty
+  Booster 44B420E4, Spice Storage B4150FEB, Uber Turret E4EC3F34, Fireworks F4ED3F95; and
+  Galactic Adventures / NPC / archetype ones (Create/Edit Creature, Energy/Repair Potion, Epicize,
+  Eradicate, AOE Repair, Defense Missile, Place Embassy, Zoo Planet, Global Happiness, Planet Scan).
+* **Giftable** (space_trade.cpp `gift_denied`): every ammo tool except the second group (adventure
+  captain tools, NPC ship weapons, archetype abilities that recharge by themselves and belong to
+  one play style). Tools without charges (weapons, drives, scan, abduct, sensors) are permanent
+  unlocks and rank rewards: giving one would strip the giver and skip the partner's progression.
+* Gift recipe: giver `i = IndexOf(2, key)` (vt+0x64), `TakeItem(i, &null, n)`; receiver with the
+  tool: `AddAmmo(n)` (kept = after - before), else `AddItemByKey(key)` (the "new tool" event, the
+  tool comes with its initial charges) then set exactly n with ConsumeAmmo/AddAmmo; post
+  0x57F3749 through `IMessageManager` vt+0x18. What is not kept goes back to the giver.
+
+### 10.2 Spice prices (✔ decompile both builds)
+* `cSpaceTrading` (`Get` 0xB3D4A0 / 2024 0xB3D4D0): +0x20 `mSpices` (vector<ResourceKey>, 6
+  spices, keys `{1CA01560..1CA01567, 0, 0}`), +0x34 every `spacetrading~` key, +0x48 NPC stores.
+  A commodity's `spaceTradingType` (prop 0x34F1A4F) is 0x082AF541 for spice.
+* Value of one unit = spacetrading~ prop **0x34F1A4A** (float: red 1CA01560 4500, 1CA01561 5230,
+  1CA01562 3375, 1CA01565 14625, 1CA01566 11242, 1CA01567 10125) x the difficulty multiplier
+  `tuning->GetFloat(0x1C2E590D)` with `tuning = [cGameNounManager+0x74]` (0xC75DB0, 2024 0xC75DD0:
+  array prop [+0x11F4] indexed by the difficulty [+0x1248]).
+* NPC store (GenerateNPCStore 0x103E8F0): a new store (0x103CD10) picks the 3 spices it wants
+  (not the planet's own) at value x one of {0.6, 0.75, 0.85, 1.0, 1.2, 1.4, 1.65, 2.0, 2.5, 3.0}
+  (cNPCStore +0x60 keys, +0x9C prices); what it pays for the player's spice (0x103D9C0, list
+  +0x88): a wanted spice at that price, any other spice at **5% of the value** (0x1487954); it sells
+  its planet's own spice (0x103E6F0) at the value (0 on the player's own planets). Limit: the store
+  stops buying after `spiceBought` (+0x30) reaches a tuning value (0x102FDF0).
+* So "twice the market value" (space_trade.cpp default sale) beats 8 of the 10 random store
+  factors and every unwanted-spice price; in rivals mode the offer is 1.5x.
+
+### 10.3 Trade between players (design, ✔ two-game test `coop_space_trade.py`)
+* Spice cannot go into a colony's own storage (`cCityData` +0x1C holds the planet's own spice
+  type only), so a partner colony's spice lands in the partner's **cargo hold** (a trading object,
+  stacks or takes a free slot). A colony does not buy the spice its planet makes.
+* Default mode (one shared budget): the seller's game adds n x price (shared.cpp carries the
+  change to everybody): an export bonus paid by the galaxy, zero-sum otherwise. A colony buys at
+  most 30 units per 10 minutes (against selling the same spice back and forth).
+* Rivals mode (`spaceext::rivals()`): the seller's spice is held back, the partner's page shows the
+  offer (Accept / Decline, declined by itself after 2 minutes), the partner pays from its own
+  budget and gets the spice, then the seller is paid; a decline, no money or no room returns it.
+* The receiver of a gift / sale / offer always decides and answers; the sender gives back what it
+  held when the answer is "no", when the partner leaves before answering, or when its own session
+  ends (then the partner may have got it too: a known edge).
