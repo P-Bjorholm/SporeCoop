@@ -172,7 +172,7 @@ def main():
         if b:
             gui.click(b)
         ok = wait(lambda: fin(guest).get('zone') == '2' and fin(guest).get('ctx') == '1', 60)
-        ck(ok, f'guest: jumped into Alice's system near the core ({fin(guest)["line"]})')
+        ck(ok, f'guest: jumped into the system of Alice near the core ({fin(guest)["line"]})')
         guest.call(f'key {VK_F9}')
         settle(guest, 'guest')
 
