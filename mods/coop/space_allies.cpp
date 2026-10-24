@@ -526,8 +526,8 @@ static void apply(Mirror& m)
     if (m.applied)
         for (auto it = m.stars.begin(); it != m.stars.end();) {
             bool used = false;
-            for (uint32_t pid : want)
-                used |= (pid & 0xFFFFFFu) == it->first;
+            for (auto& [pid, ps] : m.planets) // wanted ones, and a lost one I am on
+                used |= (pid & 0xFFFFFFu) == it->first && (ps.on || want.count(pid));
             if (!used) {
                 restore_star(m, it->first);
                 it = m.stars.erase(it);
@@ -540,15 +540,18 @@ static void apply(Mirror& m)
         return;
     bool first = !m.applied;
     m.applied = true;
+    size_t stars_before = m.stars.size();
     for (auto& [star, rec] : todo) {
         add_star(m, star);
         add_planet(m, rec);
     }
-    // the empire's species (citizens, buildings, the ships): the player's own (the same save in the
-    // usual session; the partner's species is not in my files otherwise)
-    if (void* sp = thiscall<void*>(a_GetSpecies, player_empire()))
-        thiscall<void>(a_SetSpecies, m.emp, sp);
-    str_assign((uint8_t*)m.emp + 0x3C, utf16(empire_name(m))); // SetSpeciesProfile renamed it
+    // the empire's species (citizens, buildings, the ships; also the species key of each of its
+    // stars): the player's own (the same save in the usual session; the partner's species is not in
+    // my files otherwise)
+    if (first || m.stars.size() != stars_before)
+        if (void* sp = thiscall<void*>(a_GetSpecies, player_empire()))
+            thiscall<void>(a_SetSpecies, m.emp, sp);
+    str_assign((uint8_t*)m.emp + 0x3C, utf16(empire_name(m))); // SetSpeciesProfile renames it
     if (first) {
         set_relation(m, true);
         m.rel_on = m.rel;
@@ -960,8 +963,8 @@ static std::vector<spaceext::Row> rows()
 {
     std::vector<spaceext::Row> v;
     for (auto& [n, m] : g_m) {
-        if (!m.applied && m.skipped.empty())
-            continue;
+        if (!mirrored(m))
+            continue; // nothing of that partner is mirrored (all shared, or nothing yet)
         spaceext::Row r;
         char b[200];
         const char* rel = m.rel == spaceext::Relation::War ? spaceext::tr("at war", "война")
