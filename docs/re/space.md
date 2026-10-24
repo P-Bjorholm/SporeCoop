@@ -624,8 +624,8 @@ elsewhere: apply to `GetPlanetRecord(id)+0xB0/+0xB4` directly (not loaded → no
 | +0x80 | 0xFF4780 / 0xC881E0 | **`bool AddItem(cSpaceInventoryItem* item, cSpaceInventoryItem* cargoSlot /*null = find free*/, bool apply)`** `ret 0xC`: same key+type stacks (`count += item.count`, capped by +0x48), cargo types 0/1/4/5/6 need a free cargo slot (type 3) else returns 0; tools: ammo merge | ✔ |
 | +0x88 / +0x8C / +0x90 / +0x94 | 0xC875A0 / 0xC87550 / 0xC875D0 / 0xFF39E0 | cargo slots: count / free count / `GetFreeSlot(out*)` / `AddCargoSlots(n)` | ✔ |
 
-`cSpaceInventoryItem` (size 0x7C, ctor 0xC877E0): +0x0C tool sub-object (vt+0x0C Cast(0x707459F0) →
-`cSpaceToolData*`), **+0x10 count**, **+0x14 item type** (2 tool, 3 empty cargo slot, 4 trading
+`cSpaceInventoryItem` (size 0x7C, ctor 0xC877E0): +0x0C tool sub-object, an embedded base, not a pointer (`(item+0xC)->vt[3]` = Cast(0x707459F0) →
+`cSpaceToolData*`, no AddRef; 10.4), **+0x10 count**, **+0x14 item type** (2 tool, 3 empty cargo slot, 4 trading
 object / spice; 0/1/5/6 other cargo - plant/animal/rare ~), +0x18 price, +0x1C non-stackable,
 key via vt+0x18 (returns `ResourceKey*`), vt+0x14 SetKey.
 
@@ -938,19 +938,28 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   active star = the core, `ufo+0x74C` (arrived) set. That is "at the gate".
 
 ### 10.2 Entering the core
-* In the galaxy view the zoom update **0x01009C90** (cSimulatorSpaceGame, every frame) checks a
-  zoom-in at the active star: `0x10422F0` allows it when the ship arrived (+0x74C) and the star is
-  a black hole with the wormhole tool, or **the core and `cPlayer::HasFlag(0x681C28E)` is false**,
-  and no comm screen / pause. Black hole -> wormhole 0xFDD4E0; **core -> `0x01002DD0`**
+* Two steps, like a black hole: (1) in the galaxy view at the core star, zooming in enters the
+  core's **"solar system"** like any star (galaxy update 0x100CF70: zoom <= threshold 2 at
+  `0x16DE364`, ship arrived `ufo+0x74C` -> `EnterSolarSystem` 0xFDD590; for a star of type 1 that
+  adds the progress of achievement "42", 10.3; the view shows the bright core, the system name
+  "Galactic Core", no planets). (2) In that system the system update **0x01009C90** (every frame)
+  opens the core when the camera is zoomed in (threshold 1 at `0x16DE3B0`, controller +0xD5) with
+  the ship in the centre and `0x10422F0` allows it: ship arrived and the active star is a black hole
+  with the wormhole tool, or **the core and `cPlayer::HasFlag(0x681C28E)` is false**, no comm
+  screen, no pause. Black hole -> wormhole 0xFDD4E0; **core -> `0x01002DD0`**
   (`SporeCoop::Space_EnterGalacticCore`, cdecl, no args): `SetFlag(0x681C28E)`, full health and
-  energy, chronicle event 0x57BAFFD3, then `PlayCinematic("SPG_CenterOfGalaxy")`. With the flag
-  set the core cannot be entered again (the zoom-in does nothing). The flag is also the comm
-  condition "EnteredGalacticCore" (0x8B, table at 0x1402C88): aliens talk about the trip.
-  Runtime: the mouse wheel at the screen centre in the galaxy view at the core reaches
-  0x01002DD0 (`coop_space_finale.py`); the hook sees it once per zoom-in ~.
+  energy, chronicle event 0x57BAFFD3, then `PlayCinematic("SPG_CenterOfGalaxy")`. While the
+  conditions hold 0x1009C90 calls it **every frame** (332 calls in ~10 s with the hook blocking it),
+  after the flag it does nothing: the core opens once per save. The same update zooms out to the
+  galaxy (0xFDA5D0) and lands on planets (0xFDF5A0).
+  Runtime (lane 5): galaxy view at the core -> mouse wheel in (ctx 1, "Galactic Core") -> a click
+  at the screen centre flies the ship into the centre -> wheel in -> 0x1002DD0.
+* The flag is also the comm condition "EnteredGalacticCore" (0x8B, table at 0x1402C88): aliens
+  talk about the trip afterwards.
 * `cPlayer` = `cGameNounManager::Get()+0x74` (0xF67D40 is `mov eax,[ecx+0x74]`). Its flags:
   hash set at +0x1120 (buckets) / +0x1124 (count): **`HasFlag` 0xC77440 / `SetFlag` 0xC77D70**
-  (GOG 2024 0xC77460 / 0xC77D90), thiscall(player, id) `ret 4`.
+  (GOG 2024 0xC77460 / 0xC77D90), thiscall(player, id) `ret 4`. The flags live in the save: a guest
+  joins with a copy of the host's save and so has the host's flags.
 
 ### 10.3 The cinematic SPG_CenterOfGalaxy and Steve's gift
 * The script is the cinematics ArgScript file (Spore_Game.package group 0x40890200 instance
@@ -963,12 +972,14 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   traveled very far...", 0x067B7833 "I'm Steve. You are now to be given the power...", 0x06526580
   "You have been awarded the Staff of Life." (this build calls him Steve, not Steko). The player
   has to confirm three times: `wait -forContinue` after each scrolling text and `wait -forNext`
-  after the award text (Enter works). The whole cinematic takes ~2-3 minutes.
+  after the award text (Enter works). The whole cinematic takes ~2 minutes (runtime: 1 min 50 s with an
+  Enter every 8 s); it ends in the galaxy view at the core (context 2).
 * **0x6526395**: if `!HasFlag(0x61F1454)`: `cPlayerInventory` 0xFF3CA0 adds every tool of the
   list at **inventory +0x60..+0x64** (5 tool objects in the tested save, prepared at load) with its
   charges, `SetRareAsFound(0xA9E151E4)`, event 0xDE5EDDE2, `SetFlag(0x61F1454)`. The Staff of Life
   is the tool **genesisdevice** (key {0x72E076A7, 0, 0}; text 0x0BA5C1BF!0x0C7C683C "Staff of
-  Life"). Sending this message with `IMessageManager` MessageSend (vt 0x14, (id, nullptr, nullptr))
+  Life"; runtime: after the cinematic the Staff of Life sits in the cargo palette with **42 charges**, the
+  "42 more"). Sending this message with `IMessageManager` MessageSend (vt 0x14, (id, nullptr, nullptr))
   gives a partner the gift natively, once (the game's own flag).
 * Achievement "42" ("Find the center of the galaxy", spg-42.prop, id 0xF88C1342):
   `cAchievementsManager::Get()->AddProgress(0xF88C1342, 1)` 0x676E50 (`ret 8`); the game calls it
@@ -977,18 +988,31 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   SPG_CenterOfGalaxy; the UFO controller 0x105F2E0 checks it).
 
 ### 10.4 What the co-op finale does with it (`space_finale.cpp`)
-* Zones per player (0.5 s): far / near (inside +0x1D0) / gate (active star = core), flags entered
-  (0x681C28E), staff (0x61F1454), waiting; sent as MSG_SPACE 40 every 3 s and on a change.
+* Zones per player (0.5 s): far / near (inside +0x1D0) / gate (active star = the core: in the
+  galaxy view at it or in its system), flags entered (0x681C28E), staff (0x61F1454), waiting; sent
+  as MSG_SPACE 40 every 3 s and on a change, with the active star and the last star before the core.
 * Hook 0x01002DD0: while partners in space are not at the gate the call is dropped (the core
-  stays closed, the player is told, the partners get MSG_SPACE 41 "waits for you"); the Space page
-  has "Enter now". When everybody is at the gate the mod calls the original outside the frame.
-  After the original set the flag: MSG_SPACE 42 "entered".
-* On 42: a partner at the gate enters too (the original, its own cinematic); the others get the
-  gift (message 0x6526395 + AddProgress) and can still visit the core later. A K_STATE with the
-  entered flag from a partner (a late joiner) gives the gift as well.
-* "Fly to <name>" (only to a partner in the near zone or at the gate): planet -> LeavePlanet,
-  system -> 0xFDA5D0 (galaxy view), then SpaceTeleportTo(partner's star), EnterSolarSystem when
-  the partner is in that system. Needs the interstellar drive. No view change while a cinematic
-  or caption plays or the game is paused (`cGameTimeManager +0x48` bit 0): a view switch under the
-  tutorial caption of a freshly added drive, then Enter, crashed the game in UI code (AV at
-  0xCCCCCCCC, stack 0x847EFA (0x847EC0) <- 0x84930F <- App::Canvas::Tick) ~.
+  stays closed, the player is told once, the partners get MSG_SPACE 41 "waits for you"); the Space
+  page has "Enter now". When everybody is at the gate (or after "Enter now") the mod calls the
+  original outside the frame (only in the core's system, ctx 1). After the original set the flag:
+  MSG_SPACE 42 "entered".
+* On 42: a partner at the gate enters too (from the galaxy view first `EnterSolarSystem`, then the
+  original: its own cinematic). Everybody else gets Steve's gift: message 0x6526395 by MessageSend
+  + `AddProgress(0xF88C1342, 1)`, checked every 3 s while the gift is missing (a world load on a
+  rejoin replaces the game state, the gift of the old world is gone), and can still visit the core
+  (the flag 0x681C28E stays unset).
+* "Fly to <name>" (only to a partner in the near zone or at the gate; needs the interstellar
+  drive): in the galaxy view `SpaceTeleportTo(partner's star)` (+ `EnterSolarSystem` when the
+  partner is in that system or at the gate); in a system or on a planet the jump of the Space page
+  (`spacecoop::travel_to_star`, the respawn's native sequence) into the partner's system, for a
+  partner at the gate into the system it came from; from there the player zooms out and flies on
+  (a second "Fly to" in the galaxy view goes to the gate).
+* Not done by the mod: a system -> galaxy switch. Calling 0xFDA5D0 outside the game's zoom update
+  worked, but a later Enter crashed the game in UI code (AV at 0xCCCCCCCC from App::Canvas::Tick);
+  (it turned out that the crashes came from the next bullet, so 0xFDA5D0 itself may be fine ?).
+* Pitfall found here: the tool part of an inventory item is an **embedded base at item+0x0C**
+  (`Cast` = `(item+0xC)->vt[3](0x707459F0)`, no AddRef). Reading `*(item+0xC)` as a pointer and
+  calling Release on the "tool" corrupted the inventory: AV at 0xCCCCCCCC from App::Canvas::Tick
+  (stack 0x847EFA, 0x84930F, 0x84935E) seconds later. `cPlayerInventory::GetTool` 0xFF3BF0 is the
+  safe way; it also finds tools that are not owned yet (a second list at +0x4C..+0x50): check
+  `HasTool` (vt 0x74) first.

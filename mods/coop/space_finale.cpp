@@ -390,7 +390,7 @@ static void partner_entered(uint8_t id, bool live)
     void* core = core_record();
     if (live && core && active_star_record() == core && context() >= 1) {
         spaceext::notice(who + spaceext::tr(" enters the galactic core: together!", " входит в ядро галактики: вместе!"));
-        if (context() == 2)
+        if (context() == 2 && !g_fly.star) // (a flight to the gate enters the system itself)
             H->run_outside_frame(enter_system, nullptr);
         g_enter_at = H->time_seconds() + (context() == 2 ? 4.0 : 0.0);
         return;
@@ -434,8 +434,8 @@ static void fly_step(void*)
     void* rec = spacecoop::star_record(g_fly.star);
     void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
     int ctx = context();
-    if (!rec || !mode || ctx < 0 || ++g_fly.steps > 4) {
-        g_fly = Fly();
+    if (!rec || !mode || ctx < 0 || ++g_fly.steps > 4 || (ctx == 1 && active_star_record() == rec)) {
+        g_fly = Fly(); // (in the target system already, e.g. entered by the joint entry)
         return;
     }
     if (ctx == 2) { // the galaxy view: the free instant travel of the `space -flyto` cheat

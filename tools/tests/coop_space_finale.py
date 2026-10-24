@@ -147,9 +147,11 @@ def fly_button(ui):
 def open_space_page(ui, con, ck, who):
     if ui.state().get('open') != '1':
         con.call(f'key {VK_F9}')
-    st = ui.wait(lambda s: s['open'] == '1' and s['space']['vis'], 20, 'lobby with the Space button')
-    ck(st is not None, f'{who}: F9 opens the lobby with "Space >"')
-    ui.click('space')
+    st = ui.wait(lambda s: s['open'] == '1' and (s['space']['vis'] or s.get('page') == 'space'), 20,
+                 'lobby with the Space button')
+    ck(st is not None, f'{who}: F9 opens the co-op window')
+    if st and st.get('page') != 'space':
+        ui.click('space')
     st = ui.wait(lambda s: s['page'] == 'space', 10, 'Space page')
     ck(st is not None, f'{who}: the Space page is open')
 
