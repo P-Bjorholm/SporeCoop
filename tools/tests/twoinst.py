@@ -263,10 +263,13 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
     t_start = time.time()
-    lane.run_guest()
-    time.sleep(2)  # two sandboxes starting at the very same moment can race on the bottle
+    # join_in_intro: the guest starts once the host is in its world, so that its menu intro comes
+    # after the host is ready (the guest joins at the start of it)
+    if not join_in_intro:
+        lane.run_guest()
+        time.sleep(2)  # two sandboxes starting at the very same moment can race on the bottle
     lane.run_host()
-    for inst, run in ((lane.GUEST, lane.run_guest), (lane.HOST, lane.run_host)):
+    for inst, run in ((lane.GUEST, lane.run_guest), (lane.HOST, lane.run_host))[1 if join_in_intro else 0:]:
         if not wait_up(inst, 90):  # two sandboxes starting together sometimes lose one: start it again
             run()
             assert wait_up(inst), f'instance {inst} did not start'
@@ -290,6 +293,12 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
         subprocess.run([sys.executable, os.path.join(HERE, 'load_game.py'), '-i', str(lane.HOST), *load_args],
                        capture_output=True, text=True, timeout=600)
     host.call(lane.HOST_CMD)
+    if join_in_intro:
+        lane.run_guest()
+        if not wait_up(lane.GUEST, 90):
+            lane.run_guest()
+            assert wait_up(lane.GUEST), f'instance {lane.GUEST} did not start'
+        guest = Console(lane.GUEST)
     for _ in range(120):
         if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
             break

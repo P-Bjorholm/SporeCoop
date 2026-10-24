@@ -28,8 +28,9 @@ def main():
     st = guest.call('coop.status')['out']
     ended = re.search(r'menu intro ended (\d+)', st)
     print('  guest:', ' | '.join(l for l in st.splitlines() if 'cinematic' in l or 'intro' in l) or '(no cinematic)')
-    # informational: on a fast host the world can arrive after the intro ended (then nothing to end)
-    print(f'  guest menu intros ended by the mod: {ended.group(1) if ended else 0}')
+    # the guest started after the host was in its world and joined at the start of its menu intro:
+    # the world arrived while the intro played (the race of the bug), and the mod ended it
+    ck(ended and int(ended.group(1)) >= 1, 'the world arrived during the menu intro and the mod ended the intro')
     t0 = time.time()
     while time.time() - t0 < 15 and (movie(guest) or movie(host)):
         time.sleep(1)
