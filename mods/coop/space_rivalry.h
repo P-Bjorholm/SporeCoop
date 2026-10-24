@@ -1,4 +1,4 @@
-// Rivals mode (docs/09-coop-design.md, Space 0.7 feature 10; game knowledge docs/re/space.md 10).
+// Rivals mode (docs/09-coop-design.md, Space 0.7 feature 10; game knowledge docs/re/space.md 11).
 // A host option: every player is an empire of its own, with its own budget, and relations between
 // the players (ally / neutral / war). Players at war damage each other's ships. The state lives in
 // space_ext.h (`spaceext::rivals()`, `spaceext::relation(a, b)`); this file owns it.

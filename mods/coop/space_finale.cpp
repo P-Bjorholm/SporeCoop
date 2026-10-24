@@ -43,7 +43,7 @@ enum Kind : uint8_t { K_STATE = 40, K_WAIT = 41, K_REACHED = 42 };
 enum Zone : uint8_t { Z_NONE = 0, Z_FAR = 1, Z_NEAR = 2, Z_GATE = 3 };
 enum Flag : uint8_t { F_ENTERED = 1, F_STAFF = 2, F_WAITING = 4 };
 
-// game ids (docs/re/space.md 10)
+// game ids (docs/re/space.md 16)
 constexpr uint32_t kFlagEnteredCore = 0x0681C28E; // cPlayer flag: SPG_CenterOfGalaxy played (once)
 constexpr uint32_t kFlagCoreTools = 0x061F1454;   // cPlayer flag: Steve's gift received (once)
 constexpr uint32_t kMsgCoreTools = 0x06526395;    // "player gets tools" (sent by the cinematic)
@@ -355,7 +355,7 @@ static void give_reward(void*)
     if (!mm)
         return;
     // the cinematic's own message: the player data gives the core tools (the Staff of Life with its
-    // charges), marks the collectible, writes the event log line and sets the flag (docs/re/space.md 10)
+    // charges), marks the collectible, writes the event log line and sets the flag (docs/re/space.md 16)
     vcall<void>(mm, 0x14 / 4, kMsgCoreTools, (void*)nullptr, (void*)nullptr); // MessageSend
     if (a_AchMgr && a_AchAdd)
         if (void* am = cdecl_call<void*>(a_AchMgr))
@@ -457,7 +457,7 @@ static void fly_step(void*)
     // in a system or on a planet: the jump of the Space page (spacecoop: the native sequence of the
     // respawn) into the partner's system, or for a partner at the gate into the system it came
     // from, next to the core (the core is no solar system); a system -> galaxy switch by the mod
-    // (0xFDA5D0 outside the game's zoom update) broke a later caption (docs/re/space.md 10.4)
+    // (0xFDA5D0 outside the game's zoom update) broke a later caption (docs/re/space.md 16.4)
     uint32_t sys = g_fly.sys ? g_fly.sys : g_fly.star;
     void* sysrec = spacecoop::star_record(sys);
     if (sysrec && active_star_record() != sysrec) {

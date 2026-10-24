@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool gifts and spice trade between players (space_trade.cpp, docs/re/space.md 12):
+"""Tool gifts and spice trade between players (space_trade.cpp, docs/re/space.md 14):
 
  1. the host has an Antimatter Bomb with 12 charges, the guest has none: a real click on the F9
     Space page ("Give 5", the text says "for Bob") moves 5 charges: the host has 7, the guest gets the tool with 5

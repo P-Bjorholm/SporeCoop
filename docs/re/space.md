@@ -709,7 +709,7 @@ on the receiver; all safe in any context (no planet needed).
 * Exact meaning of OnHit hitType 0..3 and of record+0xB8 (water [ModAPI] ?).
 * Whether `TravelToStarSystem` is safe during comm screens / cinematics; FE0E00 details.
 * Mission state 0/4 meaning; how the UI picks the tracked mission.
-* ~~Political ids identical across two saves of the same galaxy~~: yes for the copies of one save (§10.3).
+* ~~Political ids identical across two saves of the same galaxy~~: yes for the copies of one save (§12.3).
 
 ### 7.9 The galaxy menu intro left playing after a load: the guest "movie" (✔ runtime lanes 10 + 4, Ghidra both builds, 2026-10-23, branch fix/space-guest-movie)
 
@@ -955,7 +955,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * Pirates spawned with `SpawnUFO`: type 2 (raider) attack the player only around its colonies; on
   other planets they fly off and vanish after ~30 s without a shot. Type 8 (ambush pirate) attack
   the player anywhere (✔ runtime, `coop.fleet spawn <type>`; but not on the homeworld of the
-  2026-10-23 fixture, where they flew off too: §17.2).
+  2026-10-23 fixture, where they flew off too: §10.2).
 * Right after landing the player's ship takes no damage for a few seconds (the planet
   invulnerability counter `cSimulatorPlayerUFO` +0x24, §7.2) ~.
 
@@ -1014,9 +1014,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   save and a load. `coop.space empire colony <PlanetID> [spice]`. Stored spice (`cCityData` +0x1C,
   float) set higher is clamped at the next load (one city: 5, two cities: 10).
 
-## 17. Co-op contracts (feature 7) (✔ runtime, lane 3, GOG 2016, 2026-10-23; `space_contracts.cpp`)
+## 10. Co-op contracts (feature 7) (✔ runtime, lane 3, GOG 2016, 2026-10-23; `space_contracts.cpp`)
 
-### 17.1 Star records: name, type, planets
+### 10.1 Star records: name, type, planets
 * `cStarRecord` **+0x60 `mName`** (eastl::string16: +0x60 begin, +0x64 end, UTF-16) ✔ runtime: the
   fixture's home star 0x460035 reads "Fibucius", its neighbours "Argis-2", "Gerbus", "Aspytory" (the
   names the galaxy view shows). `cPlanetRecord` +0x18 `mName` (string16, ✔ "Madas", the fixture's
@@ -1031,7 +1031,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   Neighbours were 0.3 to 1 galaxy units away; `TravelToStarSystem` (§7.3, `coop.space jumpto`)
   reaches any of them without the interstellar drive and without money.
 
-### 17.2 The armada: the game's own raids (✔ runtime, GOG 2016, lane 3)
+### 10.2 The armada: the game's own raids (✔ runtime, GOG 2016, lane 3)
 * **Raid on demand**: `SporeCoop::Space_StartRaid` = **0x0100E620** (the `raid -start N` cheat routine,
   caller 0x102527E; the same address and body in GOG 2024 ✔ objdump): thiscall, `this` not used,
   `(int unused, cPlanetRecord* colony, int numBombers)`, `ret 0xC`, returns bool. Body: mission
@@ -1079,7 +1079,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   raid gives badge points: the panel "2 badge points" + OK takes the mouse, the co-op window's
   buttons get no clicks until it is closed (Enter).
 
-### 17.3 Rewards
+### 10.3 Rewards
 * Money: `cEmpire::AddMoney` on the host only (shared budget, shared.cpp gives the total to every
   guest within a second ✔ runtime: 100 000 -> 115 000 -> 140 000 on both games); in rivals mode
   every member of the crew adds it locally.
@@ -1092,9 +1092,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   0xA43B6F38, monolith 0x14A7D231, allylaser1..3 0x47E65D39.., allymissile1..3 0x0068DF06 /
   0x0068DF05 / 0x0068DF04 (378 resources in the group; the other names are not known).
 
-## 10. Rivals mode: players as rival empires, PvP (✔ runtime, lane 6, GOG 2016, 2026-10-23; `space_rivalry.cpp`, `coop_space_rivalry.py`)
+## 11. Rivals mode: players as rival empires, PvP (✔ runtime, lane 6, GOG 2016, 2026-10-23; `space_rivalry.cpp`, `coop_space_rivalry.py`)
 
-### 10.1 Why a partner's ship cannot be hurt, and how war changes that (✔)
+### 11.1 Why a partner's ship cannot be hurt, and how war changes that (✔)
 * A partner's ship is a Defender puppet (UfoType 6) spawned with **our own** political id
   (`modes.cpp` space_spawn: `SpawnUFO(6, &GetPlayerEmpireID(), model)`). The game's weapons never hurt
   their own empire: the projectile explosion 0x00CBBEF0 compares the attacker's political id (its
@@ -1116,7 +1116,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * Political ids of the player empire are the same in both games of the session (the same galaxy:
   0x800021CA on host and guest in the `space` fixture), which partly answers §7.8.
 
-### 10.2 Applying a PvP hit on the victim's game (✔)
+### 11.2 Applying a PvP hit on the victim's game (✔)
 * The owner calls the hooked TakeDamage on its own ship: `thiscall(ufo+0x508, dmg, 0xFFFFFFFF, type,
   dir, puppetOfShooter+0x508)`. The hook runs the rescue filter first (spacecoop.cpp: a partner at
   war never counts as a helper, so an enemy's lethal hit is a real death), then the game: HP goes
@@ -1126,7 +1126,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * Not applied: the attacker side's damage-boost tool multiplier (inside the base TakeDamage of the
   shooter's game, which is not called for the puppet).
 
-### 10.3 Money (✔)
+### 11.3 Money (✔)
 * `cEmpire::mEmpireMoney` +0xD0 of `GetPlayerEmpire()`, changed with `cEmpire::AddMoney` (clamps to
   0..99 999 999). shared.cpp pauses the Space money (resource id 3) while `spaceext::rivals()`:
   no totals, no guest changes, the guest's unsent change is dropped from the queue (it stays in the
@@ -1135,9 +1135,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   the host (K_ASK) for its last reported budget (kept by player name) after every world load in rivals
   mode and reports nothing until the answer (K_SET).
 
-## 10. Diplomacy: relations with NPC empires (✔ disassembly of both builds + runtime, lane 4, 2026-10-23; `space_diplomacy.cpp`, test `coop_space_diplomacy.py`)
+## 12. Diplomacy: relations with NPC empires (✔ disassembly of both builds + runtime, lane 4, 2026-10-23; `space_diplomacy.cpp`, test `coop_space_diplomacy.py`)
 
-### 10.1 Where the state lives
+### 12.1 Where the state lives
 * `cRelationshipManager::Get` (0xB3D390 / GOG 2024 0xB3D3C0) is a mode switch; in the Space mode
   (0x1654C05) it is the star manager's manager, in tribe/civ it is `SpacePlayerData+0x0C`.
 * **+0x24 `map<pair<pol, pol>, cRelationshipData>`** (EASTL rbtree: root +0x30, size +0x38; node:
@@ -1160,7 +1160,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   `cEmpire_SetContactedByPlayer` 0xC30A70 / 0xC30A90 from the first-contact talk, §9.6). In the
   `space_empire` fixture the two contacted empires have 0x02 (and 0x20).
 
-### 10.2 Functions (both builds, overrides files)
+### 12.2 Functions (both builds, overrides files)
 | function | GOG 2016 / GOG 2024 | notes |
 |---|---|---|
 | `ApplyRelationship(polA, polB_cause, eventId, scale)` | 0xD06280 / 0xD06280 | thiscall `ret 0x10`, float ST0; = 0xD01AE0 + ApplyEvent |
@@ -1182,7 +1182,7 @@ super power 0x601DF2A, allied with Grox 0x68B2938, embassy 0x580E23B, the empire
 be nasty 0x577909A / B (0xFE9xxx), avoided contact 0x5B942D0. CommunicatedMean 0x5F62736 applied
 by hand changed the relation once but left no event in the map (✔ runtime).
 
-### 10.3 Findings at runtime (lane 4, GOG 2016, new-game fixture `space`)
+### 12.3 Findings at runtime (lane 4, GOG 2016, new-game fixture `space`)
 * **Political ids are identical in both copies**: the player 0x800021CA and the 2120 NPC empires
   (same ids and home stars) on host and guest, because the guest loads the host's save. The empires
   exist from the start of the Space game, so empires contacted after the join have the same ids
@@ -1198,7 +1198,7 @@ by hand changed the relation once but left no event in the map (✔ runtime).
 * The game's debug cheats (`space -addAllies`, `ari -war`, `raid ...`) are not registered in the
   retail build (`cheat` returns false); `moreMoney` is.
 
-### 10.4 Recipe: shared diplomacy (implemented)
+### 12.4 Recipe: shared diplomacy (implemented)
 Hook ApplyEvent, the four state functions, MakeContact and SetContactedByPlayer. A call that is not a replay
 (`g_applying`) and not nested in another hooked call (`g_depth`) and pairs the player with an NPC
 empire is sent: an event as `{npc, player first, id, scale}` (not the computed ones above), a state
@@ -1211,12 +1211,12 @@ events, and clears its own records the host does not have. A periodic table does
 empire the guest itself changed in the last 8 s; an answer to a request does (the host handles the
 request after the guest's earlier messages).
 
-## 10. Galaxy map, roster, colonies of partners (✔ runtime, `space_map.cpp`, lane 2 GOG 2016, 2026-10-23)
+## 13. Galaxy map, roster, colonies of partners (✔ runtime, `space_map.cpp`, lane 2 GOG 2016, 2026-10-23)
 
 Found while writing feature #1/#2 of 0.7 (partners and their colonies on the galaxy map) and the
 roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.py`).
 
-### 10.1 The own empire, read from memory (✔ runtime, ModAPI layout confirmed)
+### 13.1 The own empire, read from memory (✔ runtime, ModAPI layout confirmed)
 * `cEmpire` (GetPlayerEmpire 0x10211B0): cIdentityColorable at +0x0C (mIDColorID +0x10, cached
   colour ColorRGB floats **+0x30** (the space fixture: 0.69 0.35 0.48 = FFB1587B)), **mEmpireName**
   string16 **+0x3C** ("Fishtistic Empire"), mPoliticalID +0x84, mStars vector<cStarRecord*> +0x88,
@@ -1242,7 +1242,7 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
   copy; a rejoining guest loads the host's world again and its own colonies are gone
   (`own_colony()` in space_map.h: the partner's colonies that are not mine).
 
-### 10.2 The galaxy view on the screen (✔ runtime)
+### 13.2 The galaxy view on the screen (✔ runtime)
 * `SkHost::world_to_screen` with the star record's position +0x3C gives the star's pixel in the
   galaxy view exactly (the test compares the drawn tag with the star: equal). It returns 0 also for
   points in front of the camera but outside the view (a star 8 units away at the default zoom), so
@@ -1262,7 +1262,7 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
   one's; the map draws overlay text: a dotted ring of 10 `•` at 14 px around a colony star and a
   `▼ Name` tag 36 px above the partner's star.)
 
-### 10.3 The colony tool (✔ runtime)
+### 13.3 The colony tool (✔ runtime)
 * Tool key `{0x733B280C (FNV-1 "placecolony"), 0, 0}` (`coop.space tool add placecolony`), the
   "Colony Incredi-Pak" in the colony palette (tab W-306, row 2 slot 1).
 * Aiming refuses: "Can't use in this system" (star 4587540 of the fixture, empire FFFFFFFF, reason ?)
@@ -1282,7 +1282,7 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
 * SpaceToolHit (ModAPI SimulatorEnums): 0 combatant, 1 ground, 2 water, 3 air (the hitType of the
   OnHit functions of §7.6 and 7.8).
 
-### 10.4 The roster on the wire (`space_map.cpp`)
+### 13.4 The roster on the wire (`space_map.cpp`)
 * MSG_SPACE kind 10 `K_ROSTER`: u32 version, u8 part, u8 parts; part 0 starts with the head (home
   star, home planet, place, galaxy position, empire name, star name, colour, political id, money),
   every part then has u8 n colonies (PlanetID, planet name, star name, spice key, spice name, cities,
@@ -1293,9 +1293,9 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
   change), every 5 s anyway, and when a new player is in the session. Rosters of players who left
   are dropped (the session's player list).
 
-## 12. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
+## 14. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
 
-### 12.1 Tools in the inventory (✔ decompile; ~ runtime marked)
+### 14.1 Tools in the inventory (✔ decompile; ~ runtime marked)
 * `cSpaceToolData` **is** a `cSpaceInventoryItem` (first base, size 0x2A0, ModAPI layout holds):
   the item pointer of `GetItem` / `GetTool` (vt+0x68) is the tool; the safe cast is the
   ISimulatorSerializable sub-object at +0x0C, vt+0x0C `Cast(0x707459F0)`. Item vt+0x18 key
@@ -1332,7 +1332,7 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
   tool comes with its initial charges) then set exactly n with ConsumeAmmo/AddAmmo; post
   0x57F3749 through `IMessageManager` vt+0x18. What is not kept goes back to the giver.
 
-### 12.2 Spice prices (✔ decompile both builds)
+### 14.2 Spice prices (✔ decompile both builds)
 * `cSpaceTrading` (`Get` 0xB3D4A0 / 2024 0xB3D4D0): +0x20 `mSpices` (vector<ResourceKey>, 6
   spices, keys `{1CA01560..1CA01567, 0, 0}`), +0x34 every `spacetrading~` key, +0x48 NPC stores.
   A commodity's `spaceTradingType` (prop 0x34F1A4F) is 0x082AF541 for spice.
@@ -1349,7 +1349,7 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
 * So "twice the market value" (space_trade.cpp default sale) beats 8 of the 10 random store
   factors and every unwanted-spice price; in rivals mode the offer is 1.5x.
 
-### 12.3 Trade between players (design, ✔ two-game test `coop_space_trade.py`)
+### 14.3 Trade between players (design, ✔ two-game test `coop_space_trade.py`)
 * Spice cannot go into a colony's own storage (`cCityData` +0x1C holds the planet's own spice
   type only), so a partner colony's spice lands in the partner's **cargo hold** (a trading object,
   stacks or takes a free slot). A colony does not buy the spice its planet makes.
@@ -1363,13 +1363,13 @@ roster every Space feature reads (`mods/coop/space_map.h`, test `coop_space_map.
   held when the answer is "no", when the partner leaves before answering, or when its own session
   ends (then the partner may have got it too: a known edge).
 
-## 11. A partner's colonies as an allied empire (`space_allies.cpp`, ✔ runtime, lane 9 GOG 2024, 2026-10-23)
+## 15. A partner's colonies as an allied empire (`space_allies.cpp`, ✔ runtime, lane 9 GOG 2024, 2026-10-23)
 
 How a planet of my galaxy is made to belong to another (made up) empire, and how to undo it so that
 no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG 2024 ones are in
 `overrides_dc04aee5.sym`.
 
-### 11.1 Empires and political ids (✔)
+### 15.1 Empires and political ids (✔)
 * `cStarManager` +0x150 = `eastl::map<uint32 pol, intrusive_ptr<cEmpire>>` (find 0xE5C7A0, header
   +0x154; `GetEmpire(pol)` 0xBA94A0), +0x12C = map pol -> home `cStarRecord` (same map type),
   +0x1D4 = the political id counter (`NextPoliticalID(bool high)` 0xBA6760: `[+0x1D4]++`, | 0x80000000
@@ -1399,7 +1399,7 @@ no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG
   (colonises or upgrades a star). The mirror is skipped there (hook), or it would leave stars of its
   own behind.
 
-### 11.2 Stars and planets (✔)
+### 15.2 Stars and planets (✔)
 * cStarRecord: +0x4C tech level (`SetTechLevel` 0xBB9C10; the max of its planets, 0xC8B760), +0x54
   empire id (0xA16980), +0x5C flags (0xBB9C40: 0x1/0x2 player home / owned, 0x4 home star of an
   empire, 0x8 ?, 0x40 the filtered planet copy at +0x98, 0x100 small colony: 1 city), +0x60 name
@@ -1429,7 +1429,7 @@ no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG
 * A loaded cPlanet (cStarManager +0x50 list) carries the pol in its cGameData (planet+0xD4 vt+0x48
   SetPoliticalID; read at planet+0x104): set with the record, restored with it.
 
-### 11.3 Contact and relationship (✔)
+### 15.3 Contact and relationship (✔)
 * cPlayer = `cGameNounManager +0x74` (0xF67D40); +0x11D8 = sorted vector map pol -> contact flags
   (operator[] 0xF41940; setters 0xC7BCE0 |1, 0xC7BD00 |2 contacted (`PlayerContactedEmpire`
   0xC7A890 reads it), 0xC7BD20 |4 aware (`EmpireIsAwareOfPlayer` 0xC7A8F0), 0xC7BD40 8, 0xC7BD70 0x10,
@@ -1449,7 +1449,7 @@ no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG
 * There is no erase for relationship entries; `cEmpire::Destroy` does not remove them either (the
   game keeps the entries of destroyed empires). The mirror's entry (flags cleared) stays in a save.
 
-### 11.4 The save: never with the mirror (✔)
+### 15.4 The save: never with the mirror (✔)
 * kMsgSaveGame 0x1CD20F0 -> handler 0xB29930 posts 0x685DBFA -> after a delay
   `cGamePersistenceManager_SaveGame(name, bool)` 0xB28FD0 (thiscall, ret 8); the quit save 0xB295D0
   calls the same function. Everything (stars 0xBAEE30, planet records 0xBB4D10, the serializer) is
@@ -1460,7 +1460,7 @@ no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG
 * Space saves only off-planet (the handler refuses on a planet with event 0x6251278C), so a mirror
   planet is never the high-LOD planet when it is undone for a save.
 
-### 11.5 Raids on a mirror colony (✔)
+### 15.5 Raids on a mirror colony (✔)
 * The game's raid code works on any planet: `StartRaidCheat` 0x100E620 (`raid -start`; stdcall-like
   `(unused, cPlanetRecord*, bombers)` ret 0xC, ecx unused) -> CreateMission(0xA4B0A2DF, rec, empire
   owning the star). On a mirror colony in my galaxy with me on the planet: pirate raiders (type 4,
@@ -1470,11 +1470,11 @@ no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG
 * Mission list: `cGameNounManager::GetData(cb1, cb2, cb3, cb4, 0x2AA5ADA)` (the callbacks as pushed by
   `ThereIsEventInPlanet` 0xFEE020), vector at result+4.
 
-## 10. The galactic core (✔ static analysis + runtime, lane 5, GOG 2016, 2026-10-23; feature `space_finale.cpp`)
+## 16. The galactic core (✔ static analysis + runtime, lane 5, GOG 2016, 2026-10-23; feature `space_finale.cpp`)
 
 How the game finds, opens and rewards the core, and what the co-op finale builds on.
 
-### 10.1 The core star
+### 16.1 The core star
 * The core is an ordinary `cStarRecord` of **type 1** (`+0x48`, StarType::GalacticCore) at the
   galaxy centre (0, 0) (✔ runtime: StarID 8519680 = 0x820000, sector 2080 of 4096, index 0; the
   galaxy centre global `0x16DC9F8` (GOG 2024 `0x16DBA18`) is (0, 0, 0)). There is one; find it by a
@@ -1490,11 +1490,11 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   `SpaceTeleportTo(coreRecord)` 0x10228C0 (galaxy view only) puts the ship at the core star:
   active star = the core, `ufo+0x74C` (arrived) set. That is "at the gate".
 
-### 10.2 Entering the core
+### 16.2 Entering the core
 * Two steps, like a black hole: (1) in the galaxy view at the core star, zooming in enters the
   core's **"solar system"** like any star (galaxy update 0x100CF70: zoom <= threshold 2 at
   `0x16DE364`, ship arrived `ufo+0x74C` -> `EnterSolarSystem` 0xFDD590; for a star of type 1 that
-  adds the progress of achievement "42", 10.3; the view shows the bright core, the system name
+  adds the progress of achievement "42", 16.3; the view shows the bright core, the system name
   "Galactic Core", no planets). (2) In that system the system update **0x01009C90** (every frame)
   opens the core when the camera is zoomed in (threshold 1 at `0x16DE3B0`, controller +0xD5) with
   the ship in the centre and `0x10422F0` allows it: ship arrived and the active star is a black hole
@@ -1514,7 +1514,7 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   (GOG 2024 0xC77460 / 0xC77D90), thiscall(player, id) `ret 4`. The flags live in the save: a guest
   joins with a copy of the host's save and so has the host's flags.
 
-### 10.3 The cinematic SPG_CenterOfGalaxy and Steve's gift
+### 16.3 The cinematic SPG_CenterOfGalaxy and Steve's gift
 * The script is the cinematics ArgScript file (Spore_Game.package group 0x40890200 instance
   0xF83E63C9, type 0x24A0E52, text): states SPG_CenterOfGalaxy .. _TransitionToGalaxy. It sends
   messages handled by **`cPlayer` 0xC77EB0** (GOG 2024 0xC77ED0, listener = player+0x34):
@@ -1540,7 +1540,7 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
 * While the cinematic plays: `cCinematicManager +0x2C` != 0 and `+0x148` = 0x2F7C7BDA (the id of
   SPG_CenterOfGalaxy; the UFO controller 0x105F2E0 checks it).
 
-### 10.4 What the co-op finale does with it (`space_finale.cpp`)
+### 16.4 What the co-op finale does with it (`space_finale.cpp`)
 * Zones per player (0.5 s): far / near (inside +0x1D0) / gate (active star = the core: in the
   galaxy view at it or in its system), flags entered (0x681C28E), staff (0x61F1454), waiting; sent
   as MSG_SPACE 40 every 3 s and on a change, with the active star and the last star before the core.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The galaxy core together (mods/coop/space_finale.cpp, docs/re/space.md 10).
+"""The galaxy core together (mods/coop/space_finale.cpp, docs/re/space.md 16).
 
 Both players get the interstellar drive (the fixture has none), the host zooms out to the galaxy
 view (mouse wheel) and flies next to the core (in the Grox zone: the guest is told and its Space page offers "Fly to Alice"),

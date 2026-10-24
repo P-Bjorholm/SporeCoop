@@ -198,7 +198,7 @@ SporeCoop::cRelationshipManager_ApplyEvent=0x00D05DD0 ; verified port from GOG 2
 SporeCoop::RelEventMap_Index=0x00C8C6E0 ; verified port from GOG 2016 0x00C8C6D0: the call at 0xD05EE2 inside ApplyEvent 0xD05DD0, ret 4
 Simulator::cStarManager::GetEmpire=0x00BA94C0 ; verified port from GOG 2016 0x00BA94A0: same body (map +0x150, find 0xE5C780), ret 4
 SporeCoop::cEmpire_MakeContact=0x00C32450 ; verified port from GOG 2016 0x00C32430: +0x20, identical except call targets (IsContacted 0xC7AA30, set 0xC7BDC0, same +0x11D8 offsets), ret 4
-# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 12)
+# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 14)
 App::IPropManager::Get=0x0067DDF0 ; verified port from GOG 2016 0x0067DDF0 (same addr): mov eax,[0x15FD8A8]; ret
 App::Property::GetFloat=0x0040CF10 ; verified port from GOG 2016 0x0040CF10 (same addr, same bytes: vt+0x24, type 0xD check)
 SporeCoop::DifficultyTuning_GetFloat=0x00C75DD0 ; likely port from GOG 2016 0x00C75DB0: +0x20; called at 0x103CE9B after push 0x1C2E590D / cGameNounManager::Get 0xB3D400 / mov eax,[ecx+0x74] 0xF67D40, reads +0x11F4 and +0x1248, GetArrayFloat 0x6A08B0
@@ -214,7 +214,7 @@ SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0
 SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
 SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
 SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)
-# ---- space_allies.cpp (docs/re/space.md 11): ported 2026-10-23 by a byte pattern of the GOG 2016 function (rel32 and absolute operands as wildcards, one hit in .text) + ret N checked; what each does: overrides_922af7c7.sym ----
+# ---- space_allies.cpp (docs/re/space.md 15): ported 2026-10-23 by a byte pattern of the GOG 2016 function (rel32 and absolute operands as wildcards, one hit in .text) + ret N checked; what each does: overrides_922af7c7.sym ----
 Simulator::cStarManager::NextPoliticalID=0x00BA6780 ; verified port from GOG 2016 0x00BA6760: unique byte-pattern match, ret N as in GOG 2016
 SporeCoop::cStarManager_CreateEmpire=0x00BAF240 ; verified port from GOG 2016 0x00BAF220: unique byte-pattern match, ret N as in GOG 2016
 SporeCoop::cEmpire_Init=0x00C35B00 ; verified port from GOG 2016 0x00C35AE0: unique byte-pattern match, ret N as in GOG 2016
@@ -247,7 +247,7 @@ Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x
 SporeCoop::cGameNounManager_GetPlayer=0x00F67D40 ; verified port from GOG 2016 0x00F67D40: unique byte-pattern match (mov eax,[ecx+0x74]; ret)
 SporeCoop::VectorMapUint_At=0x00F41940 ; verified asm: the call target in the contact setter 0xC7BD20 (|= 2) of this build (GOG 2016 0xC7BD00 -> 0xF41940)
 # space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
-# ---- the galactic core (space_finale.cpp, docs/re/space.md 10) ----
+# ---- the galactic core (space_finale.cpp, docs/re/space.md 16) ----
 SporeCoop::Space_EnterGalacticCore=0x01002DD0 ; verified port from GOG 2016 0x01002DD0: same address; the only string ref of "SPG_CenterOfGalaxy" (0x14953E0) at 0x1002EF0, same body with push 0x681C28E, calls 0xC77460/0xC77D90, plain ret
 Simulator::cPlayer::HasFlag=0x00C77460 ; verified port from GOG 2016 0x00C77440: +0x20; called at 0x1002DE6 and 0xFFC6E0 (flag 0x61F1454) exactly like the old ones, stack purge 4, 56 bytes
 Simulator::cPlayer::SetFlag=0x00C77D90 ; verified port from GOG 2016 0x00C77D70: +0x20; called at 0x1002E08, stack purge 4, 95 bytes

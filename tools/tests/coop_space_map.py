@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Partners and their colonies on the galaxy map (space_map.cpp, docs/re/space.md 10):
+"""Partners and their colonies on the galaxy map (space_map.cpp, docs/re/space.md 13):
 
 * both games build the roster of their empire and get the partner's (home star, empire, colonies);
 * the guest founds a colony of its own with the game's colony tool (Colony Incredi-Pak, fired at the

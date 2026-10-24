@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared diplomacy (space_diplomacy.cpp, docs/re/space.md 10): both players are one people for the
+"""Shared diplomacy (space_diplomacy.cpp, docs/re/space.md 12): both players are one people for the
 NPC empires of the galaxy.
 
 1. Both copies of the galaxy have the same empires with the same political ids and the same

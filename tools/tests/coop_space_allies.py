@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A partner's colonies as an allied empire (space_allies.cpp, docs/re/space.md 11):
+"""A partner's colonies as an allied empire (space_allies.cpp, docs/re/space.md 15):
 
 * the host founds a colony in a star system nobody owns (after the guest joined, so the guest's copy
   of the galaxy does not have it); the guest's copy shows that star owned by "Alice's empire"

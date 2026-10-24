@@ -1,5 +1,5 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
-// and the partners and their colonies on the galaxy map. docs/re/space.md 10.
+// and the partners and their colonies on the galaxy map. docs/re/space.md 13.
 #include "space_map.h"
 
 #include <windows.h>
@@ -135,7 +135,7 @@ static const Spice* spice_of(uint32_t key)
     return nullptr;
 }
 
-// cEmpire (ModAPI layout, checked at runtime, docs/re/space.md 10.1): cIdentityColorable at +0x0C
+// cEmpire (ModAPI layout, checked at runtime, docs/re/space.md 13.1): cIdentityColorable at +0x0C
 // (mIDColorID +0x10, mCachedColor ColorRGB floats +0x30), mEmpireName string16 +0x3C, mPoliticalID
 // +0x84, mStars vector<cStarRecord*> +0x88, mHomeStar +0xB0, mHomePlanet +0xB4, money +0xD0.
 // cStarRecord: position +0x3C, mEmpireID +0x54, mName +0x60, StarID +0x70, mPlanets +0x84.
@@ -509,7 +509,7 @@ uint32_t player_color(uint8_t id)
 
 // ---------------- the galaxy map ----------------
 // In the galaxy view every partner gets a name tag in its colour on its star (or where its ship
-// flies), the stars of its colonies a mark; a click on a tag travels there (docs/re/space.md 10).
+// flies), the stars of its colonies a mark; a click on a tag travels there (docs/re/space.md 13).
 // Drawn by the overlay (projected star positions, cStarRecord +0x3C, with the game camera), only
 // in the galaxy view, never while a comm screen or a cinematic covers it (coop.cpp already hides
 // the world labels under the pause menu and the co-op window).
@@ -1086,7 +1086,7 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "colonize") { // tests: fire the colony tool (Colony Incredi-Pak) at the ground under the cursor
         // cPlaceColonyToolStrategy::OnHit(tool, pos, kHitGround, 0) is what the tool does on a click
         // (charge, drop animation, CreateColony), without the aiming check "Colonies must be placed
-        // near spice" (docs/re/space.md 10.4). The terrain cursor (noun 0x18C40BC) is the point.
+        // near spice" (docs/re/space.md 13.4). The terrain cursor (noun 0x18C40BC) is the point.
         uintptr_t onhit = H->sym("Simulator::cPlaceColonyToolStrategy::OnHit"),
                   gettool = H->sym("Simulator::cPlayerInventory::GetTool"),
                   game = H->sym("Simulator::cSimulatorSpaceGame::ptr");

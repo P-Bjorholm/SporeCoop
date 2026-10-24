@@ -1,4 +1,4 @@
-// Co-op contracts (docs/09-coop-design.md, Space 0.7 feature 7; the game side in docs/re/space.md 17):
+// Co-op contracts (docs/09-coop-design.md, Space 0.7 feature 7; the game side in docs/re/space.md 10):
 // jobs made for two or more players, with a reward for each of them. The host offers a contract every
 // few minutes (and on demand: `coop.space contracts offer <armada|survey>`); every player sees it on the
 // F9 Space page and as a notice, accepts it there, and the host runs it and pays when it is done.
@@ -125,7 +125,7 @@ void* star_record(uint32_t id)
     return r && !IsBadReadPtr(r, 0xB0) ? r : nullptr;
 }
 
-// cStarRecord +0x60 mName (eastl::string16: begin, end), docs/re/space.md 17.1
+// cStarRecord +0x60 mName (eastl::string16: begin, end), docs/re/space.md 10.1
 std::string utf8(const uint16_t* b, const uint16_t* e);
 std::string star_name(uint32_t id)
 {
@@ -162,7 +162,7 @@ std::string utf8(const uint16_t* b, const uint16_t* e)
 }
 
 // cStarRecord +0x84: vector<cPlanetRecord*>; cPlanetRecord +0x184 PlanetID, +0x194 tech level (5 = a
-// colony / the homeworld), +0x18 mName (eastl::string16) (docs/re/space.md 17.1)
+// colony / the homeworld), +0x18 mName (eastl::string16) (docs/re/space.md 10.1)
 void* planet_record(uint32_t id)
 {
     void* sr = star_record(id & 0xFFFFFF);

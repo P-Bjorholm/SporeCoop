@@ -373,7 +373,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   `map cost <star>` the game's flight price, `map go <id>` / `map fly <star>` what a click does.
 * A colony for the guest: `coop.space tool add placecolony`, land on a planet of the home system
   (Vulpica in the `space` fixture), `coop.space map colonize` (the colony tool's OnHit at the ground
-  under the ship, docs/re/space.md 10.3), then confirm the drop's caption with Enter: the colony is
+  under the ship, docs/re/space.md 13.3), then confirm the drop's caption with Enter: the colony is
   in the host's roster of the guest ~14 s later. The real aiming refuses every planet of the fixture
   but the home planet ("near spice").
 * The tags vanish under the pause menu (Esc in the galaxy view opens it at once) and come back with

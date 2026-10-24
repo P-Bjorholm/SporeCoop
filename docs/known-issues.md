@@ -208,7 +208,7 @@ Fixed entries move to the commit message (and a test).
 * "Jump there" to the armada's star lands a guest next to a planet the travel picks (an own colony
   first): the host's colony is not the guest's, so the guest may have to fly to it in the system
   view before "Land" takes it to the right planet.
-* SpawnUFO pirates do not fight (docs/re/space.md 17.2): an armada anywhere else than on an own colony
+* SpawnUFO pirates do not fight (docs/re/space.md 10.2): an armada anywhere else than on an own colony
   (a neutral star, a partner's colony) would need the UFO AI's target selection, not found.
 * While the game's badge panel ("Reward ... 2 badge points" + OK, after a defended raid) is up, the
   co-op window's buttons (all F9 pages) get no clicks; Enter or its OK closes the panel. The panel is
@@ -225,7 +225,7 @@ Fixed entries move to the commit message (and a test).
 ## Space rivals mode: limits (space_rivalry.cpp, 2026-10-23)
 
 * PvP damage is the raw damage of the shot: the shooter's damage-boost tool does not count (the base
-  TakeDamage of the shooter's game is not called for the puppet, docs/re/space.md 10.2).
+  TakeDamage of the shooter's game is not called for the puppet, docs/re/space.md 11.2).
 * Only hits of the own ship count: NPC ships and turrets of a player's game hit an enemy puppet only
   on the host (squadron relays NPC hits on puppets to their owner), not on a guest's game.
 * A player who joins for the first time while rivals mode is on keeps the money of the host's save
@@ -250,7 +250,7 @@ Fixed entries move to the commit message (and a test).
 * **Names and species of NPC empires differ between the copies**: each copy picks them at the first
   contact (from that player's creations). The relation, contact and war/alliance state are shared
   by political id; notices name both ("Kirgle Empire (Alice: Judge Empire)"). Sharing names would
-  need the species too (docs/re/space.md 10.3).
+  need the species too (docs/re/space.md 12.3).
 * Events the game raises on every copy by itself are not sent (personality / archetype at contact,
   the empire AI's be nice / be nasty, embassies, super power, avoided contact). Any other event
   between the player and an NPC empire is sent, also when the local AI caused it (for example an
@@ -272,7 +272,7 @@ Fixed entries move to the commit message (and a test).
   guest's running game. When the guest leaves and joins again it loads the host's world and the
   colony is gone (`coop_space_map.py` checks exactly this). The host's own colonies survive (they
   are in the save the guests get). Shared colony ownership is not done (docs/re/space.md 5.3).
-* The names of stars nobody named differ between the copies (docs/re/space.md 10.1): the roster
+* The names of stars nobody named differ between the copies (docs/re/space.md 13.1): the roster
   sends the owner's names, the map shows mine for stars without a roster name.
 * The test colony is founded with `coop.space map colonize` (the tool's effect without the aiming
   check): the real aiming refused every planet of the `space` fixture but the home planet ("Can't use
@@ -338,11 +338,11 @@ Fixed entries move to the commit message (and a test).
   it closed until "Enter now" (Space page). There is no timeout.
 * "Fly to <name>" from a system jumps into the partner's system, or for a partner at the gate into
   the system it came from (the core is no solar system): the player zooms out and presses "Fly to"
-  again in the galaxy view. The mod does not switch a system to the galaxy view itself (10.4 of
+  again in the galaxy view. The mod does not switch a system to the galaxy view itself (16.4 of
   docs/re/space.md). The flight skips the Grox: it is offered only to a partner who is there.
 * The trip through the Grox space was not played in tests (the test teleports next to the core);
   the Grox fights there are squadron.cpp's normal NPC sync.
-* GOG 2024: the addresses are ported and checked statically (docs/re/space.md 10), the test ran on
+* GOG 2024: the addresses are ported and checked statically (docs/re/space.md 16), the test ran on
   GOG 2016 only.
 
 ## Not covered by tests yet

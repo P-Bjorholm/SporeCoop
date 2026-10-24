@@ -1,5 +1,5 @@
 // Space feature "allies" (MSG_SPACE kinds 60..69): a partner's colonies as an allied empire in my
-// copy of the galaxy (docs/re/space.md 11, docs/09-coop-design.md feature 4).
+// copy of the galaxy (docs/re/space.md 15, docs/09-coop-design.md feature 4).
 //
 // Every player keeps the colonies of its own save. The colonies of a partner (space_map.h roster)
 // appear in my galaxy as cities of a mirror empire "<partner>'s empire": its own political id, a
@@ -139,7 +139,7 @@ static std::vector<void*> ptr_vec(void* v, size_t max = 4096)
 
 // the planets of a star: cStarRecord::GetPlanetRecords loads them (resources 0x5220CB8 from the
 // save's planet DB or the cache) when the star's vector +0x84 was emptied; a star never visited
-// (+0xAC planet count 0) gets them generated (docs/re/space.md 11.4)
+// (+0xAC planet count 0) gets them generated (docs/re/space.md 15.4)
 static std::vector<void*> planets_of(void* s)
 {
     if (!F<uint8_t>(s, 0xAC) && a_RequirePlanets)
@@ -224,7 +224,7 @@ static uint32_t palette_id(uint32_t argb)
 }
 
 // relationship flags (+4 of the data: bit 0 war, bit 1 ally), both directions; the entry is made
-// by ResetRelationship when missing (docs/re/space.md 11.3)
+// by ResetRelationship when missing (docs/re/space.md 15.3)
 static void rel_flags(uint32_t a, uint32_t b, uint32_t set, uint32_t clear)
 {
     void* rm = a_RelMgr ? cdecl_call<void*>(a_RelMgr) : nullptr;

@@ -185,7 +185,7 @@ static void* as_tool(void* it)
 // cSpaceToolData: +0x7C charges, +0x1A0 max charges, +0x174 flags (0x20 uses ammo), +0x18 price
 constexpr uintptr_t kAmmo = 0x7C, kMaxAmmo = 0x1A0, kFlags = 0x174;
 
-// Ammo tools that are not for giving (docs/re/space.md 12.1): Galactic Adventures captain tools and
+// Ammo tools that are not for giving (docs/re/space.md 14.1): Galactic Adventures captain tools and
 // potions, NPC ship weapons, and the archetype / consequence abilities (they recharge on their own
 // and belong to one empire's play style). Every other ammo tool (bombs, terraforming charges,
 // colony and city tools, monoliths, fireworks, tools of mods) is giftable; tools without charges
@@ -301,7 +301,7 @@ static std::vector<SpiceInfo> spices()
 }
 
 // the market value of one unit: spacetrading~ value * the difficulty's price multiplier; NPC stores
-// pay that times 0.6..3.0 for the three spices they want and 5% for the others (docs/re/space.md 12.2)
+// pay that times 0.6..3.0 for the three spices they want and 5% for the others (docs/re/space.md 14.2)
 static float spice_value(const Key& k)
 {
     void* pm = a_PropMgr ? cdecl_call<void*>(a_PropMgr) : nullptr;

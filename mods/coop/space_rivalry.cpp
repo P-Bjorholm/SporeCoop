@@ -1,5 +1,5 @@
 // Rivals mode: a host option that makes every player an empire of its own (docs/09-coop-design.md,
-// Space 0.7 feature 10; how it works in the game: docs/re/space.md 10).
+// Space 0.7 feature 10; how it works in the game: docs/re/space.md 11).
 //
 // * Mode: the host switches between "allies" (one empire: shared money, shared help) and "rivals".
 //   The host is the authority for the mode and for the relations; it broadcasts the whole state

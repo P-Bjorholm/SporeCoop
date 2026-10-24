@@ -1,4 +1,4 @@
-// Shared diplomacy (Space 0.7 feature 8, docs/09-coop-design.md; game knowledge: docs/re/space.md 10).
+// Shared diplomacy (Space 0.7 feature 8, docs/09-coop-design.md; game knowledge: docs/re/space.md 12).
 //
 // The players act as one people toward the NPC empires: every relationship event between the own
 // empire and an NPC empire (a gift, a mission, a trade, an attack, a compliment...) and every change
