@@ -209,8 +209,14 @@ def cmd_run(a):
     if alone:  # the machine alone: no game of another lane may be visible (LAN discovery)
         for lane in a.lane_ids:
             spore(tree, lane, 'kill')
+    # exclusive tests run on a lane of this run (never on one --skip reserved for other work); LAN
+    # discovery (the UI test) only sees hosts of lanes 1..5
+    ex_lane = next((n for n in a.lane_ids if n <= 5), None)
     for t in alone:
-        report(attempt(t, 1, False)[0])
+        if ex_lane is None:
+            print(f'  SKIP {t["name"]:15s} exclusive: needs one of lanes 1-5 in this run (lanes {a.lane_ids})', flush=True)
+            continue
+        report(attempt(t, ex_lane, False)[0])
     for lane in a.lane_ids:
         spore(tree, lane, 'kill')
     total = time.time() - t0

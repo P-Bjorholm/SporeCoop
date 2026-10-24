@@ -72,7 +72,7 @@ def respawn(ck, guest, what, home):
 
 
 def main():
-    host, guest = start('space', 'Game0/Maraya')
+    host, guest = start('space')
     ck = Checks()
     time.sleep(5)
     _, home = star_of(host)

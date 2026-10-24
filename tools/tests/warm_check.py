@@ -6,11 +6,12 @@ import re
 import time
 
 import lane
+from fixtures import planet_of
 from lane import sh
 from twoinst import start, wait_guest_in
 
-FIX = {'tribe': 'Game0/Cohrach', 'civ': 'Game0/Agrauel', 'space': 'Game0/Maraya',
-       'creature': None, 'cell': 'Game0/Karke'}
+FIX = {fx: planet_of(fx) for fx in ('tribe', 'civ', 'space', 'cell')}
+FIX['creature'] = None
 
 
 def mode(con):
