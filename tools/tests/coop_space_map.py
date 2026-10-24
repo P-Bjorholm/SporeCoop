@@ -10,6 +10,8 @@
 * a real click on the tag takes the host to the guest's star (free, like the 0.6 jump);
 * the Space page (F9, real clicks) lists the guest's colony with "Fly there": the host flies there
   and pays the game's own price for the trip;
+* both in the galaxy view: the tag is on the guest's ship, a click on it teleports the host there
+  (SpaceTeleportTo: free, instant);
 * the guest leaves and joins again: both have each other's roster again (the guest reloaded the
   host's world, so its own colony is gone from its roster).
 
@@ -269,7 +271,37 @@ def main():
     ui.click('sback')
     host.call(f'key {VK_F9}')
 
-    # ---- 6. rejoin: the rosters come back ----
+    # ---- 6. a partner in the galaxy view: the tag is on its ship, a click teleports next to it ----
+    ck(to_galaxy(guest) and to_galaxy(host), 'both in the galaxy view')
+    no_movie(guest)
+    no_movie(host)
+    t = wait(lambda: [x for x in tags(host) if x['kind'] == 'player' and x['id'] == 1 and x['star'] == 0 and
+                      x['at'][0] >= 0] or None, 15)
+    print('  host tags:', tags(host), flush=True)
+    ck(bool(t), 'the host draws Bob\'s tag on Bob\'s ship in the galaxy view')
+    shot(host, 'map_galaxy_flying.png')
+    if t:
+        b = t[0]['box']
+        host.call(f'click {(b[0] + b[2]) // 2} {(b[1] + b[3]) // 2}')
+
+    def gpos(con, who):
+        m = re.search(rf'roster {who} .* at (\S+) (\S+) (\S+) empire', sp(con, 'map roster', who))
+        return tuple(float(m.group(i)) for i in (1, 2, 3)) if m else None
+
+    def close():
+        a, b = gpos(host, 0), gpos(host, 1)
+        return a and b and sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5 < 0.3
+    ck(wait(close, 15) is not None and context(host) == 'galaxy',
+       f'a click on the tag put the host next to Bob in the galaxy view ({gpos(host, 0)} ~ {gpos(host, 1)})')
+
+    # ---- 7. rejoin: the rosters come back ----
+    # (the host back home first: the rejoined guest loads the host's world where the host is)
+    for _ in range(5):
+        no_movie(host)
+        if sp(host, 'jumpto', home) == 'jumping':
+            break
+        time.sleep(2)
+    wait(lambda: place(host)[1] == home, 30)
     guest.call('coop.leave')
     ck(wait(lambda: 1 not in rosters(host), 15) is not None, 'the guest left: the host dropped its roster')
     time.sleep(2)

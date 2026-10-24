@@ -30,7 +30,7 @@ struct Colony {
     std::string star_name;    // the star's name in the owner's game (the names of stars nobody named are
                               // made up anew in every game: another copy may call it differently)
     uint32_t spice[3] = {};   // the planet's spice ResourceKey {instance, type, group} (record +0x198), 0 = none
-    std::string spice_name;   // "" if not known
+    std::string spice_name;   // English name ("Red Spice" ...), "" if not one of the six spices
     uint16_t cities = 0;      // cities of the owner's empire on the planet (cCivData +0x3C)
     bool home = false;        // the empire's home planet
 };

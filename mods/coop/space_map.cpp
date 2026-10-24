@@ -116,6 +116,25 @@ static uint32_t star_of(uint32_t place)
     return 0;
 }
 
+// the six spices of the game: prop files spice1..spice6 (group SpaceTrading 0x034D97FA, instance =
+// FNV-1 of the name; their text "Red Spice" ..., Spore_Game.package / PatchData.package)
+struct Spice {
+    uint32_t key;
+    const char *en, *ru;
+};
+static const Spice kSpices[] = {
+    {0x1CA01562u, "Red Spice", "Красная специя"},     {0x1CA01561u, "Blue Spice", "Синяя специя"},
+    {0x1CA01560u, "Yellow Spice", "Жёлтая специя"},   {0x1CA01567u, "Green Spice", "Зелёная специя"},
+    {0x1CA01566u, "Pink Spice", "Розовая специя"},    {0x1CA01565u, "Purple Spice", "Фиолетовая специя"},
+};
+static const Spice* spice_of(uint32_t key)
+{
+    for (auto& s : kSpices)
+        if (s.key == key)
+            return &s;
+    return nullptr;
+}
+
 // cEmpire (ModAPI layout, checked at runtime, docs/re/space.md 10.1): cIdentityColorable at +0x0C
 // (mIDColorID +0x10, mCachedColor ColorRGB floats +0x30), mEmpireName string16 +0x3C, mPoliticalID
 // +0x84, mStars vector<cStarRecord*> +0x88, mHomeStar +0xB0, mHomePlanet +0xB4, money +0xD0.
@@ -180,6 +199,8 @@ static bool read_local(Roster& r)
             col.name = str16((uint8_t*)p + 0x18);
             col.star_name = str16((uint8_t*)s + 0x60);
             memcpy(col.spice, (uint8_t*)p + 0x198, 12);
+            if (const Spice* sp = spice_of(col.spice[0]))
+                col.spice_name = sp->en;
             col.home = col.planet == r.home_planet;
             r.colonies.push_back(std::move(col));
             if (r.colonies.size() >= 250)
@@ -864,6 +885,8 @@ static std::string place_text(uint8_t id)
 
 static std::string spice_text(const Colony& c)
 {
+    if (const Spice* sp = spice_of(c.spice[0]))
+        return spaceext::tr(sp->en, sp->ru);
     if (!c.spice_name.empty())
         return c.spice_name;
     if (!c.spice[0])
