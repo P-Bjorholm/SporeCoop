@@ -145,7 +145,7 @@ def main():
     # both on the home planet (fights happen on planets: the weapons are for the planet view)
     for p in (ph, pg):
         if p.ctx() == 'system':
-            p.land(home)
+            p.land_retry(home)
     ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet', f'both on the home planet ({sp(guest, "dist")})')
     # the host needs some money to split
     if total < 10000:

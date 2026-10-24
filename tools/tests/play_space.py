@@ -396,6 +396,15 @@ class Player(threading.Thread):
         x, y = me if me and 0 <= me[0] < self.W and 0 <= me[1] < self.H else (self.W // 2, self.H // 2)
         self.act(f'wheel {x} {y} {n}')
 
+    def land_retry(self, want=None, seconds=150):
+        """land(), again while still in the system: on GOG 2024 the zoom does not land for up to
+        ~80 s right after a world load (docs/known-issues.md)"""
+        t0 = time.time()
+        ok = self.land(want)
+        while self.ctx() == 'system' and time.time() - t0 < seconds:
+            ok = self.land(want)
+        return ok
+
     def land(self, want=None):
         """system: click a planet (the ship flies there), then zoom in until on it"""
         for i in range(6):

@@ -51,9 +51,9 @@ def main():
     for rnd in range(4):
         # both land on the same planet (the host picks one, the guest follows), then one takes off:
         # leaving the planet frees its UFOs, the partner's puppet too (the crash of 2026-10-23)
-        ph.land(planets[rnd])
+        ph.land_retry(planets[rnd])
         planet = ph.place()[0]
-        pg.land('%08X' % (planet & 0x3FFFFFFF))
+        pg.land_retry('%08X' % (planet & 0x3FFFFFFF))
         t0 = time.time()
         while time.time() - t0 < 20 and not (together(host, 1) and together(guest, 0)):
             time.sleep(1)
