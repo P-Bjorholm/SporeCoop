@@ -495,34 +495,87 @@ fix/space-lone-death). Not a hook problem: the debug hit (attacker null) and the
 
 ### 7.3 Travel / "jump to partner"
 
-| function | address | signature | notes |
+Rewritten 2026-10-23 (branch fix/space-jump, ✔ runtime on lane 7, GOG 2016, test
+`coop_space_jump.py`). The 0.6 jump (respawn's sequence below) was wrong for any star whose planets
+were never generated: see "Why TravelToStarSystem is not enough".
+
+| function | address (both builds) | signature | notes |
 |---|---|---|---|
-| **`SpaceTeleportTo(cStarRecord*)`** | 0x010228C0 | cdecl, `ret` | ✔ the `space -flyto …` debug cheat target. **No-op unless context == 2 (galaxy)**. Refunds the travel cost (`cEmpire::SetMoney(GetMoney() + cost)`), then `cSimulatorPlayerUFO::TravelToStar` and `SnapToDestination` 0xC37FA0 → instant arrival in galaxy view |
-| `cSimulatorPlayerUFO::TravelToStar(cStarRecord*)` | 0x01002040 | thiscall(playerUFOsingleton), ✔ | normal galaxy flight: cost = 0xFFC390(curRec, dstRec) (thiscall on player-UFO singleton, `ret 8`), "not enough money" msg 0x3E7E341, `AddMoney(-cost)`, sets active star via 0x10218A0(dst, 0), star+0x44 = 1 (visited) |
-| **`cAppModeSpace::TravelToStarSystem(cStarRecord*, bool keepPosse)`** | 0x00FDD380 | thiscall(`[0x16DA918]`), `ret 8` ✔ | **system → other system** jump: `simSpaceGame->0x1009310(0, keepPosse, 0)` (destroy NPC UFOs, keep posse if true), `SetActiveStarAndPlanet(star, 0)`, tool reset 0x1048E10, picks a planet (0xFDD1F0: owned/colonised first) and makes it active, places the UFO next to it (0xC3C2D0 + 0xC38320). Callers: respawn (keepPosse 0), Return-home tool 0x1051D98 (1), wormhole 0xFDD4E0 (1) |
-| `cAppModeSpace::EnterSolarSystem()` | 0x00FDD590 | thiscall, `ret` ✔ | galaxy → system of the active star (loads planets 0xBB5CE0, context 1) |
-| `cAppModeSpace::LeavePlanet(bool)` | 0x00FDE3D0 | thiscall, `ret 4` ✔ | planet → system (sets context 1 via `simSpaceGame->0x10038F0`); respawn and Return-home pass 0 |
+| **`SpaceTeleportTo(cStarRecord*)`** | 0x010228C0 | cdecl, `ret` ✔ | the `space -flyto …` debug cheat target. **No-op unless context == 2 (galaxy)**. Adds the flight cost to the money first (`cEmpire::SetMoney(GetMoney() + cost)`, cost 0xFFC390), then `cSimulatorPlayerUFO::TravelToStar` and `SnapToDestination` 0xC37FA0: a free, instant galaxy flight |
+| `cSimulatorPlayerUFO::TravelToStar(cStarRecord*)` | 0x01002040 | thiscall(playerUFOsingleton) ✔ | the player's galaxy flight. No-op when the game time is paused (`cGameTimeManager+0x48 & 1`) or dst is the active star. Cost 0xFFC390(cur, dst), "not enough money" 0x3E7E341, `AddMoney(-cost)`; relationship event 0x5B942D0 for an uncontacted empire star; old star +0x44 = 1 (visited); `SetActiveStarAndPlanet(dst, 0)`; energy: `ChangeEnergy(-x)`, **with no energy left it damages the ship** (combatant vt+0x18); **0xBB5920(starMgr, dst, 0) = RequirePlanetsForStar + per-planet setup**; relationship events 0x1014920(pol, 4/2) for empires nearby; posts 0x55BD8F7, 0x6174B67 |
+| `cAppModeSpace::SystemToGalaxy()` (`SporeCoop::cAppModeSpace_SystemToGalaxy`) | 0x00FDA5D0 | thiscall(mode), `ret` ✔ | system → galaxy view: sim+0x50 \|= 4, DestroyNPCUFOs(1,1,0), Space_LeaveSolarSystem(active star), context 2 (0x1003330), 0x1007FA0, places the galaxy UFO, posts **0x5E37A3B** (handler 0xFDABE0: the tutorial's "entered the galaxy" caption SPG_EnteredGalaxy_201 once, hints). Callers: the zoom-out in the per-frame camera handler 0x1009C90 (0x1009EBC), message 0x6527EAF (0xC77EB0) |
+| `cAppModeSpace::EnterSolarSystem()` | 0x00FDD590 | thiscall(mode), `ret` ✔ | galaxy → system of the active star: 0x10034C0 (leave the galaxy gfx), context 1 (0x10038F0), DestroyNPCUFOs(1,1,0), 0x1007680; for a star of tech level 5: `GetEmpireForStar`, empire+0x50 \|= 0x10 (0xC31D70), relationship event 0x1014920(pol, 3), preloads the empire's creations; **0xBB5CE0(starMgr, star, &vec): creates the `cPlanet` objects** (0xBAF2A0, into cStarManager +0x50) after 0xBB5920; picks the active planet (0xFDD1F0) when none; places the UFO at the system entry point; rare-star badge; posts **0x5E37A44** (cAppModeSpace handler 0xFE2EB0: no active planet → 0xFDADD0, else +0x188 = 1). Callers: Respawn (galaxy case), zoom-in handler 0x100CF70 |
+| 0x00FDADD0 | | thiscall(mode) | after 0x5E37A44: for an NPC empire's star, once per game (flag 0xDAB99813): creates the empire's envoy UFO (type 8) next to the player and plays **SPG_FirstContact_Intercept** ("Drake's equation was right..."); SETI ambush; "first alliance possible" hint |
+| **`cAppModeSpace::TravelToStarSystem(cStarRecord*, bool keepPosse)`** | 0x00FDD380 | thiscall(mode), `ret 8` ✔ | system → other system without the galaxy view: DestroyNPCUFOs(0, keepPosse, 0), Space_LeaveSolarSystem, `SetActiveStarAndPlanet(star, 0)`, picks a planet (0xFDD1F0 over the star's cSolarSystem +0x10..+0x14) and places the UFO there (0xC3C2D0 + 0xC38320), context 1. **No planet generation, no cPlanet creation, no 0x5E37A44.** Callers: Respawn (keepPosse 0, to an own star), Return-home tool 0x1051D98 (1), wormhole 0xFDD4E0 (1) |
+| `cAppModeSpace::LeavePlanet(bool)` | 0x00FDE3D0 | thiscall, `ret 4` ✔ | planet → system (context 1 via 0x10038F0); respawn and Return-home pass 0 |
+| `cStarManager::RequirePlanetsForStar(cStarRecord*, ?)` | 0x00BB4C60 / 2024 0x00BB4C90 | thiscall `ret 8` ✔ | generates the planet records when star+0xAC (count) is 0: the only caller of `GeneratePlanetsForStar` 0xBB4270, which draws from the global RNG **0x1602760** (2024 0x1601760; one dword LCG, `Math::RandomNumberGenerator::global_ptr`) |
 | respawn landing | 0x00FE0E00 | thiscall, `ret` ~ | only caller is respawn: lands on the active planet |
 | cSimulatorSpaceGame context switches | 0x01003330 → 2, 0x01003530 → 0, 0x010038F0 → 1 | thiscall ✔ | low level, called by the mode functions above |
 | `cSimulatorSpaceGame::DestroyNPCUFOs(keepAmbush, keepPosse, bool)` | 0x01009310 | thiscall `ret 0xC` ✔ | iterates +0x78, DestroyUFO 0x102C350 |
 
-Native sequence (copied from Respawn 0xC38420, ✔), to put the player into star `dst`:
+**Why TravelToStarSystem is not enough (the root cause of the 0.6 bug, ✔ runtime).** A player's flight
+is galaxy view → `TravelToStar` (generates the planet records of the target, 0xBB5920) → zoom in →
+`EnterSolarSystem` (creates the cPlanet objects, 0xBB5CE0, and posts 0x5E37A44 for first contact).
+`TravelToStarSystem` does neither: it only works for stars that are already prepared, which is all its
+native callers need (respawn and Return-home go to own stars, whose planets are loaded with the save;
+wormhole targets are prepared at load by 0xBB7770, which runs 0xBB5CE0 for the stars in cStarManager
++0xDC and +0xF0). The 0.6 jump into a star nobody visited arrived with star+0xAC = 0 (no records), active
+planet 0, only the sun drawn and the old cPlanets in +0x50; the empire never saw the player. Zooming out
+and back in afterwards generated the records (3) but the system stayed empty (active planet 0, no
+targets) for the rest of the session ? (likely the cStar's cSolarSystem, created empty by 0x10038F0's
+`cStar::GetSolarSystem` 0xC8B8F0, is never rebuilt). Reproduce with `coop.space jumpto <StarID> force old`.
+
+**The co-op jump (`spacecoop.cpp travel_to`, ✔ runtime both from a system, a planet and the galaxy view,
+into unvisited NPC and empty systems):**
 ```
-mode = *(void**)0x16DA918;
-switch (GetCurrentContext()) {
-case 0: thiscall(0xB7D650, *(void**)0x167FADC, GetActivePlanet());  // planet-model cleanup, ret 4
-        thiscall(0xFDE3D0, mode, 0);                                 // leave planet -> system
-        break;
-case 2: thiscall(0xFDD590, mode);                                    // galaxy -> current system
-        break;
-}                                                                    // case 1: nothing
-thiscall(0xFDD380, mode, dst, /*keepPosse*/ 1);                      // jump to the other system
+guard: no cinematic (ufo+0x7F0 == 0 and cCinematicManager+0x2C == 0) unless "force"; context >= 0
+mode = *(void**)0x16DA918;  dst = cStarManager::GetStarRecord(StarID) (checked against the table)
+if dst == GetActiveStarRecord(): context 2 -> EnterSolarSystem(mode); else "already there"
+case 0: PlanetModelCleanup(*0x167FADC, GetActivePlanet()); LeavePlanet(mode, 0)     // planet -> system
+case 1: skip the next 0xFDABE0 (5 s); SystemToGalaxy(mode) 0xFDA5D0                // system -> galaxy
+case 2: e = ufo+0x7F4; ufo+0x7F4 = max(e, ufo+0x7F8)   // TravelToStar spends energy / damages at 0
+        SpaceTeleportTo(dst)                     0x10228C0  // free (cost refunded), instant, generates
+        ufo+0x7F4 = e
+        ok = GetActiveStarRecord() == dst       // TravelToStar refuses while the game time is paused
+        EnterSolarSystem(mode)                   0xFDD590   // into dst (or back into the old star)
 ```
-Galaxy-only alternative: `SpaceTeleportTo(dst)` (free, instant), then optionally
-`EnterSolarSystem()`. Partner's star: send `starRecord+0x70` (StarID), resolve with
-`cStarManager::GetStarRecord` 0xBA6EB0 (same galaxy layout → same ids). Run it outside Present
-(SK_CMD_OUTSIDE_FRAME). ? whether FDD380 is safe while a cinematic/comm screen is open - guard on
-`ufo+0x7F0 == 0` and context ≠ −1.
+All of it runs in one call outside the frame (`coop.space` is SK_CMD_OUTSIDE_FRAME, the Space page
+buttons use run_outside_frame); the posted messages are handled in the next frames, in the target system.
+Effects seen: the target's planets in cStarManager +0x50 and drawn, an active planet of that star, the
+empire's ships (envoy type 8, defenders type 6), the empire's contact entry gets flag 0x20 at once and
+the comm card shows at the bottom left; the first NPC system of a game plays SPG_FirstContact_Intercept
+(caption, OK). **The galaxy pass is hidden:** the 0x5E37A3B posted by SystemToGalaxy is handled one frame
+later by 0xFDABE0 (`SporeCoop::cAppModeSpace_OnGalaxyEntered`, the player's first look at the galaxy): in
+a tutorial save it played SPG_EnteredGalaxy_201 ("The interstellar drive from the wreck is responding to
+a beacon...", waits for OK), also in the `space` fixture without the drive, and that caption then
+blocked the next jump (coop_space_play.py and coop_space_page.py failed). `spacecoop.cpp` skips that
+handler once within 5 s after its own SystemToGalaxy (`galaxy_msgs_skipped` in `coop.space`); a real
+zoom-out later shows it as usual. The contact itself (cPlayer +0x11D8 flags 0x26, bit 1) comes when the player talks to the empire:
+the comm tab above the empire's card (288, 914 in a 1440x1080 window), an answer, Goodbye. Money and
+energy are unchanged. The planets of the player's colonies in other systems stay in +0x50 (the game keeps
+them); `coop.targets all` lists only the active star's planets.
+
+**Same planets in both games (✔ runtime):** `GeneratePlanetsForStar` 0xBB4270 (only caller
+`RequirePlanetsForStar`) and its callees (planet kinds, orbits, scores, names) draw from the global RNG
+`0x1602760` (2024 `0x1601760`), so the host and the guest generated different planets for the same
+unvisited star (0046101B: 4 and 6, then 1 and 8 planets in two sessions). What did not work: seeding the
+global RNG for the generation (mostly the same, once 6 and 10: other threads draw from the same object,
+and the planet names `cSpaceNames::GenerateRandomName` 0x5ED000 draw a number of times that depends on
+the names the game made before); only the generator's own five draws on a private generator (5, 6, 8,
+10 planets: the callees decide the structure too). What mostly works (8 of 8 probe sessions the same 6 planets, both
+games): `spacecoop.cpp` hooks `RequirePlanetsForStar` (generation when star+0xAC == 0), `RandomInt`
+0xA68F30 / `RandomFloat` 0x936040 and `GenerateRandomName`: while the generation runs, every draw on the
+global RNG **from the generating thread and outside the names** goes to a private generator seeded with
+`StarID * 0x9E3779B1 ^ bits(x) ^ rot16(bits(z)) | 1` (star+0x3C/+0x44, the same in both games); the
+global generator is untouched (`planets_seeded` in `coop.space`). Not complete: in one
+`coop_space_jump.py` run the host still made 10 planets of 0046101B and the guest 6 (docs/known-issues.md).
+The names may still differ (? not compared). Stars near home already have their planets in the save.
+? spice kinds and the NPC colonies' data (FillPlanetDataForTechLevel 0xB97040) were not compared.
+* `coop.targets all` only prints objects on the screen; `coop.space planets` prints every loaded planet
+  of the active star (PlanetIDs, cStarManager +0x50).
+
+Partner's star: send `starRecord+0x70` (StarID), resolve with `cStarManager::GetStarRecord` 0xBA6EB0
+(same galaxy layout → same ids).
 
 ### 7.4 Raids and plunder (builds on §6)
 

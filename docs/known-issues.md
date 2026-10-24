@@ -141,16 +141,20 @@ Fixed entries move to the commit message (and a test).
 
 ## Space: `coop.space jumpto` into another system arrives without planets
 
-* `coop.space jumpto 0x00460038` (and `0x0046102D`) from a planet and from the galaxy view put the
-  ship into that star's system, but the system had no planets: only the sun was drawn, and
-  `coop.targets all` still listed the planets of the system left behind (the planet list of
-  `cStarManager` +0x50 was not reloaded). Zooming out to the galaxy and back in did not load them
-  either. The star records had their planets (star +0x84, 3 and 8 records). Seen 2026-10-23,
-  lane 8, single player, inside the tutorial. The co-op "jump to partner" uses the same
-  `travel_to` (TravelToStarSystem 0xFDD380, docs/re/space.md 7.3): check whether a jump to a
-  partner in another (not yet visited) system shows its planets. Not saved into any fixture.
+## Space: an unvisited star's planets can still differ between the two games
 
-## Civilization: single vehicle sync outliers of 20-27 m
+* Each game generates the planets of a star the first time it is needed (a flight there, the jump);
+  the generation draws from the game's global random generator, so host and guest made different
+  planets for the same star (count and PlanetIDs, e.g. 4 and 6). Since fix/space-jump the generation of
+  the generating thread draws from a private generator seeded by the star (docs/re/space.md 7.3): the
+  same planets in 8 of 8 probe sessions and in most `coop_space_jump.py` runs, but once the host made 10
+  planets of 0046101B and the guest 6 (lane 7, GOG 2016, 2026-10-23). Not found: which draw still
+  differs (another generator object, `rand()`, or state such as star +0x0C = play minutes, set right
+  before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
+  "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
+  generated star (or the guest asks for them before entering).
+
+ of 20-27 m
 
 * `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
   samples was 22-27 m in three sessions (one sample each). Not traced yet: candidates are a guest

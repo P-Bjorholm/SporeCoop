@@ -82,7 +82,9 @@ only from working together.
   * **Rescue:** a lethal hit while a partner is in the same system only *disables* the ship for
     20 s (no shooting, "SHIP DISABLED" on screen, a "REPAIR <name>" beacon for the partner);
     the partner repairs it by flying within 60 m for 2 s, else the native death and respawn follow.
-  * **Jump to partner:** travel straight to a partner's star system (F9 window, `coop.space jump`).
+  * **Jump to partner:** travel straight to a partner's star system (F9 window, `coop.space jump`),
+    free and instant, also into systems nobody visited yet: the planets load, the empire there meets
+    you (comm, first contact) and both games generate the same planets for a new star.
   * **Raids:** a raid on a colony alerts the partners (with the jump offer); a raid beaten with a
     partner in the system pays 2000 more.
   * **Missions:** a completed mission gives its reward tools to the partners too; done with a
@@ -149,7 +151,7 @@ Shared contracts between the features:
 | Tribe (co-op) | Pincer +50 %, own chief per player (aura, protection, tag), duet, healer food, epic creature at the village | `tribe.cpp` (co-op section) | `coop_tribe_play.py` |
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
-| Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (co-op) | Rescue of a disabled ship, jump to partner (into any system, from a planet, a system or the galaxy view; the same planets in both games), raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py`, `coop_space_jump.py` |
 | Space (contracts) | Co-op contracts from the host: a pirate armada on the host's colony (two waves of the game's own raids, started only while two crew ships are there; the host's NPC ships, so everybody fights the same ships; "Land" on the page) and a joint survey of nearby stars; offer, accept and "Jump there" on the F9 Space page, notices, a HUD line, a time limit, failure on a timeout / an unanswered offer / a partner leaving, money and tool rewards on every game | `space_contracts.cpp` | `coop_space_contracts.py` |
 | Space (rivals) | Host option "rivals": own budgets (fair split, merged back), alliance / war / peace between players by buttons on the F9 Space page, PvP by real weapons between players at war (an enemy's ship belongs to no empire in your game; hits go to its owner), rejoins keep mode, relations and budget | `space_rivalry.cpp` | `coop_space_rivalry.py` |
 | Space (diplomacy) | One people for the NPC empires: first contacts, relationship events (gifts, missions, trade, attacks) and war / alliance / peace by one player are replayed in every copy through the game's own functions; the host's relation table is sent every 20 s, on entering Space and with the F9 Space page "Resync" button; off in rivals mode | `space_diplomacy.cpp` | `coop_space_diplomacy.py` |

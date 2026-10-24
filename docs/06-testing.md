@@ -483,9 +483,10 @@ What it does not have, and why:
 * **Colonies only through `coop.space empire colony`**: with the colony tool the game refused every
   spot on Vulpica ("Colonies must be placed near spice."): unvisited planets have no spice nodes;
   planets far from home get a spice kind (record +0x198) only when generated.
-* **Contacts only through `coop.space empire contact`**: `coop.space jumpto <StarID>` into an NPC
-  empire's system arrived in a system without planets (only the sun; `coop.targets all` kept the
-  previous system's planets; docs/known-issues.md) and no first contact came.
+* **Contacts only through `coop.space empire contact`**: first contact the game's way needs a flight
+  into the empire's system and a talk on the comm screen; since fix/space-jump `coop.space jumpto
+  <StarID>` does that flight (docs/re/space.md 7.3, `coop_space_jump.py` makes two contacts by clicks),
+  but the fixture was made before.
 * No raids, no missions of other empires, no trade route, no terraforming tools.
 
 New ids for a new `space` fixture: planets of the home system with `coop.targets all` in the
@@ -535,3 +536,26 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
   warm reset reloads the fixture too). A run takes ~8-10 minutes.
 * `--alone`: the host presses "Enter now"; the guest is near the core but not at the gate and gets
   Steve's gift by message.
+
+## 6.16 `coop_space_jump.py`: jumps into unvisited systems
+
+`SPORE_LANE=N python3 tools/tests/coop_space_jump.py` (suite `space_jump`, ~5 min with the start, the
+`space_empire` fixture). It picks unvisited stars near home with `coop.space empire near [n]` (the n
+nearest NPC empire stars and free stars around the active star, with the contact flags, visited and
+planet count, plus a `here` line for the current star) and plays: guest system -> NPC system (planets,
+active planet, empire flag 0x20, first contact through the comm by clicks), host follows with the F9
+Space page "Jump there", guest lands and jumps from the planet into an empty system, host zooms out
+(wheel) and jumps from the galaxy view with the page button, guest jumps from the galaxy view into a
+second NPC system (second contact). It checks the loaded planets (`coop.space planets`: all of them,
+`coop.targets all` only shows those on the screen), the partner rows ("in another star system" /
+"in your system"), the jump counters and no faults, and prints whether both games made the same
+PlanetIDs for the new stars (docs/known-issues.md).
+* Captions on the way that wait for OK (6.9): SPG_FirstContact_Intercept in the first NPC system (once
+  per game), the tutorial's beacon caption on the host's own zoom-out to the galaxy (the jump's own
+  galaxy pass skips it, docs/re/space.md 7.3); `settle()` presses Enter while `coop.space hp` says
+  `movie=1`.
+* The comm clicks (1440x1080): the comm tab above the empire's card at (288, 914), the first answer at
+  (720, 725) three times, Goodbye at (424, 882); the contact flag (bit 1) is set at the end of the talk.
+* The old jump stays reachable for comparisons: `coop.space jumpto <StarID> force old`.
+* After several hot reloads (`lab.py reload`) the co-op session of the running games was gone ("offline",
+  seen once 2026-10-23): restart the games for checks on both games.
