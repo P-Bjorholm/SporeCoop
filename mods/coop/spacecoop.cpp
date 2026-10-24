@@ -423,6 +423,22 @@ using RequirePlanets_t = void(SK_THISCALL*)(void*, void*, void*);
 static RequirePlanets_t o_RequirePlanets;
 static uintptr_t a_Rng;
 static uint32_t g_planets_seeded;
+// Inside the generation the planet names come from cSpaceNames::GenerateRandomName 0x5ED000, which
+// draws from the same generator a number of times that depends on the names this game made before
+// (seen: one game 6, the other 9 planets for the same seed): its draws must not move the sequence.
+using RandomName_t = void*(SK_THISCALL*)(void*, void*, uint32_t);
+static RandomName_t o_RandomName;
+static bool g_generating;
+static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
+{
+    if (!g_generating)
+        return o_RandomName(names, out, kind);
+    uint32_t saved = *(uint32_t*)a_Rng;
+    void* r = o_RandomName(names, out, kind);
+    *(uint32_t*)a_Rng = saved;
+    return r;
+}
+
 static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
     if (!a_Rng || !star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC)) {
@@ -433,7 +449,9 @@ static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
     memcpy(&x, (uint8_t*)star + 0x3C, 4);
     memcpy(&z, (uint8_t*)star + 0x44, 4);
     *(uint32_t*)a_Rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
+    g_generating = true;
     o_RequirePlanets(sm, star, p3);
+    g_generating = false;
     *(uint32_t*)a_Rng = saved;
     g_planets_seeded++;
 }
@@ -853,6 +871,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
     if (uintptr_t rp = S("Simulator::cStarManager::RequirePlanetsForStar"); rp && a_Rng)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
+    if (uintptr_t rn = S("Simulator::cSpaceNames::GenerateRandomName"); rn && a_Rng)
+        H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName);
     if (a_TerraA && a_TerraW && a_TerraT) {
         H->hook_create(M, (void*)a_TerraA, (void*)h_TerraA, (void**)&o_Terra[0]);
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
@@ -1178,6 +1198,13 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "place %08X star %u active %08X", pl, star_of(pl),
                  rec && !IsBadReadPtr(rec, 0x188) ? F<uint32_t>(rec, 0x184) : 0u);
         return b;
+    }
+    if (a[0] == "planets") { // tests: the loaded planets of the system (cStarManager +0x50, on screen or not)
+        std::string out;
+        for (auto& e : nav_entries())
+            if (e.key.size() == 9 && (e.key[0] == 'P' || e.key[0] == 'C'))
+                out += e.key + " ";
+        return out.empty() ? "none" : out;
     }
     if (a[0] == "land") { // tests: land on the active planet (the landing of Respawn)
         uintptr_t f = H->sym("SporeCoop::cAppModeSpace_LandOnActivePlanet");

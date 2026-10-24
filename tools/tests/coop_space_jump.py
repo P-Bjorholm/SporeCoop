@@ -53,10 +53,11 @@ def here(con):
 
 
 def system_planets(con, star_id):
-    """PlanetIDs of that star among the click targets of the system view"""
-    out = con.call('coop.targets all')['out']
-    ids = [int(x, 16) for x in re.findall(r'obj [PC]([0-9A-F]{8})', out)]
-    return [i for i in ids if i & 0xFFFFFF == star_id], len(ids)
+    """(PlanetIDs of that star loaded in the system, on screen or not; PlanetIDs among the click targets
+    on the screen, any star)"""
+    loaded = [int(x[1:], 16) for x in sp(con, 'planets').split() if len(x) == 9]
+    shown = [int(x, 16) for x in re.findall(r'obj [PC]([0-9A-F]{8})', con.call('coop.targets all')['out'])]
+    return [i for i in loaded if i & 0xFFFFFF == star_id], shown
 
 
 def fresh(con, kind, n=6, skip=()):
@@ -80,10 +81,15 @@ def arrived(ck, con, who, star_id, what):
     pl, st, act = place(con)
     ck(st == star_id and pl == (star_id | 0x80000000), f'{who} {what}: in the system of {star_id:08X} ({pl:08X})')
     ck(act and act & 0xFFFFFF == star_id, f'{who} {what}: the active planet belongs to that star ({act:08X})')
-    mine, total = system_planets(con, star_id)
-    pol, flags, n = here(con)
-    ck(n > 0 and len(mine) > 0 and len(mine) == total,
-       f'{who} {what}: the planets are loaded ({len(mine)} targets of {n} planet records, {total} listed)')
+    for _ in range(10):  # (all planet objects of the records, polled)
+        mine, shown = system_planets(con, star_id)
+        pol, flags, n = here(con)
+        if n and len(mine) == n:
+            break
+        time.sleep(1)
+    ck(n > 0 and len(mine) == n, f'{who} {what}: the planets are loaded ({len(mine)} of {n} planet records)')
+    ck(shown and all(i & 0xFFFFFF == star_id for i in shown),
+       f'{who} {what}: the click targets are planets of that star ({len(shown)} on the screen)')
     return pol, flags
 
 
