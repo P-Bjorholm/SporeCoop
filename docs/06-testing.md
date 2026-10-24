@@ -289,6 +289,20 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
   deterministic, so the same seed gives a similar, not the same, session).
 
+### Shared diplomacy (coop_space_diplomacy.py)
+* `coop.space diplomacy list` (the empires with a name, events or a state; `list all` every one,
+  60 lines at most), `near [n]` (the NPC empires nearest to the home star: `home=<StarID>` to fly
+  to), `table` (records with events: `rec <pol> flags=<bit0 war, bit1 alliance, 16 met> rel=..
+  <event>=<value>...`; compare two games with it), `log`, `sync`, and the game's own functions:
+  `apply <pol> [event] [scale]` (default the gift event), `war|ally|peace|break|contact <pol>`;
+  `local ...` does the same without sharing (tests: make the copies differ).
+* The test takes ~3.5 min after a cold start of the pair (~45 s): the jumps to two empires' home
+  stars take ~5 s each, the rejoin ~15 s. It passed twice in a row on lane 4 (GOG 2016).
+* Use an event that stays in the map to make copies differ: CommunicatedMean 0x5F62736 applied by
+  hand changed the relation once and left no event, so the tables looked equal again.
+* The `diplomacy list` output of all 2120 empires is cut by the console (~16 KB): the command
+  shows only the interesting ones.
+
 ## 6.13 Playing the Tribe stage through real input (play_tribe.py)
 
 Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):

@@ -167,6 +167,27 @@ Fixed entries move to the commit message (and a test).
   1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
   its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
 
+## Space diplomacy: what is not shared or may drift (space_diplomacy.cpp)
+
+* **Names and species of NPC empires differ between the copies**: each copy picks them at the first
+  contact (from that player's creations). The relation, contact and war/alliance state are shared
+  by political id; notices name both ("Kirgle Empire (Alice: Judge Empire)"). Sharing names would
+  need the species too (docs/re/space.md 10.3).
+* Events the game raises on every copy by itself are not sent (personality / archetype at contact,
+  the empire AI's be nice / be nasty, embassies, super power, avoided contact). Any other event
+  between the player and an NPC empire is sent, also when the local AI caused it (for example an
+  NPC destroying the player's buildings): if both copies' AI do the same, the host counts it twice.
+  Guests converge on the host's table within 20 s; the host's own copy is the reference.
+* An empire created after the join (uplift of a civilization, ...) gets a political id on each copy
+  by itself (`NextPoliticalID`), the ids may differ: its events are dropped as "unknown empire"
+  (`coop.space diplomacy` counter `unknown`). Not seen in tests.
+* The comm screen is not driven by clicks in the test: `coop_space_diplomacy.py` calls the same
+  game functions its buttons do (ApplyRelationship with the gift event, DeclareAlliance,
+  DeclareWar, DeclarePeace); the money of a gift goes through the shared budget. Attacks on an
+  empire's ships, missions and trade use the same hook but are not played in the test.
+* Rivals mode (feature 10) turns sharing off; it is not tested here (the switch belongs to
+  space_rivalry.cpp).
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:

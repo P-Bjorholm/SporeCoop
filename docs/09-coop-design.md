@@ -106,7 +106,7 @@ registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Spa
 | 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's colonies exist as cities of "<name>'s empire", an ally: you can visit them and defend them from raids |
 | 5 | Trade between players | `space_trade.cpp` | 70-79 | sell spice to a partner's colony for more than NPC empires pay; the partner's colony gets it |
 | 7 | Co-op contracts | `space_contracts.cpp` | 20-29 | jobs made for two (a pirate armada that needs two ships, escorts, joint expeditions), big rewards for both |
-| 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | an alliance, a war or a gift to an NPC empire by one player counts for every player |
+| 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | the players are one people for the NPC empires: a first contact, a gift, a mission, a trade, an attack, an alliance, a war or a peace by one player changes every player's copy the same way, with a notice ("Alice formed an alliance with ..."); the host's relation table keeps the copies equal (every 20 s, on joining and with the "Resync" button) |
 | 9 | The galaxy core together | `space_finale.cpp` | 40-49 | the trip to the core is a joint finale: the reward and the ending for everybody |
 | 10 | Rivals mode | `space_rivalry.cpp` | 50-59 | a host option: own budgets, players can declare war or alliance on each other, PvP between ships |
 
@@ -121,7 +121,8 @@ Shared contracts between the features:
   a partner at war shows its colonies as an enemy empire.
 * Star and planet ids are the same in every copy of the galaxy (the same save: StarID =
   `starRecord+0x70`, PlanetID = `record+0x184`, docs/re/space.md 7.3). Political ids of NPC
-  empires: to be checked by feature 8 (docs/re/space.md 7.8).
+  empires and of the player's empire are the same too (docs/re/space.md 10.3); their names and
+  species are not (each copy picks its own at the first contact).
 * Every feature works on both supported builds (symbols in `overrides_922af7c7.sym` and
   `overrides_dc04aee5.sym`; `tools/re_lint.py` fails otherwise) and has a two-game test
   `tools/tests/coop_space_<feature>.py`.
@@ -149,6 +150,7 @@ Shared contracts between the features:
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 | Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (diplomacy) | One people for the NPC empires: first contacts, relationship events (gifts, missions, trade, attacks) and war / alliance / peace by one player are replayed in every copy through the game's own functions; the host's relation table is sent every 20 s, on entering Space and with the F9 Space page "Resync" button; off in rivals mode | `space_diplomacy.cpp` | `coop_space_diplomacy.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
