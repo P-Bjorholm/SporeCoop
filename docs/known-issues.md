@@ -167,6 +167,24 @@ Fixed entries move to the commit message (and a test).
   1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
   its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
 
+## Space trade: open ends (space_trade.cpp, 2026-10-23)
+
+* **Rivals mode payment is untested**: the offer / accept / pay flow (kinds 74-76) is written for
+  `spaceext::rivals()` but space_rivalry.cpp (feature 10) was not in the branch when
+  coop_space_trade.py ran, so the test only covers the shared-budget sale. In rivals mode without
+  own budgets the two AddMoney calls cancel out.
+* **A gift or sale on its way when the own session ends comes back** (the sender cannot know
+  whether the partner already got it): leaving right after "Give" can duplicate the charges.
+  A partner who leaves before answering is handled (the sender gets it back).
+* **Demand cap is per seller game**: the 30 units / 10 minutes of a partner colony are counted by
+  the seller and forgotten on a restart; two sellers each get their own 30.
+* **The F9 Space page has 9 rows for every feature together** (coop_ui.cpp kSpaceRows): the trade
+  rows (gift, next tool, other partner, sale, offers) come after the features registered before
+  it and can fall off the page when many features show rows at once.
+* Spice values are the game's own (`spacetrading~` 0x34F1A4A x the difficulty multiplier, about
+  5 600 to 24 000 per unit on normal), so one sale of 10 is worth 110 000 to 490 000 at 2x: big
+  next to the fixture's $100 000. NPC stores pay similar money for the spices they want.
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
@@ -175,5 +193,5 @@ Fixed entries move to the commit message (and a test).
   nobody can heal: a fixture of a later tribe save is needed). Civilization: the religious role
   and trade in real play (play_civ.py plays military vehicles: the military role and joint sieges
   by real vehicles are covered). Space: raids and missions (no live mission in
-  the fixture), spice trading, terraforming with the tools, buying in the city planner (the bot
+  the fixture), spice trading with NPC stores (selling to a partner colony is covered by coop_space_trade.py), terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).

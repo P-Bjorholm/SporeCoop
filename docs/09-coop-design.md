@@ -149,6 +149,7 @@ Shared contracts between the features:
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 | Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (trade) | Gifts of tool charges from the F9 Space page (consumable tools only, the rest comes back when the partner's tool is full); spice sales to a partner's colony at the star (roster of space_map.h) at twice the market value, paid into the shared budget, the spice lands in the partner's cargo; rivals mode offers (written, untested) | `space_trade.cpp` | `coop_space_trade.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
