@@ -478,6 +478,14 @@ static void menu_intro_tick()
     H->run_outside_frame([](void*) { end_menu_intro(false, "in a stage"); }, nullptr);
 }
 
+// coop_ui.cpp: the galaxy menu plays its intro right now (its input lock drops every click on the
+// menu, our "Co-op" item too); cheap, callable in the frame
+bool menu_intro_playing()
+{
+    uint8_t* cm = game::mode_id() == modes::kMenu ? (uint8_t*)cinematic_mgr() : nullptr;
+    return cm && *(uint32_t*)(cm + kCineState) && *(uint32_t*)(cm + kCineId) == kMenuIntroId;
+}
+
 // the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
 static bool post_quit_to_menu(std::string& err)
 {

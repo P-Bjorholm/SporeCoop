@@ -38,4 +38,8 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
 
+// the galaxy menu's intro cinematic GGE_Intro plays (docs/re/space.md 7.9; ~10 s starting ~16 s after
+// the menu came up, its input lock drops all clicks on the menu); callable in the frame
+bool menu_intro_playing();
+
 } // namespace world

@@ -10,6 +10,7 @@
 #include "modes.h"
 #include "space_ext.h"
 #include "sui.h"
+#include "world.h"
 
 namespace coop_ui {
 
@@ -28,6 +29,9 @@ static double g_last_refresh;
 static std::string g_status;
 static uint32_t g_status_color = 0xFFFFD866;
 static bool g_f9_down;
+static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
+static double g_skip_since; // the Co-op item was clicked during the menu intro: open once it is over
+static double g_intro_over; // when that intro was over
 static bool g_raise = true; // move the window above all UI layers when it opens
 bool g_log_msgs; // debug: log UI messages that reach our handlers
 
@@ -745,6 +749,45 @@ void tick()
     if (f9 && !g_f9_down)
         open(!g_want_open);
     g_f9_down = f9;
+    // The galaxy menu's intro cinematic (~10 s, starting ~16 s after the menu came up unless the
+    // start-up video was skipped with Escape) holds the game's input lock: the game drops every click
+    // on the menu, so a click on our "Co-op" item did nothing (seen in coop_ui.py on GOG 2024, where
+    // the menu is reached faster; docs/re/space.md 7.9). The button press is seen here instead: on our
+    // item the mod presses Escape for the player (the game's own skip of the intro, the menu's key
+    // handler) and opens the window once the menu takes clicks again. (Ending the intro with EndCinematic in the
+    // menu, as before a load, left the menu broken: an access violation in UTFWin::Window::SetFlag
+    // from App::Canvas::Tick 10 s later, or a game that stopped answering.)
+    bool lb = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    HWND gw = (HWND)H->game_window();
+    if (lb && !g_lb_down && gw && g_menu_btn && sui::visible(g_menu_btn) && !g_want_open && !g_skip_since &&
+        world::menu_intro_playing()) {
+        POINT c{};
+        Rect r = sui::screen_rect(g_menu_btn);
+        if (GetCursorPos(&c) && ScreenToClient(gw, &c) && c.x >= r.x1 && c.x < r.x2 && c.y >= r.y1 && c.y < r.y2) {
+            H->log(M, SK_INFO, "ui: Co-op clicked during the menu intro: Escape skips it, then the window opens");
+            LPARAM lp = 1 | (MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC) << 16);
+            PostMessageW(gw, WM_KEYDOWN, VK_ESCAPE, lp);
+            PostMessageW(gw, WM_KEYUP, VK_ESCAPE, lp | 0xC0000000);
+            g_skip_since = H->time_seconds();
+        }
+    }
+    g_lb_down = lb;
+    // the game also drops clicks for ~2-3 s after the intro is over (a click 1 s or 2 s after its end
+    // did nothing, 3 s after it worked; GOG 2024 lane 9): the window opens when it takes clicks
+    if (g_skip_since) {
+        double t = H->time_seconds();
+        if (world::menu_intro_playing())
+            g_intro_over = 0;
+        else if (!g_intro_over)
+            g_intro_over = t;
+        if (g_intro_over && t - g_intro_over >= 3.0) {
+            g_skip_since = g_intro_over = 0;
+            if (A.mode && A.mode() == modes::kMenu)
+                open(true);
+        } else if (t - g_skip_since > 20) {
+            g_skip_since = g_intro_over = 0; // (the intro ends on its own after ~10 s; a load may have left the menu)
+        }
+    }
     double now = H->time_seconds();
     double period = g_want_open ? 0.25 : 1.0;
     if (!g_pending && (g_dirty || now - g_last_refresh >= period)) {

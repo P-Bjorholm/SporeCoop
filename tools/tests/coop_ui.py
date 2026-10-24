@@ -2,7 +2,8 @@
 """UI test: the whole co-op flow through the native Spore UI, two instances.
 
 host (instance 1, profile test, creature save) and guest (instance 2, empty profile):
- 1. both: the "Co-op" item is in the main menu; clicking it opens the co-op window
+ 1. both: the "Co-op" item is in the main menu; clicking it opens the co-op window (the host clicks
+    while the menu intro plays: the mod skips the intro, docs/re/space.md 7.9)
  2. host: types the name, presses Host, closes the window and loads the saved game
  3. guest: types the name, the host appears under "Games on your network", a click joins
  4. the guest receives and loads the host world
@@ -146,12 +147,34 @@ def main():
                 break
             time.sleep(1)
         con.call('wait.frames 700 60000')
-    for ui in (host, guest):
+
+    def intro(con):
+        return 'menu intro)' in con.call('coop.status')['out']
+
+    def wait_intro(con, playing, t=40):
+        t0 = time.time()
+        while time.time() - t0 < t and intro(con) != playing:
+            time.sleep(0.3)
+        return intro(con) == playing
+
+    # The galaxy menu's intro cinematic (~10 s from ~16 s after the menu came up, docs/re/space.md
+    # 7.9) holds the game's input lock: the game drops every click on the menu. The host clicks
+    # "Co-op" while it plays (the mod skips the intro for the player and opens the window: the click
+    # used to be lost, GOG 2024 lab runs), the guest after its intro (the game's own click path).
+    for ui, during in ((host, True), (guest, False)):
         st = ui.wait(lambda s: s['menu']['vis'], 30, 'menu item')
         check(st is not None, f'{ui.who}: "Co-op" item in the main menu')
+        if during:
+            seen = wait_intro(ui.c, True)
+            print(f'  {ui.who}: menu intro playing: {seen}')
+        else:
+            wait_intro(ui.c, False)
+            time.sleep(4)  # the game drops clicks for ~2-3 s after the intro (docs/re/space.md 7.9)
         ui.click('menu')
-        st = ui.wait(lambda s: s['open'] == '1' and s['join']['vis'], 20, 'co-op window')
-        check(st is not None, f'{ui.who}: the co-op window opens')
+        st = ui.wait(lambda s: s['open'] == '1' and s['join']['vis'], 25, 'co-op window')
+        check(st is not None, f'{ui.who}: the co-op window opens' + (' (clicked during the menu intro)' if during else ''))
+        if during:
+            check(not intro(ui.c), f'{ui.who}: the menu intro was skipped')
     shot(hc, 'ui_connect.png')
 
     # host
@@ -170,9 +193,18 @@ def main():
                            and f':{lane.PORT}' in s[r]['text']), None)
     st = guest.wait(lambda s: ours(s) is not None, 30, 'LAN game')
     row = ours(st) if st else None
-    check(row is not None, f'guest: host found on the network: {st[row]["text"] if row else None}')
-    shot(gc, 'ui_guest_lan.png')
-    guest.click(row or 'lan0')
+    listed = [r for r in ('lan0', 'lan1', 'lan2') if guest.state()[r]['vis']]
+    if row is None and len(listed) == 3:
+        # the window lists three games: with more hosts on this machine (other lanes of a lab run, all
+        # answering on 127.0.0.1) ours can be the fourth. Not a failure of ours: join by the address
+        print(f'  guest: three other games listed ({[guest.state()[r]["text"] for r in listed]}): join by address')
+        guest.type_into('address', f'127.0.0.1:{lane.PORT}')
+        shot(gc, 'ui_guest_lan.png')
+        guest.click('join')
+    else:
+        check(row is not None, f'guest: host found on the network: {st[row]["text"] if row else None}')
+        shot(gc, 'ui_guest_lan.png')
+        guest.click(row or 'lan0')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
     check(st is not None, f'guest: joined, lobby {st["rows"] if st else None}')
 
