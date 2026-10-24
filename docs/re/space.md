@@ -555,18 +555,21 @@ the comm tab above the empire's card (288, 914 in a 1440x1080 window), an answer
 energy are unchanged. The planets of the player's colonies in other systems stay in +0x50 (the game keeps
 them); `coop.targets all` lists only the active star's planets.
 
-**Same planets in both games (✔ runtime):** `GeneratePlanetsForStar` uses the global RNG, so the host and
-the guest generated different planets for the same unvisited star (0046101B: 4 and 6, then 1 and 8
-planets in two sessions). `spacecoop.cpp` hooks `RequirePlanetsForStar`: while it generates (star+0xAC
-== 0) the RNG dword is seeded with `StarID * 0x9E3779B1 ^ bits(x) ^ rot16(bits(z)) | 1` (star+0x3C/+0x44)
-and restored afterwards (`planets_seeded` in `coop.space`). The seed alone was not enough (one session:
-6 and 9 planets): the planet names, `cSpaceNames::GenerateRandomName` 0x5ED000 (called twice per planet
-by the generator), draw from the same RNG a number of times that depends on the names the game made
-before. The hook of GenerateRandomName puts the RNG back after each name while the generation runs, so
-the names do not move the sequence (they may still differ between the games, ? not compared). Since then
-both games list the same PlanetIDs. Stars near home already have their planets in the save (both games
-the same). ? spice kinds (`cSpaceTrading::AssignPlanetSpice`) and the NPC colonies' data
-(FillPlanetDataForTechLevel 0xB97040) were not compared.
+**Same planets in both games (✔ runtime):** `GeneratePlanetsForStar` 0xBB4270 (only caller
+`RequirePlanetsForStar`) and its callees (planet kinds, orbits, scores, names) draw from the global RNG
+`0x1602760` (2024 `0x1601760`), so the host and the guest generated different planets for the same
+unvisited star (0046101B: 4 and 6, then 1 and 8 planets in two sessions). What did not work: seeding the
+global RNG for the generation (mostly the same, once 6 and 10: other threads draw from the same object,
+and the planet names `cSpaceNames::GenerateRandomName` 0x5ED000 draw a number of times that depends on
+the names the game made before); only the generator's own five draws on a private generator (5, 6, 8,
+10 planets: the callees decide the structure too). What works (8 of 8 sessions the same 6 planets, both
+games): `spacecoop.cpp` hooks `RequirePlanetsForStar` (generation when star+0xAC == 0), `RandomInt`
+0xA68F30 / `RandomFloat` 0x936040 and `GenerateRandomName`: while the generation runs, every draw on the
+global RNG **from the generating thread and outside the names** goes to a private generator seeded with
+`StarID * 0x9E3779B1 ^ bits(x) ^ rot16(bits(z)) | 1` (star+0x3C/+0x44, the same in both games); the
+global generator is untouched (`planets_seeded` in `coop.space`). The names may still differ (? not
+compared), as may anything drawn by other code. Stars near home already have their planets in the save.
+? spice kinds and the NPC colonies' data (FillPlanetDataForTechLevel 0xB97040) were not compared.
 * `coop.targets all` only prints objects on the screen; `coop.space planets` prints every loaded planet
   of the active star (PlanetIDs, cStarManager +0x50).
 

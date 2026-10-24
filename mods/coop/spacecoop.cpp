@@ -415,45 +415,68 @@ static void* inventory()
 // The planets of a star are generated the first time something needs them (a flight there, the
 // jump, a mission: cStarManager::RequirePlanetsForStar 0xBB4C60 -> GeneratePlanetsForStar 0xBB4270)
 // from the game's global random generator (Math::RandomNumberGenerator, one LCG dword at
-// 0x1602760), so two games made different planets for the same unvisited star (count, kinds,
-// PlanetIDs: a partner's planet place did not exist on the other side). Seed it from the star
-// (StarID and its galaxy position, the same in both games) for the generation, then put the
-// sequence back (docs/re/space.md 7.3).
+// 0x1602760), so two games made different planets for the same unvisited star (count, PlanetIDs: a
+// partner's planet place did not exist on the other side). Seeding the global generator was not
+// enough (other draws in between: the names, cSpaceNames::GenerateRandomName, draw a number of times
+// that depends on the names made before; 6 and 10 planets for the same seed): the generator's own
+// draws (the calls whose return address is inside GeneratePlanetsForStar) use a private generator
+// seeded from the star (StarID and galaxy position, the same in both games) instead (docs/re/space.md 7.3).
+using RandomInt_t = uint32_t(SK_THISCALL*)(void*, uint32_t);
+using RandomFloat_t = float(SK_THISCALL*)(void*);
 using RequirePlanets_t = void(SK_THISCALL*)(void*, void*, void*);
+static RandomInt_t o_RandomInt;
+static RandomFloat_t o_RandomFloat;
 static RequirePlanets_t o_RequirePlanets;
 static uintptr_t a_Rng;
-static uint32_t g_planets_seeded;
-// Inside the generation the planet names come from cSpaceNames::GenerateRandomName 0x5ED000, which
-// draws from the same generator a number of times that depends on the names this game made before
-// (seen: one game 6, the other 9 planets for the same seed): its draws must not move the sequence.
+static uint32_t g_planet_rng, g_planets_seeded;
+static bool g_generating;
+
+static DWORD g_gen_thread;
+static int g_in_names;
+
+// every draw of the generating thread while it generates, except the names'
+static bool generator_draw(void* rng)
+{
+    return g_generating && !g_in_names && rng == (void*)a_Rng && GetCurrentThreadId() == g_gen_thread;
+}
+
+static uint32_t SK_THISCALL h_RandomInt(void* rng, uint32_t n)
+{
+    return o_RandomInt(generator_draw(rng) ? &g_planet_rng : rng, n);
+}
+
+static float SK_THISCALL h_RandomFloat(void* rng)
+{
+    return o_RandomFloat(generator_draw(rng) ? &g_planet_rng : rng);
+}
+
 using RandomName_t = void*(SK_THISCALL*)(void*, void*, uint32_t);
 static RandomName_t o_RandomName;
-static bool g_generating;
 static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
 {
-    if (!g_generating)
-        return o_RandomName(names, out, kind);
-    uint32_t saved = *(uint32_t*)a_Rng;
+    g_in_names++;
     void* r = o_RandomName(names, out, kind);
-    *(uint32_t*)a_Rng = saved;
+    g_in_names--;
     return r;
 }
 
 static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
-    if (!a_Rng || !star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC)) {
+    if (!star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC) || g_generating) {
         o_RequirePlanets(sm, star, p3);
         return;
     }
-    uint32_t x, z, saved = *(uint32_t*)a_Rng;
+    uint32_t x, z;
     memcpy(&x, (uint8_t*)star + 0x3C, 4);
     memcpy(&z, (uint8_t*)star + 0x44, 4);
-    *(uint32_t*)a_Rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
+    g_planet_rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
+    g_gen_thread = GetCurrentThreadId();
     g_generating = true;
     o_RequirePlanets(sm, star, p3);
     g_generating = false;
-    *(uint32_t*)a_Rng = saved;
     g_planets_seeded++;
+    H->log(M, SK_DEBUG, "space: planets of star %08X generated (seeded): %d", F<uint32_t>(star, 0x70),
+           (int)F<uint8_t>(star, 0xAC));
 }
 
 using SetState_t = void(SK_THISCALL*)(void*, int);
@@ -869,10 +892,13 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (uintptr_t ge = S("SporeCoop::cAppModeSpace_OnGalaxyEntered"))
         H->hook_create(M, (void*)ge, (void*)h_GalaxyEntered, (void**)&o_GalaxyEntered);
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
-    if (uintptr_t rp = S("Simulator::cStarManager::RequirePlanetsForStar"); rp && a_Rng)
+    uintptr_t ri = S("Math::RandomNumberGenerator::RandomInt"), rf = S("Math::RandomNumberGenerator::RandomFloat"),
+              rp = S("Simulator::cStarManager::RequirePlanetsForStar"),
+              rn = S("Simulator::cSpaceNames::GenerateRandomName");
+    if (a_Rng && ri && rf && rp && rn && H->hook_create(M, (void*)ri, (void*)h_RandomInt, (void**)&o_RandomInt) == 0 &&
+        H->hook_create(M, (void*)rf, (void*)h_RandomFloat, (void**)&o_RandomFloat) == 0 &&
+        H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName) == 0)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
-    if (uintptr_t rn = S("Simulator::cSpaceNames::GenerateRandomName"); rn && a_Rng)
-        H->hook_create(M, (void*)rn, (void*)h_RandomName, (void**)&o_RandomName);
     if (a_TerraA && a_TerraW && a_TerraT) {
         H->hook_create(M, (void*)a_TerraA, (void*)h_TerraA, (void**)&o_Terra[0]);
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
