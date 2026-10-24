@@ -40,14 +40,32 @@ window: it finds a free planet slot by itself (each slot ring of the galaxy menu
 window with id 0x02E5A4A8 in `coop.ui tree`; `--slot N` picks the N-th, `--slot X,Y` a point),
 hovers before clicking and checks that "Choose A Stage" opened. The wizard after it clicks fixed
 points; a run that ends with "FAILED: still GalaxyGameEntry" can simply be repeated.
+The caption window "Choose A Stage" exists (and has its own visible bit) while the chooser is
+closed; only its parents tell: closed `fl=0x2` at an off-screen rect, open `fl=0x3`. Until
+2026-10-23 the check looked for the caption alone, so a first click that did nothing (a fresh
+profile right after the galaxy intro) passed it and the wizard clicked into the void (two runs of
+two failed); now every window of the `coop.ui find` chain must be visible.
 
-The fixtures (tools/tests/fixtures.py lists planet and checked facts):
+The fixtures (tools/tests/fixtures.py lists planet and checked facts; tests take the planet from
+there, never hard-code it: a fixture made anew gets a random planet name). All but `creature` were
+made anew on 2026-10-23 (the old ones were lost with the game folder), on lanes 7/8 (GOG 2016 build):
 
 | Fixture | Planet | What it has | Made by |
 |---|---|---|---|
-| `creature`, `cell`, `tribe`, `space` | see fixtures.py | a game of that stage | `new_stage_game.py`, `space_setup.py` |
-| `civ` | Game0/Agrauel | the player city only | `new_stage_game.py civ` |
-| `civ_npc` | Game0/Taldon | the player city (with its free vehicle) and three cities of other nations (nearest about 400 m away, the planet radius is about 500), intro text dismissed, $3000 | `new_stage_game.py civ --npc-cities 3`, `coop.save`, `spore.sh fixture save civ_npc test` (2026-10-23) |
+| `creature` | Game0/Scalinus | the host's red species at its nest (recovered from lane 1's test profile, so a few minutes played) | (old) |
+| `cell` | Game0/Cadian | a new Cell game, ~330 cells in the pool, food 0, no weapon | `new_stage_game.py cell` |
+| `tribe` | Game0/Zorispe | the player tribe (3 members) and one NPC tribe (it appears ~40 s after the intro caption, which is confirmed) | `new_stage_game.py tribe`, OK the caption, wait for `coop.tribe` to list 2 tribes |
+| `civ` | Game0/Arigine | the player city only, intro text dismissed | `new_stage_game.py civ`, click 1410 1044 |
+| `civ_npc` | Game0/Tavael | the player city (with its free vehicle) and three cities of other nations (nearest about 430 m away, the planet radius is about 500), intro text dismissed, $3000 | `new_stage_game.py civ --npc-cities 3` |
+| `space` | Game0/Madas | in the home system (PlanetID 00460035), first mission ("scan the wreck" on Vulpica, P02460035), $100 000, no interstellar drive | `space_setup.py` |
+| `space_empire` | see fixtures.py | see section 6.15 | 6.15 |
+
+After each: `coop.save`, Enter on the "game saved" box, `spore.sh fixture save <name> test`. Both
+players' creations (`creations-host.package` / `creations-guest.package`, the host's 11 creatures, the
+guest's newest one is the Kirgle with the white bow of coop_guest_editor.py) were recovered on
+2026-10-23 from lane 8's test profiles: they were byte copies made by `restore_creations` at the last
+cold start (host and guest written in the same millisecond); the game later rewrites a loaded
+package (same creations, ~150 bytes of the index differ), so other lanes had a different md5.
 
 A new Civilization game has no other cities at first: they appear one by one when the player has
 claimed spice and has money, after a timer (docs/re/civ.md "NPC cities"; about 18 minutes of play

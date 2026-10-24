@@ -16,7 +16,7 @@ def field(out, pat):
 
 
 def main():
-    host, guest = start('cell', 'Game0/Karke')
+    host, guest = start('cell')
     ck = Checks()
     print(' ', guest.call(f'coop.creations choose cell {OTHER_CELL}')['out'])
     t0 = time.time()

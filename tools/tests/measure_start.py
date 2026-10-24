@@ -8,6 +8,7 @@ import sys
 import time
 
 import lane
+from fixtures import planet_of
 from twoinst import start, wait_guest_in
 
 
@@ -17,7 +18,7 @@ def rss_mb():
 
 
 def main():
-    fixture, planet = (sys.argv[1], sys.argv[2]) if len(sys.argv) > 2 else ('tribe', 'Game0/Cohrach')
+    fixture, planet = (sys.argv[1], sys.argv[2]) if len(sys.argv) > 2 else ('tribe', planet_of('tribe'))
     host, guest = start(fixture, planet)
     print('  RSS MB per SporeApp:', rss_mb())
     def watch(con, until, timeout=240):
