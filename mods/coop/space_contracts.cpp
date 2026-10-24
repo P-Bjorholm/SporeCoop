@@ -942,6 +942,8 @@ void host_tick(double t)
         g_next_offer = t + std::min(g_first_delay, g_period);
     else if (g.state == S_NONE && t > g_next_offer) {
         std::string r = offer(std::uniform_int_distribution<int>(0, 1)(g_rng) ? T_ARMADA : T_SURVEY, "");
+        if (r.rfind("offered", 0) != 0) // no colony for an armada: a survey
+            r = offer(T_SURVEY, "");
         H->log(M, SK_INFO, "contracts: auto offer: %s", r.c_str());
         g_next_offer = t + g_period;
     }

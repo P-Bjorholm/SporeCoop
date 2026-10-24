@@ -177,6 +177,9 @@ Fixed entries move to the commit message (and a test).
   ~25 s); the armada's ships have double HP, but a well-defended colony may still win a wave nearly
   alone. A raid the pirates win fails the contract; a raid still running at a timeout goes on as an
   ordinary raid.
+* "Jump there" to the armada's star lands a guest next to a planet the travel picks (an own colony
+  first): the host's colony is not the guest's, so the guest may have to fly to it in the system
+  view before "Land" takes it to the right planet.
 * SpawnUFO pirates do not fight (docs/re/space.md 17.2): an armada anywhere else than on an own colony
   (a neutral star, a partner's colony) would need the UFO AI's target selection, not found.
 * While the game's badge panel ("2 badge points" + OK, after a defended raid) is up, the co-op
