@@ -187,3 +187,5 @@ Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210
 Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): same code (context == 2 check, cost 0xFFC390 refunded, TravelToStar), plain ret
 Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
 Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
+Simulator::cPlanetModel::Get=0x00B3D450 ; verified port from GOG 2016 0x00B3D420: cdecl() -> [0x167EAF8] (ModAPI March2017 address)
+Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x00B7F040: identical code (cmp [esi+0x20],0; [esi+0x24] vt+0xC; 0xF92760), ret 4

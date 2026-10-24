@@ -504,7 +504,7 @@ struct Tag {
     net::Vec3 pos;        // galaxy coordinates
 };
 static std::vector<Tag> g_tags; // drawn in the last frame (main thread: draw and tick)
-static bool g_covered, g_lmb;
+static bool g_covered, g_lmb, g_drawn; // g_drawn: the overlay drew the map since the last tick
 static double g_cover_checked;
 static uint32_t g_tag_clicks, g_trips, g_trip_cost, g_frames_drawn, g_frames_covered;
 static std::map<uint8_t, size_t> g_col_pick; // the Space page: which colony of a partner is shown
@@ -609,6 +609,7 @@ static bool project(const net::Vec3& p, int sw, int sh, int& x, int& y)
 static void draw_map()
 {
     g_tags.clear();
+    g_drawn = true;
     if (!spaceext::in_space() || !spaceext::connected() || context() != 2)
         return;
     if (g_covered) {
@@ -641,7 +642,7 @@ static void draw_map()
             net::Vec3 p;
             int x, y;
             if (galaxy_pos_of_star(c.star, p) && project(p, sw, sh, x, y))
-                vis.push_back({c.star, x, y, c.star == r->home_star, p});
+                vis.push_back({c.star, x, y, c.home, p});
         }
         bool names = vis.size() <= 8, rings = vis.size() <= 30;
         for (auto& v : vis) {
@@ -782,8 +783,12 @@ static std::string go_to_partner(uint8_t id)
     Where w;
     if (!where_is(id, w))
         return "the partner's place is not known";
-    if (w.star)
-        return spacecoop::jump(id);
+    if (w.star) {
+        std::string e = spacecoop::jump(id);
+        if (e.empty())
+            g_trips++;
+        return e;
+    }
     uint32_t s = nearest_star(w.pos);
     if (!s)
         return "no star near the partner";
@@ -1119,23 +1124,22 @@ static std::string debug(const std::vector<std::string>& a)
         void* tool = inv ? thiscall<void*>(gettool, inv, key) : nullptr;
         if (!tool)
             return "no colony tool (coop.space tool add placecolony)\n";
-        struct Q {
-            net::Vec3 p;
-            bool found;
-        } q{{}, false};
-        game::for_each_object(
-            [](void* obj, uint32_t noun, void* user) {
-                Q* q = (Q*)user;
-                if (noun == 0x18C40BCu && game::object_position(obj, q->p)) {
-                    q->found = true;
-                    return false;
-                }
-                return true;
-            },
-            &q);
-        if (!q.found)
-            return "no terrain cursor\n";
-        float pos[3] = {q.p.x, q.p.y, q.p.z};
+        // the ground point under the ship: cPlanetModel::GetHeightAt(dir) is the terrain's distance
+        // from the planet's centre (the planet's coordinates are centred on it); a colony at the
+        // centre (the terrain cursor sits at 0,0,0 off the ground) made the game fault in a loop
+        uintptr_t pmget = H->sym("Simulator::cPlanetModel::Get"), height = H->sym("Simulator::cPlanetModel::GetHeightAt");
+        void* pm = pmget ? cdecl_call<void*>(pmget) : nullptr;
+        void* mgr = a_PlayerUFOGet ? cdecl_call<void*>(a_PlayerUFOGet) : nullptr;
+        void* u = mgr ? F<void*>(mgr, 0x40) : nullptr;
+        if (!pm || !height || !readable(u, 0x48))
+            return "no planet model / ship\n";
+        float ship[3] = {F<float>(u, 0x38), F<float>(u, 0x3C), F<float>(u, 0x40)};
+        float sl = std::sqrt(ship[0] * ship[0] + ship[1] * ship[1] + ship[2] * ship[2]);
+        float h = thiscall<float>(height, pm, ship);
+        if (sl < 1 || !(h > sl * 0.3f && h < sl))
+            return "no ground under the ship\n";
+        net::Vec3 at{ship[0] / sl * h, ship[1] / sl * h, ship[2] / sl * h};
+        float pos[3] = {at.x, at.y, at.z};
         bool ok = thiscall<bool>(onhit, nullptr, tool, pos, 1, 0);
         char b[120];
         snprintf(b, sizeof b, "colony tool %s at %.1f %.1f %.1f\n", ok ? "fired" : "refused", pos[0], pos[1], pos[2]);
@@ -1179,6 +1183,11 @@ static bool init(const SkHost* h, SkMod* m)
 
 static void tick(double now)
 {
+    // no overlay frame since the last tick (coop.cpp skips the world labels under the pause menu
+    // and the co-op window): no tags to show or click
+    if (!g_drawn)
+        g_tags.clear();
+    g_drawn = false;
     roster_tick(now);
     if (!spaceext::in_space())
         return;
