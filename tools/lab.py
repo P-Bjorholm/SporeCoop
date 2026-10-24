@@ -134,6 +134,12 @@ def cmd_run(a):
     os.makedirs(logdir, exist_ok=True)
     head = git('log', '-1', '--format=%h %s', cwd=tree)
     skip = {int(x) for x in a.skip.split(',') if x.strip()}
+    # more than 6 lanes (12 games) on one GPU ended in a full GPU reset that took the desktop down
+    # (docs/06-testing.md 6.19): SPORE_MAX_LANES raises the cap on purpose
+    cap = int(os.environ.get('SPORE_MAX_LANES', '6'))
+    if a.lanes > cap:
+        print(f'lab: {a.lanes} lanes capped to {cap} (GPU load, docs/06-testing.md 6.19; SPORE_MAX_LANES)')
+        a.lanes = cap
     a.lane_ids = [n for n in range(1, 11) if n not in skip][:a.lanes]
     # a lane for tests that take a whole lane of their own outside the run (update_check.py wipes
     # the mod from its lane): neither used by this run nor by other work (--skip); '' = none

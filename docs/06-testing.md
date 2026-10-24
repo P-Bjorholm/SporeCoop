@@ -528,7 +528,7 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
   of docs/known-issues.md (fixed on fix/space-jump). The same trip into a system visited before
   shows the colony city (out/shots `allies_city`, manual run). The checks read the game data.
 
-## 6.16 The galactic core (coop_space_finale.py)
+## 6.17 The galactic core (coop_space_finale.py)
 
 * Uses the `space` fixture; both players get the interstellar drive with `coop.space tool add
   interstellardrive`. The host zooms out with the mouse wheel (`wheel 720 540 -5`, ~6 notches),
@@ -544,7 +544,7 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
 * `--alone`: the host presses "Enter now"; the guest is near the core but not at the gate and gets
   Steve's gift by message.
 
-## 6.16 `coop_space_jump.py`: jumps into unvisited systems
+## 6.18 `coop_space_jump.py`: jumps into unvisited systems
 
 `SPORE_LANE=N python3 tools/tests/coop_space_jump.py` (suite `space_jump`, ~5 min with the start, the
 `space_empire` fixture). It picks unvisited stars near home with `coop.space empire near [n]` (the n
@@ -566,3 +566,17 @@ PlanetIDs for the new stars (docs/known-issues.md).
 * The old jump stays reachable for comparisons: `coop.space jumpto <StarID> force old`.
 * After several hot reloads (`lab.py reload`) the co-op session of the running games was gone ("offline",
   seen once 2026-10-23): restart the games for checks on both games.
+
+## 6.19 GPU load: a GPU reset took the whole desktop down (2026-10-24)
+
+* With up to 18 test games at once (9 lanes; the GOG 2024 lanes draw ~66 fps, the GOG 2016 ones
+  ~31), one game's DXVK submit thread hung the graphics ring of the RX 7900 at 00:18 on
+  2026-10-24: kernel `amdgpu: ring gfx_0.0.0 timeout ... Process SporeApp.exe ... thread
+  dxvk-submit`, `Illegal opcode in command stream`, the ring and MES resets failed, then a full
+  `GPU mode1 reset` with `VRAM is lost`. Every GPU client aborted: the headless test display's
+  Xwayland and gnome-shell, and also the user's own GNOME Shell (the session restarted, other
+  apps crashed). The mod builds no GPU commands: it is a driver / DXVK fault under load, but the
+  test load caused it.
+* Rule: at most 6 lanes (12 games) at once on this machine (`tools/lab.py run ... --lanes 6`),
+  fewer when the user works on the desktop. `journalctl -k | grep amdgpu` shows such resets;
+  `coredumpctl list` the aborted programs.
