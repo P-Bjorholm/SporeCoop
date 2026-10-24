@@ -263,10 +263,13 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   20261023-225702). The mod now skips the intro (Escape) when Co-op is clicked during it and opens
   the window 3 s after; `coop_ui.py` clicks the host's item while the intro plays on purpose (checks
   "clicked during the menu intro", "the menu intro was skipped") and the guest's 4 s after its intro.
+  It types the lane's port before Host: the port field shows the lane install's saved `host_port`
+  (mods/coop.ini, 47810 on lane 2 because the lane was copied from lane 1), and hosting failed with
+  "bind() failed on port 47810" whenever lane 1 hosted at the same time (lab runs).
 * Ships on a planet fly at the height of their own zoom (docs/re/space.md 7.10): two bots that landed
   with different numbers of zoom-ins are 100-450 m apart in height, and a partner far above is not on
   the screen at all. `coop.space dist` prints `alt <m>`; `Player.match_height()` zooms to it.
-  `coop_space_rescue.py` zooms the guest out 8 notches in round 1 so the rescue is always tested at
+  `coop_space_rescue.py` zooms the guest out 6 notches in round 1 so the rescue is always tested at
   different heights (it failed every time with the old 3D repair distance: lane 1, GOG 2024).
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
