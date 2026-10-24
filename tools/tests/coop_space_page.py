@@ -29,13 +29,24 @@ def main():
         f = sp(c, 'features')
         print(f'  {who} features:', f.replace('\n', ' | '))
         ck('squad: on' in f, f'{who}: the space feature registry is up')
-    rows = sp(host, 'rows')
-    print('  host rows:', rows.replace('\n', ' | '))
+    rows = ''
+    for _ in range(30):  # the guest's first state updates after its world loaded
+        rows = sp(host, 'rows')
+        if 'Bob: in your system' in rows:
+            break
+        time.sleep(1)
+    print('  host rows:', rows.replace('\n', ' | '), '| host', sp(host, 'star'), '| guest', sp(guest, 'star'))
     ck('Bob: in your system' in rows, 'the host page shows the guest in its system')
 
     # the guest flies to another star: the host's page offers to jump there
     s0 = star(host)
-    print('  guest away:', sp(guest, 'jumpto', s0 + 1))
+    if not ck(s0 != 0, 'the host is in a star system'):
+        return ck.result()
+    for d in (1, 2, 3, -1, -2, 4096, -4096):  # a neighbouring id that is a star of this galaxy
+        r = sp(guest, 'jumpto', s0 + d)
+        print(f'  guest jumpto {s0 + d}:', r)
+        if r == 'jumping':
+            break
     away = 0
     for _ in range(30):
         time.sleep(1)

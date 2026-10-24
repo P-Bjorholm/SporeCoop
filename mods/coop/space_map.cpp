@@ -13,6 +13,7 @@
 
 #include "modes.h"
 #include "space_ext.h"
+#include "spacecoop.h"
 #include "sporekit_game.hpp"
 
 using skg::cdecl_call;
@@ -35,7 +36,7 @@ enum Kind : uint8_t {
 constexpr size_t kChunkBytes = 1000;
 constexpr double kPeriod = 5.0, kScan = 1.0;
 
-static uintptr_t a_PlayerEmpire, a_StarMgr, a_GetStarRecord, a_PlayerUFOGet;
+static uintptr_t a_PlayerEmpire, a_StarMgr, a_PlayerUFOGet;
 
 // ---------------- reading the game ----------------
 static bool readable(const void* p, size_t n) { return p && !IsBadReadPtr(p, n); }
@@ -91,12 +92,10 @@ static std::vector<void*> ptr_vec(void* v, size_t max = 4096)
 
 static void* player_empire() { return a_PlayerEmpire ? cdecl_call<void*>(a_PlayerEmpire) : nullptr; }
 
+// (ids come from the network: the game's own GetStarRecord faults on an id that is no star)
 static void* star_record(uint32_t id)
 {
-    if (!a_StarMgr || !a_GetStarRecord || !id)
-        return nullptr;
-    void* sm = cdecl_call<void*>(a_StarMgr);
-    void* r = sm ? thiscall<void*>(a_GetStarRecord, sm, id) : nullptr;
+    void* r = spacecoop::star_record(id);
     return readable(r, 0xB0) ? r : nullptr;
 }
 
@@ -977,7 +976,6 @@ static bool init(const SkHost* h, SkMod* m)
     M = m;
     a_PlayerEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_StarMgr = H->sym("Simulator::cStarManager::Get");
-    a_GetStarRecord = H->sym("Simulator::cStarManager::GetStarRecord");
     a_PlayerUFOGet = H->sym("Simulator::cSimulatorPlayerUFO::Get");
     a_Context = H->sym("SporeCoop::Space_GetCurrentContext");
     a_CommMgr = H->sym("Simulator::cCommManager::Get");
@@ -987,7 +985,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_ActiveStarRecord = H->sym("Simulator::GetActiveStarRecord");
     a_AddMoney = H->sym("Simulator::cEmpire::AddMoney");
     a_Teleport = H->sym("Simulator::SpaceTeleportTo");
-    bool ok = a_PlayerEmpire && a_StarMgr && a_GetStarRecord;
+    bool ok = a_PlayerEmpire && a_StarMgr;
     H->log(M, ok ? SK_INFO : SK_WARN, "space map: roster %s", ok ? "on" : "off (symbols missing)");
     return ok;
 }
