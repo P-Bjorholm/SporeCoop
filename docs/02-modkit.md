@@ -75,6 +75,12 @@ The cheat is implemented as a fake `ArgScript::ICommand` with a hand-built MSVC 
 * **Main-thread fallback channel**: console tasks run not only in `Present` but also
   via a window message (`WM_APP+0x5C0`), so commands work on loading screens and
   when no frames are being drawn.
+* **Second frame source** (0.3.3): another overlay can take `Present` over and call the driver
+  past SporeKit (the Steam overlay on Windows, issue #4). When `Present` has not been seen for 2 s
+  while the window has the focus (or background mode is on) and is not minimized, the frame
+  (`SK_EV_FRAME`, the main-thread tasks) runs after every `App::Canvas::Tick` of the game loop
+  instead; `SK_EV_OVERLAY` does not fire then. `[sporekit] frames=loop` / `frames.source loop`
+  ignores `Present` for tests; `info` shows the source.
 
 ## 2.3 `sporectl` (Linux)
 

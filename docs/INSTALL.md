@@ -67,7 +67,7 @@ then says "its code is the same as build ...".
 | GOG 2016 | Windows | Not tested. Before 0.6.1 every address was wrong on Windows (it moves the exe in memory), so 0.6.0 and older could not work there |
 | GOG 2024 (`dc04aee5…`) | Linux, Wine / Bottles | Yes (0.7.0): the full automated suite (every stage, every Space feature, host + guest, real clicks) on copies of the current GOG install; before that a smoke test of the 0.6.2 release zip |
 | Steam (`3010a413…`) | Linux, Steam + Proton (offline mode) | Yes (0.7.1): the mod recognises the unpacked code, every feature is on, a Steam guest joined a GOG 2024 host in the Creature stage (world transfer, avatar, the host's NPCs), no faults |
-| Steam | Windows | Not tested yet (the same exe and the same unpacking; a user's log showed 0.7.0 turning co-op off there, the case 0.7.1 fixes) |
+| Steam | Windows 11, Steam offline | Yes (0.7.1, 0.7.2): every feature on; a Steam guest played with a GOG 2024 host in the Creature stage (world transfer, puppets, NPC damage, shared DNA), also with the frames from the game loop (`frames=loop`) as with the Steam overlay online; not tested with Steam online |
 | EA app / Origin, disc | any | Not tested. Their `SporeApp.exe` is a different file; the game runs, co-op stays off unless its code matches a build above |
 | Two different PCs over the internet or a VPN | Windows | Not tested with 0.6.1 on Windows (the network code itself is the same as on Linux, where it was tested) |
 
@@ -236,7 +236,7 @@ and reuses it next time. If you already have your own save of the same planet, i
 
 | Problem | What to do |
 |---|---|
-| No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. |
+| No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. If it says `WATCHDOG (no frames` while the game draws, another overlay (Steam, Discord, RivaTuner) keeps the frames from SporeKit: update to 0.7.2 or newer, which then takes the frames from the game loop. |
 | The game does not start after installing | Run `uninstall.bat`, start the game once without the mod, then install again. An antivirus may have removed `steam_api.dll` or `sporekit.dll`: restore them or add an exception. |
 | *Games on your network* stays empty | Both PCs must be on the same network or VPN; allow SporeApp.exe in the firewall (private networks). Type the host's address instead. |
 | Join fails or times out | The host's UDP 47810 must be reachable (VPN or port forwarding). Every player needs the same SporeCoop version. |

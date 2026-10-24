@@ -151,7 +151,7 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 |---|---|
 | GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux (Wine / Bottles) |
 | GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11, Linux (Wine / Bottles) |
-| Steam, Spore + Galactic Adventures (`3010a413…`, since 0.7.1) | Linux (Steam + Proton) |
+| Steam, Spore + Galactic Adventures (`3010a413…`, since 0.7.1) | Linux (Steam + Proton), Windows 11 |
 
 The Steam version is the GOG 2024 game under Steam's DRM: SporeCoop waits until the game has
 unpacked itself and checks the code, so Steam and GOG players can play together. The EA app and
@@ -195,7 +195,7 @@ Known issues: [docs/known-issues.md](docs/known-issues.md).
 Next:
 
 - [ ] easier internet play (no VPN or port forwarding)
-- [ ] tests with the EA app build, and of the Steam build on Windows
+- [ ] tests with the EA app build, and of the Steam build with Steam online (overlay)
 - [ ] four-player tests of the 0.7 Space features, co-op adventures
 
 ## Building from source

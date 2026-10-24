@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-24
+
+**No Co-op item on Windows with the Steam overlay** ([issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)).
+The mod loaded, but after the menu came up SporeKit got no frames from the game: another overlay
+(most likely the Steam overlay while Steam is online) took over the game's `Present` call, which
+is where SporeKit's frame begins. Everything the mod does each frame stopped: no Co-op item in the
+menu, F9 did nothing, no network. The log shows it as `WATCHDOG (no frames, ...)` while the game
+still draws.
+
+- SporeKit 0.3.3 has a second frame source: the game loop (`App::Canvas::Tick`). When `Present`
+  has not reached SporeKit for 2 s while the game window has the focus and is not minimized, the
+  frames come from the game loop, and back from `Present` when it returns. The log says
+  `frames: Present has not reached SporeKit ...`. In that mode the mod's on-screen labels (names
+  above players, notes drawn over the picture) are off; the menu item, the co-op window, F9 and
+  the whole co-op work.
+- Tested on Windows 11 with the Steam version (offline mode) and `[sporekit] frames=loop`, which
+  ignores `Present` the way such an overlay does: the Co-op item appears, F9 opens the window, and a
+  Steam guest in that mode played with a GOG 2024 host in the Creature stage (world transfer,
+  puppets, NPC damage through the host, shared DNA), no faults. In the normal mode loads of saves
+  (Creature, Space) and stage changes never switched to the game loop. Not tested with the Steam
+  overlay online (the case of the issue): please report how it goes.
+- First test of the Steam version on Windows 11 (0.7.1 and 0.7.2): every feature on, Steam and GOG
+  players together.
+- `sporekit.ini`: `background_mode` was under `[mods]` in the template (no effect when uncommented);
+  new `frames=auto|loop`. Console: `frames.source [auto|loop]`; `info` names the frame source.
+- `tools/tests/coop_frames_loop.py` (smoke): co-op with the guest's frames from the game loop.
+
 ## [0.7.1] - 2026-10-24
 
 **The Steam version works.** Steam's `SporeApp.exe` (since its October 2024 update) is the GOG 2024
