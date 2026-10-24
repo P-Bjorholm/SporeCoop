@@ -58,6 +58,8 @@ add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relat
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
+add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
+add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
 add('rejoin_mobile', 'SPORE_NET=mobile ' + P + 'coop_rejoin_net.py', minutes=5)
 # many rejoins / world loads in a row, fault log checked after each (docs/re/space.md 8.3): a world sent

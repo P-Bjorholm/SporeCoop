@@ -113,6 +113,7 @@ Simulator::cGamePersistenceManager::LoadGameByName=0x00B28020 ; verified port fr
 Simulator::cHerd::SetEnabled=0x00C6AE80 ; verified port from GOG 2016 0x00C6AE50: cand C6AE70 WRONG (not a start). C6AE80: stores arg byte at +0x218 (and nest+0xA9), loops members setting +0x1EC; called with push 0 from cHerd::Create 0xB23920 just before its ret 0x18; delta +0x30
 Simulator::cMission::SetState=0x00C47E20 ; verified port from GOG 2016 0x00C47E00 (ModAPI March2017 address of the same name)
 Simulator::cPlayerInventory::AddItemByKey=0x00FF4490 ; verified port from GOG 2016 0x00FF4490: ret 4; ToolManager getter 0xB3D490 -> LoadTool 0x104E350, then vt+0x80 AddItem
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0: same address (March2017 name GetUnlockableTool), identical body: stack purge 4, 173 bytes, items +0x34..+0x38 then +0x4C..+0x50, key compare via item vt+0x18, returns (item+0xC)->vt[3]
 Simulator::cSimulatorSpaceGame::ptr=0x016DC0FC ; verified port from GOG 2016 0x016DD0DC: getter 0x1002A70 (same addr): mov eax,[0x16DC0FC]; delta -0xFE0
 Simulator::cSpaceTrading::CreateTradingObject=0x0103A490 ; verified port from GOG 2016 0x0103A490 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::cSpeciesRelationshipManager::ApplyEvent=0x00BA4A00 ; verified port from GOG 2016 0x00BA49E0: thiscall ret 0xC, checks event==3, tuning [+0x400] compares, calls record lookup BA3B40 and threshold helper BA43E0 (uses +0x40C/+0x408/+0x404)
@@ -237,9 +238,15 @@ Simulator::cStarManager::RequirePlanetsForStar=0x00BB4C90 ; verified port from G
 SporeCoop::cPlanetRecord_AddCivData=0x00B8F010 ; verified asm: the AddCivData call at the end of 0xB96E90 (FillPlanetDataForTechLevel 0xB97090 -> level 5) of this build (GOG 2016 0x00B8EFA0 at the same place), ret 4
 Simulator::cStarRecord::GetPlanetRecords=0x00BBA900 ; verified port from GOG 2016 0x00BBA8D0 (ModAPI March2017 address of the same name)
 Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
-Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
 Simulator::cPlanetModel::Get=0x00B3D450 ; verified port from GOG 2016 0x00B3D420: cdecl() -> [0x167EAF8] (ModAPI March2017 address)
 Simulator::cPlanetModel::GetHeightAt=0x00B7F0C0 ; verified port from GOG 2016 0x00B7F040: identical code (cmp [esi+0x20],0; [esi+0x24] vt+0xC; 0xF92760), ret 4
 SporeCoop::cGameNounManager_GetPlayer=0x00F67D40 ; verified port from GOG 2016 0x00F67D40: unique byte-pattern match (mov eax,[ecx+0x74]; ret)
 SporeCoop::VectorMapUint_At=0x00F41940 ; verified asm: the call target in the contact setter 0xC7BD20 (|= 2) of this build (GOG 2016 0xC7BD00 -> 0xF41940)
 # space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
+# ---- the galactic core (space_finale.cpp, docs/re/space.md 10) ----
+SporeCoop::Space_EnterGalacticCore=0x01002DD0 ; verified port from GOG 2016 0x01002DD0: same address; the only string ref of "SPG_CenterOfGalaxy" (0x14953E0) at 0x1002EF0, same body with push 0x681C28E, calls 0xC77460/0xC77D90, plain ret
+Simulator::cPlayer::HasFlag=0x00C77460 ; verified port from GOG 2016 0x00C77440: +0x20; called at 0x1002DE6 and 0xFFC6E0 (flag 0x61F1454) exactly like the old ones, stack purge 4, 56 bytes
+Simulator::cPlayer::SetFlag=0x00C77D90 ; verified port from GOG 2016 0x00C77D70: +0x20; called at 0x1002E08, stack purge 4, 95 bytes
+Simulator::cPlayer::HandleCoreMessage=0x00C77ED0 ; verified port from GOG 2016 0x00C77EB0: +0x20; holds 0x6526395 (0xC7803D) and 0x61F1454 (0xC7804B/0xC780CD); 0x6527EAF calls 0xFD9C50 / 0xFDA5D0 (same addresses)
+Simulator::cAppModeSpace::LeaveSolarSystemToGalaxy=0x00FDA5D0 ; verified port from GOG 2016 0x00FDA5D0: same address, called by the core message handler at 0xC78161 after 0xFD9C50; prologue sub esp,0xC; push esi; mov esi,ecx, 360 bytes
+Pollinator::cAchievementsManager::AddProgress=0x00676E50 ; verified port from GOG 2016 0x00676E50: ModAPI March2017 address of the same name, stack purge 8; EnterSolarSystem 0xFDD8CB pushes 0xF88C1342 as in the old build

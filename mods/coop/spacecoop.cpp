@@ -287,6 +287,7 @@ std::string travel(uint32_t star)
         return "already there";
     return travel_to(star);
 }
+std::string travel_to_star(uint32_t star) { return in_space() ? travel_to(star) : "not in space"; }
 
 // cStarManager::GetStarRecord faults on an id that is not a star of this galaxy (seen with id 1,
 // 2026-10-23: GetStarRecord+0x32): look the record up in its table (+0xC8, 20-byte sectors whose
