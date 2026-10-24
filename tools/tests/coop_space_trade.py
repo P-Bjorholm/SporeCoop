@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool gifts and spice trade between players (space_trade.cpp, docs/re/space.md 10):
+"""Tool gifts and spice trade between players (space_trade.cpp, docs/re/space.md 12):
 
  1. the host has an Antimatter Bomb with 12 charges, the guest has none: a real click on the F9
     Space page ("Give 5", the text says "for Bob") moves 5 charges: the host has 7, the guest gets the tool with 5
@@ -129,13 +129,10 @@ def main():
     star = int(re.search(r'star (\d+)', sp(host, 'star')).group(1))
     gstar = int(re.search(r'star (\d+)', sp(guest, 'star')).group(1))
     print(f'  host star {star}, guest star {gstar}')
-    if 'roster=stand-in' in st:
-        # the roster of space_map.h is not in this build: tell the host where the guest's colony is
-        print('  (stand-in roster)', sp(host, 'trade colony', gid, star, '%08X' % (star | 0x1000000)))
-    spices = sp(host, 'trade spices')
-    m = re.search(r'spice 0 (\S+) .*price=(\d+)', spices)
-    inst, price = m.group(1), int(m.group(2))
-    print('  spice:', sp(host, 'trade spice 0 10'))
+    # the guest's colonies come from its roster (space_map.h): in the same save its home planet is
+    # in this system; a colony does not buy its own spice, so the host carries two kinds
+    print('  spice:', sp(host, 'trade spice 0 10'), sp(host, 'trade spice 1 10'))
+    wait(lambda: 'deal ' in sp(host, 'trade deal'), 15)
     deal = sp(host, 'trade deal')
     print('  host deal:', deal)
     dm = re.search(r'spice (\S+) .* x(\d+) price (\d+)', deal)

@@ -1,5 +1,5 @@
 // Space feature "trade" (MSG_SPACE kinds 70..79): tool gifts and spice trade between players
-// (docs/09-coop-design.md "Space 0.7", features 3 and 5; game knowledge: docs/re/space.md 7.7, 10).
+// (docs/09-coop-design.md "Space 0.7", features 3 and 5; game knowledge: docs/re/space.md 7.7, 12).
 //
 // Tool gifts: the F9 Space page lists the consumable tools of the cargo hold (bombs,
 // terraforming charges, colony tools, monoliths...) with "Give N to <partner>". The charges leave
@@ -28,12 +28,9 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "space_map.h"
 #include "sporekit_game.hpp"
 
-#if __has_include("space_map.h")
-#include "space_map.h"
-#define TRADE_ROSTER 1
-#endif
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -188,7 +185,7 @@ static void* as_tool(void* it)
 // cSpaceToolData: +0x7C charges, +0x1A0 max charges, +0x174 flags (0x20 uses ammo), +0x18 price
 constexpr uintptr_t kAmmo = 0x7C, kMaxAmmo = 0x1A0, kFlags = 0x174;
 
-// Ammo tools that are not for giving (docs/re/space.md 10.1): Galactic Adventures captain tools and
+// Ammo tools that are not for giving (docs/re/space.md 12.1): Galactic Adventures captain tools and
 // potions, NPC ship weapons, and the archetype / consequence abilities (they recharge on their own
 // and belong to one empire's play style). Every other ammo tool (bombs, terraforming charges,
 // colony and city tools, monoliths, fireworks, tools of mods) is giftable; tools without charges
@@ -304,7 +301,7 @@ static std::vector<SpiceInfo> spices()
 }
 
 // the market value of one unit: spacetrading~ value * the difficulty's price multiplier; NPC stores
-// pay that times 0.6..3.0 for the three spices they want and 5% for the others (docs/re/space.md 10.2)
+// pay that times 0.6..3.0 for the three spices they want and 5% for the others (docs/re/space.md 12.2)
 static float spice_value(const Key& k)
 {
     void* pm = a_PropMgr ? cdecl_call<void*>(a_PropMgr) : nullptr;
@@ -457,18 +454,12 @@ struct Col {
     uint32_t spice; // instance of the colony's own spice, 0 = none
 };
 
-#ifndef TRADE_ROSTER
-// stand-in until space_map.h is merged: colonies set by `coop.space trade colony ...` (tests)
-static std::vector<Col> g_standin;
-#endif
-
 static std::vector<Col> colonies_at(uint32_t star)
 {
     std::vector<Col> v;
     if (!star)
         return v;
     uint8_t me = spaceext::my_id();
-#ifdef TRADE_ROSTER
     for (uint8_t id : spacemap::roster_ids()) {
         const spacemap::Roster* r = id == me ? nullptr : spacemap::roster_of(id);
         if (!r)
@@ -477,11 +468,6 @@ static std::vector<Col> colonies_at(uint32_t star)
             if (c.star == star)
                 v.push_back({id, c.star, c.planet, c.name.empty() ? spacemap::star_name(c.star) : c.name, c.spice[0]});
     }
-#else
-    for (auto& c : g_standin)
-        if (c.star == star && c.owner != me && partner_here(c.owner))
-            v.push_back(c);
-#endif
     return v;
 }
 
@@ -982,16 +968,10 @@ static std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
-             "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u roster=%s\n",
+             "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
-             (unsigned)g_offers.size(),
-#ifdef TRADE_ROSTER
-             "space_map"
-#else
-             "stand-in"
-#endif
-    );
+             (unsigned)g_offers.size());
     return b;
 }
 
@@ -1003,7 +983,7 @@ static Key tool_key(const std::string& s)
 }
 
 // coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> |
-//                   sell [n] | deal | offers | accept <id> | decline <id> | money | colony ...]
+//                   take <inst> <n> | sell [n] | deal | offers | accept <id> | decline <id> | money]
 static std::string debug(const std::vector<std::string>& a)
 {
     if (a.empty())
@@ -1093,18 +1073,6 @@ static std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "money %d\n", money());
         return b;
     }
-#ifndef TRADE_ROSTER
-    if (a[0] == "colony" && a.size() > 3) { // stand-in roster: colony <owner id> <star> <planet hex> [spice hex] | clear
-        g_standin.push_back({(uint8_t)atoi(a[1].c_str()), (uint32_t)strtoul(a[2].c_str(), nullptr, 0),
-                             (uint32_t)strtoul(a[3].c_str(), nullptr, 16), "",
-                             a.size() > 4 ? (uint32_t)strtoul(a[4].c_str(), nullptr, 16) : 0u});
-        return "colony added\n";
-    }
-    if (a[0] == "colony" && a.size() > 1 && a[1] == "clear") {
-        g_standin.clear();
-        return "colonies cleared\n";
-    }
-#endif
     return "usage: coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> | "
            "take <inst> <n> | deal | sell [n] | offers | accept <id> | decline <id> | money]\n";
 }

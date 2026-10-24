@@ -870,9 +870,9 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
 
-## 10. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
+## 12. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
 
-### 10.1 Tools in the inventory (✔ decompile; ~ runtime marked)
+### 12.1 Tools in the inventory (✔ decompile; ~ runtime marked)
 * `cSpaceToolData` **is** a `cSpaceInventoryItem` (first base, size 0x2A0, ModAPI layout holds):
   the item pointer of `GetItem` / `GetTool` (vt+0x68) is the tool; the safe cast is the
   ISimulatorSerializable sub-object at +0x0C, vt+0x0C `Cast(0x707459F0)`. Item vt+0x18 key
@@ -909,7 +909,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   tool comes with its initial charges) then set exactly n with ConsumeAmmo/AddAmmo; post
   0x57F3749 through `IMessageManager` vt+0x18. What is not kept goes back to the giver.
 
-### 10.2 Spice prices (✔ decompile both builds)
+### 12.2 Spice prices (✔ decompile both builds)
 * `cSpaceTrading` (`Get` 0xB3D4A0 / 2024 0xB3D4D0): +0x20 `mSpices` (vector<ResourceKey>, 6
   spices, keys `{1CA01560..1CA01567, 0, 0}`), +0x34 every `spacetrading~` key, +0x48 NPC stores.
   A commodity's `spaceTradingType` (prop 0x34F1A4F) is 0x082AF541 for spice.
@@ -926,7 +926,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * So "twice the market value" (space_trade.cpp default sale) beats 8 of the 10 random store
   factors and every unwanted-spice price; in rivals mode the offer is 1.5x.
 
-### 10.3 Trade between players (design, ✔ two-game test `coop_space_trade.py`)
+### 12.3 Trade between players (design, ✔ two-game test `coop_space_trade.py`)
 * Spice cannot go into a colony's own storage (`cCityData` +0x1C holds the planet's own spice
   type only), so a partner colony's spice lands in the partner's **cargo hold** (a trading object,
   stacks or takes a free slot). A colony does not buy the spice its planet makes.

@@ -180,9 +180,14 @@ UTFWin::SporeStdDrawable::vftable=0x0141A978 ; verified port from GOG 2016 0x014
 UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x008308F0 ; verified port from GOG 2016 0x00830870 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 UTFWin::UILayout::UILayout=0x008100A0 ; verified port from GOG 2016 0x00810050 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::GetActivePlanetRecord=0x01021150 ; verified port from GOG 2016 0x01021150 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns [planet+0x13C] or 0
-# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 10)
+# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 12)
 App::IPropManager::Get=0x0067DDF0 ; verified port from GOG 2016 0x0067DDF0 (same addr): mov eax,[0x15FD8A8]; ret
 App::Property::GetFloat=0x0040CF10 ; verified port from GOG 2016 0x0040CF10 (same addr, same bytes: vt+0x24, type 0xD check)
 SporeCoop::DifficultyTuning_GetFloat=0x00C75DD0 ; likely port from GOG 2016 0x00C75DB0: +0x20; called at 0x103CE9B after push 0x1C2E590D / cGameNounManager::Get 0xB3D400 / mov eax,[ecx+0x74] 0xF67D40, reads +0x11F4 and +0x1248, GetArrayFloat 0x6A08B0
 Simulator::cSpaceToolData::AddAmmo=0x0104CBE0 ; verified port from GOG 2016 0x0104CBE0 (same addr, same bytes: +0x7C clamped to +0x1A0, ret 4)
 Simulator::cSpaceToolData::ConsumeAmmo=0x0104CC10 ; verified port from GOG 2016 0x0104CC10 (same addr, same bytes: -1 -> +0x19C, sub [ecx+0x7C], ret 4)
+Simulator::cCommManager::Get=0x00B3D5A0 ; verified port from GOG 2016 0x00B3D570: cdecl() -> [0x167EB44], three getters before cCinematicManager::Get 0xB3D5D0 -> [0x167EB50] as in GOG 2016
+Simulator::cCommManager::IsCommScreenActive=0x00AE9310 ; verified port from GOG 2016 0x00AE92E0: identical code (cmp [ecx+0x20],0; calls 0x1002A70 / 0x1075530 / 0x10666B0 / 0x1068360), plain ret
+SporeCoop::cSimulatorPlayerUFO_TravelCost=0x00FFC390 ; verified port from GOG 2016 0x00FFC390 (unchanged): same code, called at 0x1002090 (TravelToStar) and 0x10228E2 (SpaceTeleportTo), ret 8
+Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210F0 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns cStar+0x48
+Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): same code (context == 2 check, cost 0xFFC390 refunded, TravelToStar), plain ret
