@@ -433,7 +433,9 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
 * A hot reload of coop.dll (`lab.py reload`) while a mirror is applied leaves it in the game with
   the mod no longer knowing it (the next mirror skips that star: "a star system of another empire
   here"): `coop.space allies drop` first, or restart the games.
-* `coop.targets all` lists no city (X<n>) on a mirror colony (the cities fail its liveness check);
-  the test steers with `allies cities` instead.
-* Jumps into systems not visited before may arrive without planets (docs/known-issues.md, being
-  fixed on fix/space-jump); the free stars next to home load fine.
+* The test steers over the city with `allies cities` (distance and screen point; `coop.targets
+  all` did not list it in the test runs).
+* The guest's trip goes into a system it never visited: there the planet view stayed black after
+  the landing in every test run (HUD drawn, the cities without a position: `dist -nan`), the jump bug
+  of docs/known-issues.md (fixed on fix/space-jump). The same trip into a system visited before
+  shows the colony city (out/shots `allies_city`, manual run). The checks read the game data.

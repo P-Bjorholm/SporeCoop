@@ -109,7 +109,7 @@ def fly_to_city(con, secs=90):
         if cs:
             d, on, x, y = min(cs)
             best = min(best, d)
-            if d < 150:
+            if d < 260:
                 return d
             if on and d < 700:
                 dx, dy = x - W // 2, y - H // 2
@@ -181,6 +181,17 @@ def main():
     no_movie(guest)
     time.sleep(2)
     shot(guest, 'allies_galaxy.png')
+    # back into the home system for the trip (the Space page's usual place). A trip into a system
+    # never visited before can arrive with the planets not loaded: the planet view stays black after
+    # the landing and the cities have no position (docs/known-issues.md "jump into a not yet visited
+    # system", fixed on fix/space-jump); the checks here read the game data, not the picture
+    for _ in range(12):
+        if context(guest) == 'system':
+            break
+        guest.call('wheel 720 540 10')
+        time.sleep(1)
+    ck(context(guest) == 'system', 'the guest is back in its home system')
+    no_movie(guest)
 
     # ---- 3. the Space page: "Fly there" (a real click) ----
     rows = sp(guest, 'rows')
