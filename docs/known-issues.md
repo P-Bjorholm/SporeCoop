@@ -291,6 +291,28 @@ Fixed entries move to the commit message (and a test).
   5 600 to 24 000 per unit on normal), so one sale of 10 is worth 110 000 to 490 000 at 2x: big
   next to the fixture's $100 000. NPC stores pay similar money for the spices they want.
 
+## Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp)
+
+* Only stars nobody owns in my galaxy are mirrored. A partner's colony in a system that is mine or
+  an NPC empire's in my copy is not shown (`coop.space allies list`: "skipped ... a star system of
+  another empire here"); in the usual session (the guest plays a copy of the host's save) all
+  colonies both had at the join are shared and need no mirror.
+* The mirror empire has my own species (citizens, buildings, portrait): the partner's species is
+  not in my files when the saves differ. Its colour is the palette colour nearest to the partner's.
+* A mirror colony gets the game's own record-level colony: one city on landing (10 cCityData), not
+  the partner's layout, buildings or spice.
+* The relationship entry of the mirror (flags cleared) stays in a save, like the game's own entries
+  of destroyed empires (there is no erase). The political id counter is not given back.
+* Raids: only a raid while I am on that planet (the owner elsewhere) gets a raid of my own; the
+  game's alert there says "your cities". Plunder raids (0xC4956AA7) are mirrored like raids
+  (untested). A raid on a guest's colony helped by the host is untested (squadron makes the host's
+  NPCs authoritative on both sides there).
+* A partner who leaves stays mirrored ("away") until my session ends; with two players the host
+  leaving ends the session, so the frozen ally is only seen on the host (a guest left) or with 3+
+  players (untested).
+* Rivals mode (feature 10): a war between the players makes the mirror an enemy (relationship war
+  bit, enemies vectors); not tested here (feat/space-rivalry not merged).
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:

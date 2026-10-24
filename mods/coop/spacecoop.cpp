@@ -381,6 +381,12 @@ static void SK_THISCALL h_SetState(void* m, int s)
         return;
     if (is_raid(m)) {
         uint32_t place = mission_place(m);
+        // only raids on my own colonies: space_allies.cpp starts raids on a partner's mirror colony
+        // in my galaxy (that partner gets its own alerts)
+        void* emp = a_PlayerEmpire ? cdecl_call<void*>(a_PlayerEmpire) : nullptr;
+        void* star = star_record(place & 0xFFFFFFu);
+        if (!emp || !star || F<uint32_t>(star, 0x54) != F<uint32_t>(emp, 0x84))
+            return;
         if (g_raid_listener && (s == 3 || s == 5 || s == 6))
             g_raid_listener(place, s);
         if (s == 3) { // a raid starts on our colony

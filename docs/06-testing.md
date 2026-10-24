@@ -478,3 +478,30 @@ New ids for a new `space` fixture: planets of the home system with `coop.targets
 system view (`obj P<PlanetID>`); a planet of another star needs a generated record (a star near
 home that the tutorial points at, or one the ship visited); the nearest NPC empires: walk
 `cStarManager` +0x150 (docs/re/space.md 9.6).
+
+## 6.16 `coop_space_allies.py` (a partner's colonies as an allied empire)
+
+* Fixture `space`; takes ~7 min on a lane (start 40 s). Runs 2026-10-23: lane 9 (GOG 2024) 6 passes
+  in a row with the last code, lane 8 (GOG 2016) 3 passes. The host founds the colony itself with
+  `coop.space allies colonize` (record level, a planet of the system it is in) in a free star near
+  home (`allies free`; the nearest one, 4587540, is the tutorial's ruined colony: the test takes the
+  second). The colony must be founded **after** the guest joined: the guest plays a copy of the
+  host's save, so earlier colonies are its own already (shown as `skipped ...: your own star system`).
+* `coop.space allies star <StarID>` prints the star record as the guest's game has it (empire id,
+  owner name, tech level, each planet's tech level and cCivData pol / cities); `allies empire
+  <pol>`, `allies cities` (with distance and screen point of each city), `allies raids` (target,
+  state, raider ships), `allies raid <PlanetID> [n]` (the game's `raid -start` on a planet of my
+  galaxy), `allies fight [dmg]` (the game's damage on the raiders of my raids on mirror colonies),
+  `allies fake <name> <PlanetID>...` (a mirror without a partner), `allies remove|apply|drop`.
+* Captions: the fixture's system starts with an intro (the camera orbits the star, cinematic
+  manager busy) that only Esc ends; an Esc while landing left the planet view black (HUD only), so
+  later captions get Enter only. The interstellar drive's caption needs Enter too.
+* A hot reload of coop.dll (`lab.py reload`) while a mirror is applied leaves it in the game with
+  the mod no longer knowing it (the next mirror skips that star: "a star system of another empire
+  here"): `coop.space allies drop` first, or restart the games.
+* The test steers over the city with `allies cities` (distance and screen point; `coop.targets
+  all` did not list it in the test runs).
+* The guest's trip goes into a system it never visited: there the planet view stayed black after
+  the landing in every test run (HUD drawn, the cities without a position: `dist -nan`), the jump bug
+  of docs/known-issues.md (fixed on fix/space-jump). The same trip into a system visited before
+  shows the colony city (out/shots `allies_city`, manual run). The checks read the game data.
