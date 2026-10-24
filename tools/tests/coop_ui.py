@@ -193,18 +193,21 @@ def main():
                            and f':{lane.PORT}' in s[r]['text']), None)
     st = guest.wait(lambda s: ours(s) is not None, 30, 'LAN game')
     row = ours(st) if st else None
-    listed = [r for r in ('lan0', 'lan1', 'lan2') if guest.state()[r]['vis']]
-    if row is None and len(listed) == 3:
-        # the window lists three games: with more hosts on this machine (other lanes of a lab run, all
-        # answering on 127.0.0.1) ours can be the fourth. Not a failure of ours: join by the address
-        print(f'  guest: three other games listed ({[guest.state()[r]["text"] for r in listed]}): join by address')
-        guest.type_into('address', f'127.0.0.1:{lane.PORT}')
-        shot(gc, 'ui_guest_lan.png')
-        guest.click('join')
+    listed = [guest.state()[r]['text'] for r in ('lan0', 'lan1', 'lan2') if guest.state()[r]['vis']]
+    shot(gc, 'ui_guest_lan.png')
+    if row is not None:
+        check(True, f'guest: host found on the network: {st[row]["text"]}')
+        guest.click(row)
     else:
-        check(row is not None, f'guest: host found on the network: {st[row]["text"] if row else None}')
-        shot(gc, 'ui_guest_lan.png')
-        guest.click(row or 'lan0')
+        # the window lists three games: with more hosts on this machine (other lanes of a lab run, all
+        # answering on 127.0.0.1) ours can be the fourth, not a failure of ours. Never click another
+        # lane's game (that joins a test of another lane): join ours by its address
+        if len(listed) < 3:
+            check(False, f'guest: host found on the network (listed: {listed})')
+        else:
+            print(f'  guest: three other games listed ({listed}): join by address')
+        guest.type_into('address', f'127.0.0.1:{lane.PORT}')
+        guest.click('join')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
     check(st is not None, f'guest: joined, lobby {st["rows"] if st else None}')
 
