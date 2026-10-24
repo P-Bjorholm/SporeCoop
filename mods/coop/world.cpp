@@ -424,6 +424,60 @@ static bool (*g_playing)();
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err);
 static bool in_stage(uint32_t m);
 
+// The galaxy menu's intro cinematic "GGE_intro" (camera flight over the galaxy, ~10 s, started ~16 s
+// after the menu came up; docs/re/space.md 10). A load started from the menu while it plays left it
+// "playing" in the next stage forever: cCinematicManager +0x2C stays 2, the HUD is hidden and the
+// input lock it holds (cGameInputManager +0x110) eats every click; nothing in a stage ends it (the
+// menu's handler of its end message is gone, Enter only ends captions). The mod ends it natively
+// (EndCinematic: stop, release the input lock, post the end message 0x44F1189 that the menu handles)
+// before every load from the menu, and in a stage whenever it is found still running.
+constexpr uint32_t kMenuIntroId = 0x8915F9BBu; // FNV hash of "GGE_Intro" (the registry id, both builds)
+constexpr uintptr_t kCineState = 0x2C, kCineId = 0x148;
+static uint32_t g_intros_ended;
+static double g_intro_seen;
+
+static void* cinematic_mgr()
+{
+    uintptr_t get = H->sym("Simulator::cCinematicManager::Get");
+    return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+// ends the running cinematic when it is the menu intro (or any, with any=true); true if it did
+static bool end_menu_intro(bool any, const char* where)
+{
+    uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    if (!cm || !end || !*(uint32_t*)(cm + kCineState))
+        return false;
+    uint32_t id = *(uint32_t*)(cm + kCineId);
+    if (id != kMenuIntroId && !any)
+        return false;
+    H->log(M, SK_WARN, "world: cinematic %08X still playing %s: ended it", id, where);
+    skg::thiscall<void>(end, cm);
+    g_intros_ended++;
+    return true;
+}
+
+// in a stage: the menu intro left over from a load (a world received while it played); outside the
+// frame, after 1 s (it is never legitimately running there)
+static void menu_intro_tick()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    bool stuck = cm && in_stage(game::mode_id()) && *(uint32_t*)(cm + kCineState) &&
+                 *(uint32_t*)(cm + kCineId) == kMenuIntroId;
+    double now = H->time_seconds();
+    if (!stuck) {
+        g_intro_seen = 0;
+        return;
+    }
+    if (!g_intro_seen)
+        g_intro_seen = now;
+    if (now - g_intro_seen < 1.0 || g_intro_seen < 0)
+        return;
+    g_intro_seen = -1; // once per sighting
+    H->run_outside_frame([](void*) { end_menu_intro(false, "in a stage"); }, nullptr);
+}
+
 // the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
 static bool post_quit_to_menu(std::string& err)
 {
@@ -550,6 +604,7 @@ static void deferred_tick()
 void guest_tick()
 {
     via_menu_tick();
+    menu_intro_tick();
     deferred_tick();
     box_tick();
 }
@@ -557,6 +612,7 @@ void guest_tick()
 void tick(net::Session& s)
 {
     via_menu_tick();
+    menu_intro_tick();
     deferred_tick();
     box_tick();
     for (size_t i = 0; i < g_pending.size();) {
@@ -830,6 +886,8 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     if (starget && readstars)
         if (void* sm = skg::cdecl_call<void*>(starget))
             skg::thiscall<void>(readstars, sm);
+    // the menu intro must not survive into the stage (see end_menu_intro); in the menu nothing else plays
+    end_menu_intro(game::mode_id() == modes::kMenu, "at the load");
     skg::thiscall<void>(loadby, mgr, name.c_str());
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;
@@ -981,6 +1039,16 @@ std::string status()
     }
     if (g_in.active) {
         snprintf(b, sizeof b, "receiving world: %u/%u bytes\n", g_in.received, g_in.offer.total_size);
+        s += b;
+    }
+    // tests: a cinematic running (the menu intro before a join, a caption) holds the input
+    if (uint8_t* cm = (uint8_t*)cinematic_mgr(); cm && *(uint32_t*)(cm + kCineState)) {
+        snprintf(b, sizeof b, "cinematic %08X playing%s\n", *(uint32_t*)(cm + kCineId),
+                 *(uint32_t*)(cm + kCineId) == kMenuIntroId ? " (menu intro)" : "");
+        s += b;
+    }
+    if (g_intros_ended) {
+        snprintf(b, sizeof b, "menu intro ended %u\n", g_intros_ended);
         s += b;
     }
     return s;

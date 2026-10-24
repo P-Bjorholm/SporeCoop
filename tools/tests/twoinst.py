@@ -230,17 +230,19 @@ def warm_reset(host, guest, fixture, planet):
     return True
 
 
-def start(fixture='creature', planet=None, load_args=()):
+def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
-    same build: warm_reset() instead of a restart (~10 s instead of ~40 s)."""
+    same build: warm_reset() instead of a restart (~10 s instead of ~40 s).
+    join_in_intro: the guest joins while its galaxy menu plays the intro cinematic GGE_Intro (cold
+    start only; the race behind the stuck guest movie, docs/re/space.md 10)."""
     if planet is None and not load_args:
         planet = fixtures.planet_of(fixture)  # loaded by name (no menu clicks, warm-capable)
     st = lane_state()
     # warm only within the same save: a test starts from its fixture (stage switches in game work,
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
-    if os.environ.get('SPORE_WARM') == '1' and planet and st.get('build') == build_id() \
+    if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
             and st.get('fixture') == fixture and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:
@@ -294,6 +296,13 @@ def start(fixture='creature', planet=None, load_args=()):
         time.sleep(1)
     phases.append(('guest menu', time.time() - t_start))
     guest.call('wait.frames 200 60000')
+    if join_in_intro:  # the intro starts ~16 s after the menu came up and runs ~10 s
+        for _ in range(120):
+            if '(menu intro)' in guest.call('coop.status')['out']:
+                break
+            time.sleep(0.25)
+        else:
+            print('  (the guest menu intro did not start)', flush=True)
     phases.append(('guest join', time.time() - t_start))
     guest.call(lane.JOIN)
     # the host saves before sharing and the game shows a modal "game saved" box (frames stop):

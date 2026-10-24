@@ -49,6 +49,7 @@ add('play_civ', P + 'play_civ.py --minutes 10', ('nightly',), minutes=13, fixtur
 add('space_play', P + 'coop_space_play.py', ('smoke',), minutes=6)
 add('space_page', P + 'coop_space_page.py', ('smoke',), minutes=4)  # the F9 Space page (space_ext.h), jump by a real click
 add('space_death', P + 'coop_space_death.py', minutes=5)
+add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
