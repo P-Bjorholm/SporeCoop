@@ -669,8 +669,13 @@ static std::vector<spaceext::Row> rows()
         head.text = tr("Galactic core: you are at its gate", "Ядро галактики: вы у врат");
     else if (g_zone == Z_NEAR)
         head.text = tr("Galactic core: close, in Grox space", "Ядро галактики: близко, космос гроксов");
-    else
+    else {
+        // far from the core and nobody near it: no row (the page stays short in normal play)
+        bool near = std::any_of(g_peer.begin(), g_peer.end(), [](auto& kv) { return kv.second.zone >= Z_NEAR; });
+        if (!near)
+            return v;
         head.text = tr("Galactic core: not reached yet", "Ядро галактики: ещё не достигнуто");
+    }
     v.push_back(head);
     if (g_waiting) {
         spaceext::Row w;
