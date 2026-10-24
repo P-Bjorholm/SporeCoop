@@ -43,7 +43,7 @@ def main():
     if not ck(s0 != 0, 'the host is in a star system'):
         return ck.result()
     for d in (1, 2, 3, -1, -2, 4096, -4096):  # a neighbouring id that is a star of this galaxy
-        r = sp(guest, 'jumpto', s0 + d)
+        r = sp(guest, 'jumpto', s0 + d, 'force')  # the fixture's tutorial caption counts as a cinematic
         print(f'  guest jumpto {s0 + d}:', r)
         if r == 'jumping':
             break
