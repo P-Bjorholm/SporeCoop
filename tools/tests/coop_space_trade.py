@@ -61,9 +61,13 @@ def row_of(con, text):
 
 
 def open_space_page(ui, con):
-    if ui.state().get('open') != '1':
-        con.call(f'key {VK_F9}')
-    st = ui.wait(lambda s: s['open'] == '1' and s['space']['vis'], 20, 'lobby with the Space button')
+    st = None
+    for _ in range(3):  # (a key press can be lost while a caption or a toast takes the input)
+        if ui.state().get('open') != '1':
+            con.call(f'key {VK_F9}')
+        st = ui.wait(lambda s: s['open'] == '1' and s['space']['vis'], 8, 'lobby with the Space button')
+        if st is not None:
+            break
     if st is None:
         return False
     ui.click('space')
@@ -122,7 +126,14 @@ def rivals(ck, host, guest, ui):
     ck(wait(lambda: cargo(guest, inst) == gc0 + n), f'the spice is in the guest\'s cargo ({cargo(guest, inst)})')
     gui.click('sback')
     guest.call(f'key {VK_F9}')
+    # an offer left open when the host ends rivals mode is declined: the spice comes back
+    print('  spice:', sp(host, 'trade spice 0 10'), sp(host, 'trade spice 1 10'))
+    c1 = cargo(host, inst)
+    print('  offer:', sp(host, 'trade sell'))
+    ck(wait(lambda: 'offers=1' in sp(guest, 'trade')), 'a second offer waits on the guest')
     print('  allies:', sp(host, 'rivalry mode allies'))
+    ck(wait(lambda: 'pending=0' in sp(host, 'trade') and cargo(host, inst) == c1), 
+       f'back in allies mode the open offer is declined and the spice is back ({cargo(host, inst)} == {c1})')
 
 
 def main():

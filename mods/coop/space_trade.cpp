@@ -817,7 +817,8 @@ static void tick(double now)
             g_offers.erase(g_offers.begin() + i);
             continue;
         }
-        if (now - g_offers[i].t > kOfferLife) {
+        // unanswered for too long, or the host ended rivals mode (one budget again: nothing to pay)
+        if (now - g_offers[i].t > kOfferLife || !spaceext::rivals()) {
             answer_offer(g_offers[i].id, false); // erases it
             continue;
         }
