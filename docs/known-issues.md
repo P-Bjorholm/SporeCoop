@@ -78,12 +78,28 @@ Fixed entries move to the commit message (and a test).
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 9` and watch
   `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
 
-## coop_sync.py cell: the players' facing check rests on 2 samples
+## coop_sync.py: failures on GOG 2024 (lane 10) and turn lag (fixed 2026-10-24, fix/gog2024-sync)
 
-* Lane 2, 2026-10-23 (branch fix/cell-npc-prey): `coop_sync.py cell` failed once on "cell/players:
-  90% facing within 15 deg" with `n=2`, p90 19.9, max 23.1 deg (positions fine, NPC cells fine), and
-  passed on the next run (p90 11.2, max 20.6). With two samples one sample taken mid-turn decides
-  the result. Probably the test, not the sync: take more player samples in the cell phase.
+* The full lab run 20261023-225702 (feat/space-07, lane 10, 9 lanes busy) failed `coop_sync` twice:
+  cell/players facing p90 15.6°, tribe/citizens 2.39 / 2.13 m, civ/vehicles 4.4 / 6.0 m and 33.6°,
+  space/ships 33 m (first run). It had never run on GOG 2024, and ran on the new fixtures.
+* Cause 1 (GOG 2024, test timing): the 2024 guest keeps its game time paused (cGameTimeManager
+  +0x48 = 3, black screen, ~23 fps) for ~7 s after its world load in the tribe stage, exactly the
+  window the test measured in. Citizens do not get `Update` then (`coop.tribe` on a guest prints
+  `ai_skipped=0/0`), so mirrors do not walk and follow the host by drive.h's per-frame 15 % nudge
+  only: the error is speed x frame time / 0.15 (2.4 m at 5.5 m/s and 15 fps; the lab's load lowered
+  the frame rate). Forcing 15 fps on both builds (`frame.limit 66`) reproduced it on 2024 (citizens
+  2.7 m) and not on 2016 (0.6 m). No wrong symbol: once the game time runs the 2024 mirrors walk.
+  Players do not see it (the screen is black then).
+* Cause 2 (test, both builds): the facing checks counted the guest's designed lag. The cell host
+  turns every 4th round and the civ fixture has a single vehicle that turns in place, so 1 of 8
+  samples sat at 15-30° (raw p90 2016: 12-21.5°, 2024: 2.6-18°).
+* Vehicles at a low frame rate trail by ~2 m on both builds (15 fps: 4.2 m on 2016 and 2024), which
+  is where the lab's 4-6 m came from.
+* Fix: coop_sync.py waits until neither game is paused and compares within a 0.15 s lag window
+  (docs/06-testing.md 6.5 "Sync accuracy"). After: 3 of 3 passes on lane 10, 2 of 2 on lane 3.
+* Not fixed: drive.h's nudge is per frame, so a mirror that cannot walk trails more at low frame
+  rates; the 2024 guest's paused seconds after a load are not explained (planet still loading?).
 
 ## coop_civ_play: the guest's "I'm ready" click was lost twice
 
