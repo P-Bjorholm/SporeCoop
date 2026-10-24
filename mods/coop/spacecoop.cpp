@@ -274,6 +274,30 @@ std::string jump(uint8_t to)
     return e;
 }
 
+// cStarManager::GetStarRecord faults on an id that is not a star of this galaxy (seen with id 1,
+// 2026-10-23: GetStarRecord+0x32): look the record up in its table (+0xC8, 20-byte sectors whose
+// first dword is the record array, StarID = sector << 12 | index) and check the record's own id
+void* star_record(uint32_t id)
+{
+    if (!id || id == 0xFFFFFFFFu || !a_StarMgr)
+        return nullptr;
+    void* sm = cdecl_call<void*>(a_StarMgr);
+    if (!sm || IsBadReadPtr((uint8_t*)sm + 0xC8, 8))
+        return nullptr;
+    uint8_t* b = F<uint8_t*>(sm, 0xC8);
+    uint8_t* e = F<uint8_t*>(sm, 0xCC);
+    uint32_t sec = id >> 12, idx = id & 0xFFF;
+    if (!b || e < b || sec >= (uint32_t)((e - b) / 20) || IsBadReadPtr(b + sec * 20, 4))
+        return nullptr;
+    void** arr = *(void***)(b + sec * 20);
+    if (!arr || IsBadReadPtr(arr + idx, 4))
+        return nullptr;
+    void* r = arr[idx];
+    if (!r || IsBadReadPtr(r, 0x74) || F<uint32_t>(r, 0x70) != id)
+        return nullptr;
+    return r;
+}
+
 static std::string travel_to(uint32_t star, bool force)
 {
     if (!a_ModeSpace || !a_TravelSystem || !a_Context || !a_StarMgr || !a_GetStarRecord)
@@ -285,8 +309,10 @@ static std::string travel_to(uint32_t star, bool force)
         return "a cinematic is playing";
     void* mode = *(void**)a_ModeSpace;
     int ctx = cdecl_call<int>(a_Context);
-    void* rec = thiscall<void*>(a_GetStarRecord, cdecl_call<void*>(a_StarMgr), star);
-    if (!mode || !rec || ctx < 0)
+    void* rec = star_record(star);
+    if (!rec)
+        return "no such star";
+    if (!mode || ctx < 0)
         return "can't travel now";
     // the native sequence of cGameDataUFO::Respawn (docs/re/space.md 7.3)
     if (ctx == 0) {
