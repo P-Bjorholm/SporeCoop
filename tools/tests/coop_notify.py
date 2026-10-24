@@ -13,13 +13,14 @@ import time
 from twoinst import Checks, shot, wait_up
 from sporectl import Console
 import lane
+from fixtures import planet_of
 
 FIXTURES = {  # stage -> (fixture, planet)
-    'cell': ('cell', 'Game0/Karke'),
+    'cell': ('cell', planet_of('cell')),
     'creature': ('creature', None),
-    'tribe': ('tribe', 'Game0/Cohrach'),
-    'civ': ('civ', 'Game0/Agrauel'),
-    'space': ('space', 'Game0/Maraya'),
+    'tribe': ('tribe', planet_of('tribe')),
+    'civ': ('civ', planet_of('civ')),
+    'space': ('space', planet_of('space')),
 }
 
 

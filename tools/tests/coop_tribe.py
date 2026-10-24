@@ -29,7 +29,7 @@ def dist(a, b):
 
 
 def main():
-    host, guest = start('tribe', 'Game0/Cohrach')
+    host, guest = start('tribe')
     ck = Checks()
     t0 = time.time()
     while True:  # the guest may still be finishing the load of the host world
