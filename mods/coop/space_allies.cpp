@@ -99,6 +99,8 @@ static std::set<uint32_t> g_my_raids_seen;
 static std::string g_last;
 static std::string hex(uint32_t v);
 static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
+static bool g_end_pending;        // the session ended while I was on a mirror planet
+static void end_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
 
 // ---------------- game helpers ----------------
@@ -779,7 +781,7 @@ static void watch_raids()
         bool left = ships.count(it->first) && ships[it->first] > 0;
         it = g_watch.erase(it);
         Mirror* m = mirror_of_planet(w.planet);
-        if (aborted || left || !w.had_ships || w.ships > 2 || !m || !m->raids.count(w.planet))
+        if (aborted || left || !w.had_ships || !m || !m->raids.count(w.planet))
             continue;
         net::Writer wr;
         wr.u8(m->id);
@@ -847,6 +849,17 @@ static void tick(double now)
             }
         return;
     }
+    if (g_end_pending) {
+        static double next;
+        if (now < next)
+            return;
+        next = now + 1.0;
+        if (!spaceext::connected())
+            H->run_outside_frame([](void*) { end_all(); }, nullptr);
+        else
+            g_end_pending = false; // a new session: the mirrors are wanted again
+        return;
+    }
     if (g_hold && now >= g_reapply_at) {
         g_hold = false;
         g_next_sync = 0;
@@ -906,14 +919,31 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     }
 }
 
+// the session is over: every mirror goes. On a mirror planet itself that waits until I leave it
+// (its cities live in the planet's simulation; a save is not possible there anyway)
+static bool on_mirror_planet()
+{
+    void* ap = context() == 0 ? active_planet_record() : nullptr;
+    return ap && mirror_of_planet(F<uint32_t>(ap, 0x184)) != nullptr;
+}
+static void end_all()
+{
+    if (spaceext::in_space() && on_mirror_planet()) {
+        g_end_pending = true;
+        return;
+    }
+    g_end_pending = false;
+    unapply_all();
+    for (auto& [n, m] : g_m)
+        forget(m);
+    g_m.clear();
+    g_watch.clear();
+    g_raid_quiet.clear();
+}
+
 static void on_session_end()
 {
-    H->run_outside_frame([](void*) {
-        unapply_all();
-        for (auto& [n, m] : g_m)
-            forget(m);
-        g_m.clear();
-    }, nullptr);
+    H->run_outside_frame([](void*) { end_all(); }, nullptr);
     g_my_raids_sent.clear();
 }
 
