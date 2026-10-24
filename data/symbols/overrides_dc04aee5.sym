@@ -218,3 +218,5 @@ SporeCoop::cPlanetRecord_AddCivData=0x00B8F010 ; verified asm: the AddCivData ca
 Simulator::cStarRecord::GetPlanetRecords=0x00BBA900 ; verified port from GOG 2016 0x00BBA8D0 (ModAPI March2017 address of the same name)
 Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
 Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
+SporeCoop::cGameNounManager_GetPlayer=0x00F67D40 ; verified port from GOG 2016 0x00F67D40: unique byte-pattern match (mov eax,[ecx+0x74]; ret)
+SporeCoop::VectorMapUint_At=0x00F41940 ; verified asm: the call target in the contact setter 0xC7BD20 (|= 2) of this build (GOG 2016 0xC7BD00 -> 0xF41940)

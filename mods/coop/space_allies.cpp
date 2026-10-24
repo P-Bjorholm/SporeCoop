@@ -55,7 +55,7 @@ static uintptr_t a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit
     a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt, a_HomeStarMap,
     a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove, a_EnemyAdd, a_EnemyRemove, a_StrAssign,
     a_Save, a_Expand, a_PlayerEmpire, a_Color, a_NounMgr, a_GetData, a_MissionCb[4], a_SetState, a_StartRaid,
-    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData;
+    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt;
 
 // ---- what each mirror changed (to undo it exactly) ----
 struct StarSnap {
@@ -78,6 +78,7 @@ struct Mirror {
     std::vector<uint32_t> wanted; // the partner's colonies (PlanetIDs), from its roster
     uint32_t color = 0;           // ARGB (spacemap::player_color)
     spaceext::Relation rel = spaceext::Relation::Ally;
+    uint32_t contact_before = 0;  // cPlayer's flags for the mirror's political id before the mirror
     // applied state (valid while applied)
     bool applied = false;
     void* emp = nullptr;          // the cEmpire (kept alive by our reference, re-inserted on apply)
@@ -237,11 +238,32 @@ static void rel_flags(uint32_t a, uint32_t b, uint32_t set, uint32_t clear)
     }
 }
 
+// cPlayer (cGameNounManager +0x74) keeps per political id the flags of the contact: 0x2 contacted
+// (PlayerContactedEmpire), 0x4 aware (EmpireIsAwareOfPlayer). An empire not contacted greets the
+// player on arrival in its territory with an envoy (cEmpire 0xC31690 -> first contact comm event),
+// and the first contact resets the relationship: "Your alliance with ... has been severed".
+static uint32_t* contact_flags(uint32_t pol)
+{
+    void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+    void* pl = nm && a_GetPlayer ? thiscall<void*>(a_GetPlayer, nm) : nullptr;
+    if (!readable(pl, 0x11F0) || !a_FlagsAt)
+        return nullptr;
+    uint32_t key = pol;
+    return thiscall<uint32_t*>(a_FlagsAt, (uint8_t*)pl + 0x11D8, &key);
+}
+
 static void set_relation(Mirror& m, bool on)
 {
     void* me = player_empire();
     if (!me || !m.emp)
         return;
+    if (uint32_t* f = contact_flags(m.pol)) {
+        if (on) {
+            m.contact_before = *f;
+            *f |= 0x6;
+        } else
+            *f = m.contact_before;
+    }
     uint32_t mp = F<uint32_t>(me, 0x84);
     bool war = m.rel == spaceext::Relation::War, ally = m.rel == spaceext::Relation::Ally;
     if (on) {
@@ -855,7 +877,7 @@ static std::vector<spaceext::Row> rows()
         const char* rel = m.rel == spaceext::Relation::War ? spaceext::tr("at war", "война")
                           : m.rel == spaceext::Relation::Ally ? spaceext::tr("ally", "союзник")
                                                                : spaceext::tr("neutral", "нейтралитет");
-        snprintf(b, sizeof b, spaceext::tr("%s: %d colonies in your galaxy (%s)%s", "%s: колоний в вашей галактике: %d (%s)%s"),
+        snprintf(b, sizeof b, spaceext::tr("%s: colonies in your galaxy: %d (%s)%s", "%s: колоний в вашей галактике: %d (%s)%s"),
                  empire_name(m).c_str(), mirrored(m), rel,
                  m.online ? "" : spaceext::tr(", away", ", не в игре"));
         r.text = b;
@@ -1077,12 +1099,17 @@ static std::string debug(const std::vector<std::string>& a)
         void* rec = nullptr;
         if (a.size() > 1)
             rec = planet_record((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
-        else if (void* sm = star_mgr())
-            for (void* p : ptr_vec((uint8_t*)sm + 0x50, 64)) { // the loaded planets of this system
-                void* r = readable(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
-                if (readable(r, 0x1A4) && F<uint32_t>(r, 0x194) < 4 && !rec)
-                    rec = r;
-            }
+        else {
+            // a planet of the star I am at: the active one, else the first without a civilization
+            void* ap = active_planet_record();
+            uint32_t here = ap ? F<uint32_t>(ap, 0x184) & 0xFFFFFFu : 0;
+            if (ap && F<uint32_t>(ap, 0x194) < 4)
+                rec = ap;
+            else if (void* st = spacecoop::star_record(here))
+                for (void* r : planets_of(st))
+                    if (!rec && readable(r, 0x1A4) && F<uint32_t>(r, 0x194) < 4)
+                        rec = r;
+        }
         if (!rec || !me)
             return "no planet to colonize\n";
         uint32_t id = F<uint32_t>(rec, 0x184);
@@ -1151,11 +1178,13 @@ static bool init(const SkHost* h, SkMod* m)
     a_AllCities = S("Simulator::cGameNounManager::GetAllCities");
     a_GetPlanets = S("Simulator::cStarRecord::GetPlanetRecords");
     a_AddCivData = S("SporeCoop::cPlanetRecord_AddCivData");
+    a_GetPlayer = S("SporeCoop::cGameNounManager_GetPlayer");
+    a_FlagsAt = S("SporeCoop::VectorMapUint_At");
     uintptr_t need[] = {a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit, a_AddStar, a_SetHomeStar,
                         a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt,
                         a_HomeStarMap, a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove,
                         a_EnemyAdd, a_EnemyRemove, a_StrAssign, a_Save, a_Expand, a_PlayerEmpire, a_Color,
-                        a_Context, a_ActivePlanet, a_GetPlanets, a_AddCivData, a_RequirePlanets};
+                        a_Context, a_ActivePlanet, a_GetPlanets, a_AddCivData, a_RequirePlanets, a_GetPlayer, a_FlagsAt, a_NounMgr};
     for (size_t i = 0; i < sizeof need / sizeof need[0]; i++)
         if (!need[i]) {
             H->log(M, SK_WARN, "space allies: symbol #%d missing", (int)i);
