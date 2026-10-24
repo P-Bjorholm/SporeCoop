@@ -13,7 +13,7 @@ relay real fights use; the shots themselves come from the debug command coop.fle
 pirates pick their own targets, mostly the host). Checks: the guest is disabled
 (down=1, state 0), the host is told (partners_down), the host flies to it with the keys and the
 ship is repaired (rescues=1); also with HP 0.5 (the second bug). In round 1 the guest flies higher
-(zoomed out): the repair measures along the ground (GOG 2024 lanes: a 3D distance kept the ships of
+(zoomed out 6 notches): the repair measures along the ground (GOG 2024 lanes: a 3D distance kept the ships of
 two players at different zooms 200 m apart, docs/re/space.md 7.10)."""
 import re
 import time
@@ -58,7 +58,7 @@ def main():
             # zoomed in .. ~970 m from the centre, ~15 m per wheel notch). The repair measures along
             # the ground, as the top-down camera shows it: a 3D distance never got below the height
             # difference (GOG 2024 lanes, where retried landings left the two at different zooms)
-            pg.zoom(-8)
+            pg.zoom(-6)
             time.sleep(2)
             print('   guest zoomed out:', sp(guest, 'dist'), pg.ctx())
         ph.key_hold(['0x57'], 2.5)  # the host flies off a bit: it has to come back to repair

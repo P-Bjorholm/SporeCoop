@@ -75,6 +75,7 @@ class Player(threading.Thread):
         self.apart_since = None
         self.last_place = (0, 0)
         self.no_landing = set()
+        self.notch_m = 15.0  # height change of one wheel notch on a planet (match_height)
 
     # ---------------- input / state ----------------
     def cmd(self, line):
@@ -294,12 +295,20 @@ class Player(threading.Thread):
         """on a planet a ship flies at the height of its own zoom (~520..~970 m from the centre, ~15 m
         per wheel notch): a partner far above or below is off the screen (above the camera) or seen
         with parallax. Zoom to its height, as a player looks for it (docs/re/space.md 7.10)."""
-        m = re.search(r'alt ([-+]?\d+) m;', self.cmd('coop.space dist'))
-        if not m or abs(int(m.group(1))) < 30:
+        def alt():
+            m = re.search(r'alt ([-+]?\d+) m;', self.cmd('coop.space dist'))
+            return int(m.group(1)) if m else None
+        a = alt()
+        if a is None or abs(a) < 30:
             return False
-        self.zoom(max(-12, min(12, -round(int(m.group(1)) / 15))))  # wheel up (+) = lower
+        # metres per notch: ~15 on GOG 2024, ~45 on GOG 2016 (measured as it goes)
+        n = max(-10, min(10, -round(a / self.notch_m))) or (-1 if a > 0 else 1)
+        self.zoom(n)  # wheel up (+) = lower
         self.count('height_matched')
         self.sleep(1.0)
+        b = alt()
+        if b is not None and b != a:
+            self.notch_m = max(5.0, min(80.0, abs((a - b) / n)))
         return True
 
     def partner_dist(self):

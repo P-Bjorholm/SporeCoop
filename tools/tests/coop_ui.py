@@ -179,6 +179,9 @@ def main():
 
     # host
     host.type_into('name', 'Alice')
+    # the port field shows the lane's saved host_port (mods/coop.ini of the lane's install, copied from
+    # lane 1 when the lane was made: 47810 on lane 2 too): "bind() failed" while lane 1 hosts
+    host.type_into('port', str(lane.PORT))
     host.click('host')
     st = host.wait(lambda s: s['page'] == 'lobby' and s['rows'], 15, 'host lobby')
     check(st and 'Alice' in st['rows'][0][0], f'host: hosting, lobby shows {st["rows"] if st else None}')
