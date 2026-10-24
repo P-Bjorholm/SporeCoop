@@ -194,8 +194,10 @@ Fixed entries move to the commit message (and a test).
   view before "Land" takes it to the right planet.
 * SpawnUFO pirates do not fight (docs/re/space.md 17.2): an armada anywhere else than on an own colony
   (a neutral star, a partner's colony) would need the UFO AI's target selection, not found.
-* While the game's badge panel ("2 badge points" + OK, after a defended raid) is up, the co-op
-  window's buttons (all F9 pages) get no clicks; Enter closes the panel.
+* While the game's badge panel ("Reward ... 2 badge points" + OK, after a defended raid) is up, the
+  co-op window's buttons (all F9 pages) get no clicks; Enter or its OK closes the panel. The panel is
+  modal (only it gets the mouse): bringing the co-op window to the front every refresh did not help
+  (tried 2026-10-23, lane 3) and would have covered the panel's OK button, so it was reverted.
 * A partner who leaves the session fails a running contract when the crew gets smaller than two
   (no grace time for a rejoin); a rejoining player sees the current contract within 5 s and can
   accept a running one again. Not covered by the test: a partner leaving, a rejoin.
