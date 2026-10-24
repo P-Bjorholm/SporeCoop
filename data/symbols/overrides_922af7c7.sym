@@ -245,6 +245,7 @@ Simulator::cSpaceTrading::CreateTradingObject=0x0103A490 ; verified thiscall(tra
 Simulator::cRepairAOEToolStrategy::WhileFiring=0x01057FF0 ; verified heals owner + allied UFOs via TakeDamage(amount, pol, 10, &zero, 0)
 SporeCoop::Space_GetCurrentContext=0x01020F30 ; verified cdecl() -> SpacePlayerData+0x10 (0 planet, 1 system, 2 galaxy, -1 transition) (docs/re/space.md 7.1)
 SporeCoop::Space_GetActivePlanet=0x01021110 ; verified cdecl() -> SpacePlayerData+4 cPlanet*
+SporeCoop::Space_StartRaid=0x0100E620 ; verified thiscall (this unused) (int unused, cPlanetRecord* colony, int numBombers) ret 0xC -> bool: the `raid -start N` cheat routine (caller 0x102527E), CreateMission(0xA4B0A2DF) + SetAttackerEmpire(0) + SetTargetPlanet + SetNumBombers + Accept; runtime: a raid on the homeworld (docs/re/space.md 17.2)
 SporeCoop::PlanetModelCleanup=0x00B7D650 ; verified thiscall([0x167FADC], cPlanet*) ret 4: called by Respawn before LeavePlanet
 SporeCoop::PlanetModelMgr_ptr=0x0167FADC ; verified global, `this` of PlanetModelCleanup
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; likely thiscall(mode) ret: Respawn's landing, enters the active planet (context 0 via 0x1003530)

@@ -61,5 +61,8 @@ void* star_record(uint32_t id);
 std::vector<syncdbg::Entry> nav_entries();
 std::string status();
 std::string debug(const std::vector<std::string>& args);
+// a raid on one of our colonies changed its state (cMission::SetState hook): 3 started, 5 defended,
+// 6 lost; place = PlanetID | 0x40000000 (space_contracts.cpp: the armada's waves are raids)
+void set_raid_listener(std::function<void(uint32_t place, int state)> fn);
 
 } // namespace spacecoop

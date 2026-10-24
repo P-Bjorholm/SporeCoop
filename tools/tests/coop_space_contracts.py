@@ -2,11 +2,12 @@
 """Co-op contracts (mods/coop/space_contracts.cpp, docs/09-coop-design.md 0.7 feature 7), played on
 two games the way players do:
 
-1. pirate armada: the host offers it (coop.space contracts offer armada here), both games show it
-   on the F9 Space page, both players accept it with a real click on "Accept"; the waves come
-   because both ships are at the star; both players shoot the ships (guest shots go through the
-   host, coop.fleet shoot); the reward arrives on both games: the money once (shared budget), the
-   tool on each;
+1. pirate armada on the host's homeworld: the host offers it (coop.space contracts offer armada
+   here), both games show it on the F9 Space page, both players accept it with a real click on
+   "Accept" and land with the page's "Land" button; the waves (the game's own pirate raids, with
+   tougher ships) come because both ships are on the colony; both players shoot the raid ships
+   (guest shots go through the host, coop.fleet shoot); the reward arrives on both games: the money
+   once (shared budget, plus spacecoop's +2000 per raid defended together), the tool on each;
 2. joint survey of 2 stars: accepted by clicks, both players fly to each star with the page's
    "Jump there" button (real clicks), the reward arrives on both;
 3. failure: a survey with a 25 s limit that nobody flies: failed on both games, announced, no money.
@@ -71,18 +72,6 @@ def space_page(ui, con):
     return ui.wait(lambda s: s['page'] == 'space', 10, 'the Space page') is not None
 
 
-def click_row(ui, con, text, button):
-    """a real click on the button of the page row with this text"""
-    if not space_page(ui, con):
-        return False
-    n = wait(lambda: row_with(con, text, button) + 1, 15)
-    if not n:
-        print(f'  {ui.who}: no row "{text}" with "{button}": {rows(con)}')
-        return False
-    s = ui.wait(lambda s: s[f'sbtn{n - 1}']['vis'] and button in s[f'sbtn{n - 1}']['text'], 10, f'sbtn{n - 1}')
-    return s is not None and ui.click(f'sbtn{n - 1}')
-
-
 def captions(con, ui):
     """confirm the captions that wait for OK (landing tutorials: "Something is showing up on the
     ship's radar...", "You have discovered a wild planet..."), with the co-op window closed"""
@@ -95,6 +84,20 @@ def captions(con, ui):
         con.call('key enter')
         time.sleep(1.5)
     return False
+
+
+def click_row(ui, con, text, button):
+    """a real click on the button of the page row with this text (captions that wait for OK first:
+    they take the clicks)"""
+    captions(con, ui)
+    if not space_page(ui, con):
+        return False
+    n = wait(lambda: row_with(con, text, button) + 1, 15)
+    if not n:
+        print(f'  {ui.who}: no row "{text}" with "{button}": {rows(con)}')
+        return False
+    s = ui.wait(lambda s: s[f'sbtn{n - 1}']['vis'] and button in s[f'sbtn{n - 1}']['text'], 10, f'sbtn{n - 1}')
+    return s is not None and ui.click(f'sbtn{n - 1}')
 
 
 def main():
@@ -113,6 +116,7 @@ def main():
 
     # ---- 1. the pirate armada ----
     m0h, m0g = money(host), money(guest)
+    rb0 = int(re.search(r'raid_bonus=(\d+)', sp(host)).group(1))
     print('  ', sp(host, 'contracts offer armada here'))
     s = st(host)
     reward, tool = int(s['money']), s['tool']
@@ -136,22 +140,10 @@ def main():
         captions(host, uh)
         captions(guest, ug)
         time.sleep(1)
-    ck(int(st(host)['ships_up']) > 0, f'both ships on the planet: the first wave comes ({st(host)["ships_up"]} ships)')
+    ck(int(st(host)['ships_up']) > 0, f'both ships on the colony: the first wave comes ({st(host)["ships_up"]} ships)')
+    ok = wait(lambda: int(re.search(r'mirrors=(\d+)', guest.call('coop.fleet list')['out']).group(1)) > 0, 15)
+    ck(ok, f'the guest sees the raid ships ({guest.call("coop.fleet list")["out"].splitlines()[0]})')
     shot(host, 'contracts_armada_wave.png')
-    fleet = host.call('coop.fleet list')['out']
-    me = [float(x) for x in re.search(r'\(me\) pos=\((\S+) (\S+) (\S+)\)', fleet).groups()]
-    near = []
-    for p in re.findall(r'armada (\S+)', sp(host, 'contracts ships')):
-        m = re.search(re.escape(p) + r' type=8 .*pos=\((\S+) (\S+) (\S+)\)', fleet)
-        if m:
-            near.append(sum((float(a) - b) ** 2 for a, b in zip(m.groups(), me)) ** 0.5)
-    ck(near and max(near) < 300, f'the armada ships are around the host ({[round(d) for d in near]} m)')
-    def hurt():
-        hh = re.search(r'hp ([\d.]+)', sp(host, 'hp'))
-        dg = re.search(r'damage_in=(\d+)', guest.call('coop.fleet list')['out'])
-        return (hh and float(hh.group(1)) < 1500) or (dg and int(dg.group(1)) > 0)
-    ok = wait(lambda: captions(host, uh) and captions(guest, ug) and hurt(), 30)
-    ck(ok, f'the armada fights: {sp(host, "hp")} | guest {guest.call("coop.fleet list")["out"].splitlines()[0]}')
     t0, waves_seen, guest_shots = time.time(), set(), 0
     while time.time() - t0 < 180 and st(host)['state'] == 'active':
         captions(host, uh)
@@ -167,10 +159,10 @@ def main():
         gfleet = guest.call('coop.fleet list')['out']
         for k, i in enumerate(ids):  # half of the ships each: the guest's shots go through the host
             if k % 2 == 0 and f'ship #{i} ' in gfleet:
-                guest.call(f'coop.fleet shoot {i} 400')
+                guest.call(f'coop.fleet shoot {i} 600')
                 guest_shots += 1
             else:
-                host.call(f'coop.fleet shoot {i} 400')
+                host.call(f'coop.fleet shoot {i} 600')
         time.sleep(1.5)
     s = st(host)
     print('  host:', sp(host, 'contracts'))
@@ -178,15 +170,24 @@ def main():
     ck(guest_shots > 0, f'the guest shot armada ships ({guest_shots} shots)')
     ok = wait(lambda: st(guest)['state'] == 'done' and st(guest)['rewards'] != '0', 10)
     ck(ok, 'the guest sees the contract done')
-    ok = wait(lambda: money(host) == m0h + reward and money(guest) == m0g + reward, 15)
+    bonus = 2000 * (int(re.search(r'raid_bonus=(\d+)', sp(host)).group(1)) - rb0)  # spacecoop: raids defended together
+    ok = wait(lambda: money(host) == m0h + reward + bonus and money(guest) == m0g + reward + bonus, 15)
     ck(ok, f'the reward money arrived once in the shared budget: host {m0h} -> {money(host)}, guest {m0g} -> '
-       f'{money(guest)} (+{reward})')
+       f'{money(guest)} (+{reward} + raid bonus {bonus})')
     if tool != '00000000':
         for who, c in (('host', host), ('guest', guest)):
             ck('have' in sp(c, 'contracts tool', tool), f'{who}: the reward tool {sp(c, "contracts tool", tool)}')
     ck('Contract done' in sp(guest, 'contracts notices'), 'the guest was told')
 
     # ---- 2. the joint survey: "Jump there" by real clicks ----
+    # the armada's end gives badge points: their panel ("2 badge points" + OK) takes the mouse, the
+    # co-op window's buttons do not get clicks while it is up (docs/known-issues.md): Enter closes it
+    for ui, c in ((uh, host), (ug, guest)):
+        if ui.state().get('open') == '1':
+            c.call(f'key {VK_F9}')
+        time.sleep(0.5)
+        c.call('key enter')
+    time.sleep(2)
     m0h, m0g = money(host), money(guest)
     print('  ', sp(host, 'contracts offer survey 2'))
     targets = re.findall(r'target (\d+) \S+ (.+?) done', sp(host, 'contracts targets'))

@@ -354,6 +354,9 @@ static void* inventory()
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
 
+static std::function<void(uint32_t, int)> g_raid_listener;
+void set_raid_listener(std::function<void(uint32_t place, int state)> fn) { g_raid_listener = std::move(fn); }
+
 using SetState_t = void(SK_THISCALL*)(void*, int);
 static SetState_t o_SetState;
 static void SK_THISCALL h_SetState(void* m, int s)
@@ -364,6 +367,8 @@ static void SK_THISCALL h_SetState(void* m, int s)
         return;
     if (is_raid(m)) {
         uint32_t place = mission_place(m);
+        if (g_raid_listener && (s == 3 || s == 5 || s == 6))
+            g_raid_listener(place, s);
         if (s == 3) { // a raid starts on our colony
             g_raids_seen++;
             g_raid_since[m] = H->time_seconds();

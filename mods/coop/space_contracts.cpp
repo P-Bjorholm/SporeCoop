@@ -2,9 +2,11 @@
 // jobs made for two or more players, with a reward for each of them. The host offers a contract every
 // few minutes (and on demand: `coop.space contracts offer <armada|survey>`); every player sees it on the
 // F9 Space page and as a notice, accepts it there, and the host runs it and pays when it is done.
-//  * armada: a pirate armada at a star. Its waves come only while the host and another member of the
-//    crew are in the same place of that star (the host spawns them: they are host NPC ships, mirrored to
-//    the partners by squadron.cpp, so everybody fights the same ships). Destroy every wave in time.
+//  * armada: a pirate armada heading for a colony of the host. Its waves are the game's own pirate
+//    raids (raid starter 0x0100E620), started only while the host and another member of the crew are on
+//    that planet together, with tougher ships; the raid ships are the host's NPC ships, mirrored to the
+//    partners by squadron.cpp, so everybody fights the same ships. Destroy every wave in time; if the
+//    pirates win a wave (the raid plunders the colony), the contract fails.
 //  * survey: visit N stars near the host's star; the whole crew has to be at each of them together
 //    for a few seconds.
 // Failure: the time is up, nobody took the offer, or the crew got smaller than needed (a partner left
@@ -35,20 +37,20 @@ namespace {
 enum Kind : uint8_t { K_STATE = 20, K_ACCEPT = 21, K_RESULT = 22 };
 enum Type : uint8_t { T_NONE = 0, T_ARMADA = 1, T_SURVEY = 2 };
 enum State : uint8_t { S_NONE = 0, S_OFFERED = 1, S_ACTIVE = 2, S_DONE = 3, S_FAILED = 4 };
-enum Reason : uint8_t { R_NONE = 0, R_TIMEOUT = 1, R_EXPIRED = 2, R_LEFT = 3, R_CANCELLED = 4 };
+enum Reason : uint8_t { R_NONE = 0, R_TIMEOUT = 1, R_EXPIRED = 2, R_LEFT = 3, R_CANCELLED = 4, R_PLUNDERED = 5 };
 
 const SkHost* H;
 SkMod* M;
-uintptr_t a_PlayerUFOGet, a_GetAllUFOs, a_SpawnUFO, a_StarMgr, a_PlayerEmpire, a_AddMoney,
+uintptr_t a_PlayerUFOGet, a_GetAllUFOs, a_StartRaid, a_StarMgr, a_PlayerEmpire, a_AddMoney,
     a_SpaceGame, a_AddItemByKey, a_Context;
 
 template <typename T>
 T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 // cGameDataUFO (docs/re/space.md 0)
-constexpr uintptr_t kLoco = 0x34, kPos = 0x38, kRot = 0x44, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540,
-                    kType = 0x714;
-constexpr int kPirate = 8;            // AmbushPirate: attacks the player anywhere (docs/re/space.md 9.4)
+constexpr uintptr_t kMaxHp = 0x534, kState = 0x53C, kHp = 0x540, kMission = 0x800;
+constexpr uint32_t kRaidMission = 0xA4B0A2DF; // cMission +0x78 of a pirate raid (docs/re/space.md 6, 7.4)
+constexpr float kTough = 2.0f;        // armada ships: HP x2 (the colony's turrets must not win alone)
 constexpr double kHold = 5.0;         // survey: the crew together at a star this long
 constexpr double kOfferTime = 180.0;  // an offer waits this long for its crew
 constexpr double kShowEnd = 60.0;     // the result stays on the page this long
@@ -57,6 +59,7 @@ constexpr uint8_t kNeeded = 2;
 struct Target {
     uint32_t star = 0;
     uint8_t done = 0;
+    uint32_t planet = 0; // armada: the PlanetID of the colony
 };
 
 struct Contract {
@@ -66,15 +69,22 @@ struct Contract {
     double deadline = 0; // local clock; offered: the offer's end, active: the time limit, done: page end
     std::vector<uint8_t> crew;
     std::vector<Target> targets; // armada: one star
-    uint8_t wave = 0, waves = 0, left = 0, up = 0; // armada: current wave, ships of it not destroyed, spawned now
+    uint8_t wave = 0, waves = 0, left = 0, up = 0; // armada: current wave, its ships alive now (left = up)
     bool has(uint8_t id) const { return std::find(crew.begin(), crew.end(), id) != crew.end(); }
 };
 
 Contract g;                       // the current contract (the host's, a copy on guests)
-std::vector<void*> g_ships;       // host: the armada ships spawned now
-std::map<void*, net::Vec3> g_spot; // host: where each of them was put
-double g_spawned_at;
-uint32_t g_ship_place;            // host: the place they were spawned in
+// host, armada: the wave running now (a raid of the game) and the ships of it seen so far
+struct Seen {
+    float hp = 0, max = 1;
+    int state = 0;
+};
+std::map<void*, Seen> g_seen;     // alive armada ships of the wave (last HP / state seen)
+std::vector<void*> g_alive;       // the same pointers, in the order coop.space contracts ships prints
+bool g_wave_on, g_wave_ships;     // a raid was started / its ships appeared
+double g_wave_t, g_last_alive;    // when the raid was started / the last time a ship of it was alive
+uint32_t g_wave_place;
+int g_wave_result;                // the raid's end seen by spacecoop's SetState hook: 5 defended, 6 lost
 uint32_t g_stable_place;          // host: the place the crew check saw last, and since when
 double g_stable_since, g_next_wave, g_last_tick, g_last_publish, g_next_offer;
 std::vector<double> g_hold;       // host, survey: seconds the crew is together at each target
@@ -82,7 +92,7 @@ double g_period = 600;            // auto-offer period (s), 0 = off (coop.space 
 double g_first_delay = 240;       // the first offer after the players meet in space
 double g_limit_override;          // tests: the time limit of the next contracts
 uint32_t g_rewarded;              // the last contract id this machine was paid for
-uint32_t n_offered, n_done, n_failed, n_rewards, n_tools, n_spawned, n_killed, n_replaced;
+uint32_t n_offered, n_done, n_failed, n_rewards, n_tools, n_raids, n_ships, n_gone;
 int g_money_got;
 std::mt19937 g_rng{0x5EED};
 
@@ -116,33 +126,63 @@ void* star_record(uint32_t id)
 }
 
 // cStarRecord +0x60 mName (eastl::string16: begin, end), docs/re/space.md 17.1
+std::string utf8(const uint16_t* b, const uint16_t* e);
 std::string star_name(uint32_t id)
 {
     std::string s;
-    if (void* r = star_record(id)) {
-        const uint16_t* b = F<const uint16_t*>(r, 0x60);
-        const uint16_t* e = F<const uint16_t*>(r, 0x64);
-        if (b && e > b && e - b < 64 && !IsBadReadPtr(b, (e - b) * 2))
-            for (const uint16_t* p = b; p < e; p++) {
-                uint32_t c = *p;
-                if (c < 0x80)
-                    s += (char)c;
-                else if (c < 0x800) {
-                    s += (char)(0xC0 | c >> 6);
-                    s += (char)(0x80 | (c & 0x3F));
-                } else {
-                    s += (char)(0xE0 | c >> 12);
-                    s += (char)(0x80 | (c >> 6 & 0x3F));
-                    s += (char)(0x80 | (c & 0x3F));
-                }
-            }
-    }
+    if (void* r = star_record(id))
+        s = utf8(F<const uint16_t*>(r, 0x60), F<const uint16_t*>(r, 0x64));
     if (s.empty()) {
         char b[24];
         snprintf(b, sizeof b, "%s %06X", tr("star", "звезда"), id);
         s = b;
     }
     return s;
+}
+
+std::string utf8(const uint16_t* b, const uint16_t* e)
+{
+    std::string s;
+    if (!b || e <= b || e - b > 64 || IsBadReadPtr(b, (e - b) * 2))
+        return s;
+    for (const uint16_t* p = b; p < e; p++) {
+        uint32_t c = *p;
+        if (c < 0x80)
+            s += (char)c;
+        else if (c < 0x800) {
+            s += (char)(0xC0 | c >> 6);
+            s += (char)(0x80 | (c & 0x3F));
+        } else {
+            s += (char)(0xE0 | c >> 12);
+            s += (char)(0x80 | (c >> 6 & 0x3F));
+            s += (char)(0x80 | (c & 0x3F));
+        }
+    }
+    return s;
+}
+
+// cStarRecord +0x84: vector<cPlanetRecord*>; cPlanetRecord +0x184 PlanetID, +0x194 tech level (5 = a
+// colony / the homeworld), +0x18 mName (eastl::string16) (docs/re/space.md 17.1)
+void* planet_record(uint32_t id)
+{
+    void* sr = star_record(id & 0xFFFFFF);
+    if (!sr)
+        return nullptr;
+    void** b = F<void**>(sr, 0x84);
+    void** e = F<void**>(sr, 0x88);
+    if (!b || e < b || e - b > 64 || IsBadReadPtr(b, (e - b) * 4))
+        return nullptr;
+    for (void** it = b; it < e; ++it)
+        if (*it && !IsBadReadPtr(*it, 0x198) && F<uint32_t>(*it, 0x184) == id)
+            return *it;
+    return nullptr;
+}
+
+std::string planet_name(uint32_t id)
+{
+    void* r = planet_record(id);
+    std::string s = r ? utf8(F<const uint16_t*>(r, 0x18), F<const uint16_t*>(r, 0x1C)) : "";
+    return s.empty() ? star_name(id & 0xFFFFFF) : s;
 }
 
 std::vector<void*> all_ufos()
@@ -286,8 +326,9 @@ std::string names(const std::vector<uint8_t>& ids)
 std::string title(const Contract& c)
 {
     if (c.type == T_ARMADA)
-        return tr("pirate armada heading for ", "пиратская армада летит к ") +
-               star_name(c.targets.empty() ? 0 : c.targets[0].star);
+        return c.targets.empty() ? std::string("?")
+                                 : tr("pirate armada heading for ", "пиратская армада летит к ") +
+                                       planet_name(c.targets[0].planet) + " (" + star_name(c.targets[0].star) + ")";
     char b[96];
     snprintf(b, sizeof b, tr("joint survey of %d stars", "совместная разведка %d звёзд"), (int)c.targets.size());
     return b;
@@ -308,6 +349,7 @@ std::string reason_text(uint8_t r)
     case R_EXPIRED: return tr("nobody took it", "никто не взялся");
     case R_LEFT: return tr("a partner left", "напарник ушёл");
     case R_CANCELLED: return tr("cancelled", "отменён");
+    case R_PLUNDERED: return tr("the pirates won a wave", "пираты выиграли волну");
     }
     return "?";
 }
@@ -361,6 +403,7 @@ void write_state(net::Writer& w, const Contract& c, double t)
     for (auto& tg : c.targets) {
         w.u32(tg.star);
         w.u8(tg.done);
+        w.u32(tg.planet);
     }
     w.u8(c.wave);
     w.u8(c.waves);
@@ -387,6 +430,7 @@ bool read_state(net::Reader& r, Contract& c, double t)
         Target tg;
         tg.star = r.u32();
         tg.done = r.u8();
+        tg.planet = r.u32();
         c.targets.push_back(tg);
     }
     c.wave = r.u8();
@@ -480,29 +524,15 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
     say(s);
 }
 
-// the armada ships still in the game's UFO list: removed (DestroyInstance, as squadron.cpp removes
-// mirrors). SpawnUFO's ships are not freed by a context switch: they followed the host from the
-// system view to a planet (docs/re/space.md 17.2), so the mod takes them away itself.
-void remove_ships()
-{
-    if (!g_ships.empty() && spaceext::in_space()) {
-        auto list = all_ufos();
-        for (void* u : g_ships)
-            if (std::find(list.begin(), list.end(), u) != list.end() && game::object_alive(u) &&
-                F<int>(u, kType) == kPirate && F<int>(u, kState) != 2)
-                game::destroy_creature(u);
-    }
-    g_ships.clear();
-    g_spot.clear();
-}
-
 void finish(bool ok, uint8_t reason)
 {
     g.state = ok ? S_DONE : S_FAILED;
     g.reason = reason;
     g.up = 0;
     g.deadline = now() + kShowEnd;
-    remove_ships(); // a failed contract: the armada leaves
+    g_wave_on = false; // (a raid still running goes on as an ordinary raid of the game)
+    g_seen.clear();
+    g_alive.clear();
     ok ? n_done++ : n_failed++;
     g_next_offer = now() + g_period;
     publish();
@@ -561,28 +591,51 @@ std::vector<uint32_t> near_stars(uint32_t from, size_t n)
     return out;
 }
 
-// the armada's star: the star of a colony of the host or of a player now (feature 1's colony roster
-// is not merged yet: docs/known-issues.md)
-uint32_t armada_star()
+// the armada's target: a colony of the host (a raid needs a planet of the raided empire, docs/re/space.md
+// 7.4); "here": the planet the host is on or a colony of the host's star; else one of the host's stars
+// (cEmpire +0x88: vector<cStarRecord*>, GetStars 0xC30A10 / 0xC30A30). The guests' colonies (feature 1's
+// roster) are not in the host's save: no raid there (docs/known-issues.md).
+bool colony(void* rec) { return rec && F<int>(rec, 0x194) == 5; }
+
+uint32_t colony_of_star(uint32_t star)
 {
+    void* sr = star_record(star);
+    if (!sr)
+        return 0;
+    void** b = F<void**>(sr, 0x84);
+    void** e = F<void**>(sr, 0x88);
+    if (!b || e < b || e - b > 64 || IsBadReadPtr(b, (e - b) * 4))
+        return 0;
+    for (void** it = b; it < e; ++it)
+        if (*it && !IsBadReadPtr(*it, 0x198) && colony(*it))
+            return F<uint32_t>(*it, 0x184);
+    return 0;
+}
+
+uint32_t armada_planet(const std::string& arg)
+{
+    if (!arg.empty() && arg != "here") {
+        uint32_t id = (uint32_t)strtoul(arg.c_str(), nullptr, 0);
+        return colony(planet_record(id)) ? id : 0;
+    }
+    uint32_t place = my_place();
+    if ((place & 0x40000000u) && colony(planet_record(place & 0x3FFFFFFFu)))
+        return place & 0x3FFFFFFFu;
+    if (uint32_t c = colony_of_star(star_of(place)))
+        return c;
+    if (arg == "here")
+        return 0;
     std::vector<uint32_t> c;
-    if (void* e = empire()) { // cEmpire +0x88: vector<cStarRecord*> (GetStars 0xC30A10 / 0xC30A30)
+    if (void* e = empire()) {
         void** b = F<void**>(e, 0x88);
         void** en = F<void**>(e, 0x8C);
         if (b && en > b && en - b < 512 && !IsBadReadPtr(b, (en - b) * 4))
             for (void** it = b; it < en; ++it)
                 if (*it && !IsBadReadPtr(*it, 0x74))
-                    c.push_back(F<uint32_t>(*it, 0x70));
+                    if (uint32_t p = colony_of_star(F<uint32_t>(*it, 0x70)))
+                        c.push_back(p);
     }
-    if (uint32_t s = star_of(my_place()))
-        c.push_back(s);
-    if (C().partners)
-        for (auto& p : C().partners())
-            if (uint32_t s = star_of(p.place))
-                c.push_back(s);
-    if (c.empty())
-        return 0;
-    return c[std::uniform_int_distribution<size_t>(0, c.size() - 1)(g_rng)];
+    return c.empty() ? 0 : c[std::uniform_int_distribution<size_t>(0, c.size() - 1)(g_rng)];
 }
 
 std::string offer(uint8_t type, const std::string& arg)
@@ -599,11 +652,10 @@ std::string offer(uint8_t type, const std::string& arg)
     c.state = S_OFFERED;
     c.deadline = now() + kOfferTime;
     if (type == T_ARMADA) {
-        uint32_t s = arg == "here" ? star_of(my_place()) : !arg.empty() ? (uint32_t)strtoul(arg.c_str(), nullptr, 0)
-                                                                         : armada_star();
-        if (!s || !star_record(s))
-            return "no star for the armada";
-        c.targets.push_back({s, 0});
+        uint32_t pl = armada_planet(arg);
+        if (!pl)
+            return "no colony of the host for the armada";
+        c.targets.push_back({pl & 0xFFFFFF, 0, pl});
         c.money = 25000;
         c.tool = first_missing(kArmadaTools);
         c.waves = 2;
@@ -619,7 +671,9 @@ std::string offer(uint8_t type, const std::string& arg)
     }
     if (!c.tool)
         c.money *= 2; // every tool of the list is in the cargo already
-    remove_ships();
+    g_wave_on = false;
+    g_seen.clear();
+    g_alive.clear();
     g = c;
     g_hold.assign(g.targets.size(), 0);
     n_offered++;
@@ -642,10 +696,8 @@ void accept(uint8_t who)
     if (g.state == S_OFFERED && g.crew.size() >= g.needed) {
         g.state = S_ACTIVE;
         g.deadline = now() + limit_of(g.type);
-        if (g.type == T_ARMADA) {
+        if (g.type == T_ARMADA)
             g.wave = 1;
-            g.left = (uint8_t)(g.crew.size() + 1);
-        }
     }
     publish();
 }
@@ -688,54 +740,30 @@ int crew_with_me()
     return n;
 }
 
-// the model of the game's own pirates: a raid without an attacker empire takes it from
-// (*(cGameNounManager + 0x74)) + 0x1280 (0xC5C8B3: 0xF67D40 `mov eax,[ecx+0x74]`, 0xC758F0 `lea eax,
-// [ecx+0x1280]`; GOG 2024 0xC5C8F3 / 0xF67D40 / 0xC75910, same fields; docs/re/space.md 17.2). A null
-// key (SpawnUFO's default model) faults in the model setup once per ship, on the host and on the
-// guests' mirrors.
-const void* pirate_key(void* me)
+// a ship of the armada's raid: its owner mission (ufo +0x800, SetOwnerMission 0xC37810) is a pirate raid
+// on the contract's planet (cMission +0x78 id, +0x1E8 target cPlanet, its record +0x13C, docs/re/space.md 6)
+bool armada_ship(void* u)
 {
-    void* nm = game::noun_manager();
-    uint8_t* o = nm && !IsBadReadPtr((uint8_t*)nm + 0x74, 4) ? F<uint8_t*>(nm, 0x74) : nullptr;
-    if (o && !IsBadReadPtr(o + 0x1280, 12) && F<uint32_t>(o, 0x1280))
-        return o + 0x1280;
-    return (uint8_t*)me + 0x780; // the own ship's model (mDesiredModelKey), as coop.fleet spawn does
+    void* m = F<void*>(u, kMission);
+    if (!m || IsBadReadPtr(m, 0x1F0) || F<uint32_t>(m, 0x78) != kRaidMission)
+        return false;
+    void* planet = F<void*>(m, 0x1E8);
+    void* rec = planet && !IsBadReadPtr(planet, 0x140) ? F<void*>(planet, 0x13C) : nullptr;
+    return rec && !IsBadReadPtr(rec, 0x188) && F<uint32_t>(rec, 0x184) == g.targets[0].planet;
 }
 
-// Teleport (loco vt +0x44) and the UFO controller's targets: with the pirate model a teleport right
-// after SpawnUFO did not hold, the ship stood at the spawn spot (0, 0, 700) (docs/re/space.md 17.2)
-void place_ship(void* u, const float p[3], const float q[4])
+// the game's raid starter (the `raid -start` cheat's routine 0x0100E620, the same address in both
+// builds): thiscall, `this` unused, (int unused, cPlanetRecord* colony, int bombers), ret 0xC. It creates
+// mission 0xA4B0A2DF (CreateMission 0xFEC420), SetTargetPlanet, SetNumBombers, Accept; the raid's ships
+// (bombers type 4, 4 raiders type 2 each) come while the raided empire's player is on the planet.
+bool start_raid(int bombers)
 {
-    vcall<void>((uint8_t*)u + kLoco, 0x44 / 4, p, q);
-    memcpy((uint8_t*)u + 0x718, p, 12); // mNextPosition
-    memcpy((uint8_t*)u + 0x750, p, 12); // mDestination
-}
-
-void spawn_wave(int n, double t)
-{
-    void* me = my_ufo();
-    if (!me || !a_SpawnUFO)
-        return;
-    auto& p = F<float[3]>(me, kPos);
-    auto& q = F<float[4]>(me, kRot);
-    const float r = 60.f; // around the host's ship
-    for (int i = 0; i < n; i++) {
-        uint32_t pol = 0xFFFFFFFFu; // no empire: pirates
-        void* u = cdecl_call<void*>(a_SpawnUFO, kPirate, &pol, pirate_key(me));
-        if (!u)
-            continue;
-        float a = 6.2831853f * (float)i / (float)n;
-        float pp[3] = {p[0] + r * std::cos(a), p[1] + 15.f, p[2] + r * std::sin(a)};
-        place_ship(u, pp, q);
-        g_spot[u] = {pp[0], pp[1], pp[2]};
-        // an armada ship is tougher than a lone pirate: one ship can't take a wave alone
-        F<float>(u, kMaxHp) *= 1.5f;
-        F<float>(u, kHp) = F<float>(u, kMaxHp);
-        g_ships.push_back(u);
-        n_spawned++;
-    }
-    g_ship_place = my_place();
-    g_spawned_at = t;
+    void* rec = planet_record(g.targets[0].planet);
+    if (!rec || !a_StartRaid)
+        return false;
+    thiscall<bool>(a_StartRaid, (void*)nullptr, 0, rec, bombers);
+    n_raids++;
+    return true;
 }
 
 void armada_tick(double t)
@@ -743,69 +771,95 @@ void armada_tick(double t)
     if (g.targets.empty())
         return;
     uint32_t place = spaceext::in_space() ? my_place() : 0;
+    uint32_t target = g.targets[0].planet | 0x40000000u;
     bool changed = false;
-    if (!g_ships.empty()) {
-        if (place != g_ship_place) {
-            // the host left the planet: the rest of the wave waits until the crew is together again
-            remove_ships();
+    if (g_wave_on) {
+        if (place != g_wave_place) {
+            // the host left the planet: the game runs the raid on without anybody there (off-screen
+            // simulation): this wave comes again when the crew is together on the planet
+            g_wave_on = false;
+            g_seen.clear();
+            g_alive.clear();
+            g.up = 0;
+            g_next_wave = t + 5;
+            changed = true;
         } else {
+            std::vector<void*> alive;
             auto list = all_ufos();
-            for (auto it = g_ships.begin(); it != g_ships.end();) {
-                void* u = *it;
-                bool listed = std::find(list.begin(), list.end(), u) != list.end();
-                bool dead = !listed || !game::object_alive(u) || F<int>(u, kState) == 2 || F<float>(u, kHp) <= 0 ||
-                            F<int>(u, kType) != kPirate;
-                if (!dead && t - g_spawned_at < 3 && g_spot.count(u)) { // the spot holds (see place_ship)
-                    auto& sp = g_spot[u];
-                    auto& p = F<float[3]>(u, kPos);
-                    float d = std::fabs(p[0] - sp.x) + std::fabs(p[1] - sp.y) + std::fabs(p[2] - sp.z);
-                    if (d > 40) {
-                        float pp[3] = {sp.x, sp.y, sp.z};
-                        place_ship(u, pp, F<float[4]>(u, kRot));
-                        n_replaced++;
-                    }
+            for (void* u : list) {
+                if (!game::object_alive(u) || !armada_ship(u))
+                    continue;
+                bool live = F<int>(u, kState) != 2 && F<float>(u, kHp) > 0;
+                auto it = g_seen.find(u);
+                if (it == g_seen.end() && live) { // a new ship of the wave: tougher
+                    F<float>(u, kMaxHp) *= kTough;
+                    F<float>(u, kHp) = F<float>(u, kMaxHp);
+                    it = g_seen.emplace(u, Seen{}).first;
+                    n_ships++;
+                    g_wave_ships = true;
                 }
-                if (dead) {
-                    g_spot.erase(u);
-                    it = g_ships.erase(it);
-                    if (g.left)
-                        g.left--;
-                    n_killed++;
-                    changed = true;
-                } else
+                if (it == g_seen.end())
+                    continue;
+                it->second = {F<float>(u, kHp), F<float>(u, kMaxHp), F<int>(u, kState)};
+                if (live)
+                    alive.push_back(u);
+            }
+            // ships of the wave gone: destroyed or flown off (a ship killed by one big hit leaves the UFO
+            // list before a state 2 is ever seen, so the outcome is the raid's own: g_wave_result)
+            for (auto it = g_seen.begin(); it != g_seen.end();) {
+                if (std::find(alive.begin(), alive.end(), it->first) != alive.end()) {
                     ++it;
+                    continue;
+                }
+                n_gone++;
+                it = g_seen.erase(it);
+                changed = true;
+            }
+            if (!alive.empty())
+                g_last_alive = t;
+            g_alive = alive;
+            if (g.up != alive.size() || g.left != alive.size()) {
+                g.up = g.left = (uint8_t)std::min<size_t>(alive.size(), 255);
+                changed = true;
+            }
+            if (!g_wave_ships && t - g_wave_t > 30) {
+                H->log(M, SK_WARN, "contracts: the raid of wave %d brought no ships in 30 s: again", g.wave);
+                g_wave_on = false; // started again below
+            } else if (g_wave_result == 5 || g_wave_result == 6 || (g_wave_ships && alive.empty() && t - g_last_alive > 30)) {
+                // (no end state 30 s after the last ship: taken as won, the ships are gone)
+                bool won = g_wave_result != 6;
+                H->log(M, SK_INFO, "contracts: wave %d over: raid state %d", g.wave, g_wave_result);
+                g_wave_on = false;
+                if (!won) {
+                    finish(false, R_PLUNDERED);
+                    return;
+                }
+                if (g.wave >= g.waves) {
+                    finish(true, R_NONE);
+                    return;
+                }
+                g.wave++;
+                g_next_wave = t + 10;
+                changed = true;
             }
         }
-        if (g.up != g_ships.size()) {
-            g.up = (uint8_t)g_ships.size();
-            changed = true;
-        }
     }
-    if (!g.left && g_ships.empty()) {
-        if (g.wave >= g.waves) {
-            finish(true, R_NONE);
-            return;
-        }
-        g.wave++;
-        g.left = (uint8_t)(g.crew.size() + g.wave);
-        g_next_wave = t + 8;
-        changed = true;
-    }
-    // a wave comes when the host and another member of the crew are on one planet of the star (in the
-    // system view SpawnUFO's pirates neither move nor shoot; on a planet type 8 attacks, docs/re/space.md 17.2)
+    // a wave comes when the host and another member of the crew are on the colony together
     int ctx = a_Context ? cdecl_call<int>(a_Context) : -1;
     void* me = my_ufo();
-    bool ready = g_ships.empty() && g.left && star_of(place) == g.targets[0].star && ctx == 0 && me &&
-                 F<int>(me, kState) != 2 && crew_with_me() >= g.needed && t >= g_next_wave;
-    if (!ready || place != g_stable_place) {
-        if (place != g_stable_place) {
-            g_stable_place = place;
-            g_stable_since = t;
-        }
+    bool ready = !g_wave_on && place == target && ctx == 0 && me && F<int>(me, kState) != 2 &&
+                 crew_with_me() >= g.needed && t >= g_next_wave;
+    if (place != g_stable_place) {
+        g_stable_place = place;
+        g_stable_since = t;
     }
-    if (ready && t - g_stable_since >= 3) {
-        spawn_wave(g.left, t);
-        g.up = (uint8_t)g_ships.size();
+    if (ready && t - g_stable_since >= 3 && start_raid((int)g.crew.size() + g.wave - 1)) {
+        g_wave_on = true;
+        g_wave_ships = false;
+        g_wave_t = g_last_alive = t;
+        g_wave_place = place;
+        g_wave_result = 0;
+        g_seen.clear();
         changed = true;
     }
     if (changed)
@@ -903,7 +957,7 @@ bool init(const SkHost* h, SkMod* m)
     auto S = [](const char* n) { return H->sym(n); };
     a_PlayerUFOGet = S("Simulator::cSimulatorPlayerUFO::Get");
     a_GetAllUFOs = S("Simulator::GetAllUFOs");
-    a_SpawnUFO = S("Simulator::SpawnUFO");
+    a_StartRaid = S("SporeCoop::Space_StartRaid");
     a_StarMgr = S("Simulator::cStarManager::Get");
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
     a_AddMoney = S("Simulator::cEmpire::AddMoney");
@@ -911,7 +965,12 @@ bool init(const SkHost* h, SkMod* m)
     a_AddItemByKey = S("Simulator::cPlayerInventory::AddItemByKey");
     a_Context = S("SporeCoop::Space_GetCurrentContext");
     g_rng.seed((uint32_t)(h->time_seconds() * 1000) ^ 0xC0B0u);
-    return a_PlayerUFOGet && a_GetAllUFOs && a_SpawnUFO && a_StarMgr && a_PlayerEmpire &&
+    spacecoop::set_raid_listener([](uint32_t place, int state) {
+        if (host() && g.state == S_ACTIVE && g.type == T_ARMADA && g_wave_on && !g.targets.empty() &&
+            place == (g.targets[0].planet | 0x40000000u) && state != 3)
+            g_wave_result = state;
+    });
+    return a_PlayerUFOGet && a_GetAllUFOs && a_StartRaid && a_StarMgr && a_PlayerEmpire &&
            a_AddMoney && a_SpaceGame && a_AddItemByKey && a_Context;
 }
 
@@ -962,7 +1021,9 @@ void on_session_end()
 {
     g = Contract{};
     g_sent = Contract{};
-    remove_ships();
+    g_wave_on = false;
+    g_seen.clear();
+    g_alive.clear();
     g_next_offer = 0;
 }
 
@@ -1022,11 +1083,11 @@ std::vector<spaceext::Row> rows()
         if (g.up)
             snprintf(b, sizeof b, tr(": wave %d/%d, %d ships, ", ": волна %d/%d, кораблей %d, "), g.wave, g.waves, g.left);
         else
-            snprintf(b, sizeof b, tr(": wave %d/%d waits for %d crew on a planet, ", ": волна %d/%d ждёт %d на планете, "),
+            snprintf(b, sizeof b, tr(": wave %d/%d when %d crew are there, ", ": волна %d/%d, когда там %d из экипажа, "),
                      g.wave, g.waves, (int)g.needed);
-        r1.text = tr("Armada at ", "Армада у ") + star_name(s) + b + mmss(g.deadline - t);
+        r1.text = tr("Armada at ", "Армада у ") + planet_name(g.targets[0].planet) + b + mmss(g.deadline - t);
         jump_row(r1, s);
-        // in the star's system view: land on the active planet (the waves come on a planet)
+        // in the colony's system view: land on the active planet (the travel picks the own colony first)
         int ctx = a_Context ? cdecl_call<int>(a_Context) : -1;
         if (in && here == s && ctx == 1) {
             r1.button = tr("Land", "Сесть");
@@ -1090,7 +1151,7 @@ void draw_overlay()
 
 std::string status()
 {
-    char b[400];
+    char b[640];
     std::string crew;
     for (uint8_t id : g.crew)
         crew += (crew.empty() ? "" : ",") + std::to_string(id);
@@ -1100,11 +1161,12 @@ std::string status()
     snprintf(b, sizeof b,
              "contracts: id=%u type=%s state=%s reason=%u crew=%s needed=%u secs=%d star=%u wave=%u/%u ships_left=%u "
              "ships_up=%u targets=%d/%d money=%u tool=%08X offered=%u done=%u failed=%u rewards=%u tools_got=%u "
-             "money_got=%d spawned=%u killed=%u replaced=%u period=%.0f\n",
+             "money_got=%d planet=%08X raids=%u ships=%u gone=%u period=%.0f\n",
              g.id, type_name(g.type), state_name(g.state), g.reason, crew.empty() ? "-" : crew.c_str(), g.needed,
              g.state ? (int)std::ceil(g.deadline - now()) : 0, g.targets.empty() ? 0u : g.targets[0].star, g.wave,
              g.waves, g.left, g.up, d, (int)g.targets.size(), g.money, g.tool, n_offered, n_done, n_failed, n_rewards,
-             n_tools, g_money_got, n_spawned, n_killed, n_replaced, g_period);
+             n_tools, g_money_got, g.targets.empty() ? 0u : g.targets[0].planet, n_raids, n_ships, n_gone,
+             g_period);
     return b;
 }
 
@@ -1136,9 +1198,9 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "time limit of new contracts %.0f s (0 = the default)\n", g_limit_override);
         return b;
     }
-    if (a[0] == "ships") { // host: the armada ships spawned now (the pointers coop.fleet list prints)
+    if (a[0] == "ships") { // host: the armada ships alive now (the pointers coop.fleet list prints)
         std::string s;
-        for (void* u : g_ships) {
+        for (void* u : g_alive) {
             snprintf(b, sizeof b, "armada %p\n", u);
             s += b;
         }
