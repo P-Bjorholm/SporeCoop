@@ -61,14 +61,55 @@ it now reads ImageBase from the exe file (`symbols.cpp file_image_base`). The lo
    `tools/addrport/pe_window.py` makes a "windowed" copy of the exe: same headers, imports,
    `.rdata/.data`, but `.text` is cut down to the needed window (e.g. 0xC00000–0xC30000). Addresses
    match the real ones, and analysis takes seconds. Verified addresses → `overrides_922af7c7.sym`.
-2b. **A private full analysis** (2026-10-23): `analyzeHeadless <dir> spore -import SporeApp.exe
-   -postScript Q.java q.txt out.txt` analyses the whole exe in ~15 min into a project of one's own
-   (not the shared REA session, which other agents use); later queries with `-process SporeApp.exe
-   -noanalysis -readOnly` take ~7 s (decompile, callers, xrefs, byte scans). Calls Ghidra does not
-   see (functions only reached by `call rel32` from code it did not disassemble, BT node tables in
-   .data) are found by scanning the file for the 32-bit value or for E8/E9 rel32 targets.
-   A ready project on this machine: `out/ghidra-full/` (not in git, 350 MB); `out/ghidra-full/q.sh
-   <queries> <output>` runs one batch (query lines: dec/asm/xref/callers/scan, see its scripts/Q.java).
+2b. **Private full Ghidra projects and batch queries** (`tools/ghidra/`, 2026-10-23). One project
+   per build in the main checkout's `out/` (not in git, ~330 MB each): `out/ghidra-full/` (GOG 2016)
+   and `out/ghidra-2024/` (GOG 2024). They are our own, not the shared REA session other agents use.
+   * Build: `tools/ghidra/mkproject.sh --build 2016|2024 [--exe <SporeApp.exe>]` (defaults:
+     `_ref/gog2016/SporeApp.exe` next to the SPORE folder, and `SporebinEP1/SporeApp.exe` of
+     the main game; the exe is only read and must have the build's sha256). Ghidra 12.1.4
+     (`~/.local/opt/ghidra_12.1.4_PUBLIC`, JDK 21 in `~/.local/opt`) auto-analysis takes 8-11 min,
+     both builds can run in parallel. Then `SporeSetup.java` (1-2 min): Ghidra's analysis misses many
+     functions (619 of the 2598 named GOG 2016 addresses had none), so it adds functions at
+     `call rel32` targets found in bytes Ghidra did not disassemble (~530) and at code pointers in
+     `.rdata`/`.data` (vtables, callback tables, ~32 000), each only at a plausible MSVC start
+     (after CC/C3/90 padding or `ret N`) outside existing functions, and re-runs analysis: 58 700 →
+     91 700 functions. Then it applies every `data/symbols/*_<sha8>.sym` of the checkout as names
+     in their C++ namespaces (base file first, overrides win the primary name, other names at the
+     same address stay as labels, `; low` entries are skipped) with the `.sym` notes as plate
+     comments. Check after the build: every named function address but the `_Ret` return
+     addresses is a function entry. The new project replaces the old one at the end, so queries
+     keep working meanwhile. After editing `.sym` files: `mkproject.sh --build … --names` (~5 s).
+   * Query: `tools/ghidra/q.sh [--build 2016|2024] <queries-file|-> <output-file>` (default 2016,
+     works from any worktree). One batch takes 3-5 s (JVM and project open; a decompile ~0.5 s,
+     an `info`/`xref` ~1 ms; the first run after a change of Q.java compiles it, +4 s), so put many
+     queries in one file. Example:
+
+     ```
+     printf 'dec Simulator::cGameDataUFO::TakeDamage\ncallers 0x00C3CEA0\n' > q.txt
+     tools/ghidra/q.sh q.txt out.txt                 # GOG 2016
+     tools/ghidra/q.sh --build 2024 q.txt out24.txt  # same names, GOG 2024 addresses
+     ```
+
+     One query per line (`#` comments). `<a>` is a hex address (`0x00C3CEA0`, `C3CEA0`), a
+     `.sym` name, or either plus an offset (`Name+0x1C`):
+     `dec <a>` decompile the function containing `<a>` (creates one if none, not saved),
+     `asm <a> [n]` n instructions (default 40, disassembles on the fly), `fasm <a>` the whole
+     function, `info <a>` function/symbol/block/notes, `xref <a>` references to `<a>`,
+     `callers <a>` / `callees <a>` by function with the call sites, `calls <a>` raw E8/E9 rel32
+     sites aimed at `<a>` (also in bytes Ghidra did not disassemble), `scan <hex-dword>` every
+     occurrence of a 32-bit value (vtable / global pointers, BT node tables in .data),
+     `bytes <pattern>` with `??` wildcards, `str <text>` ASCII and UTF-16LE strings with their
+     references (or raw pointers to them), `dd <a> [n]` dwords with what they point to (vtables),
+     `sym <substring>` names. Every answer starts with `=== <query>` and ends with its time.
+   * Concurrency: Ghidra locks a project even with `-readOnly` (a second run fails with
+     `LockException: Unable to lock project`), so each q.sh run queries its own reflink snapshot in
+     `out/ghidra-runs/` (0.05 s on btrfs, removed afterwards) under a shared `flock` that
+     mkproject.sh takes exclusively while it swaps or renames. Four parallel runs (3× 2016 +
+     2024, right after a script change that forced a recompile) took 8-9 s each, same output.
+   * Known wrong ported names found this way (GOG 2024 `march2017_dc04aee5.sym`, mid-function):
+     `UTFWin::CascadeEffect::GetInterval=0x0097EE80` (inside `ret 4` of 0x97EE70),
+     `UTFWin::SporeTooltipWinProc::GetProxyID=0x008365C0` (inside 0x8365A0),
+     `Simulator::TimeAtStartOfFrame=0x00B63980` (inside 0xB63650).
 3. **Runtime verification** via devkit: `mem.read`, `call`, the exception logger (`exc`),
    the watchdog thread (`hangdump`).
 
