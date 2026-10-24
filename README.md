@@ -65,7 +65,7 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 | 🦎 **Creature: Pack** | Hunt the same animals for +25 % damage; when you are about to die near a partner, the pack saves you; partners heal each other. |
 | 🔥 **Tribe: Chiefs** | The tribe's members are split between players, each with their own chief (+20 % aura). Attack a tribe from two sides for +50 % (a *pincer*), perform together to make friends faster, kill the epic creature together for 80 food. |
 | 🏙️ **Civilization: Governors** | Every player governs their own cities and vehicles and picks a role: military, economic or religious. Two players besieging one city take it 50 % faster; a city under attack calls the others; superweapons fire only after a vote. |
-| 🚀 **Space: Squadron** | Fight the same pirates in one system. A destroyed ship is only disabled for 20 s - a partner who flies close repairs it. Jump straight to a partner's star, get alerts about raids on their colonies, terraform a planet together. |
+| 🚀 **Space: A galaxy together** | Each of you rules your own territory in one galaxy. See your partners on the galaxy map and fly to them with a click, defend each other's colonies, trade spice and give tool charges, take co-op contracts (a pirate armada that needs two ships, joint surveys), share one diplomacy toward the NPC empires and reach the galactic core together. A destroyed ship next to a partner is only disabled for 20 s. Or play as **rivals**: own budgets, alliances, wars, ship against ship. |
 
 <table>
   <tr>
@@ -181,16 +181,19 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.6.0: co-op in every stage for up to 4 players, tested automatically on real game instances:
-40+ scenario tests, bots that play every stage through real input for hours, 4-player sessions with
-rejoins, a chaos bot and simulated bad networks ([stability report](docs/stability-report.md)).
+Version 0.7.0: co-op in every stage for up to 4 players, and a Space stage built for playing
+together (the F9 window's **Space** page: partners on the map, allied colonies, trade, contracts,
+shared diplomacy, the galactic core together, rivals mode). Tested automatically on real game
+instances: 50+ scenario tests with real clicks, bots that play every stage through real input for
+hours, 4-player sessions with rejoins, a chaos bot and simulated bad networks
+([stability report](docs/stability-report.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md).
 
 Next:
 
 - [ ] easier internet play (no VPN or port forwarding)
 - [ ] tests with the Steam and EA builds
-- [ ] four-player tests, shared galaxy in Space, co-op adventures
+- [ ] four-player tests of the 0.7 Space features, co-op adventures
 
 ## Building from source
 

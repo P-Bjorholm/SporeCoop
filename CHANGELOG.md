@@ -2,7 +2,66 @@
 
 ## [Unreleased]
 
-- INSTALL.md: the GOG 2024 build passed a smoke test under Wine / Bottles on Linux (0.6.2, two games on one PC, Creature stage).
+## [0.7.0] - 2026-10-23
+
+"A galaxy together": the Space stage becomes a game of two (to four) rulers of one galaxy who see
+each other, help each other, trade and finish the game together. Everything is on the new
+**Space** page of the co-op window (F9 in the Space stage, the "Space >" button).
+
+**0.7 cannot play with 0.6.x** (the network protocol changed): every player needs 0.7.0.
+
+### Space: new
+- **Partners on the galaxy map**: a name tag in the partner's colour on their star (or on their
+  ship while they fly in the galaxy view), an arrow at the screen edge when they are out of view;
+  a click on the tag flies you there. The Space page lists where everybody is ("Bob: at Fibucius
+  [Fly there]").
+- **Your own territories**: the stars with a partner's own colonies get a ring in the partner's
+  colour, and the Space page lists them one by one with "Fly there".
+- **Partner colonies as an allied empire**: a partner's colonies founded after you joined exist in
+  your galaxy too, as the cities of "Alice's empire", an ally you have already met. You can fly
+  there, land at their city, and fight off a raid on that colony in your own game: winning it
+  counts as defended in the owner's game. The mirrored empire never reaches your save.
+- **Tool gifts**: give charges of consumable tools (bombs, terraforming charges, the colony tool,
+  monoliths, colony boosters and turrets, fireworks ...) to a partner. Permanent tools (weapons,
+  drives) stay with their owner.
+- **Trade between players**: at a star with a partner's colony, sell spice to it for twice the
+  market value (an export bonus paid by the galaxy into the shared budget, up to 30 units per
+  colony every 10 minutes); the spice arrives in the partner's cargo.
+- **Co-op contracts**: every 10 minutes the host's game offers a job made for two: a **pirate
+  armada** that attacks one of the host's colonies only while two ships of the crew are there
+  (two waves of tougher raiders), or a **joint survey** of 2-3 nearby stars that the whole crew
+  has to visit together. Money and a tool for everybody in the crew.
+- **Shared diplomacy**: the players are one people for the NPC empires. A first contact, a gift,
+  a mission, a trade route, an attack, an alliance, a war or a peace by one player changes every
+  player's galaxy the same way, with a notice. The host's relation table keeps all copies equal.
+- **The galactic core together**: partners are told when someone reaches the Grox zone or the
+  core, and can fly to a partner who is there. The core waits until everybody in Space has
+  arrived (or "Enter now"); then everybody sees the ending and gets the Staff of Life. A partner
+  who was not there gets the gift too, also when joining later.
+- **Rivals mode** (a host option): every player becomes a separate empire with an own budget (the
+  shared money is split; switching back adds them up). Players can propose alliances, declare war
+  and make peace on the Space page; at war, ships really damage each other (with the game's own
+  death and respawn), and an enemy never repairs your ship.
+
+### Fixes
+- A guest who joined (or a host who loaded) in the first ~16-26 s after the galaxy menu came up
+  could be stuck without a HUD in every stage: the menu's intro cinematic was left playing by the
+  world load and took every click. The mod now ends it.
+- The jump to a partner (and every co-op jump) into a star system nobody had visited arrived
+  without planets and without first contact. It now travels like a player through the galaxy view:
+  planets load, empires meet you.
+- Two games generated different planets for the same unvisited star (rarer now, see known issues).
+- A jump to an id that is not a star of the galaxy crashed the game (GetStarRecord).
+- The Space page and the jump buttons handle many rows (pages with "<" and ">").
+
+### Testing
+- New two-game tests for every feature (`coop_space_map`, `_allies`, `_trade`, `_contracts`,
+  `_diplomacy`, `_finale`, `_rivalry`, `_jump`, `_guest_ui`, `_page`), all with real clicks on the
+  Space page, on both supported builds (GOG 2016 lanes and the new GOG 2024 lanes 9 and 10 under
+  Wine). All fixtures were made anew for the GOG 2024 install, plus `space_empire` (drive,
+  colonies, empire contacts).
+- `tools/re_lint.py` checks every symbol the code uses against every supported build.
+
 
 ## [0.6.2] - 2026-10-23
 
