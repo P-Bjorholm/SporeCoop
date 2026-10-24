@@ -676,7 +676,8 @@ static void refresh()
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
     show(D.space_btn, space && !g_space_page);
-    text(D.subtitle, lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
+    text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
+                     : lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
     if (A.lan_scan)
         A.lan_scan(!lobby);
     if (lobby && g_space_page)
