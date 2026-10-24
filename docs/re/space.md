@@ -870,6 +870,53 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 * The filter let a ship with HP <= 1 die at the next hit (small hits can leave 0.5 HP); now any
   lethal hit next to a partner disables the ship (60 s cooldown after a rescue as before).
 
+### 9.6 Empires, contacts, colonies by record (✔ runtime, lane 8, 2026-10-23, making the `space_empire` fixture)
+
+* **Tool names** (instance = FNV-1 of the lower-case name, group 0x30608F0B, type 0xB1B104 in
+  Spore_Game.package / PatchData.package, 363 tools; names found by hashing guesses against that
+  index): `interstellardrive_upgrade1`..`4`, `energyupgrade1`..`5`, `healthupgrade1`..`5`,
+  `cargoupgrade1`..`3`, `laserlevel1`..`3`, `pulselevel1`..`3`, `placecolony` (the colony tool),
+  `monolith`, `atmospheregenerator`, `cloak`, `shield`, `wormhole`, plus scan / abduct /
+  interplanetarydrive / interstellardrive (9.3). `coop.space tool add <name>` adds any of them.
+* **Placing a colony with the tool** needs a spice node near the spot: on the T1 tutorial planet
+  Vulpica every spot was refused with "Colonies must be placed near spice." (red rings), the planet
+  has no spice node object although its record has a spice kind. On the T2 planet Gabar (the tutorial's
+  ruins) the colony tool was greyed out (? why).
+* **Planet records of a star** are made on demand: star +0x84..+0x88 vector of `cPlanetRecord*`
+  (`cStarRecord::GetPlanetRecords` 0xBBA8D0 generates them first, 0xBBA780); unvisited stars far
+  from home have an empty vector. Record +0x198 spice kind is 0 on most planets of stars the
+  player never got close to; the home system's and the beacon star's planets have one.
+* **cStarRecord**: +0x3C position (galaxy units), **+0x4C tech level** (setter 0xBB9C10 is a
+  plain store, getter 0xBB9C20), +0x54 empire id, **+0x5C flags** (SetFlag 0xBB9C40: or / and-not;
+  0x4 on stars with an NPC empire, 0x8 on Grox stars, 0x10 / 0x20 set after the player visited,
+  0x1000 ?, the player's home 0x1037), +0x70 StarID.
+* **Empires**: `cStarManager` +0x150 is an eastl map pol -> `cEmpire*` (rbtree, anchor +0x154,
+  root +0x15C, size +0x164; node +0x10 key, +0x14 value). In the `space` fixture's galaxy it held
+  2121 empires: 2119 NPC empires with **one** star each (their home star, tech level 5,
+  $100 000), the player's, and the Grox (800021C9, 2401 stars, ~320 units away at the centre). The
+  nearest NPC empires were 5.4 and 5.9 units from home (neighbouring stars are ~0.5-1 apart).
+  `cEmpire` +0x84 political id, +0x88 stars, +0xB0 home StarID, +0xD0 money.
+  **`cStarManager::GetEmpireForStar` 0xBB14B0 creates an empire** for a star without one
+  (new pol 0x80000000 | counter +0x1D4, SetEmpireID): only call it for stars with an empire id.
+* **Contacts**: `cPlayer` = `cGameNounManager::Get()` +0x74 (getter 0xF67D40); +0x11D8..+0x11DC
+  is a vector of `{u32 pol, u32 flags}` sorted by pol (lookup 0xD013B0). Getters 0xC7A840 (bit 0),
+  **0xC7A890 `PlayerContactedEmpire(pol)` (bit 1)**, 0xC7A8F0 (bit 2, "EmpireIsAwareOfPlayer"),
+  0xC7A950 (bit 3), ...; setters 0xC7BCE0 (bit 0), 0xC7BD00 (bit 1), 0xC7BD20 (bit 2),
+  0xC7BD40 / 0xC7BD70 / 0xC7BDA0 (bits 3 / 4 / 5 with a bool). The player's own entry has 0x26.
+  `cEmpire` 0xC30A50 = contacted by the player?, **0xC30A70 = SetContactedByPlayer** (bits 1 and
+  2). The game's first contact (message 0x3AC86B5, handler at 0xFE3233) calls 0xC30A70, then
+  0xC30AF0(0), counts a statistic and applies relationship event 0x5B6CF09 (scale 1.0) between
+  the empire and the player. `coop.space empire contact <StarID>` does the same without the
+  comm screen; the flags survive save and load.
+* **A colony by record** (5.3 "receiver elsewhere") works: `SetTechLevel(rec, 5)` 0xC70850,
+  `FillPlanetDataForTechLevel(rec, 5)` 0xB97040 (a cCivData with pol = star empire id and one or
+  two cCityData), `cEmpire::AddPlanet(rec)` 0xC34FB0 (SpacePlayerData +0x20 colonies grows by
+  one); for a star of no empire first `AddStarOwnership`, star +0x54 = player pol, +0x4C = 5,
+  +0x5C |= 0x100. The colony shows in the system view (`C<PlanetID>` in `coop.targets all`), on a
+  visit the planet has a generated colony (several cities and a spice geyser), and it survives a
+  save and a load. `coop.space empire colony <PlanetID> [spice]`. Stored spice (`cCityData` +0x1C,
+  float) set higher is clamped at the next load (one city: 5, two cities: 10).
+
 ## 12. Tool gifts and spice trade (`space_trade.cpp`, Ghidra both builds + offline props, 2026-10-23)
 
 ### 12.1 Tools in the inventory (✔ decompile; ~ runtime marked)

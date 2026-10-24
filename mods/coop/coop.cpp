@@ -2596,7 +2596,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     H->command_add(M, "coop.space",
-                   "coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet]"
+                   "coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet | empire [colony <PlanetID> [spice] | contact <StarID>]]"
                    " - space co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", spacecoop::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
