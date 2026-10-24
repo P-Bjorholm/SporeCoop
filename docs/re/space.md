@@ -935,9 +935,12 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   in the new-game fixture), with no events. A record with no events is not a contact.
 * War / alliance also live in `cEmpire` enemies +0x5C / allies +0x70 (AddEnemy 0xC34730, AddAlly
   0xC347C0, remove ally 0xC32970), kept by the four state functions below.
-* **Contact** ("met"): `cPlayer` (`cGameNounManager::Get()+0x74`) **+0x11D8..+0x11DC** is a sorted
-  vector of `{u32 pol, u32 flags}`, flag **0x20** = met (IsContacted 0xC7AA10 / 0xC7AA30, set
-  0xC7BDA0 / 0xC7BDC0 `(pol, bool)`).
+* **Contact** has two levels in the `cPlayer` flags of §9.6 (`cGameNounManager::Get()+0x74`
+  **+0x11D8..+0x11DC**, sorted `{u32 pol, u32 flags}`): **0x20 = met** (0xC7AA10 / 0xC7AA30, set
+  0xC7BDA0 / 0xC7BDC0 `(pol, bool)` by MakeContact below, on arriving at the empire's star) and
+  **0x02 = contacted** (PlayerContactedEmpire 0xC7A890, set with 0x04 by
+  `cEmpire_SetContactedByPlayer` 0xC30A70 / 0xC30A90 from the first-contact talk, §9.6). In the
+  `space_empire` fixture the two contacted empires have 0x02 (and 0x20).
 
 ### 10.2 Functions (both builds, overrides files)
 | function | GOG 2016 / GOG 2024 | notes |
@@ -948,6 +951,7 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
 | ResetRelationship(a, b) | 0xD05870 / 0xD05870 | `ret 8`: creates the record if missing, clears its events (flags kept) |
 | map<u32,float>::operator[] | 0xC8C6D0 / 0xC8C6E0 | `ret 4` → float* (used by ApplyEvent on the record's event map) |
 | **cEmpire_MakeContact(int)** | 0xC32430 / 0xC32450 | thiscall(empire) `ret 4`: first contact: returns if met, else sets flag 0x20 and applies the personality events 0x5B6FCC9 / 0x5B6FCD4 (+ archetype, super power, Grox ones); called on arriving at the empire's star (0xC7A234), landing on its planet (0xC75660), by the universe sim (0x1014A59) |
+| cEmpire_SetContactedByPlayer() | 0xC30A70 / 0xC30A90 | thiscall plain ret; flags 0x02 and 0x04; one caller, the first-contact message handler 0xFE3233 (which then applies 0x5B6CF09 by ApplyRelationship) |
 | cStarManager::GetEmpire(pol) | 0xBA94A0 / 0xBA94C0 | `ret 4`; `map<pol, cEmpire*>` at star manager +0x150 (node value +0x14); cEmpire pol +0x84, name string16 +0x3C, home StarID +0xB0 |
 
 Event ids (ModAPI `RelationshipEvents`) found at the call sites of ApplyRelationship: gift (comm
@@ -977,10 +981,10 @@ by hand changed the relation once but left no event in the map (✔ runtime).
   retail build (`cheat` returns false); `moreMoney` is.
 
 ### 10.4 Recipe: shared diplomacy (implemented)
-Hook ApplyEvent, the four state functions and MakeContact. A call that is not a replay
+Hook ApplyEvent, the four state functions, MakeContact and SetContactedByPlayer. A call that is not a replay
 (`g_applying`) and not nested in another hooked call (`g_depth`) and pairs the player with an NPC
 empire is sent: an event as `{npc, player first, id, scale}` (not the computed ones above), a state
-change only when the flags really changed, a contact when the met flag went on. The partner replays
+change only when the flags really changed, a contact (level met or talk) when its flag went on. The partner replays
 through ApplyRelationship / the state function / MakeContact with its own player. The host sends
 its table (records with events or a state, plus the met flag) every 20 s and in answer to a guest's
 request (on entering Space and the "Resync" button); a guest sets war/alliance through the state
