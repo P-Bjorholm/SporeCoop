@@ -65,10 +65,13 @@ def main():
     st = ui.wait(lambda s: s['open'] == '1' and s['space']['vis'], 20, 'lobby with the Space button')
     ck(st is not None, 'F9 in Space: the lobby shows the "Space >" button')
     ui.click('space')
-    st = ui.wait(lambda s: s['page'] == 'space' and s['sbtn0']['vis'], 10, 'Space page')
-    ck(st is not None and 'Jump' in st['sbtn0']['text'], 'the Space page has the jump button')
+    # (other features add rows too: the jump is the row with "Jump there")
+    lines = sp(host, 'rows').splitlines()
+    idx = next((i for i, l in enumerate(lines) if l.endswith('| Jump there')), 0)
+    st = ui.wait(lambda s: s['page'] == 'space' and s[f'sbtn{idx}']['vis'], 10, 'Space page')
+    ck(st is not None and 'Jump' in st[f'sbtn{idx}']['text'], f'the Space page has the jump button (row {idx})')
     shot(host, 'space_page.png')
-    ui.click('sbtn0')
+    ui.click(f'sbtn{idx}')
     for _ in range(30):
         time.sleep(1)
         if star(host) == away:

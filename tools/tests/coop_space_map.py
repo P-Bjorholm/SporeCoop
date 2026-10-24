@@ -246,7 +246,7 @@ def main():
     # ---- 5. the Space page lists the guest's colony: "Fly there" (the game's price) ----
     rows = sp(host, 'rows')
     print('  host rows:', rows.replace('\n', ' | '), flush=True)
-    ck(f"Bob's colony {target[1] if target else '?'}" in rows and 'Fly there' in rows, 'the Space page lists Bob\'s colony')
+    ck(f"colony {target[1] if target else '?'} (" in rows and 'Fly there' in rows, 'the Space page lists Bob\'s colony')
     cost = re.search(r'cost (-?\d+) money (-?\d+)', sp(host, 'map cost', home))
     m0 = int(cost.group(2)) if cost else None
     ui = Ui(host, 'host')
@@ -256,7 +256,7 @@ def main():
     ck(st is not None, 'F9: the lobby shows "Space >"')
     ui.click('space')
     lines = rows.splitlines()
-    idx = next((i for i, l in enumerate(lines) if "Bob's colony" in l), -1)
+    idx = next((i for i, l in enumerate(lines) if f"colony {target[1] if target else '?'} (" in l), -1)
     st = ui.wait(lambda s: s['page'] == 'space' and s.get(f'sbtn{idx}', {}).get('vis'), 10, 'Space page')
     ck(st is not None and idx >= 0, f'the colony row {idx} has its button')
     shot(host, 'map_space_page.png')

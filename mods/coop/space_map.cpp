@@ -874,8 +874,8 @@ static std::string place_text(uint8_t id)
         if (p.id == id && (p.place & 0x40000000u) && r)
             for (auto& c : r->colonies)
                 if (c.planet == (p.place & 0x3FFFFFFFu) && !c.name.empty())
-                    return c.name + " (" + n + ")";
-    return n;
+                    return spaceext::tr("on ", "на ") + c.name + " (" + n + ")";
+    return spaceext::tr("at ", "у звезды ") + n;
 }
 
 static std::string spice_text(const Colony& c)
@@ -944,9 +944,11 @@ static std::vector<spaceext::Row> rows()
         const Colony& c = *own[pick];
         spaceext::Row cr;
         std::string sn = c.star_name.empty() ? star_name(c.star) : c.star_name;
-        cr.text = std::string("    ") + (n == 1 ? nm + spaceext::tr("'s colony ", ": колония ") : std::string()) +
+        std::string cities = std::to_string(c.cities) +
+                             (c.cities == 1 ? spaceext::tr(" city", " город") : spaceext::tr(" cities", " гор."));
+        cr.text = std::string("  ") + (n == 1 ? spaceext::tr("colony ", "колония ") : "") +
                   (c.name.empty() ? spaceext::tr("a planet", "планета") : c.name) + (sn.empty() ? "" : " (" + sn + ")") +
-                  ", " + spice_text(c) + ", " + std::to_string(c.cities) + spaceext::tr(" cities", " гор.");
+                  ": " + spice_text(c) + ", " + cities;
         cr.color = col;
         if (c.star != here) {
             cr.button = spaceext::tr("Fly there", "Лететь туда");
