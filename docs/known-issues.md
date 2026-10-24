@@ -127,7 +127,20 @@ Fixed entries move to the commit message (and a test).
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
 
-## Civilization: single vehicle sync outliers of 20-27 m
+## Space: an unvisited star's planets can still differ between the two games
+
+* Each game generates the planets of a star the first time it is needed (a flight there, the jump);
+  the generation draws from the game's global random generator, so host and guest made different
+  planets for the same star (count and PlanetIDs, e.g. 4 and 6). Since fix/space-jump the generation of
+  the generating thread draws from a private generator seeded by the star (docs/re/space.md 7.3): the
+  same planets in 8 of 8 probe sessions and in most `coop_space_jump.py` runs, but once the host made 10
+  planets of 0046101B and the guest 6 (lane 7, GOG 2016, 2026-10-23). Not found: which draw still
+  differs (another generator object, `rand()`, or state such as star +0x0C = play minutes, set right
+  before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
+  "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
+  generated star (or the guest asks for them before entering).
+
+ of 20-27 m
 
 * `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
   samples was 22-27 m in three sessions (one sample each). Not traced yet: candidates are a guest

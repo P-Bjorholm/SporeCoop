@@ -424,9 +424,10 @@ planet count, plus a `here` line for the current star) and plays: guest system -
 active planet, empire flag 0x20, first contact through the comm by clicks), host follows with the F9
 Space page "Jump there", guest lands and jumps from the planet into an empty system, host zooms out
 (wheel) and jumps from the galaxy view with the page button, guest jumps from the galaxy view into a
-second NPC system (second contact). It checks that both games list the same PlanetIDs for the new
-stars (seeded planet generation, docs/re/space.md 7.3), the partner rows ("in another star system" /
-"in your system"), the jump counters and no faults.
+second NPC system (second contact). It checks the loaded planets (`coop.space planets`: all of them,
+`coop.targets all` only shows those on the screen), the partner rows ("in another star system" /
+"in your system"), the jump counters and no faults, and prints whether both games made the same
+PlanetIDs for the new stars (docs/known-issues.md).
 * Captions on the way that wait for OK (6.9): SPG_FirstContact_Intercept in the first NPC system (once
   per game), the tutorial's beacon caption on the host's own zoom-out to the galaxy (the jump's own
   galaxy pass skips it, docs/re/space.md 7.3); `settle()` presses Enter while `coop.space hp` says
