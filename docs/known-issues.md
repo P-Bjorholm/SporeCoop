@@ -192,6 +192,16 @@ Fixed entries move to the commit message (and a test).
 * Spice gifts, tool gifts and the jump work between rivals as before (deliberate acts); mission
   rewards are shared between allies only; raid alerts reach everybody.
 
+## Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23)
+
+* `coop_space_rescue.py` round 1 failed once: the host had flown ~550 m off with 2.5 s of W and came
+  back too late (repair 1.0 of 2.0 s when the 20 s ran out); round 2 then started 1330 m apart. Passed
+  in the next run and on the base branch. The ship of the new fixture is faster: a shorter flight off
+  would make it stable.
+* `coop_space_death.py` failed once in the forced-jump step: after the OK the ship stayed dead for 47 s
+  and the guard "respawn caption without a planet" did not fire (0), so the respawn caption had ended
+  some other way; passed in the next run and on the base branch.
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
