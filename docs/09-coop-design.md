@@ -82,7 +82,9 @@ only from working together.
   * **Rescue:** a lethal hit while a partner is in the same system only *disables* the ship for
     20 s (no shooting, "SHIP DISABLED" on screen, a "REPAIR <name>" beacon for the partner);
     the partner repairs it by flying within 60 m for 2 s, else the native death and respawn follow.
-  * **Jump to partner:** travel straight to a partner's star system (F9 window, `coop.space jump`).
+  * **Jump to partner:** travel straight to a partner's star system (F9 window, `coop.space jump`),
+    free and instant, also into systems nobody visited yet: the planets load, the empire there meets
+    you (comm, first contact) and both games generate the same planets for a new star.
   * **Raids:** a raid on a colony alerts the partners (with the jump offer); a raid beaten with a
     partner in the system pays 2000 more.
   * **Missions:** a completed mission gives its reward tools to the partners too; done with a
@@ -148,7 +150,7 @@ Shared contracts between the features:
 | Tribe (co-op) | Pincer +50 %, own chief per player (aura, protection, tag), duet, healer food, epic creature at the village | `tribe.cpp` (co-op section) | `coop_tribe_play.py` |
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
-| Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (co-op) | Rescue of a disabled ship, jump to partner (into any system, from a planet, a system or the galaxy view; the same planets in both games), raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py`, `coop_space_jump.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.

@@ -127,17 +127,6 @@ Fixed entries move to the commit message (and a test).
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
 
-## Space: `coop.space jumpto` into another system arrives without planets
-
-* `coop.space jumpto 0x00460038` (and `0x0046102D`) from a planet and from the galaxy view put the
-  ship into that star's system, but the system had no planets: only the sun was drawn, and
-  `coop.targets all` still listed the planets of the system left behind (the planet list of
-  `cStarManager` +0x50 was not reloaded). Zooming out to the galaxy and back in did not load them
-  either. The star records had their planets (star +0x84, 3 and 8 records). Seen 2026-10-23,
-  lane 8, single player, inside the tutorial. The co-op "jump to partner" uses the same
-  `travel_to` (TravelToStarSystem 0xFDD380, docs/re/space.md 7.3): check whether a jump to a
-  partner in another (not yet visited) system shows its planets. Not saved into any fixture.
-
 ## Civilization: single vehicle sync outliers of 20-27 m
 
 * `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
