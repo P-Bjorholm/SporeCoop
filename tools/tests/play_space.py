@@ -420,7 +420,15 @@ class Player(threading.Thread):
         return False
 
     def take_off(self):
-        for _ in range(10):
+        # captions that wait for OK take the wheel: landing on the first mission's planet (Vulpica,
+        # P02460035 in the `space` fixture) shows ~5 tutorial captions ("Something is showing up on
+        # the ship's radar..."); confirm them first, they do not count as zoom attempts
+        t0 = time.time()
+        zooms = 0
+        while zooms < 10 and time.time() - t0 < 90:
+            if self.captions():
+                continue
+            zooms += 1
             self.zoom(-5)
             self.sleep(1.0)
             if self.ctx() != 'planet':

@@ -12,6 +12,7 @@ and mirrors found freed by the game (coop.status freed_by_game) shows the path w
 import re
 import time
 
+import fixtures
 import lane
 from play_space import Player
 from twoinst import Checks, Monitor, shot, start
@@ -42,10 +43,15 @@ def main():
     while time.time() - t0 < 20 and not (together(host, 1) and together(guest, 0)):
         time.sleep(1)
     ck(together(host, 1) and together(guest, 0), 'both see the partner ship')
+    # one planet of the home system per round (fixed, not random: the run is the same every time);
+    # Vulpica (P02460035) is the first mission's planet: landing there shows tutorial captions that
+    # take the input until OK (Player.take_off confirms them; before that, rounds 2-4 failed whenever
+    # the random pick was Vulpica)
+    planets = ['01460035', '02460035', '03460035', fixtures.FIXTURES['space']['home']]
     for rnd in range(4):
         # both land on the same planet (the host picks one, the guest follows), then one takes off:
         # leaving the planet frees its UFOs, the partner's puppet too (the crash of 2026-10-23)
-        ph.land()
+        ph.land(planets[rnd])
         planet = ph.place()[0]
         pg.land('%08X' % (planet & 0x3FFFFFFF))
         t0 = time.time()
