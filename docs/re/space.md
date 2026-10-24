@@ -754,6 +754,51 @@ opened with F9 but real clicks on it did nothing, and its jumps answered "a cine
   intro)" while one runs and "menu intro ended N". Calling EndCinematic on the stuck guest by hand
   (`call 0xADFF50 thiscall <mgr>`) brought the HUD and the clicks back at once, no faults.
 
+* **Clicks on the menu itself (✔ runtime, lane 9 GOG 2024, 2026-10-24, branch fix/gog2024-tests):**
+  while the intro plays the game drops every click on the galaxy menu (its own items and the mod's
+  "Co-op" item: the UI never sees them), and also for **~2-3 s after it ended** (a click 1 s or 2 s
+  after the end did nothing, 3 s after it worked; measured with `coop.status` + `coop.uistate`).
+  A click does not skip the intro; **Escape does** (✔ runtime: gone at the next sample, 0.5 s; the
+  key goes through the menu's key handler 0xDEA5B0, which passes it on to 0xE00620 ~). `coop_ui.py` clicked "Co-op" ~21 s after the menu on GOG
+  2024 (~66 fps: `wait.frames 700` is ~10 s there, ~22 s on GOG 2016), inside the intro, so the
+  host's window never opened (lab 20261023-225702, lane 1, twice). Real players clicking Co-op in
+  the first ~30 s met the same dead button.
+* **Fix (coop_ui.cpp tick):** the left button going down over the Co-op item while the intro plays
+  (`world::menu_intro_playing()`: menu mode, cinematic manager +0x2C != 0, +0x148 = GGE_Intro) is
+  seen through GetAsyncKeyState + GetCursorPos; the mod posts Escape (WM_KEYDOWN/UP VK_ESCAPE) to the
+  game window, i.e. the game's own skip, and opens the co-op window 3 s after the intro is over (when
+  the menu takes clicks again). Log: "ui: Co-op clicked during the menu intro: Escape skips it".
+* **Negative result:** ending the intro with **EndCinematic in the menu** (the call `load_now` makes
+  right before a load) and staying in the menu broke it: once an access violation at 0x9617A3
+  (`UTFWin::Window::SetFlag+0xF3`, from `App::Canvas::Tick` 0x8483F6, data 0x0C0A0000) ~10 s later,
+  once a game whose co-op window stopped reacting (no hosting) and whose console died. EndCinematic
+  is only safe right before a load (the menu is torn down). The menu handler's end path (0x44F1189
+  with the GGE_Intro id) also stops the cinematic again (0xAD7DC0) and releases its +0x1AC object.
+
+### 7.10 Ship height on a planet and the repair distance (✔ runtime, lane 1 GOG 2024, 2026-10-24, branch fix/gog2024-tests)
+
+* On a planet the scene's origin is the planet's centre and a UFO flies on a sphere whose radius is
+  its **zoom** (`mZoomAltitude` +0x768, §0; `MoveTo` = normalize(dir) * altitude). On the home
+  planet of the `space` fixture (✔ `coop.fleet list` positions while turning the mouse wheel at the
+  ship): ~719 m from the centre right after a landing, ~15 m per single wheel notch on GOG 2024
+  (6 notches at once: 120-180 m; GOG 2016: 6 notches ~270 m, 8 ~360 m), **~520 m fully zoomed
+  in** (clamped), still on the planet at ~990 m (further out the ship leaves for the system). The
+  two players' heights are their own zooms: nothing keeps them equal.
+* **The bug (GOG 2024 lanes, lab 20261023-225702 lane 1):** the rescue measured the 3D distance
+  (`net::dist`, < 60 m held for 2 s). With the retried landings of `coop_space_rescue.py` (zoom-ins
+  that do not land in the first minute on GOG 2024, known-issues) the host flew at r 775 and the
+  guest at r 978 (or 638 in round 2): the host circled 200-260 m from the disabled guest, right
+  "over" it, and the guest was destroyed. Seen with `coop.fleet list` (me) positions on both games.
+* **A player far above or below is not on the screen at all:** host zoomed in (r 536), guest at
+  r 771-991: no `player` (or `far`) line in the host's `coop.targets all`, i.e. the partner is above
+  the camera; with smaller differences it is seen with parallax.
+* **Fix:** `spacecoop.cpp repair_distance`: on a planet the distance along the lower sphere (angle
+  between the two directions times the smaller radius), elsewhere 3D. `coop.space dist` prints
+  `<name> <3D> m; repair <that> m; alt <partner radius - own radius> m;` (alt on a planet only).
+  The bot (`Player.match_height`, play_space.py) zooms toward the partner's height (alt/30 notches,
+  at most 4, per step) while flying to a disabled partner, as a player zooms to find it, and stops
+  once the ground distance (`repair`) is under 40 m (screen distance alone kept it flying past).
+
 ## 8. Loading a save while a stage runs (leaving space)
 
 Found while fixing "loading a Cell save from the Space stage crashes" (branch fix/stage-switch-load,
@@ -1210,6 +1255,21 @@ functions, then, if the events differ, `ResetRelationship` + operator[] for each
 events, and clears its own records the host does not have. A periodic table does not touch an
 empire the guest itself changed in the last 8 s; an answer to a request does (the host handles the
 request after the guest's earlier messages).
+
+### 12.5 The game ends an alliance below a relation of 3 (✔ Ghidra both builds + runtime lane 2, 2026-10-24, branch fix/gog2024-tests)
+* `FUN_01013370(cEmpire*)` (same address in both builds; called per empire from 0x1013650, the
+  periodic pass over the empires with a relation to the player) reads
+  `CalculateRelationship(npc, player)`; if allied (IsAllied) and the relation is **below the tuning
+  value at +0x54 = 3.0**, it shows event 0x4CA76FBD and calls **BreakAlliance** (posts 0x43F2585);
+  below +0x50 = 7.0 (and falling) it only warns (event 0x2194609D). The tuning object is the
+  address `FUN_010407d0` returns: 0x15B9450 (GOG 2016, read at runtime: +0x40 1.0, +0x44 100, +0x48
+  150, +0x50 7.0, +0x54 3.0, +0x58 3.0) / 0x15B8450 (GOG 2024, the same values at runtime, lane 9). Then war and peace are decided the
+  same way (DeclareWar below FUN_00cbcc70's value, DeclarePeace above FUN_00b7e1f0's).
+* So an alliance with a relation under 3 is not stable in any copy: `coop_space_diplomacy.py` made
+  one gift (rel -0.69) and an alliance (event 0x526E524 +1, rel 2.44); a minute later one copy's pass
+  broke it and the shared hooks broke it in the other (the "after the rejoin the guest is still
+  allied" failure on lane 9, GOG 2024, and on lane 2, GOG 2016). The mod was right to share it. The
+  test now gives a gift worth 3. Each DeclareAlliance adds 0x526E524 (+1.0 in the event map).
 
 ## 13. Galaxy map, roster, colonies of partners (✔ runtime, `space_map.cpp`, lane 2 GOG 2016, 2026-10-23)
 

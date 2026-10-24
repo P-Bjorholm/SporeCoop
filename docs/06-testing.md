@@ -271,6 +271,23 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   intro fix disabled; not investigated further). `coop_space_rescue.py` retries the first landing
   for 150 s. The 2024 lanes run at ~66-69 fps, the 2016 lanes at ~31 fps: `wait.frames N` waits half
   as long on 2024.
+* The galaxy menu drops every click while its intro plays (~16-26 s after the menu came up) and
+  for ~2-3 s after it (docs/re/space.md 7.9). On GOG 2024 `wait.frames 700` after the menu is ~10 s,
+  so `coop_ui.py` clicked "Co-op" inside the intro and the host's window never opened (lab
+  20261023-225702). The mod now skips the intro (Escape) when Co-op is clicked during it and opens
+  the window 3 s after; `coop_ui.py` clicks the host's item while the intro plays on purpose (checks
+  "clicked during the menu intro", "the menu intro was skipped") and the guest's 4 s after its intro.
+  It types the lane's port before Host: the port field shows the lane install's saved `host_port`
+  (mods/coop.ini, 47810 on lane 2 because the lane was copied from lane 1), and hosting failed with
+  "bind() failed on port 47810" whenever lane 1 hosted at the same time (lab runs).
+* Ships on a planet fly at the height of their own zoom (docs/re/space.md 7.10): two bots that landed
+  with different numbers of zoom-ins are 100-450 m apart in height, and a partner far above is not on
+  the screen at all. `coop.space dist` prints `repair <m>` (the ground distance) and `alt <m>`;
+  `Player.match_height()` zooms toward it step by step (one notch is ~15-30 m on GOG 2024, ~45 m on
+  GOG 2016) and `Player.rescue()` stops inside 40 m of ground distance. With the screen distance
+  alone (< 25 px) the host flew past the disabled guest or orbited it 60-150 m away.
+  `coop_space_rescue.py` zooms the guest out 6 notches in round 1 so the rescue is always tested at
+  different heights (it failed every time with the old 3D repair distance: lane 1, GOG 2024).
 * The player's ship in a star system can not be moved away from a test: writing its position or
   calling the locomotive SetPosition is undone at once (the ship stays near the camera target);
   to test "nobody near", `coop.space repairdist 0` sets the repair range to 0.
@@ -383,6 +400,14 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   stars take ~5 s each, the rejoin ~15 s. It passed twice in a row on lane 4 (GOG 2016).
 * Use an event that stays in the map to make copies differ: CommunicatedMean 0x5F62736 applied by
   hand changed the relation once and left no event, so the tables looked equal again.
+* The first contact shows a tutorial caption on the player who made it ("Drake's equation was
+  right... open your Communications Panel", with OK) and the caption's input lock drops the clicks
+  on the co-op window ("timeout waiting for Space page", lab 20261023-225702 lane 9 and an earlier
+  run on lane 2): the test confirms captions (Enter) before its clicks.
+* An alliance needs a relation of at least 3: below it the game's own periodic check breaks it in
+  either copy (docs/re/space.md 12.5); with one gift the relation was 2.44 and the alliance was gone
+  ~1 min later ("after the rejoin the guest is still allied" failed on both builds). The test gives
+  a gift worth 3 before the alliance.
 * The `diplomacy list` output of all 2120 empires is cut by the console (~16 KB): the command
   shows only the interesting ones.
 

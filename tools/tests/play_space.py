@@ -243,14 +243,22 @@ class Player(threading.Thread):
         self.count('rescue_flights')
         t0 = time.time()
         while time.time() - t0 < 20:
+            matched = self.match_height()
             me, players, _ = self.targets()
             p = players.get(self.partner.pid)
             if not p:
+                if matched:
+                    continue  # (far above: not on the screen until the heights match)
                 break
-            if me and math.hypot(p[0] - me[0], p[1] - me[1]) < 25:
+            # the repair counts the distance along the ground (`repair <m>` of coop.space dist): stay
+            # put once inside 40 m (the range is 60 m, held 2 s); short pulses near it (the ship
+            # coasts ~0.3 s after the keys, overshooting out of the range)
+            m = re.search(r'repair ([\d.]+) m;', self.cmd('coop.space dist'))
+            ground = float(m.group(1)) if m else 1e9
+            if ground < 40 or (me and math.hypot(p[0] - me[0], p[1] - me[1]) < 25):
                 self.sleep(0.5)
             else:
-                self.steer(p[0], p[1], me, 0.5)
+                self.steer(p[0], p[1], me, 0.5 if ground > 200 else 0.2)
             if not re.search(r'partners_down=[1-9]', self.cmd('coop.status')):
                 break
         return True
@@ -287,6 +295,22 @@ class Player(threading.Thread):
             self.act(f'click {x} {y}')
             self.count('shots')
             self.sleep(self.rng.uniform(0.3, 0.7))
+        return True
+
+    def match_height(self):
+        """on a planet a ship flies at the height of its own zoom (~520..~990 m from the centre, ~15-30 m
+        per wheel notch on GOG 2024, ~45 m on GOG 2016): a partner far above or below is off the screen (above the camera) or seen
+        with parallax. Zoom to its height, as a player looks for it (docs/re/space.md 7.10)."""
+        m = re.search(r'alt ([-+]?\d+) m;', self.cmd('coop.space dist'))
+        if not m or abs(int(m.group(1))) < 30:
+            return False
+        # one notch is ~15-30 m on GOG 2024 and ~45 m on GOG 2016, and the zoom is animated: a step of
+        # alt/30 notches (at most 4) per call, the next call corrects what is left
+        a = int(m.group(1))
+        n = max(-4, min(4, -round(a / 30))) or (-1 if a > 0 else 1)
+        self.zoom(n)  # wheel up (+) = lower
+        self.count('height_matched')
+        self.sleep(0.7)
         return True
 
     def partner_dist(self):

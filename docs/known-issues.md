@@ -154,6 +154,32 @@ Fixed entries move to the commit message (and a test).
   (tutorial state of the fixture, planet LOD loading at ~66 fps?). Reproduce: SPORE_LANE=10, `start
   ('space')`, then `Player.land(home)` at once. (The guest "movie" that made the guest's clicks
   vanish on this fixture, described on feat/space-trade, is fixed: docs/re/space.md 7.9.)
+* The extra zoom-ins of those retries leave the two players at different heights over the planet
+  (a ship's height is its zoom, docs/re/space.md 7.10). That made the rescue fail on GOG 2024 (the
+  3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
+  zooms to the partner's height. The landing delay itself is still not understood.
+
+## Co-op window: only three games on the network are listed
+
+* The connect page shows the first three answers of the LAN discovery (`lan0`..`lan2`). On a
+  machine running several lab lanes every host answers on 127.0.0.1 (and the LAN address), so the
+  own lane's host can be the fourth and is not listed; a click on `lan0` then joined another lane's
+  game ("rejected: different SporeApp.exe build", lane 9, 2026-10-24). `coop_ui.py` joins its own
+  host by address when it is not listed and never clicks another lane's row. (The discovery also
+  queried only ports 47810-47819, lanes 1-5: lane 9's host on 47826 was never found. It queries 20
+  ports now, lanes 1-10.) Players with more than three co-op hosts on their
+  network see only three: more rows or a filter (same build first) would help.
+
+## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
+
+* `coop_ui.py` on lane 9 (GOG 2024, branch fix/gog2024-tests, 2026-10-24): once in 12 runs of the
+  final code the host's console timed out right after its click on "Co-op" during the menu intro
+  (the mod posts Escape to skip the intro, docs/re/space.md 7.9); the game log was overwritten by
+  the next test before it was read. The other 11 runs (8 of them in a row) passed. An earlier version
+  that ended the intro with EndCinematic in the menu broke the menu twice (an access violation in
+  `UTFWin::Window::SetFlag`, a game that stopped reacting): that one is gone. If it comes back, keep
+  `out/lab/<run>/ui.host.game.log` and look for what the main thread did after "Co-op clicked
+  during the menu intro".
 
 ## Space: `coop.space jumpto` into another system arrives without planets
 

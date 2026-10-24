@@ -102,6 +102,24 @@ def contact(con, other, pol, home, ck, who):
     return met and ok
 
 
+def confirm_captions(con, who):
+    """a caption or cinematic waits for OK (coop.space hp cine=1 / movie=1): Enter, as a player does"""
+    for _ in range(4):
+        hp = sp(con, 'hp')
+        if 'cine=1' not in hp and 'movie=1' not in hp:
+            return True
+        cine = [x for x in con.call('coop.status')['out'].splitlines() if x.startswith('cinematic')]
+        print(f'  {who}: a caption waits ({hp} {cine}): Enter')
+        con.call('key enter')
+        time.sleep(1.5)
+    return False
+
+
+def raw(con, pol):
+    """the relation line of one empire, with the computed value"""
+    return next((l for l in sp(con, 'diplomacy table').splitlines() if l.startswith('rec ' + pol)), '')
+
+
 def same(host, guest, ck, what):
     ok = wait(lambda: table(host) == table(guest), 15)
     th, tg = table(host), table(guest)
@@ -139,7 +157,10 @@ def main():
     # 2-3: the guest meets an empire and gives it a gift, the host allies with it
     contact(guest, host, p1, h1, ck, 'guest')
     before = rec(host, p1)
-    print('  guest gift:', sp(guest, 'diplomacy apply', p1, GIFT, 1))
+    # a gift worth three: an alliance needs a relation of 3 or more (below it the game's own check,
+    # 0x1013370 with the tuning at 0x15B9450 / 0x15B8450 +0x54, ends it on its next pass: one gift
+    # and the alliance made 2.44, and either copy broke the alliance a minute later, docs/re/space.md 12.5)
+    print('  guest gift:', sp(guest, 'diplomacy apply', p1, GIFT, 3))
     ok = wait(lambda: GIFT in rec(host, p1) and rec(host, p1) == rec(guest, p1))
     print(f'  host {p1}: {before} -> {rec(host, p1)}')
     ck(ok, 'the guest\'s gift changed the host\'s relation the same way')
@@ -168,6 +189,10 @@ def main():
     idx = next((int(m.group(1)) for m in re.finditer(r'^(\d+): .*\| (Resync|Сверить)$', rows, re.M)), -1)
     ck(idx >= 0, 'the guest\'s Space page has the "Resync" button')
     ui = Ui(guest, 'guest')
+    # the first contact (step 2) shows a tutorial caption on the guest ("Drake's equation was
+    # right... open your Communications Panel", with OK): while it waits for the player's OK the
+    # game's input lock drops every click, also on the co-op window. A player confirms it first.
+    confirm_captions(guest, 'guest')
     if ui.state().get('open') != '1':
         guest.call(f'key {VK_F9}')
     st = ui.wait(lambda s: s['open'] == '1' and s['space']['vis'], 20, 'lobby with the Space button')
@@ -185,6 +210,7 @@ def main():
     same(host, guest, ck, 'after Resync')
 
     # 6: rejoin
+    print('  before the rejoin: host', raw(host, p1), '| guest', raw(guest, p1))
     guest.call('coop.leave')
     time.sleep(2)
     guest.call(lane.JOIN)
@@ -192,7 +218,9 @@ def main():
     ck(wait_guest_in(host, guest, 150), 'the guest joined again')
     time.sleep(4)
     same(host, guest, ck, 'after the rejoin')
-    ck(flags(guest, p1) & 2 and flags(guest, p1) & 16, 'after the rejoin the guest is still allied with ' + p1)
+    if not ck(flags(guest, p1) & 2 and flags(guest, p1) & 16, 'after the rejoin the guest is still allied with ' + p1):
+        print('  host:', raw(host, p1), '\n  guest:', raw(guest, p1))
+        print('  guest log:', sp(guest, 'diplomacy log').splitlines()[-4:])
     for who, c in (('host', host), ('guest', guest)):
         print(f'  {who}:', sp(c, 'diplomacy'))
     ck.faults(host=host, guest=guest)
