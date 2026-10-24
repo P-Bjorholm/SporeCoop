@@ -38,7 +38,7 @@ enum Reason : uint8_t { R_NONE = 0, R_TIMEOUT = 1, R_EXPIRED = 2, R_LEFT = 3, R_
 
 const SkHost* H;
 SkMod* M;
-uintptr_t a_PlayerUFOGet, a_GetAllUFOs, a_SpawnUFO, a_StarMgr, a_GetStarRecord, a_PlayerEmpire, a_AddMoney,
+uintptr_t a_PlayerUFOGet, a_GetAllUFOs, a_SpawnUFO, a_StarMgr, a_PlayerEmpire, a_AddMoney,
     a_SpaceGame, a_AddItemByKey, a_Context;
 
 template <typename T>
@@ -105,10 +105,10 @@ void* my_ufo()
     return mgr ? F<void*>(mgr, 0x40) : nullptr;
 }
 
+// (ids come from the network: the safe lookup of spacecoop.cpp, GetStarRecord faults on a wrong id)
 void* star_record(uint32_t id)
 {
-    void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
-    void* r = sm && a_GetStarRecord && id ? thiscall<void*>(a_GetStarRecord, sm, id) : nullptr;
+    void* r = spacecoop::star_record(id);
     return r && !IsBadReadPtr(r, 0xB0) ? r : nullptr;
 }
 
@@ -255,6 +255,15 @@ uint32_t first_missing(const ToolInfo (&list)[N])
 }
 
 // ---- texts ----
+std::vector<std::string> g_said; // the last notices of this feature (tests: coop.space contracts notices)
+void say(const std::string& t)
+{
+    g_said.push_back(t);
+    if (g_said.size() > 12)
+        g_said.erase(g_said.begin());
+    spaceext::notice(t);
+}
+
 std::string mmss(double secs)
 {
     int s = std::max(0, (int)secs);
@@ -388,7 +397,7 @@ bool read_state(net::Reader& r, Contract& c, double t)
 void announce(const Contract& o, const Contract& c)
 {
     if (c.id != o.id && c.state == S_OFFERED) {
-        spaceext::notice(tr("New co-op contract: ", "Новый совместный контракт: ") + title(c) + ", " +
+        say(tr("New co-op contract: ", "Новый совместный контракт: ") + title(c) + ", " +
                          reward_text(c) + tr(". Accept it on the F9 Space page", ". Принять: F9, страница Космос"));
         return;
     }
@@ -396,15 +405,15 @@ void announce(const Contract& o, const Contract& c)
         return; // the result has its own message
     for (uint8_t id : c.crew)
         if (!o.has(id))
-            spaceext::notice(spaceext::name_of(id) + tr(" accepted the contract", " принял(а) контракт"));
+            say(spaceext::name_of(id) + tr(" accepted the contract", " принял(а) контракт"));
     if (c.state == S_ACTIVE && o.state == S_OFFERED)
-        spaceext::notice(tr("Contract started: ", "Контракт начался: ") + title(c) + ", " + mmss(c.deadline - now()) +
+        say(tr("Contract started: ", "Контракт начался: ") + title(c) + ", " + mmss(c.deadline - now()) +
                          tr(" to do it", " на выполнение"));
     if (c.type == T_ARMADA && c.up && !o.up) {
         char b[160];
         snprintf(b, sizeof b, tr("The armada attacks: wave %d/%d, %d ships", "Армада атакует: волна %d/%d, кораблей: %d"),
                  c.wave, c.waves, c.up);
-        spaceext::notice(b);
+        say(b);
     }
     if (c.type == T_SURVEY)
         for (size_t i = 0; i < c.targets.size() && i < o.targets.size(); i++)
@@ -415,7 +424,7 @@ void announce(const Contract& o, const Contract& c)
                 char b[160];
                 snprintf(b, sizeof b, tr("%s surveyed together (%d/%d)", "%s разведана вместе (%d/%d)"),
                          star_name(c.targets[i].star).c_str(), d, (int)c.targets.size());
-                spaceext::notice(b);
+                say(b);
             }
 }
 
@@ -438,7 +447,7 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
 {
     bool mine = std::find(crew.begin(), crew.end(), spaceext::my_id()) != crew.end();
     if (!ok) {
-        spaceext::notice(tr("Contract failed: ", "Контракт провален: ") + reason_text(reason));
+        say(tr("Contract failed: ", "Контракт провален: ") + reason_text(reason));
         return;
     }
     (void)type;
@@ -465,7 +474,7 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
         s += tr(" (the tool is already in your cargo)", " (инструмент у вас уже есть)");
     if (!mine)
         s = names(crew) + tr(" completed a contract: $", " выполнили контракт: $") + std::to_string(money_);
-    spaceext::notice(s);
+    say(s);
 }
 
 void finish(bool ok, uint8_t reason)
@@ -645,7 +654,7 @@ std::string jump_to(uint32_t star)
     snprintf(b, sizeof b, "0x%X", star);
     std::string r = spacecoop::debug({"jumpto", b}); // the native travel of spacecoop.cpp (docs/re/space.md 7.3)
     if (r != "jumping")
-        spaceext::notice(tr("Can't jump: ", "Прыжок невозможен: ") + r);
+        say(tr("Can't jump: ", "Прыжок невозможен: ") + r);
     return r;
 }
 
@@ -843,14 +852,13 @@ bool init(const SkHost* h, SkMod* m)
     a_GetAllUFOs = S("Simulator::GetAllUFOs");
     a_SpawnUFO = S("Simulator::SpawnUFO");
     a_StarMgr = S("Simulator::cStarManager::Get");
-    a_GetStarRecord = S("Simulator::cStarManager::GetStarRecord");
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
     a_AddMoney = S("Simulator::cEmpire::AddMoney");
     a_SpaceGame = S("Simulator::cSimulatorSpaceGame::ptr");
     a_AddItemByKey = S("Simulator::cPlayerInventory::AddItemByKey");
     a_Context = S("SporeCoop::Space_GetCurrentContext");
     g_rng.seed((uint32_t)(h->time_seconds() * 1000) ^ 0xC0B0u);
-    return a_PlayerUFOGet && a_GetAllUFOs && a_SpawnUFO && a_StarMgr && a_GetStarRecord && a_PlayerEmpire &&
+    return a_PlayerUFOGet && a_GetAllUFOs && a_SpawnUFO && a_StarMgr && a_PlayerEmpire &&
            a_AddMoney && a_SpaceGame && a_AddItemByKey && a_Context;
 }
 
@@ -961,8 +969,8 @@ std::vector<spaceext::Row> rows()
         if (g.up)
             snprintf(b, sizeof b, tr(": wave %d/%d, %d ships, ", ": волна %d/%d, кораблей %d, "), g.wave, g.waves, g.left);
         else
-            snprintf(b, sizeof b, tr(": wave %d/%d waits for %d ships, ", ": волна %d/%d ждёт %d корабля, "), g.wave,
-                     g.waves, (int)g.needed);
+            snprintf(b, sizeof b, tr(": wave %d/%d needs %d crew here, ", ": волна %d/%d, нужно %d из экипажа, "),
+                     g.wave, g.waves, (int)g.needed);
         r1.text = tr("Armada at ", "Армада у ") + star_name(s) + b + mmss(g.deadline - t);
         jump_row(r1, s);
         v.push_back(std::move(r1));
@@ -1080,6 +1088,12 @@ std::string debug(const std::vector<std::string>& a)
             s += b;
         }
         return s.empty() ? "no targets\n" : s;
+    }
+    if (a[0] == "notices") {
+        std::string s;
+        for (auto& t : g_said)
+            s += "notice " + t + "\n";
+        return s.empty() ? "no notices\n" : s;
     }
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
