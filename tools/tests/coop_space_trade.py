@@ -2,7 +2,7 @@
 """Tool gifts and spice trade between players (space_trade.cpp, docs/re/space.md 10):
 
  1. the host has an Antimatter Bomb with 12 charges, the guest has none: a real click on the F9
-    Space page ("Give 5 to Bob") moves 5 charges: the host has 7, the guest gets the tool with 5
+    Space page ("Give 5", the text says "for Bob") moves 5 charges: the host has 7, the guest gets the tool with 5
  2. no room: the guest's bombs are at 97 of 99, the host gives 5 again: the guest keeps 2 and 3
     come back to the host (7 - 5 + 3 = 5)
  3. spice sale: at a star where the guest has a colony the host's page offers "Sell 10" at twice the
@@ -75,7 +75,6 @@ def click_row(ui, con, text, pick=None, tries=8):
     gift row shows `pick` first"""
     for _ in range(tries):
         if pick:
-            n, t = row_of(con, 'x')
             gift_n, gift_t = row_of(con, pick)
             if gift_n is None:
                 nx, _ = row_of(con, 'more tools to give')
@@ -84,8 +83,8 @@ def click_row(ui, con, text, pick=None, tries=8):
                 ui.wait(lambda s: s[f'sbtn{nx}']['vis'], 5, 'Next tool')
                 ui.click(f'sbtn{nx}')
                 continue
-        n, t = row_of(con, text)
-        if n is None:
+        n, t = row_of(con, (pick + ' x') if pick else text)
+        if n is None or text not in t:
             return False
         ui.wait(lambda s: s[f'sbtn{n}']['vis'], 5, f'button of row {n}')
         print(f'  click row {n}: {t}')
@@ -111,7 +110,7 @@ def main():
     ui = Ui(host, 'host')
     ck(open_space_page(ui, host), 'F9: the host opens the Space page')
     print('  host rows:', sp(host, 'rows').replace('\n', ' | '))
-    ck(click_row(ui, host, 'Give 5 to', pick='Antimatter'), 'the gift row of the bomb is clicked')
+    ck(click_row(ui, host, 'Give 5', pick='Anti-Matter Bomb'), 'the gift row of the bomb is clicked')
     shot(host, 'space_trade_gift.png')
     got = wait(lambda: ammo(guest) == 5)
     ck(got, f'the guest got the tool with 5 charges ({ammo(guest)})')
@@ -119,7 +118,7 @@ def main():
 
     # ---- 2. no room: the rest comes back ----
     print('  guest bomb:', sp(guest, 'trade ammo', BOMB, 97))
-    ck(click_row(ui, host, 'Give 5 to', pick='Antimatter'), 'the gift row is clicked again')
+    ck(click_row(ui, host, 'Give 5', pick='Anti-Matter Bomb'), 'the gift row is clicked again')
     ck(wait(lambda: ammo(guest) == 99), f'the guest is full: 99 ({ammo(guest)})')
     ck(wait(lambda: ammo(host) == 5), f'3 charges came back to the host: 5 ({ammo(host)})')
     st = sp(host, 'trade')

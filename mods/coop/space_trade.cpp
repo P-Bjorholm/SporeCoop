@@ -921,9 +921,11 @@ static std::vector<spaceext::Row> rows()
             auto& t = ts[ti];
             int n = gift_step(t);
             spaceext::Row r;
+            // (the button is narrow: the partner's name goes into the text)
             r.text = t.name + " x" + std::to_string(t.ammo) +
-                     (ts.size() > 1 ? " (" + std::to_string(ti + 1) + "/" + std::to_string(ts.size()) + ")" : "");
-            r.button = tr("Give ", "Дать ") + std::to_string(n) + tr(" to ", ": ") + to.name;
+                     (ts.size() > 1 ? " (" + std::to_string(ti + 1) + "/" + std::to_string(ts.size()) + ")" : "") +
+                     tr(", for ", ", для: ") + to.name;
+            r.button = tr("Give ", "Дать ") + std::to_string(n);
             Key k = t.key;
             uint8_t id = to.id;
             r.on_click = [k, n, id] {

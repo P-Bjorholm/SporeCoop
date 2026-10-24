@@ -102,9 +102,9 @@ registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Spa
 |---|---|---|---|---|
 | 1 | Partners on the galaxy map | `space_map.cpp` | 10-19 | a name tag on each partner's star in the galaxy view (and where they fly); a click there jumps to them |
 | 2 | Partner colonies on the map | `space_map.cpp` | 10-19 | the stars with a partner's colonies are marked with the partner's name: whose territory is where |
-| 3 | Tool gifts | `space_trade.cpp` | 70-79 | give weapon charges, terraforming and other tools from the cargo to a partner (F9 Space page) |
+| 3 | Tool gifts | `space_trade.cpp` | 70-79 | give charges of consumable tools (bombs, terraforming charges, colony and city tools, monoliths) to a partner from the F9 Space page ("Antimatter Bomb x12 [Give 5 to Bob]", "Next tool", "Other partner"); what does not fit (the partner's tool is full) comes back. Permanent tools (weapons, drives, scan) and adventure / archetype tools are not giftable (docs/re/space.md 10.1) |
 | 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's colonies exist as cities of "<name>'s empire", an ally: you can visit them and defend them from raids |
-| 5 | Trade between players | `space_trade.cpp` | 70-79 | sell spice to a partner's colony for more than NPC empires pay; the partner's colony gets it |
+| 5 | Trade between players | `space_trade.cpp` | 70-79 | at a star with a partner's colony the Space page offers "Bob's <colony> buys Red Spice $9000 (2x market)" [Sell 10]: twice the market value (NPC stores pay 0.6-3x for the 3 spices they want, 5% for the others), paid by the galaxy into the shared budget (an export bonus), the spice lands in the partner's cargo hold; a colony buys 30 units per 10 minutes and not its own spice. Rivals mode: an offer at 1.5x that the partner accepts and pays from its own budget (docs/re/space.md 10.2-10.3) |
 | 7 | Co-op contracts | `space_contracts.cpp` | 20-29 | jobs made for two (a pirate armada that needs two ships, escorts, joint expeditions), big rewards for both |
 | 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | an alliance, a war or a gift to an NPC empire by one player counts for every player |
 | 9 | The galaxy core together | `space_finale.cpp` | 40-49 | the trip to the core is a joint finale: the reward and the ending for everybody |
