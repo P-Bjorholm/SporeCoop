@@ -154,6 +154,17 @@ Fixed entries move to the commit message (and a test).
   ports now, lanes 1-10.) Players with more than three co-op hosts on their
   network see only three: more rows or a filter (same build first) would help.
 
+## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
+
+* `coop_ui.py` on lane 9 (GOG 2024, branch fix/gog2024-tests, 2026-10-24): once in 12 runs of the
+  final code the host's console timed out right after its click on "Co-op" during the menu intro
+  (the mod posts Escape to skip the intro, docs/re/space.md 7.9); the game log was overwritten by
+  the next test before it was read. The other 11 runs (8 of them in a row) passed. An earlier version
+  that ended the intro with EndCinematic in the menu broke the menu twice (an access violation in
+  `UTFWin::Window::SetFlag`, a game that stopped reacting): that one is gone. If it comes back, keep
+  `out/lab/<run>/ui.host.game.log` and look for what the main thread did after "Co-op clicked
+  during the menu intro".
+
 ## Space: `coop.space jumpto` into another system arrives without planets
 
 ## Space: an unvisited star's planets can still differ between the two games
