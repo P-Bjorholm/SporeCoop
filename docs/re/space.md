@@ -687,7 +687,7 @@ opened with F9 but real clicks on it did nothing, and its jumps answered "a cine
   2016 lanes at ~31 fps (the same `wait.frames 200` before the join takes 3 s instead of 6.5 s), and the
   host's load is faster: the 2024 guest joined ~16.7 s after its menu and loaded at ~20 s (inside the
   intro), the 2016 guest joined at ~22.8 s and loaded at ~26.3 s (just after it). The race is the
-  same on GOG 2016: in one of four ordinary starts on lane 4 the 2016 guest's world also arrived
+  same on GOG 2016: in one of three ordinary starts on lane 4 the 2016 guest's world also arrived
   during the intro (the fix ended it at the load). Real players on either build hit it when they
   join within ~16-26 s of the menu coming up (the video not skipped).
   Every Space symbol on that path was checked for 2024 (cinematic manager getter, EndCinematic);
