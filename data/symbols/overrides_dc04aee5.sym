@@ -193,16 +193,22 @@ SporeCoop::cRelationshipManager_ApplyEvent=0x00D05DD0 ; verified port from GOG 2
 SporeCoop::RelEventMap_Index=0x00C8C6E0 ; verified port from GOG 2016 0x00C8C6D0: the call at 0xD05EE2 inside ApplyEvent 0xD05DD0, ret 4
 Simulator::cStarManager::GetEmpire=0x00BA94C0 ; verified port from GOG 2016 0x00BA94A0: same body (map +0x150, find 0xE5C780), ret 4
 SporeCoop::cEmpire_MakeContact=0x00C32450 ; verified port from GOG 2016 0x00C32430: +0x20, identical except call targets (IsContacted 0xC7AA30, set 0xC7BDC0, same +0x11D8 offsets), ret 4
-# space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
-SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0x00C70850: the same 14 instructions (calls and absolute addresses masked), tools: port by instruction text 2026-10-23
-SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
-SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
-SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)
+# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 12)
+App::IPropManager::Get=0x0067DDF0 ; verified port from GOG 2016 0x0067DDF0 (same addr): mov eax,[0x15FD8A8]; ret
+App::Property::GetFloat=0x0040CF10 ; verified port from GOG 2016 0x0040CF10 (same addr, same bytes: vt+0x24, type 0xD check)
+SporeCoop::DifficultyTuning_GetFloat=0x00C75DD0 ; likely port from GOG 2016 0x00C75DB0: +0x20; called at 0x103CE9B after push 0x1C2E590D / cGameNounManager::Get 0xB3D400 / mov eax,[ecx+0x74] 0xF67D40, reads +0x11F4 and +0x1248, GetArrayFloat 0x6A08B0
+Simulator::cSpaceToolData::AddAmmo=0x0104CBE0 ; verified port from GOG 2016 0x0104CBE0 (same addr, same bytes: +0x7C clamped to +0x1A0, ret 4)
+Simulator::cSpaceToolData::ConsumeAmmo=0x0104CC10 ; verified port from GOG 2016 0x0104CC10 (same addr, same bytes: -1 -> +0x19C, sub [ecx+0x7C], ret 4)
 Simulator::cCommManager::Get=0x00B3D5A0 ; verified port from GOG 2016 0x00B3D570: cdecl() -> [0x167EB44], three getters before cCinematicManager::Get 0xB3D5D0 -> [0x167EB50] as in GOG 2016
 Simulator::cCommManager::IsCommScreenActive=0x00AE9310 ; verified port from GOG 2016 0x00AE92E0: identical code (cmp [ecx+0x20],0; calls 0x1002A70 / 0x1075530 / 0x10666B0 / 0x1068360), plain ret
 SporeCoop::cSimulatorPlayerUFO_TravelCost=0x00FFC390 ; verified port from GOG 2016 0x00FFC390 (unchanged): same code, called at 0x1002090 (TravelToStar) and 0x10228E2 (SpaceTeleportTo), ret 8
 Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210F0 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns cStar+0x48
 Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): same code (context == 2 check, cost 0xFFC390 refunded, TravelToStar), plain ret
+# space empire setup for tests / fixtures (coop.space empire, docs/re/space.md 9.6)
+SporeCoop::cPlanetRecord_SetTechLevel=0x00C70870 ; verified port from GOG 2016 0x00C70850: the same 14 instructions (calls and absolute addresses masked), tools: port by instruction text 2026-10-23
+SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97090 ; verified port from GOG 2016 0x00B97040: the same 14 instructions (level switch 2/4/5; level 5: 0xB96E90(rec), then 0xB8DA70(1) on the record)
+SporeCoop::cEmpire_AddPlanet=0x00C34FD0 ; verified port from GOG 2016 0x00C34FB0: the same 14 instructions; ret 4
+SporeCoop::cEmpire_SetContactedByPlayer=0x00C30A90 ; verified port from GOG 2016 0x00C30A70: +0x84 pol, cGameNounManager::Get 0xB3D400, +0x74 getter 0xF67D40, setters 0xC7BD20/0xC7BD40 (disassembly 2026-10-23)
 Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
 Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4
 Simulator::cPlanetModel::Get=0x00B3D450 ; verified port from GOG 2016 0x00B3D420: cdecl() -> [0x167EAF8] (ModAPI March2017 address)
