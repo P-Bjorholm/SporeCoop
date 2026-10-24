@@ -76,6 +76,7 @@ def settle(con, who, secs=4, timeout=120):
     crashed the game in the UI (AV at 0xCCCCCCCC from App::Canvas::Tick, docs/06-testing.md)"""
     quiet = 0.0
     since = None
+    presses = 0
     t0 = time.time()
     while time.time() - t0 < timeout:
         f = fin(con)
@@ -83,7 +84,9 @@ def settle(con, who, secs=4, timeout=120):
             quiet = 0.0
             since = since or time.time()
             if time.time() - since >= 6:
-                con.call('key enter')
+                presses += 1
+                # some captions only take the green check button (bottom right)
+                con.call('key enter' if presses % 2 else 'click 1410 1048')
                 since = None
         else:
             since = None
@@ -92,6 +95,7 @@ def settle(con, who, secs=4, timeout=120):
                 return True
         time.sleep(1.0)
     print(f'  {who}: still busy after {timeout} s:', fin(con)['line'])
+    shot(con, f'finale_busy_{who}.png')
     return False
 
 
@@ -185,22 +189,34 @@ def main():
         guest.call(f'key {VK_F9}')
         settle(guest, 'guest')
 
-    # the host flies to the core star (the gate) and zooms in like a player
+    # the host flies to the core star (the gate), zooms into its "solar system", flies the ship into
+    # the centre (a click) and zooms in: that is where the game opens the core (0x1009C90)
     r = sp(host, 'finale goto core')
     print('  host goto core:', r)
     ok = wait(lambda: fin(host).get('zone') == '3', 30)
     ck(ok, f'host: at the gate of the galactic core ({fin(host)["line"]})')
     settle(host, 'host')
-    w, h = 1440, 1080
-    for _ in range(6):
-        host.call(f'wheel {w // 2} {h // 2} 5')
+    for _ in range(10):
+        if fin(host).get('ctx') == '1':
+            break
+        host.call('wheel 720 540 3')
         time.sleep(1.5)
-        if fin(host).get('waiting') == '1' or fin(host).get('entered') == '1':
+    ck(fin(host).get('ctx') == '1', 'host: zoomed into the core\'s system')
+    time.sleep(3)
+    settle(host, 'host')
+    shot(host, 'finale_core_system.png')
+    for _ in range(4):
+        host.call('click 720 480')  # fly into the centre
+        time.sleep(5)
+        for _ in range(4):
+            host.call('wheel 720 540 3')
+            time.sleep(1.5)
+        f = fin(host)
+        if f.get('waiting') == '1' or f.get('entered') == '1':
             break
     f = fin(host)
-    wheel = f.get('waiting') == '1'
-    if not wheel:
-        print('  (the wheel did not reach the core: entering by command)', f['line'])
+    if f.get('waiting') != '1' and f.get('entered') != '1':
+        print('  (flying into the centre did not reach the core: entering by command)', f['line'])
         sp(host, 'finale enter')
         time.sleep(2)
         f = fin(host)

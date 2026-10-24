@@ -147,6 +147,8 @@ static int tool_charges(uint32_t hash)
     if (!inv || !a_GetTool)
         return -1;
     uint32_t key[3] = {hash, 0, 0};
+    if (!vcall<bool>(inv, 0x74 / 4, (const void*)key)) // HasTool (GetTool also finds tools still to unlock)
+        return -1;
     void* tool = thiscall<void*>(a_GetTool, inv, (const void*)key);
     return tool ? F<int>(tool, 0x7C) : -1;
 }
@@ -309,16 +311,33 @@ static void __cdecl h_Enter()
     }
 }
 
+// the core is entered from inside its "solar system" (context 1, active star = the core): the
+// system update 0x1009C90 calls 0x1002DD0 every frame while the ship sits in the centre and the
+// camera is zoomed in; called directly the cinematic places the ship itself
+static double g_enter_at; // a partner entered: our own entry after the system view is up
+
+static bool in_core_system()
+{
+    void* core = core_record();
+    return core && active_star_record() == core && context() == 1;
+}
+
 static void enter_now(void*)
 {
-    if (has_flag(kFlagEnteredCore) || busy())
-        return;
-    void* core = core_record();
-    if (!core || active_star_record() != core || context() != 2)
+    if (has_flag(kFlagEnteredCore) || busy() || !in_core_system())
         return;
     g_go = true;
     h_Enter();
     g_go = false;
+}
+
+// at the gate in the galaxy view: into the core's system first (the native galaxy -> system)
+static void enter_system(void*)
+{
+    void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
+    void* core = core_record();
+    if (mode && core && active_star_record() == core && context() == 2 && !busy())
+        thiscall<void>(a_EnterSystem, mode);
 }
 
 // ---------------- Steve's gift for partners ----------------
@@ -369,14 +388,36 @@ static void partner_entered(uint8_t id, bool live)
     if (has_flag(kFlagEnteredCore))
         return;
     void* core = core_record();
-    if (live && core && active_star_record() == core && context() == 2 && !cinematic_playing()) {
+    if (live && core && active_star_record() == core && context() >= 1) {
         spaceext::notice(who + spaceext::tr(" enters the galactic core: together!", " входит в ядро галактики: вместе!"));
-        H->run_outside_frame(enter_now, nullptr);
+        if (context() == 2)
+            H->run_outside_frame(enter_system, nullptr);
+        g_enter_at = H->time_seconds() + (context() == 2 ? 4.0 : 0.0);
         return;
     }
     if (live)
         spaceext::notice(who + spaceext::tr(" entered the galactic core!", " вошёл(ла) в ядро галактики!"));
-    schedule_reward(who);
+    // Steve's gift follows from reward_tick
+}
+
+// Steve's gift for whoever lacks it: a partner reached the core, or the own save says the core was
+// entered (a guest's copy of the host's save) without the gift. Checked again and again: a world
+// load (a rejoin) replaces the game state, the gift of the old world is gone
+static double g_reward_next;
+static void reward_tick(double now)
+{
+    if (now < g_reward_next || g_reward_pending || !spaceext::in_space() || g_flags & F_STAFF || busy() ||
+        context() < 0 || g_enter_at || g_waiting)
+        return;
+    g_reward_next = now + 3;
+    std::string from;
+    for (auto& [id, n] : g_reached_by)
+        if (id != spaceext::my_id())
+            from = n;
+    if (from.empty() && g_flags & F_ENTERED && !g_entries)
+        from = spaceext::tr("Your crew", "Ваш экипаж");
+    if (!from.empty())
+        schedule_reward(from);
 }
 
 // ---------------- flying to a partner at the core ----------------
@@ -463,7 +504,7 @@ static std::string fly_to(uint8_t id)
             if (p.id == id)
                 in_system = (p.place & 0x80000000u) != 0;
     bool gate = it->second.zone == Z_GATE;
-    return fly_to_star(it->second.star, in_system && !gate, gate ? it->second.prev : 0);
+    return fly_to_star(it->second.star, in_system || gate, gate ? it->second.prev : 0);
 }
 
 static void fly_tick(double now)
@@ -525,13 +566,14 @@ static void on_message(uint8_t kind, uint8_t from, net::Reader& r)
         }
         if (zone < Z_NEAR)
             p.told_near = p.told_gate = false;
-        // a partner who already entered the core (before we joined, or we missed K_REACHED)
-        if ((flags & F_ENTERED) && !p.told_entered) {
+        // a partner who entered the core before we joined (or we missed K_REACHED). A guest joins
+        // with a copy of the host's save and inherits the host's flag: the host does not count a
+        // guest with the flag while it has the flag itself
+        if ((flags & F_ENTERED) && !p.told_entered && !has_flag(kFlagEnteredCore)) {
             p.told_entered = true;
             g_reached_by[from] = who;
             if (first && !has_flag(kFlagCoreTools))
                 spaceext::notice(who + spaceext::tr(" has reached the galactic core.", " уже достиг(ла) ядра галактики."));
-            schedule_reward(who);
         }
         return;
     }
@@ -566,9 +608,17 @@ static void tick(double now)
         void* core = core_record();
         if (!core || active_star_record() != core || g_flags & F_ENTERED) {
             g_waiting = false;
-        } else if ((g_alone || missing().empty()) && !cinematic_playing() && context() == 2) {
+        } else if ((g_alone || missing().empty()) && !busy()) {
+            g_enter_at = now; // everybody is here (or "Enter now"): open it
+            g_waiting = false;
+        }
+    }
+    if (g_enter_at && now >= g_enter_at) {
+        if (has_flag(kFlagEnteredCore) || active_star_record() != core_record() || now > g_enter_at + 30)
+            g_enter_at = 0; // done, left, or gave up
+        else if (in_core_system() && !busy()) {
+            g_enter_at = 0;
             H->run_outside_frame(enter_now, nullptr);
-            g_waiting = false; // (enter_now opens it; if not, the next zoom-in asks again)
         }
     }
     // partners who left the session
@@ -580,6 +630,7 @@ static void tick(double now)
             else
                 ++it;
     }
+    reward_tick(now);
     fly_tick(now);
 }
 
@@ -588,6 +639,8 @@ static void session_end()
     g_peer.clear();
     g_reached_by.clear();
     g_waiting = g_alone = g_go = false;
+    g_enter_at = 0;
+    g_reward_next = 0;
     g_fly = Fly();
     g_sent_zone = g_sent_flags = 0xFF;
 }
@@ -622,7 +675,7 @@ static std::vector<spaceext::Row> rows()
         w.color = 0xFFFFD040;
         w.on_click = [] {
             g_alone = true;
-            enter_now(nullptr);
+            g_enter_at = H->time_seconds();
         };
         v.push_back(w);
     }
@@ -733,10 +786,9 @@ static std::string debug(const std::vector<std::string>& a)
         std::string e = fly_to_star(s, a.size() > 2 && a[2] == "enter");
         return e.empty() ? "flying to " + std::to_string(s) : e;
     }
-    if (a[0] == "enter") { // tests: what the zoom-in into the core star does (goes through the wait)
-        void* core = core_record();
-        if (!core || active_star_record() != core || context() != 2)
-            return "not at the core's gate (goto core first)";
+    if (a[0] == "enter") { // tests: what the zoom-in at the core's centre does (goes through the wait)
+        if (!in_core_system())
+            return "not in the core's system (goto core enter first)";
         H->run_outside_frame([](void*) { h_Enter(); }, nullptr);
         return "entering";
     }
