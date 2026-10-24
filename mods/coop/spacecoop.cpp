@@ -301,6 +301,25 @@ void* star_record(uint32_t id)
 // coop.space jumpto <star> [force] [old]: "old" = the 0.6 jump (TravelToStarSystem), for comparisons
 static bool g_jump_old;
 
+// The jump passes through the galaxy view for a moment. SystemToGalaxy posts 0x5E37A3B, whose handler
+// 0xFDABE0 shows what belongs to the player's first look at the galaxy (in the tutorial the caption
+// SPG_EnteredGalaxy_201 about the beacon, which waits for OK and then blocks the next jump, also in a
+// save without the interstellar drive; hints). The player does not see that galaxy view: skip the
+// handler once, right after the jump; a later real zoom-out shows it as usual.
+using GalaxyEntered_t = void(SK_THISCALL*)(void*);
+static GalaxyEntered_t o_GalaxyEntered;
+static double g_galaxy_pass_until;
+static uint32_t g_galaxy_msgs_skipped;
+static void __fastcall h_GalaxyEntered(void* self, void*)
+{
+    if (H->time_seconds() < g_galaxy_pass_until) {
+        g_galaxy_pass_until = 0;
+        g_galaxy_msgs_skipped++;
+        return;
+    }
+    o_GalaxyEntered(self);
+}
+
 static std::string travel_to(uint32_t star, bool force)
 {
     static uintptr_t to_galaxy = H->sym("SporeCoop::cAppModeSpace_SystemToGalaxy"),
@@ -345,6 +364,8 @@ static std::string travel_to(uint32_t star, bool force)
         return "";
     }
     if (ctx == 1) {
+        if (o_GalaxyEntered)
+            g_galaxy_pass_until = H->time_seconds() + 5;
         thiscall<void>(to_galaxy, mode);
         ctx = cdecl_call<int>(a_Context);
     }
@@ -827,6 +848,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     g_ok = a_PlayerUFOGet && a_Context && a_ActivePlanet;
     if (a_SetState)
         H->hook_create(M, (void*)a_SetState, (void*)h_SetState, (void**)&o_SetState);
+    if (uintptr_t ge = S("SporeCoop::cAppModeSpace_OnGalaxyEntered"))
+        H->hook_create(M, (void*)ge, (void*)h_GalaxyEntered, (void**)&o_GalaxyEntered);
     a_Rng = S("Math::RandomNumberGenerator::global_ptr");
     if (uintptr_t rp = S("Simulator::cStarManager::RequirePlanetsForStar"); rp && a_Rng)
         H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
@@ -935,10 +958,10 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size());
     return b + spaceext::status_all();
 }

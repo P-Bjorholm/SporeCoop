@@ -427,9 +427,10 @@ Space page "Jump there", guest lands and jumps from the planet into an empty sys
 second NPC system (second contact). It checks that both games list the same PlanetIDs for the new
 stars (seeded planet generation, docs/re/space.md 7.3), the partner rows ("in another star system" /
 "in your system"), the jump counters and no faults.
-* Captions on the way that wait for OK (6.9): the tutorial's beacon caption on the first pass through the
-  galaxy view and SPG_FirstContact_Intercept in the first NPC system (both once per game); `settle()`
-  presses Enter while `coop.space hp` says `movie=1`.
+* Captions on the way that wait for OK (6.9): SPG_FirstContact_Intercept in the first NPC system (once
+  per game), the tutorial's beacon caption on the host's own zoom-out to the galaxy (the jump's own
+  galaxy pass skips it, docs/re/space.md 7.3); `settle()` presses Enter while `coop.space hp` says
+  `movie=1`.
 * The comm clicks (1440x1080): the comm tab above the empire's card at (288, 914), the first answer at
   (720, 725) three times, Goodbye at (424, 882); the contact flag (bit 1) is set at the end of the talk.
 * The old jump stays reachable for comparisons: `coop.space jumpto <StarID> force old`.

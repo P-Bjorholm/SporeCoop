@@ -167,6 +167,7 @@ SporeCoop::TimeOfDay_GetObject=0x01021110 ; verified port from GOG 2016 0x010211
 SporeCoop::TimeOfDay_Unavailable=0x01020F30 ; verified port from GOG 2016 0x01020F30 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::cAppModeSpace_LandOnActivePlanet=0x00FE0E00 ; verified port from GOG 2016 0x00FE0E00: Respawn calls 0xFE0E00 after TravelToStarSystem; plain ret; calls 0x1003530 (context 0)
 SporeCoop::cAppModeSpace_SystemToGalaxy=0x00FDA5D0 ; verified port from GOG 2016 0x00FDA5D0: delta 0; same prologue (sub esp,0xC; mov esi,ecx; or [[esi+0x15C]+0x50],4; IBakeManager vt 0x40 on [esi+0x16C]), 360 bytes, callers 0x1009EBC (same) and 0xC78161 (GOG 2016 0xC78141, +0x20)
+SporeCoop::cAppModeSpace_OnGalaxyEntered=0x00FDABE0 ; verified port from GOG 2016 0x00FDABE0: delta 0, the same first 8 instructions (sub esp,0x44; push esi; cGameNounManager::Get 0xB3D400; GetWindow 0xF67D40), 492 bytes, only caller 0xFE3600 (same)
 SporeCoop::cCreatureAnimal_IsEpic=0x00C0C240 ; verified port from GOG 2016 0x00C0C200 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 SporeCoop::cSimPlanetHighLOD_EndRespawnCaption=0x00FF59D0 ; verified port from GOG 2016 0x00FF59D0: add ecx,0x1E4; jmp 0x7CFD30; only callers 0x100C57A / 0x100C5E7 (identical to old)
 SporeCoop::cTribeUI_Get=0x00CD4230 ; verified port from GOG 2016 0x00CD41E0: mov eax,[0x169B2C8]; ret (old global 0x169C2A8, -0xFE0); 161 callers

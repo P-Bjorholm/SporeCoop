@@ -532,7 +532,7 @@ guard: no cinematic (ufo+0x7F0 == 0 and cCinematicManager+0x2C == 0) unless "for
 mode = *(void**)0x16DA918;  dst = cStarManager::GetStarRecord(StarID) (checked against the table)
 if dst == GetActiveStarRecord(): context 2 -> EnterSolarSystem(mode); else "already there"
 case 0: PlanetModelCleanup(*0x167FADC, GetActivePlanet()); LeavePlanet(mode, 0)     // planet -> system
-case 1: SystemToGalaxy(mode)                    0xFDA5D0                             // system -> galaxy
+case 1: skip the next 0xFDABE0 (5 s); SystemToGalaxy(mode) 0xFDA5D0                // system -> galaxy
 case 2: e = ufo+0x7F4; ufo+0x7F4 = max(e, ufo+0x7F8)   // TravelToStar spends energy / damages at 0
         SpaceTeleportTo(dst)                     0x10228C0  // free (cost refunded), instant, generates
         ufo+0x7F4 = e
@@ -544,8 +544,13 @@ buttons use run_outside_frame); the posted messages are handled in the next fram
 Effects seen: the target's planets in cStarManager +0x50 and drawn, an active planet of that star, the
 empire's ships (envoy type 8, defenders type 6), the empire's contact entry gets flag 0x20 at once and
 the comm card shows at the bottom left; the first NPC system of a game plays SPG_FirstContact_Intercept
-(caption, OK), and the first pass through the galaxy view of the tutorial save plays its beacon caption
-(OK). The contact itself (cPlayer +0x11D8 flags 0x26, bit 1) comes when the player talks to the empire:
+(caption, OK). **The galaxy pass is hidden:** the 0x5E37A3B posted by SystemToGalaxy is handled one frame
+later by 0xFDABE0 (`SporeCoop::cAppModeSpace_OnGalaxyEntered`, the player's first look at the galaxy): in
+a tutorial save it played SPG_EnteredGalaxy_201 ("The interstellar drive from the wreck is responding to
+a beacon...", waits for OK), also in the `space` fixture without the drive, and that caption then
+blocked the next jump (coop_space_play.py and coop_space_page.py failed). `spacecoop.cpp` skips that
+handler once within 5 s after its own SystemToGalaxy (`galaxy_msgs_skipped` in `coop.space`); a real
+zoom-out later shows it as usual. The contact itself (cPlayer +0x11D8 flags 0x26, bit 1) comes when the player talks to the empire:
 the comm tab above the empire's card (288, 914 in a 1440x1080 window), an answer, Goodbye. Money and
 energy are unchanged. The planets of the player's colonies in other systems stay in +0x50 (the game keeps
 them); `coop.targets all` lists only the active star's planets.
