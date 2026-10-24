@@ -55,7 +55,7 @@ static uintptr_t a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit
     a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt, a_HomeStarMap,
     a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove, a_EnemyAdd, a_EnemyRemove, a_StrAssign,
     a_Save, a_Expand, a_PlayerEmpire, a_Color, a_NounMgr, a_GetData, a_MissionCb[4], a_SetState, a_StartRaid,
-    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt;
+    a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt, a_AllUFOs, a_TakeDamage, a_PlayerUFO;
 
 // ---- what each mirror changed (to undo it exactly) ----
 struct StarSnap {
@@ -79,6 +79,7 @@ struct Mirror {
     uint32_t color = 0;           // ARGB (spacemap::player_color)
     spaceext::Relation rel = spaceext::Relation::Ally;
     uint32_t contact_before = 0;  // cPlayer's flags for the mirror's political id before the mirror
+    spaceext::Relation rel_on = spaceext::Relation::Ally; // the relation written into the game
     // applied state (valid while applied)
     bool applied = false;
     void* emp = nullptr;          // the cEmpire (kept alive by our reference, re-inserted on apply)
@@ -96,6 +97,7 @@ static uint32_t g_saves, g_unmirrors, g_applies, g_raids_started, g_raids_won, g
 static std::vector<uint32_t> g_my_raids_sent;
 static std::set<uint32_t> g_my_raids_seen;
 static std::string g_last;
+static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
 
 // ---------------- game helpers ----------------
 static void* star_mgr() { return a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr; }
@@ -543,8 +545,17 @@ static void apply(Mirror& m)
     if (void* sp = thiscall<void*>(a_GetSpecies, player_empire()))
         thiscall<void>(a_SetSpecies, m.emp, sp);
     str_assign((uint8_t*)m.emp + 0x3C, utf16(empire_name(m))); // SetSpeciesProfile renamed it
-    if (first)
+    if (first) {
         set_relation(m, true);
+        m.rel_on = m.rel;
+    } else if (m.rel != m.rel_on) { // rivals mode: an alliance or a war between the players
+        spaceext::Relation want = m.rel;
+        m.rel = m.rel_on;
+        set_relation(m, false);
+        m.rel = want;
+        set_relation(m, true);
+        m.rel_on = want;
+    }
     g_applies++;
 }
 
@@ -669,68 +680,100 @@ static void raids_tick(double now)
 // helper: a raid of my own on the mirror colony I am on, while its owner's raid runs
 static void helper_raids()
 {
-    if (context() != 0)
-        return;
-    void* ap = active_planet_record();
+    void* ap = context() == 0 ? active_planet_record() : nullptr;
+    uint32_t here = ap ? F<uint32_t>(ap, 0x184) : 0;
+    auto act = active_raids();
+    std::set<uint32_t> raided; // PlanetIDs (the raid's target record need not be the same object
+                               // as the active planet's: compare ids)
+    // a raid of mine on a mirror colony lives only while I am on that planet and the owner's raid
+    // runs: away from the planet the game would simulate it off-screen against the mirror's cities
+    for (auto& [rec, mi] : act) {
+        uint32_t id = readable(rec, 0x188) ? F<uint32_t>(rec, 0x184) : 0;
+        if (id)
+            raided.insert(id);
+        Mirror* m = mirror_of_planet(id);
+        if (m && (id != here || !m->raids.count(id)) && a_SetState) {
+            thiscall<void>(a_SetState, mi, 7); // aborted
+            g_aborted.insert(mi);
+            g_last = "raid on " + m->name + "'s colony aborted";
+        }
+    }
     if (!ap)
         return;
-    uint32_t here = F<uint32_t>(ap, 0x184);
-    auto act = active_raids();
     for (auto& [n, m] : g_m) {
-        if (!m.applied || !m.planets.count(here))
+        if (!m.applied || !m.planets.count(here) || !m.planets[here].on || !m.raids.count(here))
             continue;
-        bool owner_raid = m.raids.count(here) != 0;
         const spacemap::Roster* r = m.online ? spacemap::roster_of(m.id) : nullptr;
+        // the owner fights it there itself (with me: squadron mirrors its ships to me)
         bool owner_here = r && (r->place & 0x40000000u) && (r->place & 0x3FFFFFFFu) == here;
-        auto it = act.find(ap);
-        if (owner_raid && !owner_here && it == act.end() && a_StartRaid) {
+        if (!owner_here && !raided.count(here) && a_StartRaid) {
             int bombers = std::max(2, (int)m.raids[here]);
             thiscall<int>(a_StartRaid, nullptr, 0, ap, bombers); // the `raid -start` code: owner = star's empire
             g_raids_started++;
             g_last = "raid on " + m.name + "'s colony started here";
-        } else if (!owner_raid && it != act.end() && a_SetState)
-            thiscall<void>(a_SetState, it->second, 7); // the owner's raid is over: abort mine
+        }
     }
 }
 
-// a raid of mine on a mirror colony ended: a win completes the owner's raid
-static std::set<void*> g_watch; // my raids on mirror colonies (pointers only compared, never used)
-static std::map<void*, uint32_t> g_watch_planet;
-using SetStateCb = void (*)(void*, int);
+// a raid of mine on a mirror colony ended: a win completes the owner's raid. The manager takes a
+// finished raid through 5 (completed) or 6 (failed) to 1 within one update, so the state does not
+// tell; the ships do: a raid ends "completed" when none of its ships is left (docs/re/space.md 6),
+// a failed one sends them away alive.
+struct Watch {
+    uint32_t planet = 0;
+    int ships = 0;          // its living ships at the last look
+    bool had_ships = false;
+};
+static std::map<void*, Watch> g_watch; // my raids on mirror colonies (pointers only compared)
+
+static std::map<void*, int> raid_ships()
+{
+    std::map<void*, int> n;
+    void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+    void* vec = nm && a_AllUFOs ? thiscall<void*>(a_AllUFOs, nm) : nullptr;
+    for (void* u : ptr_vec(vec, 1024))
+        if (readable(u, 0x808) && F<void*>(u, 0x800) && F<float>(u, 0x540) > 0 && F<int>(u, 0x53C) != 2)
+            n[F<void*>(u, 0x800)]++;
+    return n;
+}
 
 static void watch_raids()
 {
     auto act = active_raids();
+    auto ships = raid_ships();
     std::set<void*> now;
     for (auto& [rec, mi] : act) {
         uint32_t id = F<uint32_t>(rec, 0x184);
-        if (mirror_of_planet(id)) {
-            now.insert(mi);
-            g_watch_planet[mi] = id;
-        }
+        if (!mirror_of_planet(id))
+            continue;
+        now.insert(mi);
+        Watch& w = g_watch[mi];
+        w.planet = id;
+        w.ships = ships.count(mi) ? ships[mi] : 0;
+        w.had_ships |= w.ships > 0;
     }
-    // gone from the active list: look at the state if the mission still exists
-    auto all = missions();
-    std::set<void*> alive(all.begin(), all.end());
-    for (void* mi : g_watch)
-        if (!now.count(mi)) {
-            uint32_t id = g_watch_planet[mi];
-            int st = alive.count(mi) && readable(mi, 0x88) ? F<int>(mi, 0x84) : -1;
-            Mirror* m = mirror_of_planet(id);
-            if ((st == 5 || st == 9 || st == 1) && m && m->raids.count(id) && st != 7) {
-                // 5 completed (1 after the manager handled it): won
-                net::Writer w;
-                w.u8(m->id);
-                w.u32(id);
-                spaceext::send(K_DEFENDED, w);
-                g_raids_won++;
-                m->raids.erase(id);
-                spaceext::notice(m->name + spaceext::tr("'s colony is safe: you beat the raid",
-                                                        ": колония спасена, вы отбили налёт"));
-            }
-            g_watch_planet.erase(mi);
+    for (auto it = g_watch.begin(); it != g_watch.end();) {
+        if (now.count(it->first)) {
+            ++it;
+            continue;
         }
-    g_watch = now;
+        Watch w = it->second;
+        bool aborted = g_aborted.erase(it->first) != 0;
+        bool left = ships.count(it->first) && ships[it->first] > 0;
+        it = g_watch.erase(it);
+        Mirror* m = mirror_of_planet(w.planet);
+        if (aborted || left || !w.had_ships || w.ships > 2 || !m || !m->raids.count(w.planet))
+            continue;
+        net::Writer wr;
+        wr.u8(m->id);
+        wr.u32(w.planet);
+        spaceext::send(K_DEFENDED, wr);
+        g_raids_won++;
+        m->raids.erase(w.planet);
+        g_last = "beat the raid on " + m->name + "'s colony";
+        spaceext::notice(m->name + spaceext::tr("'s colony is safe: you beat the raid",
+                                                ": колония спасена, вы отбили налёт"));
+    }
 }
 
 // ---------------- sync with the rosters ----------------
@@ -923,7 +966,7 @@ static std::string status()
              "raids_started=%u raids_won=%u raids_completed=%u",
              (int)g_m.size(), ap, st, pl, (int)g_hold, g_saves, g_unmirrors, g_applies, g_growth_blocked,
              g_raids_started, g_raids_won, g_raids_completed);
-    return b;
+    return std::string(b) + (g_last.empty() ? "" : " last='" + g_last + "'");
 }
 
 static std::string hex(uint32_t v)
@@ -1047,11 +1090,35 @@ static std::string debug(const std::vector<std::string>& a)
             }
         return o.empty() ? "no cities\n" : o;
     }
+    if (a[0] == "fight") { // tests: hit the ships of my raids on mirror colonies (the game's damage, as my shots)
+        float dmg = a.size() > 1 ? (float)atof(a[1].c_str()) : 1000.f;
+        std::set<void*> mine;
+        for (auto& [rec, mi] : active_raids())
+            if (mirror_of_planet(F<uint32_t>(rec, 0x184)))
+                mine.insert(mi);
+        void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+        void* vec = nm && a_AllUFOs ? thiscall<void*>(a_AllUFOs, nm) : nullptr;
+        void* pm = a_PlayerUFO ? cdecl_call<void*>(a_PlayerUFO) : nullptr;
+        void* me = readable(pm, 0x44) ? F<void*>(pm, 0x40) : nullptr;
+        if (!me || !a_TakeDamage)
+            return "no ship\n";
+        uint32_t pol = my_pol();
+        int n = 0;
+        float dir[3] = {0, 0, 1};
+        for (void* u : ptr_vec(vec, 512))
+            if (u != me && readable(u, 0x808) && mine.count(F<void*>(u, 0x800)) && F<float>(u, 0x540) > 0) {
+                thiscall<void>(a_TakeDamage, (uint8_t*)u + 0x508, dmg, pol, 0, (const float*)dir, (uint8_t*)me + 0x508);
+                n++;
+            }
+        return "hit " + std::to_string(n) + " raid ships\n";
+    }
     if (a[0] == "raids") {
         std::string o;
+        auto ships = raid_ships();
         for (auto& [rec, m] : active_raids())
             o += "raid " + hex(F<uint32_t>(m, 0x78)) + " on " + hex(F<uint32_t>(rec, 0x184)) + " state " +
                  std::to_string(F<int>(m, 0x84)) + " bombers " + std::to_string(F<int>(m, 0x1F8)) +
+                 " ships " + std::to_string(ships.count(m) ? ships[m] : 0) +
                  (mirror_of_planet(F<uint32_t>(rec, 0x184)) ? " (mirror colony)" : "") + "\n";
         return o.empty() ? "no raids\n" : o;
     }
@@ -1179,6 +1246,9 @@ static bool init(const SkHost* h, SkMod* m)
     a_GetPlanets = S("Simulator::cStarRecord::GetPlanetRecords");
     a_AddCivData = S("SporeCoop::cPlanetRecord_AddCivData");
     a_GetPlayer = S("SporeCoop::cGameNounManager_GetPlayer");
+    a_AllUFOs = S("Simulator::GetAllUFOs");
+    a_TakeDamage = S("Simulator::cGameDataUFO::TakeDamage");
+    a_PlayerUFO = S("Simulator::cSimulatorPlayerUFO::Get");
     a_FlagsAt = S("SporeCoop::VectorMapUint_At");
     uintptr_t need[] = {a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit, a_AddStar, a_SetHomeStar,
                         a_AddPlanet, a_SetSpecies, a_GetSpecies, a_PlanetTech, a_FillPlanet, a_MapErase, a_MapAt,

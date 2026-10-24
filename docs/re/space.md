@@ -916,3 +916,110 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   visit the planet has a generated colony (several cities and a spice geyser), and it survives a
   save and a load. `coop.space empire colony <PlanetID> [spice]`. Stored spice (`cCityData` +0x1C,
   float) set higher is clamped at the next load (one city: 5, two cities: 10).
+
+## 11. A partner's colonies as an allied empire (`space_allies.cpp`, ✔ runtime, lane 9 GOG 2024, 2026-10-23)
+
+How a planet of my galaxy is made to belong to another (made up) empire, and how to undo it so that
+no save keeps it. GOG 2016 addresses (decompile with tools/ghidra/q.sh); the GOG 2024 ones are in
+`overrides_dc04aee5.sym`.
+
+### 11.1 Empires and political ids (✔)
+* `cStarManager` +0x150 = `eastl::map<uint32 pol, intrusive_ptr<cEmpire>>` (find 0xE5C7A0, header
+  +0x154; `GetEmpire(pol)` 0xBA94A0), +0x12C = map pol -> home `cStarRecord` (same map type),
+  +0x1D4 = the political id counter (`NextPoliticalID(bool high)` 0xBA6760: `[+0x1D4]++`, | 0x80000000
+  with high; empires and the player use high = 1), +0x1D8 = the player's pol.
+* **The game makes an empire lazily** in `GetEmpireForStar(star)` 0xBB14B0: a star with `+0x54 == -1`
+  gets `NextPoliticalID | 0x80000000`; when the map has no empire for that pol: home star map
+  (0xBAF7A0), `CreateEmpire(pol)` 0xBAF220 (new cEmpire 0x158, ctor 0xC34970, +0x84 = pol, into the
+  map), `cEmpire_Init(pol, isPlayer)` 0xC35AE0 (isPlayer = home star flags & 3: player-owned home),
+  `AddStarOwnership(star)`, `SetHomeStar(star)` 0xC30D50, money from props. A civilization planet
+  that grows to space (0x100A000, case tech 4 -> 5) uses exactly this plus `SetContacted` 0xC30AF0,
+  `SetSpeciesProfile`, `AddPlanet` 0xC34FB0, `SetHomePlanet` 0xC31800 and a relationship event.
+* cEmpire fields: +0x10 colour id (0x53DBCF3 + 0..11 = the 12 palette colours, returned at once by
+  `UpdateAndGetColor` 0xC32E10; 0x53DBCF1 = the player's species colour, 0x53DBCF2 unset), +0x30 RGB
+  floats, +0x3C name (eastl::string16, ctor sets u"unknown"; `SetSpeciesProfile` 0xC337D0 rewrites it
+  from the species name via `cIdentityColorable::AssignNames`), +0x50 flags (0x10 owns stars, 0x40|0x04
+  player), +0x54/+0x58 archetype, +0x5C enemies vector (add 0xC34730, remove 0xC328E0), +0x70 allies
+  vector (add 0xC347C0, remove 0xC32970; `IsAllyOf` 0xC31D30), +0x84 pol, +0x88 stars, +0xB0 home
+  StarID, +0xB4 home PlanetID, +0xD0 money, +0x104 controller (NPC: 0x28-byte object 0xEAB3E0(3),
+  grox 4).
+* `cEmpire::Destroy` 0xC34460 is loud (event log 0x88426556 "empire destroyed", message 0x4B33711,
+  every star released): not for undoing. Quiet removal: erase the pol from the map +0x150
+  (`MapUintPtr_Erase` 0xBAA280 = map<uint32, intrusive_ptr>::erase(&key)) and the home star map
+  (0xBAF7A0(pol, null)); the mod keeps its own reference and puts the same object back on the next
+  apply (`MapUintPtr_At` 0xDD85C0 = operator[]), so nothing that still holds it sees it freed.
+* NPC empires grow by themselves: 0xFEA3A0 (periodic, for empires near the active star whose
+  stars lack flag 0x100 and whose +0x50 bit 0x40 is clear) -> `cEmpireGrowth_Expand(pol)` 0xFE9410
+  (colonises or upgrades a star). The mirror is skipped there (hook), or it would leave stars of its
+  own behind.
+
+### 11.2 Stars and planets (✔)
+* cStarRecord: +0x4C tech level (`SetTechLevel` 0xBB9C10; the max of its planets, 0xC8B760), +0x54
+  empire id (0xA16980), +0x5C flags (0xBB9C40: 0x1/0x2 player home / owned, 0x4 home star of an
+  empire, 0x8 ?, 0x40 the filtered planet copy at +0x98, 0x100 small colony: 1 city), +0x60 name
+  (the names of unnamed stars are made up anew in every game), +0x70 StarID, +0x74 species key
+  (12 bytes), +0x84 vector<cPlanetRecord*>, +0xAC planet count.
+* **Planet records are resources** {PlanetID, 0x5220CB8, 1} in the save's planet DB
+  (`planetRecords.pkp`). The game empties a star's vector +0x84 for systems far away;
+  `cStarRecord::GetPlanetRecords` 0xBBA8D0 (-> 0xBBA780) loads them again (from the resource cache:
+  the same object while somebody holds a reference). A star never visited has count 0:
+  `RequirePlanetsForStar(star, 0)` 0xBB4C60 generates them (same PlanetIDs in every copy).
+* **The save writes every cached planet record**: `SaveGame` 0xB28FD0 ends in 0xBB4D10 -> 0xBAC510,
+  which takes every cached resource of type 0x5220CB8 and writes it to the planet DB, also those of
+  systems the player left long ago. Undoing a change through the star's vector therefore misses
+  records the game dropped from it (seen: a mirrored planet stayed a colony in the save while its star
+  was restored). The mod holds a reference to each record it changes and restores it by pointer.
+* Record-level colony (what a mirror colony is): star `+0x54 = pol` (+ `AddStarOwnership`), then
+  `cPlanetRecord_SetTechLevel(rec, 5)` 0xC70850 (cdecl), `FillPlanetDataForTechLevel(rec, 5)`
+  0xB97040 (cdecl; -> 0xB96E40: a new cCivData 0x50 with pol = the star's empire and
+  `num_cities_in_colony` cCityData 0xC4 of type 0xFD701F6F, pushed with `AddCivData` 0xB8EFA0 to the
+  raw-pointer vector +0x15C; flag 0x40 of +0x2C), `cEmpire_AddPlanet(rec)` 0xC34FB0. The cCivData ctor
+  0xFF32F0 takes a political id of its own from the counter too.
+* Landing there (✔ screenshot `allies_planet.png`): the planet panel shows the empire's name and
+  species portrait, the planet has one colony city of that empire (cCity +0x30 = its pol; the 10
+  cCityData make one city on a fresh colony), its turrets shoot animals, not an ally's ship. The first
+  star I tried (the nearest free one of the fixture) is the tutorial's ruined colony: there the city is
+  a scripted ruin.
+* A loaded cPlanet (cStarManager +0x50 list) carries the pol in its cGameData (planet+0xD4 vt+0x48
+  SetPoliticalID; read at planet+0x104): set with the record, restored with it.
+
+### 11.3 Contact and relationship (✔)
+* cPlayer = `cGameNounManager +0x74` (0xF67D40); +0x11D8 = sorted vector map pol -> contact flags
+  (operator[] 0xF41940; setters 0xC7BCE0 |1, 0xC7BD00 |2 contacted (`PlayerContactedEmpire`
+  0xC7A890 reads it), 0xC7BD20 |4 aware (`EmpireIsAwareOfPlayer` 0xC7A8F0), 0xC7BD40 8, 0xC7BD70 0x10,
+  0xC7BDA0 0x20).
+* An empire the player has not contacted greets him when he enters its territory: cEmpire 0xC31690
+  sets "aware" and, not contacted, starts a first contact comm event (0xAEB330): an envoy ship and
+  (the first time in a game) the tutorial caption "Drake's equation was right... a living alien race!".
+  That first contact **reset the alliance** ("Your alliance with the Alice's empire has been
+  severed."). The mirror is marked contacted + aware (0x6) up front: no envoy, no reset.
+* Relationship data: `GetRelationshipMap(polA, polB)` 0xD01AE0 (thiscall on the manager, ret 8: the
+  galaxy map relMgr+0x24 or the active planet's), `GetRelationshipData(map, a, b)` 0xD01560 (ret 0xC,
+  null when there is none), flags at data+4: bit 0 war, bit 1 ally (`DeclareWar` 0xD065E0 /
+  `DeclareAlliance` 0xD06960 set them plus the empires' vectors, and post UI messages: 0x4445D43
+  when the player is one side). `ResetRelationship(a, b)` 0xD05870 makes a missing entry (0xD05770).
+  The mod writes the flags and the vectors directly. With the alliance the panel shows the happy face
+  and "We like new acquaintances +30".
+* There is no erase for relationship entries; `cEmpire::Destroy` does not remove them either (the
+  game keeps the entries of destroyed empires). The mirror's entry (flags cleared) stays in a save.
+
+### 11.4 The save: never with the mirror (✔)
+* kMsgSaveGame 0x1CD20F0 -> handler 0xB29930 posts 0x685DBFA -> after a delay
+  `cGamePersistenceManager_SaveGame(name, bool)` 0xB28FD0 (thiscall, ret 8); the quit save 0xB295D0
+  calls the same function. Everything (stars 0xBAEE30, planet records 0xBB4D10, the serializer) is
+  written inside the call.
+* The mod hooks 0xB28FD0: before the original every mirror is undone (planets by pointer, stars, the
+  empire out of the maps, contact flags and relationship flags back); 3 s after it the mirror is
+  applied again (the same empire object and pol, the same cCivData: the cities keep their state).
+* Space saves only off-planet (the handler refuses on a planet with event 0x6251278C), so a mirror
+  planet is never the high-LOD planet when it is undone for a save.
+
+### 11.5 Raids on a mirror colony (✔)
+* The game's raid code works on any planet: `StartRaidCheat` 0x100E620 (`raid -start`; stdcall-like
+  `(unused, cPlanetRecord*, bombers)` ret 0xC, ecx unused) -> CreateMission(0xA4B0A2DF, rec, empire
+  owning the star). On a mirror colony in my galaxy with me on the planet: pirate raiders (type 4,
+  pol -1) and the colony's own defenders (type 6, pol of the mirror empire) spawn and fight.
+* The manager takes a finished raid through 5 or 6 to 1 within one update; won vs lost is told by its
+  ships (`ufo+0x800 == mission`): none left alive = won (a failed raid sends them away alive).
+* Mission list: `cGameNounManager::GetData(cb1, cb2, cb3, cb4, 0x2AA5ADA)` (the callbacks as pushed by
+  `ThereIsEventInPlanet` 0xFEE020), vector at result+4.
