@@ -78,6 +78,7 @@ static float g_dist;
 static double g_next_eval, g_next_send;
 static bool g_waiting, g_alone, g_go, g_reward_pending;
 static std::string g_reward_from;
+static uint32_t g_reward_fails;
 static uint32_t g_waits, g_entries, g_entries_with, g_rewards, g_reward_skipped, g_flights, g_blocked;
 
 // a flight to a partner at the core: galaxy view first (the core is not a solar system), then the
@@ -362,6 +363,8 @@ static void give_reward(void*)
     bool ok = has_flag(kFlagCoreTools);
     if (ok)
         g_rewards++;
+    else
+        g_reward_fails++;
     H->log(M, ok ? SK_INFO : SK_WARN, "finale: Steve's gift from %s: %s (staff charges %d)", g_reward_from.c_str(),
            ok ? "given" : "the game did not take the message", tool_charges(kToolStaff));
     if (ok)
@@ -373,7 +376,7 @@ static void give_reward(void*)
 
 static void schedule_reward(const std::string& from)
 {
-    if (g_reward_pending || has_flag(kFlagCoreTools))
+    if (g_reward_pending || has_flag(kFlagCoreTools) || g_reward_fails >= 3) // (not taken 3 times: give up, logged)
         return;
     g_reward_pending = true;
     g_reward_from = from;
@@ -641,6 +644,7 @@ static void session_end()
     g_waiting = g_alone = g_go = false;
     g_enter_at = 0;
     g_reward_next = 0;
+    g_reward_fails = 0;
     g_fly = Fly();
     g_sent_zone = g_sent_flags = 0xFF;
 }
