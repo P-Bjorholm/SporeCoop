@@ -251,7 +251,7 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   ship cannot take off. `coop_space_puppet.py` failed rounds 2-4 that way whenever its random
   planet pick was Vulpica (lab 20261023-224651, lane 8: both ships stayed on the planet, the mod was
   fine). `Player.take_off()` now confirms captions (`captions()`, Enter) before zooming out, and
-  the puppet test lands on a fixed planet per round (P01, Vulpica, P03, home), ~6 min per run.
+  the puppet test lands on a fixed planet per round (P01, Vulpica, P03, home).
 * GOG 2024 lanes: for up to ~80 s after the load, zooming in at the home planet does not land
   (measured on lane 10: the first zoom that landed came 50 s after `start()` returned, also with the
   intro fix disabled; not investigated further). `coop_space_rescue.py` retries the first landing
