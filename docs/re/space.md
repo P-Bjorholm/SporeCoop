@@ -995,3 +995,46 @@ Found while writing the game bot `tools/tests/play_space.py` (players fly with r
   0xF06A8152, shield 0x4542380A, cloak 0x44808DE7, atmospheregenerator 0x931426A0, gravitationwave
   0xA43B6F38, monolith 0x14A7D231, allylaser1..3 0x47E65D39.., allymissile1..3 0x0068DF06 /
   0x0068DF05 / 0x0068DF04 (378 resources in the group; the other names are not known).
+
+## 10. Rivals mode: players as rival empires, PvP (✔ runtime, lane 6, GOG 2016, 2026-10-23; `space_rivalry.cpp`, `coop_space_rivalry.py`)
+
+### 10.1 Why a partner's ship cannot be hurt, and how war changes that (✔)
+* A partner's ship is a Defender puppet (UfoType 6) spawned with **our own** political id
+  (`modes.cpp` space_spawn: `SpawnUFO(6, &GetPlayerEmpireID(), model)`). The game's weapons never hurt
+  their own empire: the projectile explosion 0x00CBBEF0 compares the attacker's political id (its
+  local at esp+0x10, from the owner's combatant vt+0x10) with `target->GetPoliticalID()` (combatant
+  vt+0x10 = 0xC69020: `mov eax,[ecx-0x508]; jmp [eax+0x4C]` = cGameData vt+0x4C 0x5AADB0 `mov eax,
+  [ecx+0x30]`) at 0xCBC198..0xCBC1AC and skips equal ids (unless the tool has kFlagDamagesFriendlies
+  or the attacker's id is -1); TakeDamage itself returns on `attackerPol == own pol` (§2.1 step 4).
+* **The political id is just `cGameData+0x30`**: `SetPoliticalID` (vt+0x48) 0x00804880 is `mov eax,
+  [esp+4]; mov [ecx+0x30],eax; ret 4`. Writing it on a live UFO works at once.
+* GOG 2024 (dc04aee5, static check by byte pattern): the same friendly-fire test sits at 0x00CBC1EC
+  (`cmp ebx,-1; je; mov edx,[edi]; mov eax,[edx+0x10]; call eax; cmp ebx,eax`) and SetPoliticalID is
+  the same store at 0x00804910, so +0x30 is the political id there too (not run on that build).
+* The puppet of a player we are at war with gets political id **-1** (0xFFFFFFFF, "no empire", like
+  the pirates of `coop.fleet spawn`): the laser (palette "combat", key 1, a click on the ship) then
+  hits it, TakeDamage 0xC3CEA0 is called on it with `type 1`, attacker = our UFO's combatant, about
+  1 damage per hit and 3 hits per 0.7 s with the starting laser (guest ship 1500 HP). The puppet stays
+  invincible (+0x588), so the game itself does nothing; squadron's TakeDamage hook sends the hit to the
+  puppet's owner.
+* Political ids of the player empire are the same in both games of the session (the same galaxy:
+  0x800021CA on host and guest in the `space` fixture), which partly answers §7.8.
+
+### 10.2 Applying a PvP hit on the victim's game (✔)
+* The owner calls the hooked TakeDamage on its own ship: `thiscall(ufo+0x508, dmg, 0xFFFFFFFF, type,
+  dir, puppetOfShooter+0x508)`. The hook runs the rescue filter first (spacecoop.cpp: a partner at
+  war never counts as a helper, so an enemy's lethal hit is a real death), then the game: HP goes
+  down; a lethal hit plays the native death caption ("...cloning technology..."), OK respawns the
+  ship at the home colony (§7.2.1). `cSimulatorUniverse 0x100E580(attacker)` only stores the attacker
+  pointer (+0x110) and a constant (+0x114).
+* Not applied: the attacker side's damage-boost tool multiplier (inside the base TakeDamage of the
+  shooter's game, which is not called for the puppet).
+
+### 10.3 Money (✔)
+* `cEmpire::mEmpireMoney` +0xD0 of `GetPlayerEmpire()`, changed with `cEmpire::AddMoney` (clamps to
+  0..99 999 999). shared.cpp pauses the Space money (resource id 3) while `spaceext::rivals()`:
+  no totals, no guest changes, the guest's unsent change is dropped from the queue (it stays in the
+  guest's own money).
+* A guest that rejoins reloads the host's save, so its money becomes the save's value: the guest asks
+  the host (K_ASK) for its last reported budget (kept by player name) after every world load in rivals
+  mode and reports nothing until the answer (K_SET).

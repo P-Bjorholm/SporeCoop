@@ -10,6 +10,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "space_rivalry.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 
@@ -99,6 +100,8 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
     void* u = (uint8_t*)combat - kCombat;
     void* me = player_ufo();
     void* att = attacker ? (uint8_t*)attacker - kCombat : nullptr;
+    if (rivalry::on_hit(u, att, dmg, type, dir))
+        return 0; // our hit on the ship of a player at war with us: its owner takes it (space_rivalry.cpp)
     if (is_guest()) {
         auto it = g_mirror_of.find(u);
         if (it != g_mirror_of.end()) { // a mirror is hit: only our shots count, the host applies them

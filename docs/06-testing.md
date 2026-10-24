@@ -286,6 +286,16 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   your own (subagents of one session share the scratchpad folder: another agent's `up.py` there
   started the cell fixture in this lane, 2026-10-23).
 
+* Rivals mode (`coop_space_rivalry.py`, ~6 min on lane 6 after a 45 s start): both land on the
+  fixture's home planet, the buttons of the F9 Space page are found by their caption in
+  `coop.space rows` (row n = widget `sbtn<n>`) and clicked for real. Real PvP shots: the host flies
+  to the guest (`Player.regroup`, < 80 m), palette "combat", key 1, clicks on the guest's point from
+  `coop.targets all`; about 1 damage per hit, ~100 hits in 20 s. `coop.space rivalry` prints mode,
+  own money, relations, every player's last budget and the hit counters; `coop.space rivalry shoot
+  <id> <dmg>` is a hit of the own ship on a player's puppet through the hooked TakeDamage (the lethal
+  hit of the test), `pol` the political ids of the puppets (FFFFFFFF = at war). Money is changed with
+  `coop.res add money <n>` (local, as if earned; shared again in allies mode).
+
 ## 6.12 Space game bots (play_space.py)
 
 * `coop.targets all` lists what a bot can fly to: in a solar system its planets (`obj P/C<PlanetID>`),

@@ -204,6 +204,29 @@ Fixed entries move to the commit message (and a test).
 * The reward tool is chosen from the host's cargo (the first one of the list it lacks); a guest who
   has it already gets only the money.
 
+## Space rivals mode: limits (space_rivalry.cpp, 2026-10-23)
+
+* PvP damage is the raw damage of the shot: the shooter's damage-boost tool does not count (the base
+  TakeDamage of the shooter's game is not called for the puppet, docs/re/space.md 10.2).
+* Only hits of the own ship count: NPC ships and turrets of a player's game hit an enemy puppet only
+  on the host (squadron relays NPC hits on puppets to their owner), not on a guest's game.
+* A player who joins for the first time while rivals mode is on keeps the money of the host's save
+  it loaded (it had no budget yet); a rejoining player gets its own budget back from the host.
+* A guest that is not in space when the host switches the mode gets its share or merge when it is
+  back in space; the merge counts its last reported budget.
+* Spice gifts, tool gifts and the jump work between rivals as before (deliberate acts); mission
+  rewards are shared between allies only; raid alerts reach everybody.
+
+## Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23)
+
+* `coop_space_rescue.py` round 1 failed once: the host had flown ~550 m off with 2.5 s of W and came
+  back too late (repair 1.0 of 2.0 s when the 20 s ran out); round 2 then started 1330 m apart. Passed
+  in the next run and on the base branch. The ship of the new fixture is faster: a shorter flight off
+  would make it stable.
+* `coop_space_death.py` failed once in the forced-jump step: after the OK the ship stayed dead for 47 s
+  and the guard "respawn caption without a planet" did not fire (0), so the respawn caption had ended
+  some other way; passed in the next run and on the base branch.
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
