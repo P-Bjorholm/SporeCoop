@@ -83,6 +83,20 @@ def click_row(ui, con, text, button):
     return s is not None and ui.click(f'sbtn{n - 1}')
 
 
+def captions(con, ui):
+    """confirm the captions that wait for OK (landing tutorials: "Something is showing up on the
+    ship's radar...", "You have discovered a wild planet..."), with the co-op window closed"""
+    for _ in range(30):
+        if 'movie=1' not in sp(con, 'hp') and 'cine=1' not in sp(con, 'hp'):
+            return True
+        if ui.state().get('open') == '1':
+            con.call(f'key {VK_F9}')
+            time.sleep(0.5)
+        con.call('key enter')
+        time.sleep(1.5)
+    return False
+
+
 def main():
     host, guest = start('space')
     ck = Checks()
@@ -111,8 +125,18 @@ def main():
     shot(guest, 'contracts_armada_page.png')
     ok = wait(lambda: st(host)['state'] == 'active' and st(guest)['state'] == 'active', 15)
     ck(ok, f'the contract is active on both games (crew {st(host)["crew"]})')
-    ok = wait(lambda: int(st(host)['ships_up']) > 0, 30)
-    ck(ok, f'both ships at the star: the first wave comes ({st(host)["ships_up"]} ships)')
+    ck(int(st(host)['ships_up']) == 0, 'no wave in the system view (the armada fights on a planet)')
+    # both land on the system's active planet with the page's "Land" button
+    for ui, c in ((uh, host), (ug, guest)):
+        ck(click_row(ui, c, 'Armada at', 'Land'), f'{ui.who}: a click on "Land"')
+    ok = wait(lambda: sp(host, 'star').startswith('place 4') and sp(guest, 'star').split()[1] == sp(host, 'star').split()[1], 30)
+    ck(ok, f'both on one planet ({sp(host, "star")} / {sp(guest, "star")})')
+    t0 = time.time()
+    while time.time() - t0 < 40 and int(st(host)['ships_up']) == 0:
+        captions(host, uh)
+        captions(guest, ug)
+        time.sleep(1)
+    ck(int(st(host)['ships_up']) > 0, f'both ships on the planet: the first wave comes ({st(host)["ships_up"]} ships)')
     shot(host, 'contracts_armada_wave.png')
     fleet = host.call('coop.fleet list')['out']
     me = [float(x) for x in re.search(r'\(me\) pos=\((\S+) (\S+) (\S+)\)', fleet).groups()]
@@ -122,8 +146,16 @@ def main():
         if m:
             near.append(sum((float(a) - b) ** 2 for a, b in zip(m.groups(), me)) ** 0.5)
     ck(near and max(near) < 300, f'the armada ships are around the host ({[round(d) for d in near]} m)')
+    def hurt():
+        hh = re.search(r'hp ([\d.]+)', sp(host, 'hp'))
+        dg = re.search(r'damage_in=(\d+)', guest.call('coop.fleet list')['out'])
+        return (hh and float(hh.group(1)) < 1500) or (dg and int(dg.group(1)) > 0)
+    ok = wait(lambda: captions(host, uh) and captions(guest, ug) and hurt(), 30)
+    ck(ok, f'the armada fights: {sp(host, "hp")} | guest {guest.call("coop.fleet list")["out"].splitlines()[0]}')
     t0, waves_seen, guest_shots = time.time(), set(), 0
     while time.time() - t0 < 180 and st(host)['state'] == 'active':
+        captions(host, uh)
+        captions(guest, ug)
         s = st(host)
         waves_seen.add(s['wave'])
         ptrs = re.findall(r'armada (\S+)', sp(host, 'contracts ships'))
