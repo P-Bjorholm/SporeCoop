@@ -289,6 +289,22 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   third pair. Each run prints its seed; `--seed N` replays the same choices (the game itself is not
   deterministic, so the same seed gives a similar, not the same, session).
 
+## 6.12.1 The galaxy map test (coop_space_map.py, ~3.5 min on a cold lane)
+
+* `coop.space map roster [id]` prints the rosters (`own` / `shared` colonies), `map tags` the tags
+  drawn in the last frame (box and the projected star point), `map project <star>` a star's pixel,
+  `map planets [star]` the stars near the ship with their planet records (tech, spice, nodes),
+  `map cost <star>` the game's flight price, `map go <id>` / `map fly <star>` what a click does.
+* A colony for the guest: `coop.space tool add placecolony`, land on a planet of the home system
+  (Vulpica in the `space` fixture), `coop.space map colonize` (the colony tool's OnHit at the ground
+  under the ship, docs/re/space.md 10.3), then confirm the drop's caption with Enter: the colony is
+  in the host's roster of the guest ~14 s later. The real aiming refuses every planet of the fixture
+  but the home planet ("near spice").
+* The tags vanish under the pause menu (Esc in the galaxy view opens it at once) and come back with
+  a second Esc.
+* Before the rejoin the host goes back to a star system: a guest that joins while the host is in the
+  galaxy view is not "together" with it, `wait_guest_in` times out.
+
 ## 6.13 Playing the Tribe stage through real input (play_tribe.py)
 
 Learned while writing the tribe game bot (2026-10-23, docs/stability/tribe.md):

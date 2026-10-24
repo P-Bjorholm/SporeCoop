@@ -100,8 +100,8 @@ registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Spa
 
 | # | Feature | File | Kinds | What the player gets |
 |---|---|---|---|---|
-| 1 | Partners on the galaxy map | `space_map.cpp` | 10-19 | a name tag on each partner's star in the galaxy view (and where they fly); a click there jumps to them |
-| 2 | Partner colonies on the map | `space_map.cpp` | 10-19 | the stars with a partner's colonies are marked with the partner's name: whose territory is where |
+| 1 | Partners on the galaxy map (done) | `space_map.cpp` | 10-19 | a "▼ Bob" tag in the partner's colour on its star in the galaxy view, or on its ship while it flies there; an arrow on the screen edge when it is outside the view; a click on the tag (or "Fly there" on the Space page, "Bob: <star>") jumps there for free (to its system; next to its ship in the galaxy view) |
+| 2 | Partner colonies on the map (done) | `space_map.cpp` | 10-19 | a dotted ring in the partner's colour around every star with a colony of the partner's own (the colonies both started with are shared), its name next to it when few are in view; the Space page shows the colonies one at a time (planet, star, spice, cities) with "Next" and "Fly there" (the game's flight price, 0 in this game; no range limit: a partner's colony is a friendly port) |
 | 3 | Tool gifts | `space_trade.cpp` | 70-79 | give weapon charges, terraforming and other tools from the cargo to a partner (F9 Space page) |
 | 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's colonies exist as cities of "<name>'s empire", an ally: you can visit them and defend them from raids |
 | 5 | Trade between players | `space_trade.cpp` | 70-79 | sell spice to a partner's colony for more than NPC empires pay; the partner's colony gets it |
@@ -149,6 +149,7 @@ Shared contracts between the features:
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 | Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (galaxy map) | The roster of every player's empire (home, place, empire, colonies; `space_map.h` for the other features); partners' tags and their own colonies on the galaxy view, hidden under menus, comm screens and cinematics; a click on a tag or "Fly there" on the Space page travels there; rosters come back after a rejoin | `space_map.cpp` | `coop_space_map.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
