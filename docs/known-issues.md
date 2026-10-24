@@ -184,7 +184,7 @@ Fixed entries move to the commit message (and a test).
 * **Rivals mode is tested only in a local merge**: space_rivalry.cpp (feature 10) is not in this
   branch; coop_space_trade.py passed its rivals part (offer, accept by a real click, both own
   budgets, an open offer declined when the host ends rivals mode) on a throwaway merge with
-  feat/space-rivalry 9642dae (lane 10, GOG 2024, 2026-10-23). Without space_rivalry the test
+  feat/space-rivalry 2515362 (lane 10, GOG 2024, 2026-10-23). Without space_rivalry the test
   prints "rivals mode: UNTESTED".
 * **The guest's UI clicks do not arrive on the new space fixture (GOG 2024, lane 10)**: after the
   join the guest's game sits in a HUD-less movie state (`coop.space hp` shows `movie=1`, Enter
