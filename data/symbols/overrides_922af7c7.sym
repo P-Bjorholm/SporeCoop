@@ -324,3 +324,34 @@ Simulator::cGamePersistenceManager::LoadGame=0x00B271A0 ; likely vtable[4] of th
 Simulator::cCommManager::Get=0x00B3D570 ; verified cdecl() -> [0x167FB24] (space_map: comm screen check)
 Simulator::cCommManager::IsCommScreenActive=0x00AE92E0 ; verified thiscall(commMgr) plain ret -> bool: [this+0x20] != 0, or the space game's comm UI (0x1075530 / 0x1068360) is up; space_map hides the galaxy tags while true
 SporeCoop::cSimulatorPlayerUFO_TravelCost=0x00FFC390 ; verified thiscall(playerUFO singleton, cStarRecord* from, cStarRecord* to) ret 8 -> int money: distance * rate (own star 0xC315B0 / allied star 0xC31D30 cheaper); used by TravelToStar 0x1002090 and SpaceTeleportTo 0x10228E2 (docs/re/space.md 10)
+# ---- space_allies.cpp (partner colonies as an allied empire, docs/re/space.md 11), Ghidra decompile + disassembly 2026-10-23 ----
+Simulator::cStarManager::NextPoliticalID=0x00BA6760 ; verified decompile: thiscall(starMgr, bool high) ret 4 -> [+0x1D4]++ (| 0x80000000 if high; empires use 1)
+SporeCoop::cStarManager_CreateEmpire=0x00BAF220 ; verified decompile (called by GetEmpireForStar 0xBB14B0): thiscall(starMgr, pol) ret 4 -> new cEmpire (0x158, ctor 0xC34970), +0x84 = pol, stored in the empire map starMgr+0x150 (intrusive ptr)
+SporeCoop::cEmpire_Init=0x00C35AE0 ; verified decompile: thiscall(empire, pol, bool isPlayer) ret 8: +0x84 = pol, +0x104 = controller (NPC: 0x28-byte 0xEAB3E0(3, grox 4); player 0x220 0xEB0E70), flags +0x50 |= 0x10 (player |= 0x44), NPC: archetype +0x54/+0x58 from props (0xC35460)
+Simulator::cEmpire::AddStarOwnership=0x00C342E0 ; verified decompile: thiscall(empire, cStarRecord*) ret 4: mStars +0x88 (AddRef, no duplicates), star species key from the home star, each tech-5 planet -> ConvertPlanetOwner 0xC73920 (player: AddColony), msg 0x55BD8F7
+SporeCoop::cEmpire_SetHomeStar=0x00C30D50 ; verified decompile: thiscall(empire, cStarRecord*) ret 4: +0xB0 = StarID, starMgr->0xBAF7A0(pol, star) (home star map, star flag 4), msg 0x43F2586
+SporeCoop::cStarManager_SetHomeStar=0x00BAF7A0 ; verified decompile: thiscall(starMgr, pol, cStarRecord* or null) ret 8: home star map +0x12C[pol] = star (flag 4 on, star+0x54 = pol); null: old star flag 4 off and the entry erased (0xBAA280)
+SporeCoop::cEmpire_AddPlanet=0x00C34FB0 ; verified decompile: thiscall(empire, cPlanetRecord*) ret 4: player -> SpacePlayerData::AddColony 0x1022040; AddStarOwnership(star of the planet); ally of the player -> msg 0x43F2585
+Simulator::cEmpire::SetSpeciesProfile=0x00C337D0 ; verified decompile: thiscall(empire, cSpeciesProfile*) ret 4: each owned star species key (+0x74) = profile+0x504; AssignNames -> the empire name +0x3C is rewritten "<species> ..."
+Simulator::cEmpire::GetSpeciesProfile=0x00C30DC0 ; verified callers (UpdateAndGetColor, DeclareWar): thiscall(empire) -> cSpeciesProfile*
+SporeCoop::cPlanetRecord_SetTechLevel=0x00C70850 ; verified decompile: cdecl(cPlanetRecord*, int level): +0x194 = level (leaving 5: empire->0xC35950, comm manager cleanup), active planet -> msg 0x490D429, star tech level = max of its planets (0xC8B760)
+SporeCoop::cPlanetRecord_FillPlanetDataForTechLevel=0x00B97040 ; verified decompile: cdecl(cPlanetRecord*, int level): 5 -> 0xB96E40: new cCivData (0x50, ctor 0xFF32F0, pol = star empire id) + num_cities_in_colony cCityData (0xC4, type 0xFD701F6F), AddCivData 0xB8EFA0 (raw pointer push to +0x15C); then flag 0x40 in +0x2C
+SporeCoop::MapUintPtr_Erase=0x00BAA280 ; verified asm: thiscall(eastl::map<uint32, intrusive_ptr>*, const uint32* key) ret 4 -> bool: erase + Release of the value (used for the home star map +0x12C; same map type as the empire map +0x150)
+SporeCoop::MapUintPtr_At=0x00DD85C0 ; verified decompile (CreateEmpire, SetHomeStar): thiscall(map, const uint32* key) ret 4 -> pointer to the value slot (inserted empty if missing)
+SporeCoop::cEmpire_AddAlly=0x00C347C0 ; verified decompile: thiscall(empire, cEmpire* other) ret 4: allies vector +0x70 (AddRef, no duplicates; IsAllyOf 0xC31D30 reads it)
+SporeCoop::cEmpire_RemoveAlly=0x00C32970 ; verified decompile: thiscall(empire, cEmpire* other) ret 4: swap-remove from +0x70, Release
+SporeCoop::cEmpire_AddEnemy=0x00C34730 ; verified callers (DeclareWar 0xD065E0): thiscall(empire, cEmpire* other) ret 4: enemies vector +0x5C
+SporeCoop::cEmpire_RemoveEnemy=0x00C328E0 ; verified decompile (DeclarePeace): thiscall(empire, cEmpire* other) ret 4: swap-remove from +0x5C
+RelationshipManager_GetRelationshipMap=0x00D01AE0 ; verified asm (IsAllied 0xD02020): thiscall(relMgr, polA, polB) ret 8 -> map (the galaxy map relMgr+0x24, or the active planet's)
+RelationshipManager_GetRelationshipData=0x00D01560 ; verified asm: thiscall(relMgr, map, polA, polB) ret 0xC -> data or null; data+4 flags: bit 0 war, bit 1 ally
+Simulator::cRelationshipManager::ResetRelationship=0x00D05870 ; verified asm: thiscall(relMgr, polA, polB) ret 8: makes the entry (0xD05770) when missing, clears its event list (flags kept)
+SporeCoop::cGamePersistenceManager_SaveGame=0x00B28FD0 ; verified decompile: thiscall(persistenceMgr, const char16_t* name, bool) ret 8: writes the save (star manager 0xBAEE30, serializer, <name>.tmp); callers: kMsgSaveGame handler 0xB29930 (after 0x685DBFA) and the quit save 0xB295D0
+SporeCoop::cEmpireGrowth_Expand=0x00FE9410 ; verified decompile: thiscall(sim, pol) ret 4: an NPC empire colonises / upgrades a star (from the periodic 0xFEA3A0 and 0xBB8240)
+SporeCoop::MissionNouns_Cb1=0x00CD7E80 ; verified asm (ThereIsEventInPlanet 0xFEE020): 1st callback of cGameNounManager::GetData for the mission nouns 0x2AA5ADA
+SporeCoop::MissionNouns_Cb2=0x00D3D3D0 ; verified asm (0xFEE020): 2nd callback
+SporeCoop::MissionNouns_Cb3=0x00FECEA0 ; verified asm (0xFEE020): 3rd callback
+SporeCoop::MissionNouns_Cb4=0x00B1E430 ; verified asm (0xFEE020): 4th callback
+SporeCoop::StartRaidCheat=0x0100E620 ; verified asm (the `raid -start` parser 0x1025200): stdcall-like (unused, cPlanetRecord*, int bombers) ret 0xC, ecx unused: CreateMission(0xA4B0A2DF, rec, empire of the star) + SetAttackerEmpire(0) + SetTargetPlanet + SetNumBombers + Accept
+Simulator::cStarManager::RequirePlanetsForStar=0x00BB4C60 ; verified decompile: thiscall(starMgr, cStarRecord*, 0) ret 8: generates the planets of a star never visited (+0xAC == 0)
+SporeCoop::cPlanetRecord_AddCivData=0x00B8EFA0 ; verified decompile: thiscall(cPlanetRecord*, cCivData*) ret 4: push_back to the raw-pointer vector +0x15C..+0x164 (grows via 0xB96700); called by 0xB96E40
+Simulator::cStarRecord::GetPlanetRecords=0x00BBA8D0 ; verified decompile: thiscall(star) -> vector<cPlanetRecord*>*: 0xBBA780 first reloads the records (resources {PlanetID, 0x5220CB8, 1}) when +0x84 holds fewer than the count +0xAC (the game empties it for systems far away); flag 0x40 of +0x5C: a filtered copy at +0x98
