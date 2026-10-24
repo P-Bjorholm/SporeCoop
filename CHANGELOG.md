@@ -57,6 +57,12 @@ ModAPI also targets) is supported: update the game through GOG.
 - Two games generated different planets for the same unvisited star (rarer now, see known issues).
 - A jump to an id that is not a star of the galaxy crashed the game (GetStarRecord).
 - The Space page and the jump buttons handle many rows (pages with "<" and ">").
+- Rescue on a planet: a partner flying over your disabled ship at another zoom height could not
+  repair it (the distance was measured in 3D, and a ship's height on a planet is its zoom). The
+  repair distance is now measured along the ground.
+- A click on the main menu's **Co-op** item while the galaxy menu's intro plays (about 16-30 s
+  after the menu appears) did nothing: the mod now skips the intro (like Esc) and opens the window.
+- LAN discovery asks 20 ports (it found hosts on ports 47810-47819 only).
 
 ### Testing
 - New two-game tests for every feature (`coop_space_map`, `_allies`, `_trade`, `_contracts`,
@@ -65,6 +71,17 @@ ModAPI also targets) is supported: update the game through GOG.
   Wine). All fixtures were made anew for the GOG 2024 install, plus `space_empire` (drive,
   colonies, empire contacts).
 - `tools/re_lint.py` checks every symbol the code uses against every supported build.
+- Release gate: the full suite (45 tests) on 6 lanes, three GOG 2024 and three GOG 2016: 43 of
+  45, and the two others (`space_rivalry`, `space_puppet`: the GOG 2024 landing delay after a
+  load, now retried by the tests) passed 4 of 4 on GOG 2024 lanes afterwards.
+
+### Known issues
+- On GOG 2024, zooming in to land on a planet can do nothing for up to ~80 s right after a world
+  load; then it works.
+- Two games can still generate different planets for a star nobody visited (rarely).
+- While a game panel that waits for OK is open (for example the badge points after a raid), the
+  co-op window gets no clicks: press Enter or OK first.
+- Details and more: [docs/known-issues.md](docs/known-issues.md).
 
 
 ## [0.6.2] - 2026-10-23
