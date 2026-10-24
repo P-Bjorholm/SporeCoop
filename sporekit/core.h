@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.2"
+#define SK_VERSION "0.3.3"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -118,6 +118,9 @@ void* d3d_device();
 void* game_window();
 uint64_t frame_index();
 double fps();
+void frame_from_game_loop();          // after App::Canvas::Tick: the frame when Present is lost
+const char* frame_source();           // "Present" / "game loop (...)" for info
+void set_frame_source_mode(bool loop); // tests: true = ignore Present, frames from the game loop
 void request_screenshot(const std::wstring& path, std::function<void(bool, std::string)> done);
 void overlay_text(int x, int y, uint32_t argb, const char* utf8);
 int world_to_screen(const float* w, float* out);

@@ -77,6 +77,7 @@ static int c_info(void*, int, const char* const*, SkOut* o)
         outf(o, "symbols of build %s (same code as this exe)\n", symbols_build().c_str());
     outf(o, "frame=%llu fps=%.1f device=%p hwnd=%p\n", (unsigned long long)frame_index(), fps(),
          d3d_device(), game_window());
+    outf(o, "frames from: %s\n", frame_source());
     outf(o, "mode=0x%08X (%s)\n", mode, game_mode_name(mode));
     outf(o, "mods:");
     for (auto* m : mods_list())
@@ -525,6 +526,16 @@ static int c_bg(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+// frames.source [auto|loop]: loop ignores Present and runs the frames from the game loop, as when
+// another overlay takes Present over (tests of that fallback); any thread, it only sets a flag
+static int c_frames_source(void*, int argc, const char* const* argv, SkOut* o)
+{
+    if (argc > 1)
+        set_frame_source_mode(strcmp(argv[1], "loop") == 0);
+    outf(o, "frames from: %s", frame_source());
+    return 0;
+}
+
 static int c_exc(void*, int argc, const char* const* argv, SkOut* o)
 {
     outf(o, "%s", exceptions_report().c_str());
@@ -632,6 +643,8 @@ void register_builtin_commands()
     command_add(k, "stack.here", "stack.here [n] [all] - main thread call chain, read on the main thread itself",
                 c_stack_here, nullptr, M);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
+    command_add(k, "frames.source", "frames.source [auto|loop] - where frames come from (loop: ignore Present, tests)",
+                c_frames_source, nullptr, A);
 }
 
 } // namespace sk

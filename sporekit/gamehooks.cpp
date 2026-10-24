@@ -45,6 +45,17 @@ static int SK_THISCALL h_SporeAppInit(void* self, int a)
     return r;
 }
 
+// App::Canvas::Tick: thiscall(canvas), plain ret, once per pass of the game loop (it pumps the
+// window messages; minimized it sleeps 200 ms). The frame source when Present is lost (d3d9hook.cpp).
+typedef int(SK_THISCALL* CanvasTick_t)(void*);
+static CanvasTick_t o_CanvasTick;
+static int SK_THISCALL h_CanvasTick(void* self)
+{
+    int r = o_CanvasTick(self);
+    frame_from_game_loop();
+    return r;
+}
+
 static int SK_THISCALL h_Shutdown(void* self)
 {
     SKLOG(SK_INFO, "App::cSporeApp::Shutdown");
@@ -69,6 +80,7 @@ bool gamehooks_install()
     try_hook("App::cAppSystem::Init", (void*)h_AppSysInit, (void**)&o_AppSysInit);
     try_hook("App::cSporeApp::Init", (void*)h_SporeAppInit, (void**)&o_SporeAppInit);
     try_hook("App::cSporeApp::Shutdown", (void*)h_Shutdown, (void**)&o_Shutdown);
+    try_hook("App::Canvas::Tick", (void*)h_CanvasTick, (void**)&o_CanvasTick);
     return true;
 }
 

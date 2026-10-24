@@ -157,12 +157,33 @@ static void capture_if_requested()
     done(ok, ok ? (narrow(path) + " " + std::to_string(d.Width) + "x" + std::to_string(d.Height)) : err);
 }
 
-// ---- per-frame ----
-static void on_frame_begin_present()
+// ---- frame source ----
+// Normally every frame starts in the Present hook. Another overlay can take Present over and call
+// the driver past it (seen on Windows with the Steam overlay while Steam is online: issue #4, frames
+// stopped right after the menu came up): the game draws, SporeKit sees no frame, and every mod
+// stops ticking. The game loop (App::Canvas::Tick, once per loop pass) is then the frame source:
+// when Present has not been seen for kPresentLostSec while the window has the focus (or background
+// mode is on) and is not minimized, the per-frame work runs from there (without the overlay pass,
+// which needs the frame's back buffer).
+static constexpr double kPresentLostSec = 2.0;
+static double g_last_present_t;  // last Present seen (or the device creation)
+static bool g_loop_frames;       // frames come from the game loop now
+static bool g_in_loop_frame;
+static int g_frames_mode = -1;   // 0 auto, 1 loop: ignore Present (tests of the fallback), -1 unread
+
+static int frames_mode_read()
 {
-    if (g_in_frame)
-        return;
-    g_in_frame = true;
+    if (g_frames_mode < 0) {
+        std::string m = ini_str(mods_dirw() + L"\\sporekit.ini", "sporekit", "frames", "auto");
+        g_frames_mode = m == "loop" ? 1 : 0;
+    }
+    return g_frames_mode;
+}
+
+// ---- per-frame ----
+// the work of one frame that does not draw: counters, frame limit, tasks, SK_EV_FRAME
+static void frame_common()
+{
     g_frame++;
     double t = now_seconds();
     float dt = g_last_t > 0 ? (float)(t - g_last_t) : 0.f;
@@ -181,6 +202,21 @@ static void on_frame_begin_present()
     cheats_flush_pending();
     pump_main_tasks();
     fire(SK_EV_FRAME, &dt);
+}
+
+static void on_frame_begin_present()
+{
+    if (g_in_frame || g_in_loop_frame)
+        return;
+    if (frames_mode_read() == 1)
+        return; // frames=loop: as if another overlay had taken Present
+    g_last_present_t = now_seconds();
+    if (g_loop_frames) {
+        g_loop_frames = false;
+        SKLOG(SK_INFO, "frames: Present reaches SporeKit again; frames come from Present");
+    }
+    g_in_frame = true;
+    frame_common();
 
     // overlay pass
     font_ensure();
@@ -205,6 +241,44 @@ static void on_frame_begin_present()
 }
 
 static int g_present_depth; // device Present may call the swapchain Present internally
+
+// called on the main thread after every App::Canvas::Tick (gamehooks.cpp)
+void frame_from_game_loop()
+{
+    if (!g_dev || g_in_frame || g_in_loop_frame || g_present_depth)
+        return;
+    bool forced = frames_mode_read() == 1;
+    if (!forced && now_seconds() - g_last_present_t < kPresentLostSec)
+        return;
+    // Without focus Spore pauses and stops drawing (no Present) while the loop goes on: no frames
+    // then, as before, unless background mode keeps it running (hooked GetForegroundWindow says
+    // so). A minimized Spore draws nothing either.
+    if (!g_hwnd || IsIconic(g_hwnd) || GetForegroundWindow() != g_hwnd)
+        return;
+    if (!g_loop_frames) {
+        g_loop_frames = true;
+        if (forced)
+            SKLOG(SK_INFO, "frames: [sporekit] frames=loop: frames come from the game loop (App::Canvas::Tick)");
+        else
+            SKLOG(SK_WARN, "frames: Present has not reached SporeKit for %.0f s (another overlay took it over?); "
+                           "frames come from the game loop (App::Canvas::Tick), on-screen labels are off",
+                  kPresentLostSec);
+    }
+    g_in_loop_frame = true;
+    frame_common();
+    g_in_loop_frame = false;
+}
+
+const char* frame_source()
+{
+    if (!g_dev)
+        return "none (no device yet)";
+    if (frames_mode_read() == 1)
+        return g_loop_frames ? "game loop (frames=loop, test)" : "none yet (frames=loop, test)";
+    return g_loop_frames ? "game loop (Present not seen)" : "Present";
+}
+
+void set_frame_source_mode(bool loop) { g_frames_mode = loop ? 1 : 0; }
 
 static HRESULT WINAPI h_Present(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND w,
                                 const RGNDATA* r)
@@ -276,6 +350,7 @@ static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWN
           pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0, pp ? pp->Windowed : -1, hr);
     if (SUCCEEDED(hr) && out && *out) {
         g_dev = *out;
+        g_last_present_t = now_seconds(); // the frame source fallback counts from here
         if (pp) {
             g_bb_w = pp->BackBufferWidth;
             g_bb_h = pp->BackBufferHeight;
