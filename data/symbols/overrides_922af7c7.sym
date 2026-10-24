@@ -321,3 +321,7 @@ Simulator::cCreatureCitizen::vftable=0x0146B818 ; verified main vtable of cCreat
 Simulator::cTreeData::vftable=0x0145D160 ; verified cTreeData main vtable (second base 0x145D150, size 0x80, docs/re/tribe.md); was kTreeVt in tribe.cpp
 UTFWin::SporeStdDrawable::vftable=0x0141B2D0 ; verified main vtable written by the SporeStdDrawable ctor 0x8309B0 (others 0141B2B8/0141B278); was hard-coded in sui.cpp
 Simulator::cGamePersistenceManager::LoadGame=0x00B271A0 ; likely vtable[4] of the persistence manager, first parameter field is the save name (string16); debug hook only (debug.cpp loadhook)
+# space_trade.cpp (tool gifts and spice trade, docs/re/space.md 10)
+App::IPropManager::Get=0x0067DDF0 ; verified cdecl() -> IPropManager* (mov eax,[0x15FE8A0]); vt+0x2C GetPropertyList(instance, group, PropertyListPtr*) -> bool, as cSpaceTrading 0x103CE15 calls it; PropertyList vt+0x04 Release
+App::Property::GetFloat=0x0040CF10 ; verified cdecl(PropertyList*, propID, float* out) -> bool (vt+0x24 GetProperty, type 0xD float); called with the spice value 0x34F1A4A by the NPC store code 0x103DB23
+SporeCoop::DifficultyTuning_GetFloat=0x00C75DB0 ; likely thiscall(tuning = [cGameNounManager+0x74], propID) ret 4 -> float ST0: array property [tuning+0x11F4] indexed by difficulty [tuning+0x1248] (0..2), 1.0 if missing; NPC store prices use it with 0x1C2E590D (0x103CE9B, 0x103DB3E)
