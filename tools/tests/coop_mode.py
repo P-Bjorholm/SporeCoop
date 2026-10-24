@@ -3,9 +3,9 @@
 (guest) starts in the galaxy menu with an empty profile, joins, receives and auto-loads the
 host world, then both must see each other's puppet.
 
-usage: coop_mode.py [--fixture NAME --planet SLOT/PLANET] [--keep-guest] [--move X,Y]
+usage: coop_mode.py [--fixture NAME [--planet SLOT/PLANET]] [--keep-guest] [--move X,Y]
   --fixture      restart both games, restore out/fixtures/NAME.tgz for the host and load
-                 SLOT/PLANET there (e.g. --fixture space --planet Game0/Maraya). Without it the
+                 SLOT/PLANET there (default: its planet in tools/tests/fixtures.py). Without it the
                  host must already be playing. (Quitting one Wine instance of the bottle kills
                  the others, so the guest is only restarted together with the host.)
   --keep-guest   reuse a running guest
@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from twoinst import wait_guest_in  # noqa: E402
 from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
+import fixtures  # noqa: E402
 
 
 def up(inst):
@@ -74,6 +75,8 @@ def main():
     ap.add_argument('--port', type=int, default=lane.PORT)
     ap.add_argument('--move', default='1000,760')
     a = ap.parse_args()
+    if a.fixture and not a.planet:
+        a.planet = fixtures.planet_of(a.fixture)
     spore = os.path.join(ROOT, 'tools', 'spore.sh')
     if a.adventure:
         subprocess.run([spore, 'kill'], stdout=subprocess.DEVNULL)

@@ -14,14 +14,15 @@ import re
 import sys
 import time
 
+from fixtures import planet_of
 from twoinst import Checks, shot, start
 
 FIXTURES = {
-    'cell': ('cell', 'Game0/Karke'),
+    'cell': ('cell', planet_of('cell')),
     'creature': ('creature', None),
-    'tribe': ('tribe', 'Game0/Cohrach'),
-    'civ': ('civ', 'Game0/Agrauel'),
-    'space': ('space', 'Game0/Maraya'),
+    'tribe': ('tribe', planet_of('tribe')),
+    'civ': ('civ', planet_of('civ')),
+    'space': ('space', planet_of('space')),
 }
 KINDS = {'p': 'players', 'n': 'NPC creatures', 'c': 'NPC cells', 't': 'citizens', 'v': 'vehicles', 's': 'ships'}
 # what counts as "in sync": position (m, relative to the kind) and facing (deg)

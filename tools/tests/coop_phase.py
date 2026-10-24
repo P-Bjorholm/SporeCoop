@@ -17,6 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console  # noqa: E402
 import lane  # noqa: E402
+from fixtures import planet_of  # noqa: E402
 
 SPORE = os.path.join(ROOT, 'tools', 'spore.sh')
 
@@ -58,7 +59,8 @@ def main():
     while not up(lane.HOST):
         time.sleep(1)
     host, guest = Console(lane.HOST), Console(lane.GUEST)
-    for c, slot, planet, mode in ((guest, 'Game0', 'Scalinus', 'Creature'), (host, 'Game0', 'Cohrach', 'Tribe')):
+    for c, (slot, planet), mode in ((guest, planet_of('creature').split('/'), 'Creature'),
+                                    (host, planet_of('tribe').split('/'), 'Tribe')):
         for _ in range(180):
             if 'GalaxyGameEntry' in c.call('game.mode')['out']:
                 break
@@ -77,7 +79,7 @@ def main():
     ok &= t is not None
     guest.call('wait.frames 300 60000')
     # the guest leaves for its own creature save: the host must pull it back
-    print(guest.call('coop.load Game0 Scalinus')['out'])
+    print(guest.call('coop.load ' + planet_of('creature').replace('/', ' '))['out'])
     t1 = wait_mode(guest, 'Creature', 120)
     time.sleep(1)
     host.call('click 980 606')

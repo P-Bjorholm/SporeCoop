@@ -21,7 +21,7 @@ def pool(con):
 
 
 def main():
-    host, guest = start('cell', 'Game0/Karke')
+    host, guest = start('cell')
     ck = Checks()
     time.sleep(5)
     # the host saved before sending the world: the game's "saved" box (pauses the game) is confirmed

@@ -3,12 +3,13 @@
 NPC empires of the galaxy.
 
 1. Both copies of the galaxy have the same empires with the same political ids and the same
-   relation table (the guest loaded the host's save).
+   relation table (the guest loaded the host's save), with the fixture's two contacts.
 2. The guest flies to an NPC empire's home star: first contact, and the host's copy has met it too.
 3. The guest gives that empire a gift (ApplyRelationship with the gift event, as the comm screen
    does): the host's relation with it changes the same way. The host forms an alliance with it: the
    guest's copy is allied too.
-4. The reverse direction: the host makes contact with a second empire and declares war on it, the
+4. The reverse direction: the host makes contact with a second empire (arriving at its star, then
+   the first-contact talk as the game's message handler does it) and declares war on it, the
    guest's copy is at war; the guest makes peace, the host's copy is at peace.
 5. The copies drift apart (a local change that is not shared): a real click on the F9 Space page
    "Resync" button brings the guest back to the host's table.
@@ -27,7 +28,8 @@ import lane
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, ROOT, shot, start, wait_guest_in
 
-GIFT = '526E51F'
+GIFT, TALK = '526E51F', '5B6CF09'
+FIXTURE = 'space_empire'  # space + drive, money, colonies, first contact with two NPC empires
 
 
 def sp(con, *a):
@@ -65,10 +67,10 @@ def wait(pred, timeout=20):
 
 def space_planet():
     """the planet of the space fixture (fixtures.py, or the save inside out/fixtures/space.tgz)"""
-    p = fixtures.planet_of('space')
+    p = fixtures.planet_of(FIXTURE)
     fx = os.path.join(os.path.dirname(os.path.dirname(subprocess.run(
         ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ROOT, capture_output=True,
-        text=True).stdout.strip())), 'SporeCoop', 'out', 'fixtures', 'space.tgz')
+        text=True).stdout.strip())), 'SporeCoop', 'out', 'fixtures', FIXTURE + '.tgz')
     try:
         names = tarfile.open(fx).getnames()
     except (OSError, tarfile.TarError):
@@ -81,8 +83,8 @@ def space_planet():
 
 
 def near(con):
-    """[(pol, home star)] of the NPC empires nearest to our home"""
-    return re.findall(r'near (\w+) .* home=(\d+)', sp(con, 'diplomacy near 8'))
+    """[(pol, home StarID, home StarID hex, contact flags)] of the NPC empires nearest to our home"""
+    return re.findall(r'near (\w+) .* home=(\d+) \((\w+)\) .* contact=(\d+)', sp(con, 'diplomacy near 8'))
 
 
 def contact(con, other, pol, home, ck, who):
@@ -112,7 +114,7 @@ def same(host, guest, ck, what):
 
 
 def main():
-    host, guest = start('space', planet=space_planet())
+    host, guest = start(FIXTURE, planet=space_planet())
     ck = Checks()
     time.sleep(4)
     for who, c in (('host', host), ('guest', guest)):
@@ -125,11 +127,14 @@ def main():
        'the same player political id and number of empires in both copies')
     ck(near(host) == near(guest), 'the same NPC empires (political ids, home stars) near home in both copies')
     same(host, guest, ck, 'after the join')
+    known = [x for x in near(host) if int(x[3])]
+    ck(len(known) >= 1 and all(flags(guest, x[0]) & 48 for x in known),
+       f'the fixture\'s contacts are contacts in the guest\'s copy too ({[x[0] for x in known]})')
 
-    n = near(guest)
-    if not ck(len(n) >= 2, 'two NPC empires near home'):
+    n = [x for x in near(guest) if not int(x[3])]  # not met yet
+    if not ck(len(n) >= 2, 'two NPC empires near home not met yet'):
         return ck.result()
-    (p1, h1), (p2, h2) = n[1], n[0]
+    (p1, h1, _, _), (p2, h2, x2, _) = n[0], n[1]
 
     # 2-3: the guest meets an empire and gives it a gift, the host allies with it
     contact(guest, host, p1, h1, ck, 'guest')
@@ -146,6 +151,9 @@ def main():
 
     # 4: the other direction, war and peace
     contact(host, guest, p2, h2, ck, 'host')
+    print('  host first-contact talk:', sp(host, 'empire contact', x2))
+    ck(wait(lambda: flags(guest, p2) & 32 and TALK in rec(guest, p2)),
+       f'the host\'s first-contact talk with {p2} is in the guest\'s copy ({rec(guest, p2)})')
     print('  host war:', sp(host, 'diplomacy war', p2))
     ck(wait(lambda: flags(guest, p2) & 1), f'the host\'s war on {p2} holds in the guest\'s copy')
     print('  guest peace:', sp(guest, 'diplomacy peace', p2))

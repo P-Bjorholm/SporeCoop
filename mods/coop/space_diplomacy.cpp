@@ -39,14 +39,16 @@ static const SkHost* H;
 static SkMod* M;
 
 enum Kind : uint8_t { K_EVENT = 30, K_STATE = 31, K_SNAP = 32, K_ASK = 33, K_CONTACT = 34 };
-constexpr uint32_t kContacted = 0x10; // Rec::flags: the player has met the empire (cPlayer flag 0x20)
+// Rec::flags besides war / alliance: the two levels of a first contact (cPlayer flags, see contact_flags)
+constexpr uint32_t kMet = 0x10;       // cPlayer 0x20: met (cEmpire_MakeContact, arriving at its star)
+constexpr uint32_t kContacted = 0x20; // cPlayer 0x02: contacted (cEmpire_SetContactedByPlayer, the first-contact talk)
 enum What : uint8_t { W_WAR = 1, W_ALLY = 2, W_PEACE = 3, W_BREAK = 4 };
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 static uintptr_t a_RelGet, a_Apply, a_ApplyEv, a_War, a_Ally, a_Peace, a_Break, a_Reset, a_Calc, a_EvIndex,
-    a_StarMgr, a_GetEmpire, a_StarRec, a_Contact, a_NounMgr, a_PlayerEmpire, a_PlayerPol;
+    a_StarMgr, a_GetEmpire, a_StarRec, a_Contact, a_Spoken, a_NounMgr, a_PlayerEmpire, a_PlayerPol;
 
 using ApplyEv_t = float(SK_THISCALL*)(void*, void*, uint32_t, uint32_t, uint32_t, float);
 using State_t = void(SK_THISCALL*)(void*, void*, void*);
@@ -54,6 +56,8 @@ static ApplyEv_t o_ApplyEv;
 static State_t o_War, o_Ally, o_Peace, o_Break;
 using Contact_t = void(SK_THISCALL*)(void*, int);
 static Contact_t o_Contact;
+using Spoken_t = void(SK_THISCALL*)(void*);
+static Spoken_t o_Spoken;
 
 static int g_depth;     // inside a hooked relationship call (its inner events are part of it)
 static bool g_applying; // replaying a partner's change: nothing is sent
@@ -178,11 +182,12 @@ static void* record(uint32_t npc, uint32_t me)
     return found;
 }
 
-// cPlayer (cGameNounManager +0x74) +0x11D8..+0x11DC: sorted vector of {u32 pol, u32 flags} per empire;
-// flag 0x20 = met (IsContacted 0xC7AA10, set by cEmpire_MakeContact 0xC32430 through 0xC7BDA0)
-static std::vector<uint32_t> contacted_list()
+// cPlayer (cGameNounManager +0x74) +0x11D8..+0x11DC: sorted vector of {u32 pol, u32 flags} per empire
+// (docs/re/space.md 9.6, 10.1): 0x20 = met (IsContacted 0xC7AA10, set by cEmpire_MakeContact 0xC32430),
+// 0x02 = contacted (PlayerContactedEmpire 0xC7A890, set with 0x04 by cEmpire_SetContactedByPlayer 0xC30A70)
+static std::map<uint32_t, uint32_t> contact_flags()
 {
-    std::vector<uint32_t> v;
+    std::map<uint32_t, uint32_t> v;
     void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
     void* pl = nm ? F<void*>(nm, 0x74) : nullptr;
     if (!pl || !skg::readable((uint8_t*)pl + 0x11D8, 8))
@@ -191,20 +196,24 @@ static std::vector<uint32_t> contacted_list()
     uint32_t* e = F<uint32_t*>(pl, 0x11DC);
     if (!b || e < b || e - b > 2 * 20000 || !skg::readable(b, (size_t)(e - b) * 4))
         return v;
-    for (uint32_t* q = b; q + 1 < e + 1 && q < e; q += 2)
-        if (q[1] & 0x20)
-            v.push_back(q[0]);
+    for (uint32_t* q = b; q + 1 < e; q += 2) {
+        uint32_t f = (q[1] & 0x20 ? kMet : 0) | (q[1] & 0x02 ? kContacted : 0);
+        if (f)
+            v[q[0]] = f;
+    }
     return v;
 }
-static bool contacted(uint32_t pol)
+static uint32_t contact_of(uint32_t pol)
 {
-    auto v = contacted_list();
-    return std::find(v.begin(), v.end(), pol) != v.end();
+    auto v = contact_flags();
+    auto it = v.find(pol);
+    return it == v.end() ? 0 : it->second;
 }
+static bool contacted(uint32_t pol) { return contact_of(pol) & kMet; }
 
 struct Rec {
     uint32_t npc;
-    uint32_t flags; // bit 0 war, bit 1 alliance, kContacted
+    uint32_t flags; // bit 0 war, bit 1 alliance, kMet, kContacted
     std::vector<std::pair<uint32_t, float>> ev; // sorted by id
 };
 
@@ -215,14 +224,14 @@ static std::vector<Rec> my_table()
     uint32_t me = my_pol();
     if (!mgr || !is_empire(me))
         return v;
-    auto met = contacted_list();
-    std::sort(met.begin(), met.end());
+    auto met = contact_flags();
     walk((uint8_t*)mgr + 0x24, [&](void* node) {
         uint32_t a = F<uint32_t>(node, 0x10), b = F<uint32_t>(node, 0x14);
         uint32_t npc = a == me ? b : b == me ? a : 0;
         if (!npc || !is_empire(npc) || npc == me)
             return;
-        Rec r{npc, (F<uint32_t>(node, 0x1C) & 3) | (std::binary_search(met.begin(), met.end(), npc) ? kContacted : 0), {}};
+        auto mf = met.find(npc);
+        Rec r{npc, (F<uint32_t>(node, 0x1C) & 3) | (mf == met.end() ? 0 : mf->second), {}};
         walk((uint8_t*)node + 0x20, [&](void* en) { r.ev.push_back({F<uint32_t>(en, 0x10), F<float>(en, 0x14)}); });
         v.push_back(std::move(r));
     });
@@ -361,8 +370,21 @@ static void SK_THISCALL h_Contact(void* empire, int arg)
     o_Contact(empire, arg);
     g_depth--;
     if (watch && contacted(pol)) {
-        g_out.push_back({K_CONTACT, pol, 0, 0, 0, {}});
+        g_out.push_back({K_CONTACT, pol, 0, kMet, 0, {}});
     }
+}
+
+// the first-contact talk (message 0x3AC86B5, handler 0xFE3233; also coop.space empire contact)
+static void SK_THISCALL h_Spoken(void* empire)
+{
+    uint32_t pol = pol_of(empire);
+    bool watch = !g_applying && g_depth == 0 && sharing() && spaceext::in_space() && is_empire(pol) &&
+                 pol != my_pol() && !(contact_of(pol) & kContacted);
+    g_depth++;
+    o_Spoken(empire);
+    g_depth--;
+    if (watch && (contact_of(pol) & kContacted))
+        g_out.push_back({K_CONTACT, pol, 0, kContacted, 0, {}});
 }
 static bool busy(const Rec& r) { return r.flags || !r.ev.empty(); }
 
@@ -420,18 +442,20 @@ static void apply_state(uint8_t from, const Out& m)
 static void apply_contact(uint8_t from, const Out& m)
 {
     void* e = empire_of(m.npc);
-    if (!e || !o_Contact) {
+    if (!e) {
         g_unknown++;
         log_line("contact with an unknown empire");
         return;
     }
-    bool had = contacted(m.npc);
-    if (!had)
+    bool had = contact_of(m.npc) & m.ev;
+    if (!had && m.ev == kMet && o_Contact)
         o_Contact(e, 0);
+    else if (!had && m.ev == kContacted && o_Spoken)
+        o_Spoken(e);
     g_got_contact++;
     char buf[160];
-    snprintf(buf, sizeof buf, "got contact from %s with %08X '%s'%s", spaceext::name_of(from).c_str(), m.npc,
-             empire_name(e).c_str(), had ? " (known already)" : "");
+    snprintf(buf, sizeof buf, "got contact %s from %s with %08X '%s'%s", m.ev == kMet ? "met" : "talk",
+             spaceext::name_of(from).c_str(), m.npc, empire_name(e).c_str(), had ? " (known already)" : "");
     log_line(buf);
     if (!had) {
         g_last_notice = spaceext::name_of(from) + spaceext::tr(" made contact with ", " вступил(а) в контакт: ") +
@@ -460,8 +484,13 @@ static bool reconcile(const Rec& h, bool asked)
         return false; // our own change is on its way to the host
     }
     bool changed = false;
-    if ((h.flags & kContacted) && o_Contact && !contacted(h.npc)) {
-        o_Contact(e, 0); // the game's first contact: name, personality events, map
+    uint32_t cf = contact_of(h.npc);
+    if ((h.flags & kMet) && o_Contact && !(cf & kMet)) {
+        o_Contact(e, 0); // the game's first contact: personality events, the empire on the map
+        changed = true;
+    }
+    if ((h.flags & kContacted) && o_Spoken && !(cf & kContacted)) {
+        o_Spoken(e);
         changed = true;
     }
     void* r = record(h.npc, mp);
@@ -516,7 +545,7 @@ static void apply_snapshot()
     }
     std::sort(hostset.begin(), hostset.end());
     for (auto& mine : my_table()) // ours only: events or a state the host's copy does not have
-        if (!(mine.flags & kContacted) && busy(mine) && !std::binary_search(hostset.begin(), hostset.end(), mine.npc) &&
+        if (!(mine.flags & (kMet | kContacted)) && busy(mine) && !std::binary_search(hostset.begin(), hostset.end(), mine.npc) &&
             reconcile(Rec{mine.npc, 0, {}}, g_snap_asked))
             n++;
     g_fixed += n;
@@ -619,6 +648,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     }
     if (kind == K_CONTACT) {
         Out m{kind, r.u32(), 0, 0, 0, {}};
+        m.ev = r.u8() == 2 ? kContacted : kMet;
         m.name = r.str8();
         if (r.ok()) {
             g_in.push_back({origin, m});
@@ -644,7 +674,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         uint8_t reply_to = r.u8();
         uint16_t n = r.u16();
         for (uint16_t i = 0; i < n && r.ok(); i++) {
-            Rec h{r.u32(), r.u32() & (3 | kContacted), {}};
+            Rec h{r.u32(), r.u32() & (3 | kMet | kContacted), {}};
             uint8_t k = r.u8();
             for (uint8_t j = 0; j < k && r.ok(); j++) {
                 uint32_t id = r.u32();
@@ -696,8 +726,10 @@ static void tick(double now)
         w.u32(m.npc);
         if (m.kind != K_CONTACT)
             w.u8(m.first);
-        if (m.kind == K_CONTACT)
+        if (m.kind == K_CONTACT) {
+            w.u8(m.ev == kContacted ? 2 : 1);
             g_sent_contact++;
+        }
         else if (m.kind == K_EVENT) {
             w.u32(m.ev);
             w.f32(m.scale);
@@ -746,7 +778,7 @@ static std::vector<spaceext::Row> rows()
     auto t = my_table();
     int allies = 0, wars = 0, met = 0;
     for (auto& x : t) {
-        met += (x.flags & kContacted) != 0;
+        met += (x.flags & (kMet | kContacted)) != 0;
         allies += (x.flags & 2) != 0;
         wars += (x.flags & 1) != 0;
     }
@@ -853,8 +885,9 @@ static std::string debug(const std::vector<std::string>& a)
         size_t n = a.size() > 1 ? (size_t)atoi(a[1].c_str()) : 8;
         for (size_t i = 0; i < d.size() && i < n; i++) {
             void* e = empire_of(d[i].second);
-            snprintf(b, sizeof b, "near %08X '%s' home=%u dist=%.2f rel=%.2f\n", d[i].second, empire_name(e).c_str(),
-                     F<uint32_t>(e, 0xB0), d[i].first, relation(d[i].second));
+            snprintf(b, sizeof b, "near %08X '%s' home=%u (%08X) dist=%.2f rel=%.2f contact=%u\n", d[i].second,
+                     empire_name(e).c_str(), F<uint32_t>(e, 0xB0), F<uint32_t>(e, 0xB0), d[i].first,
+                     relation(d[i].second), contact_of(d[i].second));
             out += b;
         }
         return out;
@@ -899,6 +932,8 @@ static std::string debug(const std::vector<std::string>& a)
         if (v[0] == "contact") {
             if (a_Contact)
                 thiscall<void>(a_Contact, e, 0); // through the hook, as arriving at the empire's star does
+            if (a_Spoken && v.size() > 2 && v[2] == "talk")
+                thiscall<void>(a_Spoken, e); // and the first-contact talk
         } else if (v[0] == "apply") {
             uint32_t ev = v.size() > 2 ? parse_pol(v[2]) : 0x0526E51F; // default: a gift
             float sc = v.size() > 3 ? (float)atof(v[3].c_str()) : 1.f;
@@ -937,6 +972,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_PlayerEmpire = S("Simulator::GetPlayerEmpire");
     a_PlayerPol = S("Simulator::GetPlayerEmpireID");
     a_Contact = S("SporeCoop::cEmpire_MakeContact");
+    a_Spoken = S("SporeCoop::cEmpire_SetContactedByPlayer");
     a_NounMgr = S("Simulator::cGameNounManager::Get");
     if (!(a_RelGet && a_Apply && a_ApplyEv && a_War && a_Ally && a_Peace && a_Break && a_StarMgr && a_GetEmpire &&
           a_PlayerEmpire && a_PlayerPol))
@@ -948,6 +984,8 @@ static bool init(const SkHost* h, SkMod* m)
     ok = H->hook_create(M, (void*)a_Break, (void*)h_Break, (void**)&o_Break) == 0 && ok;
     if (a_Contact && a_NounMgr) // optional: without it first contacts arrive with the host's table only
         ok = H->hook_create(M, (void*)a_Contact, (void*)h_Contact, (void**)&o_Contact) == 0 && ok;
+    if (a_Spoken && a_NounMgr)
+        ok = H->hook_create(M, (void*)a_Spoken, (void*)h_Spoken, (void**)&o_Spoken) == 0 && ok;
     return ok && o_ApplyEv && o_War && o_Ally && o_Peace && o_Break;
 }
 
