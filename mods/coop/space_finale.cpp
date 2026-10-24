@@ -150,12 +150,10 @@ static int tool_charges(uint32_t hash)
         return -1;
     uint8_t* item = vcall<uint8_t*>(inv, 0x68 / 4, key); // GetItemByKey (tools)
     void* sub = item && !IsBadReadPtr(item, 0x18) ? F<void*>(item, 0x0C) : nullptr;
-    void* tool = sub ? vcall<void*>(sub, 0x0C / 4, 0x707459F0u) : nullptr; // Cast -> cSpaceToolData (AddRef)
-    if (!tool)
-        return 0;
-    int n = F<int>(tool, 0x7C);
-    vcall<void>(tool, 0x08 / 4); // Release
-    return n;
+    // Cast -> cSpaceToolData; it does not AddRef (0xFF3CA0 AddRefs itself): no Release here (a
+    // Release freed the interstellar drive and the game crashed in the UI later, 2026-10-23)
+    void* tool = sub ? vcall<void*>(sub, 0x0C / 4, 0x707459F0u) : nullptr;
+    return tool ? F<int>(tool, 0x7C) : 0;
 }
 
 // the core star: the one star record of type 1 (StarType::GalacticCore), at the galaxy centre

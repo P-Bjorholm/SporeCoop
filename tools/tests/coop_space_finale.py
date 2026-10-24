@@ -70,16 +70,23 @@ def wait(pred, timeout, step=1.0):
     return None
 
 
-def settle(con, who, secs=4, timeout=90):
-    """press OK on every caption (tutorial texts, badges) until nothing plays for `secs`"""
+def settle(con, who, secs=4, timeout=120):
+    """press OK on every caption (tutorial texts, badges) until nothing plays for `secs`. A caption
+    is confirmed only after it has been up for 6 s: an Enter while a caption is still coming up
+    crashed the game in the UI (AV at 0xCCCCCCCC from App::Canvas::Tick, docs/06-testing.md)"""
     quiet = 0.0
+    since = None
     t0 = time.time()
     while time.time() - t0 < timeout:
         f = fin(con)
         if f.get('busy') == '1':
-            con.call('key enter')
             quiet = 0.0
+            since = since or time.time()
+            if time.time() - since >= 6:
+                con.call('key enter')
+                since = None
         else:
+            since = None
             quiet += 1.0
             if quiet >= secs:
                 return True
@@ -108,16 +115,18 @@ def to_galaxy(con, who, ck):
     settle(con, who)  # the drive's first galaxy view shows a tutorial caption
 
 
-def press_through(cons, until, timeout=240):
-    """the core cinematic waits for the player (scrolling text, "Steve gives gifts"): OK until done"""
+def press_through(cons, until, timeout=300):
+    """the core cinematic waits for the player (scrolling texts, "Steve gives gifts"): OK until done,
+    each player's Enter at least 8 s after the previous one"""
     t0 = time.time()
+    last = {id(c): time.time() for c in cons}
     while time.time() - t0 < timeout:
         if until():
             return True
         for c in cons:
-            f = fin(c)
-            if f.get('busy') == '1':
+            if fin(c).get('busy') == '1' and time.time() - last[id(c)] >= 8:
                 c.call('key enter')
+                last[id(c)] = time.time()
         time.sleep(2)
     return until()
 
