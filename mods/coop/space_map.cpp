@@ -466,6 +466,420 @@ uint32_t player_color(uint8_t id)
     return pal[1 + id % 4];
 }
 
+// ---------------- the galaxy map ----------------
+// In the galaxy view every partner gets a name tag in its colour on its star (or where its ship
+// flies), the stars of its colonies a mark; a click on a tag travels there (docs/re/space.md 10).
+// Drawn by the overlay (projected star positions, cStarRecord +0x3C, with the game camera), only
+// in the galaxy view, never while a comm screen or a cinematic covers it (coop.cpp already hides
+// the world labels under the pause menu and the co-op window).
+static uintptr_t a_Context, a_CommMgr, a_CommActive, a_CinematicMgr, a_TravelCost, a_ActiveStarRecord, a_AddMoney,
+    a_Teleport;
+
+struct Tag {
+    uint8_t id;
+    uint32_t star;        // 0: a partner's ship in flight (the nearest star is the target)
+    bool colony;
+    int x0, y0, x1, y1;   // the clickable box (back buffer pixels)
+    int sx, sy;           // the projected point of the star / ship
+    net::Vec3 pos;        // galaxy coordinates
+};
+static std::vector<Tag> g_tags; // drawn in the last frame (main thread: draw and tick)
+static bool g_covered, g_lmb;
+static double g_cover_checked;
+static uint32_t g_tag_clicks, g_trips, g_trip_cost, g_frames_drawn, g_frames_covered;
+static std::map<uint8_t, size_t> g_col_pick; // the Space page: which colony of a partner is shown
+
+static int context() { return a_Context ? cdecl_call<int>(a_Context) : -1; }
+
+static bool galaxy_pos_of_star(uint32_t star, net::Vec3& out)
+{
+    void* r = star_record(star);
+    if (!r)
+        return false;
+    auto& q = F<float[3]>(r, 0x3C);
+    out = {q[0], q[1], q[2]};
+    return true;
+}
+
+// where a partner is: its star, or its ship in the galaxy view (live player state first, the
+// roster as a fallback)
+struct Where {
+    uint32_t star = 0; // 0: in flight in the galaxy view
+    net::Vec3 pos{};   // galaxy coordinates
+};
+static bool where_is(uint8_t id, Where& w)
+{
+    if (spaceext::ctx().partners)
+        for (auto& p : spaceext::ctx().partners())
+            if (p.id == id) {
+                w.star = star_of(p.place);
+                if (w.star)
+                    return galaxy_pos_of_star(w.star, w.pos);
+                w.pos = p.pos; // the galaxy view: the ship's position is in galaxy coordinates
+                return std::isfinite(p.pos.x) && (p.pos.x != 0 || p.pos.y != 0 || p.pos.z != 0);
+            }
+    const Roster* r = roster_of(id);
+    if (!r)
+        return false;
+    w.star = r->star_now;
+    if (w.star)
+        return galaxy_pos_of_star(w.star, w.pos);
+    w.pos = r->galaxy_pos;
+    return r->galaxy_pos.x != 0 || r->galaxy_pos.y != 0 || r->galaxy_pos.z != 0;
+}
+
+// the star nearest to a galaxy point (a partner's ship in flight): the sectors of cStarManager
+// +0xC8 (docs/re/space.md 9.1)
+static uint32_t nearest_star(const net::Vec3& at, float max_d = 3.f)
+{
+    void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+    if (!readable(sm, 0xD0))
+        return 0;
+    uint8_t* sb = F<uint8_t*>(sm, 0xC8);
+    uint8_t* se = F<uint8_t*>(sm, 0xCC);
+    if (!sb || se <= sb || (se - sb) / 20 > 4096 || !readable(sb, se - sb))
+        return 0;
+    uint32_t best = 0;
+    float bd = max_d;
+    for (uint8_t* sec = sb; sec + 20 <= se; sec += 20) {
+        void** b = F<void**>(sec, 0);
+        void** e = F<void**>(sec, 4);
+        if (!b || e <= b || e - b > 4096 || !readable(b, (e - b) * 4))
+            continue;
+        for (void** it = b; it < e; ++it) {
+            void* r = *it;
+            if (!readable(r, 0x74))
+                continue;
+            auto& q = F<float[3]>(r, 0x3C);
+            float d = net::dist(net::Vec3{q[0], q[1], q[2]}, at);
+            if (d < bd) {
+                bd = d;
+                best = F<uint32_t>(r, 0x70);
+            }
+        }
+    }
+    return best;
+}
+
+// UTF-8 code points * 9 px (Arial 18 bold, like coop.cpp's text_width)
+static int text_w(const std::string& s)
+{
+    int n = 0;
+    for (unsigned char c : s)
+        n += (c & 0xC0) != 0x80;
+    return n * 9;
+}
+
+static void text(int x, int y, uint32_t argb, const std::string& s)
+{
+    H->overlay_text(x + 1, y + 1, 0xC0000000, s.c_str()); // a shadow: readable on bright nebulae
+    H->overlay_text(x, y, argb, s.c_str());
+}
+
+static bool project(const net::Vec3& p, int sw, int sh, int& x, int& y)
+{
+    float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
+    if (!H->world_to_screen(w, sc) || !std::isfinite(sc[0]) || !std::isfinite(sc[1]))
+        return false;
+    x = (int)sc[0];
+    y = (int)sc[1];
+    return x >= 0 && y >= 0 && x < sw && y < sh;
+}
+
+static void draw_map()
+{
+    g_tags.clear();
+    if (!spaceext::in_space() || !spaceext::connected() || context() != 2)
+        return;
+    if (g_covered) {
+        g_frames_covered++;
+        return;
+    }
+    g_frames_drawn++;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    uint8_t me = spaceext::my_id();
+    // colonies first (the partners' tags go on top): a hollow diamond around each colony star,
+    // the owner's name next to it while few are on the screen (zoomed in), else at the home star
+    for (uint8_t id : roster_ids()) {
+        if (id == me)
+            continue;
+        const Roster* r = roster_of(id);
+        uint32_t col = player_color(id);
+        std::string nm = spaceext::name_of(id);
+        struct S {
+            uint32_t star;
+            int x, y;
+            bool home;
+            net::Vec3 p;
+        };
+        std::vector<S> vis;
+        std::set<uint32_t> seen;
+        for (auto& c : r->colonies) {
+            if (!seen.insert(c.star).second)
+                continue;
+            net::Vec3 p;
+            int x, y;
+            if (galaxy_pos_of_star(c.star, p) && project(p, sw, sh, x, y))
+                vis.push_back({c.star, x, y, c.star == r->home_star, p});
+        }
+        bool names = vis.size() <= 8;
+        for (auto& v : vis) {
+            text(v.x - 7, v.y - 11, col, "◇"); // ◇
+            if (names || v.home) {
+                std::string t = v.home ? nm + spaceext::tr("'s home", ": дом") : nm;
+                text(v.x + 10, v.y - 9, (col & 0x00FFFFFF) | 0xD0000000, t);
+                g_tags.push_back({id, v.star, true, v.x - 8, v.y - 10, v.x + 12 + text_w(t), v.y + 10, v.x, v.y, v.p});
+            } else
+                g_tags.push_back({id, v.star, true, v.x - 8, v.y - 10, v.x + 8, v.y + 10, v.x, v.y, v.p});
+        }
+    }
+    // the partners: "▼ Bob" above their star (or ship), an arrow on the screen edge when off screen
+    for (uint8_t id : roster_ids()) {
+        if (id == me)
+            continue;
+        Where w;
+        if (!where_is(id, w))
+            continue;
+        uint32_t col = player_color(id);
+        std::string t = spaceext::name_of(id);
+        if (!w.star)
+            t += spaceext::tr(" (flying)", " (в полёте)");
+        int x, y;
+        if (project(w.pos, sw, sh, x, y)) {
+            std::string s = "▼ " + t; // ▼
+            int tw = text_w(s);
+            text(x - tw / 2, y - 36, col, s);
+            g_tags.push_back({id, w.star, false, x - tw / 2 - 4, y - 38, x + tw / 2 + 4, y - 12, x, y, w.pos});
+            continue;
+        }
+        float sc[2] = {-1e9f, -1e9f}, p3[3] = {w.pos.x, w.pos.y, w.pos.z};
+        bool front = H->world_to_screen(p3, sc) != 0 && sc[0] > -1e8f;
+        if (sw <= 0)
+            continue;
+        float cx = sw / 2.f, cy = sh / 2.f;
+        float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
+        float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
+                           std::fabs(dy) > 0.5f ? (cy - 60) / std::fabs(dy) : 1e9f);
+        if (!front)
+            k = cy - 60;
+        int ex = (int)(cx + dx * k), ey = (int)(cy + dy * k);
+        const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "►" : "◄") : (dy > 0 ? "▼" : "▲");
+        std::string s = std::string(arrow) + " " + t;
+        int tw = text_w(s);
+        text(ex - tw / 2, ey - 10, col, s);
+        g_tags.push_back({id, w.star, false, ex - tw / 2 - 4, ey - 12, ex + tw / 2 + 4, ey + 12, -1, -1, w.pos});
+    }
+}
+
+// a comm screen (talking to an empire) or a cinematic covers the galaxy view
+static void cover_tick(double now)
+{
+    if (now - g_cover_checked < 0.2)
+        return;
+    g_cover_checked = now;
+    bool c = false;
+    void* cm = a_CommMgr ? cdecl_call<void*>(a_CommMgr) : nullptr;
+    if (cm && a_CommActive)
+        c = thiscall<bool>(a_CommActive, cm);
+    void* cin = a_CinematicMgr ? cdecl_call<void*>(a_CinematicMgr) : nullptr;
+    if (cin && F<uint32_t>(cin, 0x2C) != 0)
+        c = true;
+    g_covered = c;
+}
+
+// a trip to a star: free to a partner (as the 0.6 jump), the normal galaxy flight cost to one of a
+// partner's colonies (the game's own price for the distance, cheaper to own / allied stars:
+// 0xFFC390), without the drive's range limit (a partner's colony is a friendly port)
+static std::string fly_to(uint32_t star, bool pay)
+{
+    if (!star)
+        return "no star";
+    int cost = 0;
+    void* emp = player_empire();
+    if (pay && a_TravelCost && a_ActiveStarRecord && a_PlayerUFOGet && emp) {
+        void* cur = cdecl_call<void*>(a_ActiveStarRecord);
+        void* dst = star_record(star);
+        void* ufo = cdecl_call<void*>(a_PlayerUFOGet);
+        if (cur && dst && ufo && cur != dst)
+            cost = thiscall<int>(a_TravelCost, ufo, cur, dst);
+        if (cost < 0 || cost > 10000000)
+            cost = 0;
+        if (cost > F<int>(emp, 0xD0)) {
+            char b[96];
+            snprintf(b, sizeof b, "%s %d", spaceext::tr("not enough money for the trip:", "не хватает денег на перелёт:"),
+                     cost);
+            return b;
+        }
+    }
+    std::string e = spacecoop::travel(star);
+    if (!e.empty())
+        return e;
+    g_trips++;
+    if (cost > 0 && a_AddMoney && emp) {
+        thiscall<void>(a_AddMoney, emp, -cost);
+        g_trip_cost += (uint32_t)cost;
+    }
+    return "";
+}
+
+// to a partner: its star system (the 0.6 jump), or, while it flies in the galaxy view, the star
+// next to its ship (SpaceTeleportTo: instant and free in the galaxy view, docs/re/space.md 7.3)
+static std::string go_to_partner(uint8_t id)
+{
+    Where w;
+    if (!where_is(id, w))
+        return "the partner's place is not known";
+    if (w.star)
+        return spacecoop::jump(id);
+    uint32_t s = nearest_star(w.pos);
+    if (!s)
+        return "no star near the partner";
+    if (context() == 2 && a_Teleport) {
+        void* r = star_record(s);
+        if (!r)
+            return "no star record";
+        cdecl_call<void>(a_Teleport, r);
+        g_trips++;
+        return "";
+    }
+    return spacecoop::travel(s);
+}
+
+static void click_task(void* p)
+{
+    Tag* t = (Tag*)p;
+    std::string e = t->colony ? fly_to(t->star, true) : go_to_partner(t->id);
+    if (!e.empty())
+        spaceext::notice(spaceext::tr("can't fly there: ", "не долететь: ") + e);
+    delete t;
+}
+
+// a left click on a tag (the virtual cursor of the tests too: SporeKit hooks GetCursorPos and
+// GetAsyncKeyState)
+static void click_tick()
+{
+    bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    bool edge = down && !g_lmb;
+    g_lmb = down;
+    if (!edge || g_tags.empty())
+        return;
+    HWND w = (HWND)H->game_window();
+    POINT pt;
+    RECT rc;
+    if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt) || !GetClientRect(w, &rc) || rc.right <= 0 || rc.bottom <= 0)
+        return;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    int x = sw > 0 ? pt.x * sw / rc.right : pt.x, y = sh > 0 ? pt.y * sh / rc.bottom : pt.y;
+    // partners' tags are on top: the last drawn wins
+    for (auto it = g_tags.rbegin(); it != g_tags.rend(); ++it)
+        if (x >= it->x0 && x <= it->x1 && y >= it->y0 && y <= it->y1) {
+            g_tag_clicks++;
+            H->run_outside_frame(click_task, new Tag(*it));
+            return;
+        }
+}
+
+// ---------------- the Space page ----------------
+static std::string place_text(uint8_t id)
+{
+    Where w;
+    if (!where_is(id, w))
+        return spaceext::tr("somewhere in space", "где-то в космосе");
+    if (!w.star) {
+        uint32_t s = nearest_star(w.pos);
+        std::string n = s ? star_name(s) : "";
+        return n.empty() ? spaceext::tr("flying in the galaxy", "летит по галактике")
+                         : std::string(spaceext::tr("flying near ", "летит у ")) + n;
+    }
+    std::string n = star_name(w.star);
+    if (n.empty())
+        n = spaceext::tr("a star", "звезда");
+    const Roster* r = roster_of(id);
+    for (auto& p : spaceext::ctx().partners ? spaceext::ctx().partners() : std::vector<spacecoop::Partner>{})
+        if (p.id == id && (p.place & 0x40000000u) && r)
+            for (auto& c : r->colonies)
+                if (c.planet == (p.place & 0x3FFFFFFFu) && !c.name.empty())
+                    return c.name + " (" + n + ")";
+    return n;
+}
+
+static std::string spice_text(const Colony& c)
+{
+    if (!c.spice_name.empty())
+        return c.spice_name;
+    if (!c.spice[0])
+        return spaceext::tr("no spice", "без специй");
+    char b[24];
+    snprintf(b, sizeof b, "spice %08X", c.spice[0]);
+    return b;
+}
+
+static std::vector<spaceext::Row> rows()
+{
+    std::vector<spaceext::Row> v;
+    if (!spaceext::in_space() || !spaceext::connected())
+        return v;
+    uint8_t me = spaceext::my_id();
+    uint32_t here = star_of(spaceext::ctx().my_place ? spaceext::ctx().my_place() : 0);
+    for (uint8_t id : roster_ids()) {
+        if (id == me)
+            continue;
+        const Roster* r = roster_of(id);
+        std::string nm = spaceext::name_of(id);
+        uint32_t col = player_color(id);
+        Where w;
+        bool known = where_is(id, w);
+        spaceext::Row a;
+        a.text = nm + ": " + place_text(id);
+        a.color = col;
+        if (known && (!w.star || w.star != here)) {
+            a.button = spaceext::tr("Fly there", "Лететь туда");
+            a.on_click = [id] {
+                std::string e = go_to_partner(id);
+                if (!e.empty())
+                    spaceext::notice(spaceext::tr("can't fly there: ", "не долететь: ") + e);
+            };
+        }
+        v.push_back(std::move(a));
+        if (!r || r->colonies.empty())
+            continue;
+        // one colony at a time, "Next" picks the following one (the page has few rows)
+        size_t n = r->colonies.size();
+        size_t& pick = g_col_pick[id];
+        if (pick >= n)
+            pick = 0;
+        if (n > 1) {
+            spaceext::Row b;
+            b.text = std::string("  ") + nm + spaceext::tr("'s colonies: ", ": колонии ") + std::to_string(pick + 1) +
+                     "/" + std::to_string(n) + spaceext::tr(" (◇ on the galaxy map)", " (◇ на карте галактики)");
+            b.color = col;
+            b.button = spaceext::tr("Next", "Дальше");
+            b.on_click = [id] { g_col_pick[id]++; };
+            v.push_back(std::move(b));
+        }
+        const Colony& c = r->colonies[pick];
+        spaceext::Row cr;
+        std::string sn = star_name(c.star);
+        cr.text = std::string("    ") + (c.name.empty() ? spaceext::tr("a planet", "планета") : c.name) +
+                  (sn.empty() ? "" : " (" + sn + ")") + ", " + spice_text(c) + ", " + std::to_string(c.cities) +
+                  spaceext::tr(" cities", " гор.") + (c.home ? spaceext::tr(", home", ", дом") : "");
+        cr.color = col;
+        if (c.star != here) {
+            cr.button = spaceext::tr("Fly there", "Лететь туда");
+            uint32_t star = c.star;
+            cr.on_click = [star] {
+                std::string e = fly_to(star, true);
+                if (!e.empty())
+                    spaceext::notice(spaceext::tr("can't fly there: ", "не долететь: ") + e);
+            };
+        }
+        v.push_back(std::move(cr));
+    }
+    return v;
+}
+
 // ---------------- the feature ----------------
 static std::string fmt_roster(const Roster& r)
 {
@@ -485,9 +899,12 @@ static std::string fmt_roster(const Roster& r)
 
 static std::string status()
 {
-    char b[160];
-    snprintf(b, sizeof b, "map: rosters=%u changes=%u sent=%u got=%u reqs=%u version=%u", (unsigned)g_rosters.size(),
-             g_changes, g_sent, g_got, g_reqs, g_version);
+    char b[300];
+    snprintf(b, sizeof b,
+             "map: rosters=%u changes=%u sent=%u got=%u reqs=%u version=%u tags=%u covered=%d drawn=%u hidden=%u "
+             "clicks=%u trips=%u trip_cost=%u",
+             (unsigned)g_rosters.size(), g_changes, g_sent, g_got, g_reqs, g_version, (unsigned)g_tags.size(),
+             (int)g_covered, g_frames_drawn, g_frames_covered, g_tag_clicks, g_trips, g_trip_cost);
     return b;
 }
 
@@ -506,7 +923,52 @@ static std::string debug(const std::vector<std::string>& a)
         g_force_send = true;
         return "sending\n";
     }
-    return "usage: coop.space map [status | roster [id] | send]\n";
+    if (a[0] == "tags") { // tests: the tags of the last frame (box, the projected star / ship point)
+        std::string s;
+        char b[200];
+        for (auto& t : g_tags) {
+            snprintf(b, sizeof b, "tag %u %s star %u box %d %d %d %d at %d %d pos %.3f %.3f %.3f\n", t.id,
+                     t.colony ? "colony" : "player", t.star, t.x0, t.y0, t.x1, t.y1, t.sx, t.sy, t.pos.x, t.pos.y,
+                     t.pos.z);
+            s += b;
+        }
+        snprintf(b, sizeof b, "context %d covered %d\n", context(), (int)g_covered);
+        return s + b;
+    }
+    if (a[0] == "project" && a.size() > 1) { // tests: where a star is on the screen
+        net::Vec3 p;
+        uint32_t star = (uint32_t)strtoul(a[1].c_str(), nullptr, 0);
+        if (!galaxy_pos_of_star(star, p))
+            return "no star\n";
+        float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+        int ok = H->world_to_screen(w, sc);
+        char b[160];
+        snprintf(b, sizeof b, "star %u '%s' pos %.3f %.3f %.3f screen %d %d %d\n", star, star_name(star).c_str(), p.x,
+                 p.y, p.z, ok, (int)sc[0], (int)sc[1]);
+        return b;
+    }
+    if (a[0] == "fly" && a.size() > 1) { // tests: the colony trip (cost) to a star; "free": no cost
+        std::string e = fly_to((uint32_t)strtoul(a[1].c_str(), nullptr, 0), !(a.size() > 2 && a[2] == "free"));
+        return e.empty() ? "flying\n" : e + "\n";
+    }
+    if (a[0] == "go" && a.size() > 1) { // tests: what a click on a partner's tag does
+        std::string e = go_to_partner((uint8_t)atoi(a[1].c_str()));
+        return e.empty() ? "going\n" : e + "\n";
+    }
+    if (a[0] == "cost" && a.size() > 1) { // tests: the price of the trip to a star
+        void* cur = a_ActiveStarRecord ? cdecl_call<void*>(a_ActiveStarRecord) : nullptr;
+        void* dst = star_record((uint32_t)strtoul(a[1].c_str(), nullptr, 0));
+        void* ufo = a_PlayerUFOGet ? cdecl_call<void*>(a_PlayerUFOGet) : nullptr;
+        if (!cur || !dst || !ufo || !a_TravelCost)
+            return "no cost\n";
+        void* emp = player_empire();
+        char b[96];
+        snprintf(b, sizeof b, "cost %d money %d\n", thiscall<int>(a_TravelCost, ufo, cur, dst),
+                 emp ? F<int>(emp, 0xD0) : -1);
+        return b;
+    }
+    return "usage: coop.space map [status | roster [id] | send | tags | project <star> | fly <star> [free] | go <id> | "
+           "cost <star>]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)
@@ -517,12 +979,27 @@ static bool init(const SkHost* h, SkMod* m)
     a_StarMgr = H->sym("Simulator::cStarManager::Get");
     a_GetStarRecord = H->sym("Simulator::cStarManager::GetStarRecord");
     a_PlayerUFOGet = H->sym("Simulator::cSimulatorPlayerUFO::Get");
+    a_Context = H->sym("SporeCoop::Space_GetCurrentContext");
+    a_CommMgr = H->sym("Simulator::cCommManager::Get");
+    a_CommActive = H->sym("Simulator::cCommManager::IsCommScreenActive");
+    a_CinematicMgr = H->sym("Simulator::cCinematicManager::Get");
+    a_TravelCost = H->sym("SporeCoop::cSimulatorPlayerUFO_TravelCost");
+    a_ActiveStarRecord = H->sym("Simulator::GetActiveStarRecord");
+    a_AddMoney = H->sym("Simulator::cEmpire::AddMoney");
+    a_Teleport = H->sym("Simulator::SpaceTeleportTo");
     bool ok = a_PlayerEmpire && a_StarMgr && a_GetStarRecord;
     H->log(M, ok ? SK_INFO : SK_WARN, "space map: roster %s", ok ? "on" : "off (symbols missing)");
     return ok;
 }
 
-static void tick(double now) { roster_tick(now); }
+static void tick(double now)
+{
+    roster_tick(now);
+    if (!spaceext::in_space())
+        return;
+    cover_tick(now);
+    click_tick();
+}
 
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
@@ -539,6 +1016,8 @@ static bool reg = spaceext::add({.name = "map",
                                  .tick = tick,
                                  .on_message = on_message,
                                  .on_session_end = roster_end,
+                                 .draw_overlay = draw_map,
+                                 .rows = rows,
                                  .status = status,
                                  .debug = debug});
 

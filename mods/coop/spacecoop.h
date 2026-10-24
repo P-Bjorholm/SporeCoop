@@ -51,6 +51,8 @@ int spice(std::string& to);
 int give_spice(int n);
 bool can_jump(std::string& to);
 std::string jump(uint8_t to); // "" = ok, else why not
+// the same travel to any star system by StarID (space_map: a partner's colony), free
+std::string travel(uint32_t star); // "" = ok, else why not
 // tests (coop.targets all): where to fly. On a planet its cities (T<n> ours, X<n> others), in a
 // solar system its planets (key P<PlanetID>, C<PlanetID>
 // for a colony of ours), in the galaxy view the stars near the own ship (S<StarID>, H<StarID> for a

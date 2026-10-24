@@ -274,6 +274,17 @@ std::string jump(uint8_t to)
     return e;
 }
 
+std::string travel(uint32_t star)
+{
+    if (!in_space())
+        return "not in space";
+    if (g_down)
+        return "the ship is disabled";
+    if (star == star_of(C.my_place ? C.my_place() : 0))
+        return "already there";
+    return travel_to(star);
+}
+
 static std::string travel_to(uint32_t star, bool force)
 {
     if (!a_ModeSpace || !a_TravelSystem || !a_Context || !a_StarMgr || !a_GetStarRecord)
