@@ -27,6 +27,8 @@ struct Colony {
     uint32_t star = 0;        // StarID (cStarRecord +0x70)
     uint32_t planet = 0;      // PlanetID (cPlanetRecord +0x184): star in the low 24 bits, index << 24
     std::string name;         // planet name (UTF-8, "" if not readable)
+    std::string star_name;    // the star's name in the owner's game (the names of stars nobody named are
+                              // made up anew in every game: another copy may call it differently)
     uint32_t spice[3] = {};   // the planet's spice ResourceKey {instance, type, group} (record +0x198), 0 = none
     std::string spice_name;   // "" if not known
     uint16_t cities = 0;      // cities of the owner's empire on the planet (cCivData +0x3C)
@@ -40,6 +42,7 @@ struct Roster {
     uint32_t place = 0;       // modes place: StarID | 0x80000000, PlanetID | 0x40000000, 0 = galaxy view
     net::Vec3 galaxy_pos{};   // the ship in galaxy coordinates (the current star's position in a system)
     uint32_t star_now = 0;    // StarID the player is at (in a system / on a planet), 0 = galaxy view
+    std::string star_now_name;// its name in the player's game (see Colony::star_name)
     std::string empire_name;  // UTF-8, "" if not readable
     uint32_t color = 0;       // ARGB of the empire's identity colour, 0 = not readable
     uint32_t political_id = 0;// the empire's political id in its own save (not valid in other saves)
@@ -62,7 +65,10 @@ void on_roster_change(std::function<void(uint8_t id)> f);
 // unless that is too close to mine (both are often the game's "player" colour), then one of a
 // fixed palette
 uint32_t player_color(uint8_t id);
-// the name of a star in my own save (UTF-8), "" if not readable
+// the name of a star in my own game (UTF-8), "" if not readable
 std::string star_name(uint32_t star);
+// a partner's colony that is not one of mine: the players start as one empire (the guests load the
+// host's save), so the colonies both have are shared, the others are that player's own
+bool own_colony(uint8_t id, const Colony& c);
 
 } // namespace spacemap

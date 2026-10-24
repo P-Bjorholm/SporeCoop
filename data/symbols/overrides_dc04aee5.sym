@@ -185,3 +185,5 @@ Simulator::cCommManager::IsCommScreenActive=0x00AE9310 ; verified port from GOG 
 SporeCoop::cSimulatorPlayerUFO_TravelCost=0x00FFC390 ; verified port from GOG 2016 0x00FFC390 (unchanged): same code, called at 0x1002090 (TravelToStar) and 0x10228E2 (SpaceTeleportTo), ret 8
 Simulator::GetActiveStarRecord=0x010210F0 ; verified port from GOG 2016 0x010210F0 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns cStar+0x48
 Simulator::SpaceTeleportTo=0x010228C0 ; verified port from GOG 2016 0x010228C0 (unchanged): same code (context == 2 check, cost 0xFFC390 refunded, TravelToStar), plain ret
+Simulator::cPlaceColonyToolStrategy::OnHit=0x0105B930 ; verified port from GOG 2016 0x0105B930 (unchanged): same code, sequencer global 0x167A60C, AE4950 instead of AE4920, callback 0x1058C60, ret 0x10
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0 (unchanged): identical code (items +0x34..+0x38), ret 4

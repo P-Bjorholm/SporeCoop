@@ -5,12 +5,14 @@
 #include <windows.h>
 
 #include <algorithm>
+#define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <set>
 
+#include "game.h"
 #include "modes.h"
 #include "space_ext.h"
 #include "spacecoop.h"
@@ -142,6 +144,7 @@ static bool read_local(Roster& r)
     r.place = spaceext::ctx().my_place ? spaceext::ctx().my_place() : 0;
     r.star_now = star_of(r.place);
     if (r.star_now) {
+        r.star_now_name = star_name(r.star_now);
         if (void* s = star_record(r.star_now)) {
             auto& q = F<float[3]>(s, 0x3C);
             r.galaxy_pos = {q[0], q[1], q[2]};
@@ -175,6 +178,7 @@ static bool read_local(Roster& r)
             if (!mine)
                 continue;
             col.name = str16((uint8_t*)p + 0x18);
+            col.star_name = str16((uint8_t*)s + 0x60);
             memcpy(col.spice, (uint8_t*)p + 0x198, 12);
             col.home = col.planet == r.home_planet;
             r.colonies.push_back(std::move(col));
@@ -237,6 +241,7 @@ static void put_colony(net::Writer& w, const Colony& c)
 {
     w.u32(c.planet);
     w.str8(c.name.substr(0, 64));
+    w.str8(c.star_name.substr(0, 64));
     for (uint32_t k : c.spice)
         w.u32(k);
     w.str8(c.spice_name.substr(0, 32));
@@ -250,6 +255,7 @@ static Colony get_colony(net::Reader& r)
     c.planet = r.u32();
     c.star = c.planet & 0xFFFFFFu;
     c.name = r.str8();
+    c.star_name = r.str8();
     for (uint32_t& k : c.spice)
         k = r.u32();
     c.spice_name = r.str8();
@@ -267,6 +273,7 @@ static void put_head(net::Writer& w, const Roster& r, bool with_pos)
     w.f32(with_pos ? r.galaxy_pos.y : 0.f);
     w.f32(with_pos ? r.galaxy_pos.z : 0.f);
     w.str8(r.empire_name.substr(0, 64));
+    w.str8(r.star_now_name.substr(0, 64));
     w.u32(r.color);
     w.u32(r.political_id);
     w.u32((uint32_t)r.money);
@@ -282,6 +289,7 @@ static void get_head(net::Reader& rd, Roster& r)
     r.galaxy_pos.y = rd.f32();
     r.galaxy_pos.z = rd.f32();
     r.empire_name = rd.str8();
+    r.star_now_name = rd.str8();
     r.color = rd.u32();
     r.political_id = rd.u32();
     r.money = (int)rd.u32();
@@ -441,6 +449,19 @@ static void roster_end()
     g_force_send = false;
     for (uint8_t id : ids)
         changed(id);
+}
+
+bool own_colony(uint8_t id, const Colony& c)
+{
+    if (id == spaceext::my_id())
+        return true;
+    const Roster* me = roster_of(spaceext::my_id());
+    if (!me)
+        return true;
+    for (auto& m : me->colonies)
+        if (m.planet == c.planet)
+            return false;
+    return true;
 }
 
 // ---------------- colours ----------------
@@ -615,22 +636,29 @@ static void draw_map()
         std::vector<S> vis;
         std::set<uint32_t> seen;
         for (auto& c : r->colonies) {
-            if (!seen.insert(c.star).second)
+            if (!own_colony(id, c) || !seen.insert(c.star).second)
                 continue;
             net::Vec3 p;
             int x, y;
             if (galaxy_pos_of_star(c.star, p) && project(p, sw, sh, x, y))
                 vis.push_back({c.star, x, y, c.star == r->home_star, p});
         }
-        bool names = vis.size() <= 8;
+        bool names = vis.size() <= 8, rings = vis.size() <= 30;
         for (auto& v : vis) {
-            text(v.x - 7, v.y - 11, col, "◇"); // ◇
+            if (rings) // a dotted ring around the star, like a territory mark
+                for (int k = 0; k < 10; k++) {
+                    double a = k * 2 * M_PI / 10;
+                    text(v.x + (int)std::lround(14 * std::cos(a)) - 3, v.y + (int)std::lround(14 * std::sin(a)) - 10,
+                         col, "•");
+                }
+            else
+                text(v.x - 6, v.y - 10, col, "○");
             if (names || v.home) {
                 std::string t = v.home ? nm + spaceext::tr("'s home", ": дом") : nm;
-                text(v.x + 10, v.y - 9, (col & 0x00FFFFFF) | 0xD0000000, t);
-                g_tags.push_back({id, v.star, true, v.x - 8, v.y - 10, v.x + 12 + text_w(t), v.y + 10, v.x, v.y, v.p});
+                text(v.x + 18, v.y - 10, (col & 0x00FFFFFF) | 0xD0000000, t);
+                g_tags.push_back({id, v.star, true, v.x - 16, v.y - 16, v.x + 20 + text_w(t), v.y + 16, v.x, v.y, v.p});
             } else
-                g_tags.push_back({id, v.star, true, v.x - 8, v.y - 10, v.x + 8, v.y + 10, v.x, v.y, v.p});
+                g_tags.push_back({id, v.star, true, v.x - 16, v.y - 16, v.x + 16, v.y + 16, v.x, v.y, v.p});
         }
     }
     // the partners: "▼ Bob" above their star (or ship), an arrow on the screen edge when off screen
@@ -656,6 +684,31 @@ static void draw_map()
         bool front = H->world_to_screen(p3, sc) != 0 && sc[0] > -1e8f;
         if (sw <= 0)
             continue;
+        if (!front) {
+            // not projectable (outside the view): the direction from my ship towards it, found by
+            // walking the galaxy segment from the ship to the farthest point still on the screen
+            void* mgr = a_PlayerUFOGet ? cdecl_call<void*>(a_PlayerUFOGet) : nullptr;
+            void* u = mgr ? F<void*>(mgr, 0x40) : nullptr;
+            int mx, my;
+            net::Vec3 me{};
+            if (readable(u, 0x48)) {
+                me = {F<float>(u, 0x38), F<float>(u, 0x3C), F<float>(u, 0x40)};
+                if (project(me, sw, sh, mx, my)) {
+                    float lo = 0, hi = 1;
+                    for (int it = 0; it < 12; it++) {
+                        float m = (lo + hi) / 2;
+                        net::Vec3 q{me.x + (w.pos.x - me.x) * m, me.y + (w.pos.y - me.y) * m, me.z + (w.pos.z - me.z) * m};
+                        int qx, qy;
+                        if (project(q, sw, sh, qx, qy)) {
+                            lo = m;
+                            sc[0] = (float)qx, sc[1] = (float)qy;
+                            front = true;
+                        } else
+                            hi = m;
+                    }
+                }
+            }
+        }
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
         float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
@@ -792,10 +845,10 @@ static std::string place_text(uint8_t id)
         return n.empty() ? spaceext::tr("flying in the galaxy", "летит по галактике")
                          : std::string(spaceext::tr("flying near ", "летит у ")) + n;
     }
-    std::string n = star_name(w.star);
+    const Roster* r = roster_of(id);
+    std::string n = r && r->star_now == w.star && !r->star_now_name.empty() ? r->star_now_name : star_name(w.star);
     if (n.empty())
         n = spaceext::tr("a star", "звезда");
-    const Roster* r = roster_of(id);
     for (auto& p : spaceext::ctx().partners ? spaceext::ctx().partners() : std::vector<spacecoop::Partner>{})
         if (p.id == id && (p.place & 0x40000000u) && r)
             for (auto& c : r->colonies)
@@ -842,28 +895,35 @@ static std::vector<spaceext::Row> rows()
             };
         }
         v.push_back(std::move(a));
-        if (!r || r->colonies.empty())
+        if (!r)
             continue;
-        // one colony at a time, "Next" picks the following one (the page has few rows)
-        size_t n = r->colonies.size();
+        // the partner's own colonies (those we both have since the start are in my game too), one
+        // at a time: "Next" picks the following one (the page has few rows)
+        std::vector<const Colony*> own;
+        for (auto& c : r->colonies)
+            if (own_colony(id, c))
+                own.push_back(&c);
+        if (own.empty())
+            continue;
+        size_t n = own.size();
         size_t& pick = g_col_pick[id];
         if (pick >= n)
             pick = 0;
         if (n > 1) {
             spaceext::Row b;
             b.text = std::string("  ") + nm + spaceext::tr("'s colonies: ", ": колонии ") + std::to_string(pick + 1) +
-                     "/" + std::to_string(n) + spaceext::tr(" (◇ on the galaxy map)", " (◇ на карте галактики)");
+                     "/" + std::to_string(n) + spaceext::tr(" (\u25CB on the galaxy map)", " (\u25CB на карте галактики)");
             b.color = col;
             b.button = spaceext::tr("Next", "Дальше");
             b.on_click = [id] { g_col_pick[id]++; };
             v.push_back(std::move(b));
         }
-        const Colony& c = r->colonies[pick];
+        const Colony& c = *own[pick];
         spaceext::Row cr;
-        std::string sn = star_name(c.star);
-        cr.text = std::string("    ") + (c.name.empty() ? spaceext::tr("a planet", "планета") : c.name) +
-                  (sn.empty() ? "" : " (" + sn + ")") + ", " + spice_text(c) + ", " + std::to_string(c.cities) +
-                  spaceext::tr(" cities", " гор.") + (c.home ? spaceext::tr(", home", ", дом") : "");
+        std::string sn = c.star_name.empty() ? star_name(c.star) : c.star_name;
+        cr.text = std::string("    ") + (n == 1 ? nm + spaceext::tr("'s colony ", ": колония ") : std::string()) +
+                  (c.name.empty() ? spaceext::tr("a planet", "планета") : c.name) + (sn.empty() ? "" : " (" + sn + ")") +
+                  ", " + spice_text(c) + ", " + std::to_string(c.cities) + spaceext::tr(" cities", " гор.");
         cr.color = col;
         if (c.star != here) {
             cr.button = spaceext::tr("Fly there", "Лететь туда");
@@ -889,8 +949,9 @@ static std::string fmt_roster(const Roster& r)
              (unsigned)r.colonies.size(), H->time_seconds() - r.updated);
     std::string s = b;
     for (auto& c : r.colonies) {
-        snprintf(b, sizeof b, "  colony %08X star %u '%s' spice %08X '%s' cities %u%s\n", c.planet, c.star,
-                 c.name.c_str(), c.spice[0], c.spice_name.c_str(), c.cities, c.home ? " home" : "");
+        snprintf(b, sizeof b, "  colony %08X star %u '%s' at '%s' spice %08X '%s' cities %u%s%s\n", c.planet, c.star,
+                 c.name.c_str(), c.star_name.c_str(), c.spice[0], c.spice_name.c_str(), c.cities, c.home ? " home" : "",
+                 own_colony(r.id, c) ? " own" : " shared");
         s += b;
     }
     return s;
@@ -953,6 +1014,132 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "go" && a.size() > 1) { // tests: what a click on a partner's tag does
         std::string e = go_to_partner((uint8_t)atoi(a[1].c_str()));
         return e.empty() ? "going\n" : e + "\n";
+    }
+    if (a[0] == "planets") { // tests: stars near the ship (or a star) with their planet records
+        // coop.space map planets [star]: PlanetID name type tech atmosphere temperature water
+        std::vector<uint32_t> stars;
+        if (a.size() > 1)
+            stars.push_back((uint32_t)strtoul(a[1].c_str(), nullptr, 0));
+        else {
+            Roster me;
+            read_local(me);
+            void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+            uint8_t* sb = readable(sm, 0xD0) ? F<uint8_t*>(sm, 0xC8) : nullptr;
+            uint8_t* se = sb ? F<uint8_t*>(sm, 0xCC) : nullptr;
+            for (uint8_t* sec = sb; sb && sec + 20 <= se && stars.size() < 40; sec += 20)
+                for (void* r : ptr_vec(sec, 4096))
+                    if (readable(r, 0x98) && net::dist(net::Vec3{F<float>(r, 0x3C), F<float>(r, 0x40), F<float>(r, 0x44)},
+                                                       me.galaxy_pos) < (a.size() > 2 ? atof(a[2].c_str()) : 4.0))
+                        stars.push_back(F<uint32_t>(r, 0x70));
+        }
+        std::string s;
+        char b[200];
+        for (uint32_t st : stars) {
+            void* r = star_record(st);
+            if (!r)
+                continue;
+            net::Vec3 p;
+            galaxy_pos_of_star(st, p);
+            snprintf(b, sizeof b, "star %u '%s' empire %08X type %d at %.2f %.2f %.2f\n", st, star_name(st).c_str(),
+                     F<uint32_t>(r, 0x54), F<int>(r, 0x48), p.x, p.y, p.z);
+            s += b;
+            for (void* pl : ptr_vec((uint8_t*)r + 0x84, 64))
+                if (readable(pl, 0x1A4)) {
+                    snprintf(b, sizeof b,
+                             "  planet %08X '%s' type %d tech %d scores %.2f %.2f %.2f civs %u spice %08X nodes %u\n",
+                             F<uint32_t>(pl, 0x184), str16((uint8_t*)pl + 0x18).c_str(), F<int>(pl, 0x28),
+                             F<int>(pl, 0x194), F<float>(pl, 0xB0), F<float>(pl, 0xB4), F<float>(pl, 0xB8),
+                             (unsigned)ptr_vec((uint8_t*)pl + 0x15C, 32).size(), F<uint32_t>(pl, 0x198),
+                             (unsigned)ptr_vec((uint8_t*)pl + 0xE4, 256).size());
+                    s += b;
+                }
+            if (s.size() > 7000)
+                break;
+        }
+        return s.empty() ? "no stars\n" : s;
+    }
+    if (a[0] == "above" && a.size() > 1) { // tests: put the own ship above the nearest object of a noun
+        // (on a planet: a spice geyser for the colony tool, docs/re/space.md 10.4); "list" only prints them
+        struct Q {
+            uint32_t noun;
+            net::Vec3 me, best;
+            float bd;
+            std::string out;
+        } q{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), {}, {}, 1e30f, ""};
+        void* mgr = a_PlayerUFOGet ? cdecl_call<void*>(a_PlayerUFOGet) : nullptr;
+        void* u = mgr ? F<void*>(mgr, 0x40) : nullptr;
+        if (!readable(u, 0x760))
+            return "no ship\n";
+        q.me = {F<float>(u, 0x38), F<float>(u, 0x3C), F<float>(u, 0x40)};
+        game::for_each_object(
+            [](void* obj, uint32_t noun, void* user) {
+                Q* q = (Q*)user;
+                net::Vec3 p;
+                if (noun != q->noun || !game::object_alive(obj) || !game::object_position(obj, p))
+                    return true;
+                char b[96];
+                snprintf(b, sizeof b, "obj %08X at %.1f %.1f %.1f dist %.1f\n", noun, p.x, p.y, p.z, net::dist(p, q->me));
+                q->out += b;
+                if (net::dist(p, q->me) < q->bd) {
+                    q->bd = net::dist(p, q->me);
+                    q->best = p;
+                }
+                return true;
+            },
+            &q);
+        if (q.bd > 1e29f)
+            return "none\n" + q.out;
+        if (a.size() > 2 && a[2] == "list")
+            return q.out;
+        float len = std::sqrt(q.best.x * q.best.x + q.best.y * q.best.y + q.best.z * q.best.z);
+        float ml = std::sqrt(q.me.x * q.me.x + q.me.y * q.me.y + q.me.z * q.me.z);
+        if (len < 1)
+            return "bad position\n";
+        float k = ml / len; // the ship's own height above the planet centre, over the object
+        float p[3] = {q.best.x * k, q.best.y * k, q.best.z * k};
+        memcpy((uint8_t*)u + 0x38, p, 12);
+        memcpy((uint8_t*)u + 0x718, p, 12); // next position
+        memcpy((uint8_t*)u + 0x750, p, 12); // destination
+        char b[96];
+        snprintf(b, sizeof b, "moved above %.1f %.1f %.1f (was %.1f away)\n", q.best.x, q.best.y, q.best.z, q.bd);
+        return b;
+    }
+    if (a[0] == "colonize") { // tests: fire the colony tool (Colony Incredi-Pak) at the ground under the cursor
+        // cPlaceColonyToolStrategy::OnHit(tool, pos, kHitGround, 0) is what the tool does on a click
+        // (charge, drop animation, CreateColony), without the aiming check "Colonies must be placed
+        // near spice" (docs/re/space.md 10.4). The terrain cursor (noun 0x18C40BC) is the point.
+        uintptr_t onhit = H->sym("Simulator::cPlaceColonyToolStrategy::OnHit"),
+                  gettool = H->sym("Simulator::cPlayerInventory::GetTool"),
+                  game = H->sym("Simulator::cSimulatorSpaceGame::ptr");
+        if (!onhit || !gettool || !game || context() != 0)
+            return "not on a planet\n";
+        void* sg = *(void**)game;
+        void* inv = readable(sg, 0x44) ? F<void*>(sg, 0x40) : nullptr;
+        uint32_t key[3] = {0x733B280Cu, 0, 0}; // placecolony
+        void* tool = inv ? thiscall<void*>(gettool, inv, key) : nullptr;
+        if (!tool)
+            return "no colony tool (coop.space tool add placecolony)\n";
+        struct Q {
+            net::Vec3 p;
+            bool found;
+        } q{{}, false};
+        game::for_each_object(
+            [](void* obj, uint32_t noun, void* user) {
+                Q* q = (Q*)user;
+                if (noun == 0x18C40BCu && game::object_position(obj, q->p)) {
+                    q->found = true;
+                    return false;
+                }
+                return true;
+            },
+            &q);
+        if (!q.found)
+            return "no terrain cursor\n";
+        float pos[3] = {q.p.x, q.p.y, q.p.z};
+        bool ok = thiscall<bool>(onhit, nullptr, tool, pos, 1, 0);
+        char b[120];
+        snprintf(b, sizeof b, "colony tool %s at %.1f %.1f %.1f\n", ok ? "fired" : "refused", pos[0], pos[1], pos[2]);
+        return b;
     }
     if (a[0] == "cost" && a.size() > 1) { // tests: the price of the trip to a star
         void* cur = a_ActiveStarRecord ? cdecl_call<void*>(a_ActiveStarRecord) : nullptr;
