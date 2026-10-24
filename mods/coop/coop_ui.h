@@ -1,6 +1,7 @@
 // Co-op user interface built from Spore's own UI: a "Co-op" item in the main menu and a
-// game dialog with two pages, "connect" (name, address, games on the network, hosting) and
-// "lobby" (players, stage, ping, ready, chat, world transfer). docs/08-ui.md.
+// game dialog with three pages, "connect" (name, address, games on the network, hosting),
+// "lobby" (players, stage, ping, ready, chat, world transfer) and, in the Space stage, "space"
+// (the rows of the space features, space_ext.h). docs/08-ui.md.
 #pragma once
 
 #include <cstdint>
@@ -77,5 +78,7 @@ extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 
 // the dialog text font (0 until the co-op window was built once)
 uint32_t text_font();
+// the window speaks Russian (ui lang = ru, or auto on a Russian system)
+bool russian();
 
 } // namespace coop_ui

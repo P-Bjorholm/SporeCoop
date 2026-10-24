@@ -8,6 +8,7 @@
 #include <map>
 
 #include "modes.h"
+#include "space_ext.h"
 #include "sui.h"
 
 namespace coop_ui {
@@ -36,6 +37,8 @@ constexpr uint32_t kDialogLayout = 0x34A6339E; // the game's account dialog (fra
 constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, kGreen = 0xFF8CF08C,
                    kRed = 0xFFFF7A6A, kYellow = 0xFFFFD866;
 constexpr float kW = 760, kH = 560;
+constexpr int kSpaceRows = 9;
+static bool g_space_page; // the lobby shows the Space page instead
 
 static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
 
@@ -181,6 +184,12 @@ struct Dialog {
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, jump_btn = nullptr;
+    Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
+    // Space page: the rows of the space features (space_ext.h)
+    std::vector<Win> page_space;
+    Win space_title = nullptr, space_back = nullptr;
+    Win space_text[kSpaceRows] = {}, space_button[kSpaceRows] = {};
+    std::function<void()> space_action[kSpaceRows];
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -426,6 +435,10 @@ static void build_dialog()
             A.creation_cycle(1);
         g_dirty = true;
     });
+    D.space_btn = add_button(L, "space", {580, 66, 720, 98}, T("Space >", "Космос >"), [] {
+        g_space_page = true;
+        g_dirty = true;
+    });
     D.chat_edit = add_edit(L, "chatedit", {40, 438, 560, 470}, "", 120);
     D.send_btn = add_button(L, "send", {570, 434, 720, 474}, T("Send", "Отправить"), do_send_chat);
     D.ready_btn = add_button(L, "ready", {40, 488, 240, 528}, "", [] {
@@ -439,6 +452,32 @@ static void build_dialog()
     D.leave_btn = add_button(L, "leave", {500, 488, 720, 528}, "", [] {
         A.leave();
         set_status(T("Left the session", "Вы вышли из игры"), kYellow);
+    });
+    // ---- Space page ----
+    auto& S = D.page_space;
+    D.space_title = add_label(S, {40, 104, 720, 130}, T("Your galaxy together", "Галактика вместе"), kGold);
+    for (int i = 0; i < kSpaceRows; i++) {
+        float y = 138.f + i * 38;
+        char nm[16];
+        D.space_text[i] = add_label(S, {40, y + 4, 545, y + 32}, "", kWhite);
+        snprintf(nm, sizeof nm, "sbtn%d", i);
+        D.space_button[i] = add_button(S, nm, {555, y, 720, y + 34}, "", [i] {
+            if (!D.space_action[i])
+                return;
+            // game calls and UI changes of a feature: outside the frame
+            H->run_outside_frame(
+                [](void* p) {
+                    auto* f = (std::function<void()>*)p;
+                    (*f)();
+                    delete f;
+                },
+                new std::function<void()>(D.space_action[i]));
+            g_dirty = true;
+        });
+    }
+    D.space_back = add_button(S, "sback", {40, 488, 240, 528}, T("< Lobby", "< Лобби"), [] {
+        g_space_page = false;
+        g_dirty = true;
     });
     // Enter in the chat field sends the message
     if (D.chat_edit)
@@ -578,6 +617,25 @@ static void refresh_lobby()
     text(D.leave_btn, host ? T("Stop hosting", "Закрыть игру") : T("Leave", "Выйти"));
 }
 
+static void refresh_space()
+{
+    auto rows = spaceext::rows_all();
+    for (int i = 0; i < kSpaceRows; i++) {
+        bool have = i < (int)rows.size();
+        show(D.space_text[i], have);
+        D.space_action[i] = have ? rows[i].on_click : nullptr;
+        show(D.space_button[i], have && !rows[i].button.empty() && rows[i].on_click);
+        if (!have)
+            continue;
+        text(D.space_text[i], rows[i].text);
+        color(D.space_text[i], rows[i].color ? rows[i].color : kWhite);
+        text(D.space_button[i], rows[i].button);
+    }
+    if (rows.empty())
+        text(D.space_text[0], T("Nothing here yet", "Пока ничего"));
+    show(D.space_text[0], true);
+}
+
 static void refresh()
 {
     g_pending = false;
@@ -608,14 +666,22 @@ static void refresh()
         return;
     }
     bool lobby = A.role() != 0;
+    bool space = lobby && A.mode && A.mode() == modes::kSpace;
+    if (!space)
+        g_space_page = false;
     for (Win w : D.page_connect)
         show(w, !lobby);
     for (Win w : D.page_lobby)
-        show(w, lobby);
+        show(w, lobby && !g_space_page);
+    for (Win w : D.page_space)
+        show(w, lobby && g_space_page);
+    show(D.space_btn, space && !g_space_page);
     text(D.subtitle, lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
     if (A.lan_scan)
         A.lan_scan(!lobby);
-    if (lobby)
+    if (lobby && g_space_page)
+        refresh_space();
+    else if (lobby)
         refresh_lobby();
     else
         refresh_connect();
@@ -679,7 +745,8 @@ void shutdown()
 
 std::string debug_state()
 {
-    std::string s = "open=" + std::to_string(g_want_open) + " page=" + (A.role() ? "lobby" : "connect") +
+    std::string s = "open=" + std::to_string(g_want_open) + " page=" +
+                    (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + "\n";
     char b[256];
     if (g_menu_btn) {
@@ -717,5 +784,7 @@ std::string debug_state()
 }
 
 uint32_t text_font() { return g_text_font; }
+
+bool russian() { return g_ru; }
 
 } // namespace coop_ui

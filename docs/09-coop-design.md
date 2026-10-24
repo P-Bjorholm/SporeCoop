@@ -91,6 +91,41 @@ only from working together.
   * **Cargo:** give spice to a partner (F9 window: "Give 10"); without a free slot it comes back.
 * Not possible with separate saves: shared colony *ownership* (each save keeps its own colonies).
 
+### Space 0.7 - "A galaxy together" (in progress, 2026-10-23)
+
+Two (to four) rulers of one galaxy, each with their own territory, who see each other, help each
+other, trade and finish the game together. Every feature is a file of its own on top of the
+registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Space" page rows,
+`coop.space <feature> ...` test commands). The features and the data they share:
+
+| # | Feature | File | Kinds | What the player gets |
+|---|---|---|---|---|
+| 1 | Partners on the galaxy map | `space_map.cpp` | 10-19 | a name tag on each partner's star in the galaxy view (and where they fly); a click there jumps to them |
+| 2 | Partner colonies on the map | `space_map.cpp` | 10-19 | the stars with a partner's colonies are marked with the partner's name: whose territory is where |
+| 3 | Tool gifts | `space_trade.cpp` | 70-79 | give weapon charges, terraforming and other tools from the cargo to a partner (F9 Space page) |
+| 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's colonies exist as cities of "<name>'s empire", an ally: you can visit them and defend them from raids |
+| 5 | Trade between players | `space_trade.cpp` | 70-79 | sell spice to a partner's colony for more than NPC empires pay; the partner's colony gets it |
+| 7 | Co-op contracts | `space_contracts.cpp` | 20-29 | jobs made for two (a pirate armada that needs two ships, escorts, joint expeditions), big rewards for both |
+| 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | an alliance, a war or a gift to an NPC empire by one player counts for every player |
+| 9 | The galaxy core together | `space_finale.cpp` | 40-49 | the trip to the core is a joint finale: the reward and the ending for everybody |
+| 10 | Rivals mode | `space_rivalry.cpp` | 50-59 | a host option: own budgets, players can declare war or alliance on each other, PvP between ships |
+
+Shared contracts between the features:
+* **Roster** (`space_map.h`, kinds 10-19): every player broadcasts, every few seconds and on a
+  change, a summary of its empire: home star, current place, empire name and colour, and its
+  colonies (StarID, PlanetID, planet name, spice). `roster_of(id)` / `roster_ids()` serve
+  features 2, 4, 5, 7 and 10. A rejoining player gets the others' rosters within one period.
+* **Rivals** (`space_rivalry.h`): `rivals()` (the host's option, sent to everybody) and
+  `relation(a, b)` (ally / neutral / war between two players). Shared money, shared diplomacy and
+  allied colonies follow it: in rivals mode money is per player and diplomacy is per player;
+  a partner at war shows its colonies as an enemy empire.
+* Star and planet ids are the same in every copy of the galaxy (the same save: StarID =
+  `starRecord+0x70`, PlanetID = `record+0x184`, docs/re/space.md 7.3). Political ids of NPC
+  empires: to be checked by feature 8 (docs/re/space.md 7.8).
+* Every feature works on both supported builds (symbols in `overrides_922af7c7.sym` and
+  `overrides_dc04aee5.sym`; `tools/re_lint.py` fails otherwise) and has a two-game test
+  `tools/tests/coop_space_<feature>.py`.
+
 ### Adventures
 * Everyone shares one adventure (guests auto-launch the host's adventure), with a party of captains.
 

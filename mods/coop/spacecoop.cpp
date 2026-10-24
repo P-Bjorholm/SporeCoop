@@ -8,6 +8,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "space_ext.h"
 #include "sporekit_game.hpp"
 
 using skg::cdecl_call;
@@ -635,12 +636,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         break;
     }
+    default:
+        spaceext::dispatch(kind, origin, r); // the features of space_ext.h
+        break;
     }
 }
 
 // ---------------- frame ----------------
 void tick(double now)
 {
+    spaceext::tick_all(now); // features check the stage and the session themselves
     if (!in_space() || !connected())
         return;
     if (C.partners)
@@ -663,6 +668,7 @@ void tick(double now)
 
 void draw_overlay()
 {
+    spaceext::overlay_all();
     if (!g_down || !in_space())
         return;
     int sw = 0, sh = 0;
@@ -693,6 +699,7 @@ void on_session_end()
     g_last_star.clear();
     g_raid_since.clear();
     g_terra_planet = 0;
+    spaceext::session_end_all();
 }
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
@@ -739,6 +746,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->log(M, SK_INFO, "space co-op: rescue %s, jump %s, missions %s, terraform %s, cargo %s",
            a_AddHealth && a_Destroyed ? "on" : "off", a_TravelSystem && a_GetStarRecord ? "on" : "off",
            a_SetState ? "on" : "off", a_TerraA ? "on" : "off", a_CreateTrading && a_Trading ? "on" : "off");
+    spaceext::init_all(H, M, &C);
     return g_ok;
 }
 
@@ -835,7 +843,7 @@ std::string status()
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size());
-    return b;
+    return b + spaceext::status_all();
 }
 
 // tests: coop.space down | hp | jump [id] | give <n> | spice add <n> | terra <a> <w> <t> | money
@@ -843,6 +851,9 @@ std::string debug(const std::vector<std::string>& a)
 {
     if (a.empty())
         return status();
+    std::string ext;
+    if (spaceext::debug(a, ext)) // coop.space features | rows | press <n> | <feature> ...
+        return ext;
     void* u = my_ufo();
     char b[200];
     if (a[0] == "hit" && a.size() > 1 && u) { // the game's damage path on the own ship
@@ -1003,4 +1014,45 @@ std::string debug(const std::vector<std::string>& a)
     return "usage: coop.space [hit <dmg> | hp | jump [id] | give <n> | spice [add <n>] | terra <a> <w> <t> | planet]";
 }
 
+} // namespace spacecoop
+
+// ---------------- the Space page: where the partners are (an example of a space_ext feature) ----------------
+namespace spacecoop {
+static std::vector<spaceext::Row> squad_rows()
+{
+    std::vector<spaceext::Row> v;
+    if (!in_space() || !connected() || !C.partners)
+        return v;
+    uint32_t here = star_of(C.my_place ? C.my_place() : 0);
+    for (auto& p : C.partners()) {
+        uint32_t s = star_of(p.place);
+        bool known = s || g_last_star.count(p.id);
+        if (!s && known)
+            s = g_last_star[p.id];
+        spaceext::Row r;
+        bool down = g_partner_down.count(p.id) != 0;
+        if (s && s == here)
+            r.text = p.name + spaceext::tr(": in your system", ": в вашей системе");
+        else if (!p.place)
+            r.text = p.name + spaceext::tr(": in the galaxy view", ": на карте галактики");
+        else
+            r.text = p.name + spaceext::tr(": in another star system", ": в другой звёздной системе");
+        if (down) {
+            r.text += spaceext::tr(" - ship disabled!", " - корабль подбит!");
+            r.color = 0xFFFF6040;
+        }
+        if (s && s != here) {
+            r.button = spaceext::tr("Jump there", "Прыгнуть");
+            uint8_t id = p.id;
+            r.on_click = [id] {
+                std::string e = jump(id);
+                if (!e.empty() && C.notice)
+                    C.notice("can't jump: " + e);
+            };
+        }
+        v.push_back(std::move(r));
+    }
+    return v;
+}
+static bool squad_reg = spaceext::add({.name = "squad", .rows = squad_rows});
 } // namespace spacecoop
