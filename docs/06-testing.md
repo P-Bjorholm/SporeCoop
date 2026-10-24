@@ -437,7 +437,8 @@ home that the tutorial points at, or one the ship visited); the nearest NPC empi
 
 ## 6.16 `coop_space_allies.py` (a partner's colonies as an allied empire)
 
-* Fixture `space`; takes ~7 min on a lane (start 40 s). The host founds the colony itself with
+* Fixture `space`; takes ~7 min on a lane (start 40 s). Runs 2026-10-23: lane 9 (GOG 2024) 6 passes
+  in a row with the last code, lane 8 (GOG 2016) 3 passes. The host founds the colony itself with
   `coop.space allies colonize` (record level, a planet of the system it is in) in a free star near
   home (`allies free`; the nearest one, 4587540, is the tutorial's ruined colony: the test takes the
   second). The colony must be founded **after** the guest joined: the guest plays a copy of the
