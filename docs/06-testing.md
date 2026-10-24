@@ -320,6 +320,11 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   but the home planet ("near spice").
 * The tags vanish under the pause menu (Esc in the galaxy view opens it at once) and come back with
   a second Esc.
+* Runs (2026-10-23): lane 2 (GOG 2016) passed 5 times in a row (one ~3.5 min each). Lane 1 (GOG
+  2024) once: rosters, the tags in the galaxy view, hiding under the pause menu and the rejoin
+  passed; the guest's part failed: after the drive's badge a caption with letterbox bars stayed on
+  the guest for over a minute through Enter (`a cinematic is playing`), so it never picked the
+  planet. The test now also clicks the caption's check button (1410, 1048); not run on GOG 2024 since.
 * Before the rejoin the host goes back to a star system: a guest that joins while the host is in the
   galaxy view is not "together" with it, `wait_guest_in` times out.
 

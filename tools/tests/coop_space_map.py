@@ -70,10 +70,12 @@ def wait(cond, secs, step=1.0):
 
 def no_movie(con, secs=30):
     """confirm the captions that wait for OK (tutorial, badges) until no cinematic runs"""
-    for _ in range(int(secs / 2)):
+    for i in range(int(secs / 2)):
         if 'movie=0' in sp(con, 'hp'):
             return True
-        con.call(f'key {VK_RETURN}')
+        # Enter, and every other time the caption's green check button at the bottom right (on GOG
+        # 2024 a caption once stayed through Enter for a minute)
+        con.call(f'key {VK_RETURN}' if i % 2 == 0 else 'click 1410 1048')
         time.sleep(2)
     return 'movie=0' in sp(con, 'hp')
 
