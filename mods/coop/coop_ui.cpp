@@ -192,6 +192,7 @@ struct Dialog {
     std::function<void()> space_action[kSpaceRows];
 };
 static Dialog D;
+static bool g_front_is_last, g_raised; // the window was raised; the main window's front child is its last
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
 
 static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t, uint32_t argb,
@@ -658,6 +659,16 @@ static void refresh()
             sui::add_child(main, D.root);
         sui::bring_to_front(main, D.root);
         sui::set_flag(D.root, sui::kFlagAlwaysInFront, true);
+        auto kids = sui::children(main);
+        g_front_is_last = !kids.empty() && kids.back() == D.root; // which end of the list is the front
+        g_raised = true;
+    } else if (g_want_open && g_raised) {
+        // a game panel opened later (the badge points after a raid, captions) lands above the
+        // window and takes the mouse: the window goes back to the front
+        Win main = sui::main_window();
+        auto kids = sui::children(main);
+        if (!kids.empty() && (g_front_is_last ? kids.back() : kids.front()) != D.root && sui::parent(D.root) == main)
+            sui::bring_to_front(main, D.root);
     }
     show(D.root, g_want_open);
     if (!g_want_open) {
