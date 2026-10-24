@@ -180,3 +180,10 @@ UTFWin::SporeStdDrawable::vftable=0x0141A978 ; verified port from GOG 2016 0x014
 UTFWin::SporeStdDrawableImageInfo::SporeStdDrawableImageInfo=0x008308F0 ; verified port from GOG 2016 0x00830870 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 UTFWin::UILayout::UILayout=0x008100A0 ; verified port from GOG 2016 0x00810050 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::GetActivePlanetRecord=0x01021150 ; verified port from GOG 2016 0x01021150 (unchanged): cdecl() reads SpacePlayerData 0x16DDA8C, returns [planet+0x13C] or 0
+# ---- the galactic core (space_finale.cpp, docs/re/space.md 10) ----
+SporeCoop::Space_EnterGalacticCore=0x01002DD0 ; verified port from GOG 2016 0x01002DD0: same address; the only string ref of "SPG_CenterOfGalaxy" (0x14953E0) at 0x1002EF0, same body with push 0x681C28E, calls 0xC77460/0xC77D90, plain ret
+Simulator::cPlayer::HasFlag=0x00C77460 ; verified port from GOG 2016 0x00C77440: +0x20; called at 0x1002DE6 and 0xFFC6E0 (flag 0x61F1454) exactly like the old ones, stack purge 4, 56 bytes
+Simulator::cPlayer::SetFlag=0x00C77D90 ; verified port from GOG 2016 0x00C77D70: +0x20; called at 0x1002E08, stack purge 4, 95 bytes
+Simulator::cPlayer::HandleCoreMessage=0x00C77ED0 ; verified port from GOG 2016 0x00C77EB0: +0x20; holds 0x6526395 (0xC7803D) and 0x61F1454 (0xC7804B/0xC780CD); 0x6527EAF calls 0xFD9C50 / 0xFDA5D0 (same addresses)
+Simulator::cAppModeSpace::LeaveSolarSystemToGalaxy=0x00FDA5D0 ; verified port from GOG 2016 0x00FDA5D0: same address, called by the core message handler at 0xC78161 after 0xFD9C50; prologue sub esp,0xC; push esi; mov esi,ecx, 360 bytes
+Pollinator::cAchievementsManager::AddProgress=0x00676E50 ; verified port from GOG 2016 0x00676E50: ModAPI March2017 address of the same name, stack purge 8; EnterSolarSystem 0xFDD8CB pushes 0xF88C1342 as in the old build
