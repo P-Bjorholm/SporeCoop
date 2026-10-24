@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include "modes.h"
+#include "space_ext.h"
 #include "sporekit_game.hpp"
 
 namespace shared {
@@ -121,6 +123,9 @@ static Res g_res[] = {
 
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
 
+// rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
+static bool own_budget(const Res& r) { return r.mode == modes::kSpace && spaceext::rivals(); }
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
@@ -140,6 +145,11 @@ void tick(net::Session& s, uint32_t mode, double now)
         return;
     for (auto& r : g_res) {
         double v;
+        if (own_budget(r)) { // paused: unsent changes stay with the player (space_rivalry.cpp splits)
+            r.have = false;
+            r.pending = 0;
+            continue;
+        }
         if (r.mode != mode || !r.get(v)) {
             r.have = false;
             continue;
@@ -185,6 +195,8 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
     for (auto& r : g_res) {
         if (r.id != id)
             continue;
+        if (own_budget(r))
+            return; // a total or a change sent before the switch to rivals mode: not shared any more
         double cur;
         if (!r.get(cur))
             return;

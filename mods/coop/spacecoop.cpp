@@ -89,14 +89,17 @@ static uint32_t star_of(uint32_t place)
     return 0;
 }
 
-static std::vector<Partner> partners_here()
+// the partners in our place; `friends`: not those at war with us (rivals mode, space_rivalry.cpp):
+// an enemy does not rescue our ship, terraform with us or earn us a "together" bonus
+static std::vector<Partner> partners_here(bool friends = true)
 {
     std::vector<Partner> r;
     uint32_t mine = C.my_place ? C.my_place() : 0;
     if (!mine || !C.partners)
         return r;
     for (auto& p : C.partners())
-        if (p.place == mine)
+        if (p.place == mine &&
+            (!friends || spaceext::relation(C.sess->my_id(), p.id) != spaceext::Relation::War))
             r.push_back(p);
     return r;
 }
@@ -583,6 +586,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     case K_MISSION: {
         r.f32();
         uint8_t n = r.u8();
+        if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
+            break; // rivals mode: mission rewards are shared between allies only
         void* inv = inventory();
         int got = 0;
         for (int i = 0; i < n && r.ok(); i++) {
@@ -919,7 +924,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "dist" && u) {
         std::string s;
-        for (auto& p : partners_here()) {
+        for (auto& p : partners_here(false)) {
             snprintf(b, sizeof b, "%s %.1f m; ", p.name.c_str(), net::dist(p.pos, ufo_pos(u)));
             s += b;
         }
