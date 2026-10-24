@@ -22,7 +22,7 @@ def num(con, key):
 
 
 def main():
-    host, guest = start('space', 'Game0/Maraya')
+    host, guest = start('space')
     ck = Checks()
     time.sleep(3)
     print(' ', host.call('coop.avatar')['out'].splitlines()[0])
