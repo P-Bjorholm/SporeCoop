@@ -542,8 +542,8 @@ static bool galaxy_pos_of_star(uint32_t star, net::Vec3& out)
     return true;
 }
 
-// where a partner is: its star, or its ship in the galaxy view (live player state first, the
-// roster as a fallback)
+// where a partner is: its star, or its ship in the galaxy view (its live player state, only while
+// it is in Space)
 struct Where {
     uint32_t star = 0; // 0: in flight in the galaxy view
     net::Vec3 pos{};   // galaxy coordinates
@@ -559,14 +559,7 @@ static bool where_is(uint8_t id, Where& w)
                 w.pos = p.pos; // the galaxy view: the ship's position is in galaxy coordinates
                 return std::isfinite(p.pos.x) && (p.pos.x != 0 || p.pos.y != 0 || p.pos.z != 0);
             }
-    const Roster* r = roster_of(id);
-    if (!r)
-        return false;
-    w.star = r->star_now;
-    if (w.star)
-        return galaxy_pos_of_star(w.star, w.pos);
-    w.pos = r->galaxy_pos;
-    return r->galaxy_pos.x != 0 || r->galaxy_pos.y != 0 || r->galaxy_pos.z != 0;
+    return false; // not in Space (or no state yet): no tag (its roster may be old)
 }
 
 // the star nearest to a galaxy point (a partner's ship in flight): the sectors of cStarManager
@@ -678,9 +671,11 @@ static void draw_map()
             if (names || v.home) {
                 std::string t = v.home ? nm + spaceext::tr("'s home", ": дом") : nm;
                 text(v.x + 18, v.y - 10, (col & 0x00FFFFFF) | 0xD0000000, t);
-                g_tags.push_back({id, v.star, true, v.x - 16, v.y - 16, v.x + 20 + text_w(t), v.y + 16, v.x, v.y, v.p});
-            } else
-                g_tags.push_back({id, v.star, true, v.x - 16, v.y - 16, v.x + 16, v.y + 16, v.x, v.y, v.p});
+                // only the name is clickable: a click on the star itself stays the game's (its
+                // own flight in range, the star's card)
+                g_tags.push_back({id, v.star, true, v.x + 16, v.y - 12, v.x + 20 + text_w(t), v.y + 12, v.x, v.y, v.p});
+            } else // (no label: nothing to click; a click on the star itself stays the game's)
+                g_tags.push_back({id, v.star, true, 0, 0, -1, -1, v.x, v.y, v.p});
         }
     }
     // the partners: "▼ Bob" above their star (or ship), an arrow on the screen edge when off screen
@@ -1086,52 +1081,6 @@ static std::string debug(const std::vector<std::string>& a)
         }
         return s.empty() ? "no stars\n" : s;
     }
-    if (a[0] == "above" && a.size() > 1) { // tests: put the own ship above the nearest object of a noun
-        // (on a planet: a spice geyser for the colony tool, docs/re/space.md 10.4); "list" only prints them
-        struct Q {
-            uint32_t noun;
-            net::Vec3 me, best;
-            float bd;
-            std::string out;
-        } q{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), {}, {}, 1e30f, ""};
-        void* mgr = a_PlayerUFOGet ? cdecl_call<void*>(a_PlayerUFOGet) : nullptr;
-        void* u = mgr ? F<void*>(mgr, 0x40) : nullptr;
-        if (!readable(u, 0x760))
-            return "no ship\n";
-        q.me = {F<float>(u, 0x38), F<float>(u, 0x3C), F<float>(u, 0x40)};
-        game::for_each_object(
-            [](void* obj, uint32_t noun, void* user) {
-                Q* q = (Q*)user;
-                net::Vec3 p;
-                if (noun != q->noun || !game::object_alive(obj) || !game::object_position(obj, p))
-                    return true;
-                char b[96];
-                snprintf(b, sizeof b, "obj %08X at %.1f %.1f %.1f dist %.1f\n", noun, p.x, p.y, p.z, net::dist(p, q->me));
-                q->out += b;
-                if (net::dist(p, q->me) < q->bd) {
-                    q->bd = net::dist(p, q->me);
-                    q->best = p;
-                }
-                return true;
-            },
-            &q);
-        if (q.bd > 1e29f)
-            return "none\n" + q.out;
-        if (a.size() > 2 && a[2] == "list")
-            return q.out;
-        float len = std::sqrt(q.best.x * q.best.x + q.best.y * q.best.y + q.best.z * q.best.z);
-        float ml = std::sqrt(q.me.x * q.me.x + q.me.y * q.me.y + q.me.z * q.me.z);
-        if (len < 1)
-            return "bad position\n";
-        float k = ml / len; // the ship's own height above the planet centre, over the object
-        float p[3] = {q.best.x * k, q.best.y * k, q.best.z * k};
-        memcpy((uint8_t*)u + 0x38, p, 12);
-        memcpy((uint8_t*)u + 0x718, p, 12); // next position
-        memcpy((uint8_t*)u + 0x750, p, 12); // destination
-        char b[96];
-        snprintf(b, sizeof b, "moved above %.1f %.1f %.1f (was %.1f away)\n", q.best.x, q.best.y, q.best.z, q.bd);
-        return b;
-    }
     if (a[0] == "colonize") { // tests: fire the colony tool (Colony Incredi-Pak) at the ground under the cursor
         // cPlaceColonyToolStrategy::OnHit(tool, pos, kHitGround, 0) is what the tool does on a click
         // (charge, drop animation, CreateColony), without the aiming check "Colonies must be placed
@@ -1181,7 +1130,7 @@ static std::string debug(const std::vector<std::string>& a)
         return b;
     }
     return "usage: coop.space map [status | roster [id] | send | tags | project <star> | fly <star> [free] | go <id> | "
-           "cost <star>]\n";
+           "cost <star> | planets [star] | colonize]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)
