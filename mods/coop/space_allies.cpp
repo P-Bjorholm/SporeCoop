@@ -97,7 +97,9 @@ static uint32_t g_saves, g_unmirrors, g_applies, g_raids_started, g_raids_won, g
 static std::vector<uint32_t> g_my_raids_sent;
 static std::set<uint32_t> g_my_raids_seen;
 static std::string g_last;
+static std::string hex(uint32_t v);
 static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
+static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
 
 // ---------------- game helpers ----------------
 static void* star_mgr() { return a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr; }
@@ -626,15 +628,24 @@ static void* mission_target(void* m)
     void* p = F<void*>(m, 0x1E8);
     return readable(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
 }
-// active raids on planet records: target record -> mission
-static std::map<void*, void*> active_raids()
+// active raids on planet records: target record -> mission (accepted = 2 too: the manager makes a
+// new raid active only at its next update, seconds later)
+static std::map<void*, void*> active_raids(bool accepted = false)
 {
     std::map<void*, void*> r;
     for (void* m : missions())
-        if (is_raid(m) && F<uint32_t>(m, 0x84) == 3)
+        if (is_raid(m) && (F<uint32_t>(m, 0x84) == 3 || (accepted && F<uint32_t>(m, 0x84) == 2)))
             if (void* rec = mission_target(m))
                 r[rec] = m;
     return r;
+}
+
+static bool mirror_pol(uint32_t pol)
+{
+    for (auto& [n, m] : g_m)
+        if (m.emp && m.pol == pol)
+            return true;
+    return false;
 }
 
 static Mirror* mirror_of_planet(uint32_t planet)
@@ -682,7 +693,7 @@ static void helper_raids()
 {
     void* ap = context() == 0 ? active_planet_record() : nullptr;
     uint32_t here = ap ? F<uint32_t>(ap, 0x184) : 0;
-    auto act = active_raids();
+    auto act = active_raids(true);
     std::set<uint32_t> raided; // PlanetIDs (the raid's target record need not be the same object
                                // as the active planet's: compare ids)
     // a raid of mine on a mirror colony lives only while I am on that planet and the owner's raid
@@ -695,7 +706,8 @@ static void helper_raids()
         if (m && (id != here || !m->raids.count(id)) && a_SetState) {
             thiscall<void>(a_SetState, mi, 7); // aborted
             g_aborted.insert(mi);
-            g_last = "raid on " + m->name + "'s colony aborted";
+            g_last = "raid on " + m->name + "'s colony aborted (here " + hex(here) + ", owner's raid " +
+                     std::to_string(m->raids.count(id)) + ")";
         }
     }
     if (!ap)
@@ -706,6 +718,9 @@ static void helper_raids()
         const spacemap::Roster* r = m.online ? spacemap::roster_of(m.id) : nullptr;
         // the owner fights it there itself (with me: squadron mirrors its ships to me)
         bool owner_here = r && (r->place & 0x40000000u) && (r->place & 0x3FFFFFFFu) == here;
+        auto q = g_raid_quiet.find(here);
+        if (q != g_raid_quiet.end() && H->time_seconds() < q->second)
+            continue; // one ended just now (the owner's raid ends with my win's message)
         if (!owner_here && !raided.count(here) && a_StartRaid) {
             int bombers = std::max(2, (int)m.raids[here]);
             thiscall<int>(a_StartRaid, nullptr, 0, ap, bombers); // the `raid -start` code: owner = star's empire
@@ -732,7 +747,8 @@ static std::map<void*, int> raid_ships()
     void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
     void* vec = nm && a_AllUFOs ? thiscall<void*>(a_AllUFOs, nm) : nullptr;
     for (void* u : ptr_vec(vec, 1024))
-        if (readable(u, 0x808) && F<void*>(u, 0x800) && F<float>(u, 0x540) > 0 && F<int>(u, 0x53C) != 2)
+        if (readable(u, 0x808) && F<void*>(u, 0x800) && F<float>(u, 0x540) > 0 && F<int>(u, 0x53C) != 2 &&
+            !mirror_pol(F<uint32_t>(u, 0x30)) && F<uint32_t>(u, 0x30) != my_pol())
             n[F<void*>(u, 0x800)]++;
     return n;
 }
@@ -758,6 +774,7 @@ static void watch_raids()
             continue;
         }
         Watch w = it->second;
+        g_raid_quiet[w.planet] = H->time_seconds() + 15.0;
         bool aborted = g_aborted.erase(it->first) != 0;
         bool left = ships.count(it->first) && ships[it->first] > 0;
         it = g_watch.erase(it);
@@ -837,7 +854,7 @@ static void tick(double now)
     if (spaceext::connected() && now >= g_next_raid_scan) {
         g_next_raid_scan = now + 1.0;
         raids_tick(now);
-        H->run_outside_frame([](void*) { helper_raids(); watch_raids(); }, nullptr);
+        H->run_outside_frame([](void*) { watch_raids(); helper_raids(); }, nullptr);
     }
     uint32_t ch = spacemap::roster_changes();
     if (ch == g_roster_seen && now < g_next_sync)
@@ -1085,8 +1102,20 @@ static std::string debug(const std::vector<std::string>& a)
         for (void* c : ptr_vec(vec, 256))
             if (readable(c, 0x130)) {
                 void* e = empire_of(F<uint32_t>(c, 0x30));
+                // cCity +0x124 position; the own ship +0x38 (tests fly over it)
+                float* p = &F<float>(c, 0x124);
+                void* pm = a_PlayerUFO ? cdecl_call<void*>(a_PlayerUFO) : nullptr;
+                void* me = readable(pm, 0x44) ? F<void*>(pm, 0x40) : nullptr;
+                float d = -1, xy[2] = {-1, -1};
+                if (readable(me, 0x48)) {
+                    float* q = &F<float>(me, 0x38);
+                    d = std::sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2]));
+                }
+                int on = H->world_to_screen ? H->world_to_screen(p, xy) : 0;
+                char t[96];
+                snprintf(t, sizeof t, " dist %.0f screen %d %.0f %.0f", d, on, xy[0], xy[1]);
                 o += "city pol=" + hex(F<uint32_t>(c, 0x30)) + " owner='" + (e ? str16((uint8_t*)e + 0x3C) : std::string("-")) +
-                     "'\n";
+                     "'" + t + "\n";
             }
         return o.empty() ? "no cities\n" : o;
     }
@@ -1106,7 +1135,8 @@ static std::string debug(const std::vector<std::string>& a)
         int n = 0;
         float dir[3] = {0, 0, 1};
         for (void* u : ptr_vec(vec, 512))
-            if (u != me && readable(u, 0x808) && mine.count(F<void*>(u, 0x800)) && F<float>(u, 0x540) > 0) {
+            if (u != me && readable(u, 0x808) && mine.count(F<void*>(u, 0x800)) && F<float>(u, 0x540) > 0 &&
+                F<uint32_t>(u, 0x30) != pol && !mirror_pol(F<uint32_t>(u, 0x30))) { // the raiders, not the defenders
                 thiscall<void>(a_TakeDamage, (uint8_t*)u + 0x508, dmg, pol, 0, (const float*)dir, (uint8_t*)me + 0x508);
                 n++;
             }

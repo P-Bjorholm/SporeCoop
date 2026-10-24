@@ -103,7 +103,7 @@ registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Spa
 | 1 | Partners on the galaxy map | `space_map.cpp` | 10-19 | a name tag on each partner's star in the galaxy view (and where they fly); a click there jumps to them |
 | 2 | Partner colonies on the map | `space_map.cpp` | 10-19 | the stars with a partner's colonies are marked with the partner's name: whose territory is where |
 | 3 | Tool gifts | `space_trade.cpp` | 70-79 | give weapon charges, terraforming and other tools from the cargo to a partner (F9 Space page) |
-| 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's colonies exist as cities of "<name>'s empire", an ally: you can visit them and defend them from raids |
+| 4 | Partner colonies as an allied empire | `space_allies.cpp` | 60-69 | in your galaxy a partner's own colonies (those not in your copy) exist as cities of "<name>'s empire", an ally (an enemy when the players are at war in rivals mode): its stars, a city to land at, a Space page row "Fly there"; a raid on such a colony can be fought there in your galaxy and the win defends the partner's real colony. Never saved: taken out before every save, gone when the session ends |
 | 5 | Trade between players | `space_trade.cpp` | 70-79 | sell spice to a partner's colony for more than NPC empires pay; the partner's colony gets it |
 | 7 | Co-op contracts | `space_contracts.cpp` | 20-29 | jobs made for two (a pirate armada that needs two ships, escorts, joint expeditions), big rewards for both |
 | 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | an alliance, a war or a gift to an NPC empire by one player counts for every player |
@@ -149,6 +149,7 @@ Shared contracts between the features:
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 | Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (allies) | A partner's colonies founded after the join appear in your galaxy as an allied empire "<name>'s empire" (stars, colony city, F9 "Fly there"); its raids can be fought from your galaxy (a win completes the partner's raid); the mirror is taken out of every save and removed at the session end | `space_allies.cpp` | `coop_space_allies.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.
