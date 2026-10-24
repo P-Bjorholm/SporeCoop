@@ -22,6 +22,8 @@ import time
 
 import lane
 from coop_ui import VK_F9, Ui
+from fixtures import FIXTURES
+from play_space import Player
 from twoinst import Checks, shot, start, wait_guest_in
 
 
@@ -97,12 +99,10 @@ def close_page(ui, con):
         con.call('wait.frames 10 5000')
 
 
-def real_fire(host, guest, secs=25):
-    """the host shoots the guest's ship like a player: next to it, combat palette, key 1, clicks on it"""
-    from play_space import Player
-    ph = Player('host', lane.HOST, 0, 1, time.time() + 600, {})
-    print('  ', sp(host, 'goto'))
-    time.sleep(1)
+def real_fire(ph, host, guest, secs=25):
+    """the host shoots the guest's ship like a player: flies close, combat palette, key 1, clicks on it"""
+    ph.regroup()  # (the keys, toward the partner's point on the screen, until < 80 m)
+    print('  ', sp(host, 'dist'))
     ph.open_palette('combat')
     host.call('key 1')
     h0 = riv(guest).get('hits_got', 0)
@@ -115,7 +115,14 @@ def real_fire(host, guest, secs=25):
         time.sleep(0.6)
         if riv(guest).get('hits_got', 0) > h0:
             break
+    for _ in range(int(secs / 0.6)):  # a few more shots
+        me, players, _ = ph.targets()
+        p = players.get(1)
+        if p:
+            host.call(f'click {p[0]} {p[1]}')
+        time.sleep(0.6)
     host.call('key 0x1B')  # Esc: no tool
+    ph.palette = None
     return riv(guest).get('hits_got', 0) - h0
 
 
@@ -123,6 +130,10 @@ def main():
     host, guest = start('space')
     ck = Checks()
     time.sleep(5)
+    ph = Player('host', lane.HOST, 0, 1, time.time() + 1800, {})
+    pg = Player('guest', lane.GUEST, 1, 2, time.time() + 1800, {})
+    ph.partner, pg.partner = pg, ph
+    home = FIXTURES['space']['home']
     for who, c in (('host', host), ('guest', guest)):
         f = sp(c, 'features')
         ck('rivalry: rivals=0' in f, f'{who}: the rivalry feature is up, allies mode ({f.splitlines()[-1] if f else ""})')
@@ -131,6 +142,11 @@ def main():
     t0 = wait(lambda: money(host) == money(guest) and money(host), 15)
     total = money(host)
     ck(total and money(guest) == total, f'shared money before: host {money(host)} guest {money(guest)}')
+    # both on the home planet (fights happen on planets: the weapons are for the planet view)
+    for p in (ph, pg):
+        if p.ctx() == 'system':
+            p.land(home)
+    ck(ph.place()[0] == pg.place()[0] and ph.ctx() == 'planet', f'both on the home planet ({sp(guest, "dist")})')
     # the host needs some money to split
     if total < 10000:
         host.call('coop.res add money 20000')
@@ -149,14 +165,14 @@ def main():
     mh, mg = money(host), money(guest)
     ck(mh is not None and mg is not None and abs(mh + mg - total) <= 2 and abs(mh - mg) <= 2,
        f'the money is split fairly: host {mh} + guest {mg} = {total}')
-    ck('switched to rivals' in guest.call('coop.uistate')['out'] or True, 'the guest is told')
     # separate budgets: the guest earns, the host spends
     guest.call('coop.res add money 5000')
     host.call('coop.res add money -1000')
     time.sleep(4)
     ck(money(guest) == mg + 5000 and money(host) == mh - 1000,
        f'own budgets: host {mh} -> {money(host)} (-1000), guest {mg} -> {money(guest)} (+5000)')
-    ck(riv(host).get('budgets') is not None, 'budgets reported')
+    bh, bg = riv(host)['text'], riv(guest)['text']
+    ck(f'1:{mg + 5000}' in bh and f'0:{mh - 1000}' in bg, 'each game knows the other\'s budget (K_MONEY)')
     print('  host:', riv(host)['text'])
     print('  guest:', riv(guest)['text'])
 
@@ -168,6 +184,8 @@ def main():
 
     # ---- war by the guest's real click
     press(ug, guest, 'Declare war', ck, 'guest')
+    chat = ' / '.join(ug.state()['chat'])
+    ck('rivals mode' in chat, f'the guest was told about the mode ({chat})')
     ok = wait(lambda: riv(host)['rel'].get(1) == 'war' and riv(guest)['rel'].get(0) == 'war', 15)
     ck(ok, f'war on both games ({riv(host)["rel"]} / {riv(guest)["rel"]})')
     close_page(ug, guest)
@@ -178,7 +196,7 @@ def main():
 
     # ---- the host's shots damage the guest's ship on the guest's game
     hp0 = hp(guest)
-    n = real_fire(host, guest)
+    n = real_fire(ph, host, guest)
     ck(True, f'real laser shots of the host that reached the guest: {n}')
     if n == 0:
         print('  (no real shot landed: the debug hit through the hooked TakeDamage)')
@@ -191,8 +209,23 @@ def main():
     ck(g.get('hits_got', 0) > 0 and (hp1[0] < hp0[0] or hp1[2] == 2),
        f'the host\'s hits damage the guest\'s ship: hp {hp0[0]:.0f} -> {hp1[0]:.0f} (hits_got={g.get("hits_got")})')
     shot(guest, 'space_rivalry_hit.png')
+    # a lethal hit: the native death (no rescue by an enemy), OK on the caption, the respawn
+    print('  ', sp(host, 'rivalry shoot 1 5000'))
+    st = wait(lambda: hp(guest)[2] == 2, 10)
+    ck(st and 'down=0' in sp(guest, 'hp') and riv(guest).get('pvp_deaths') == 1,
+       f'a lethal PvP hit destroys the guest\'s ship, the enemy does not rescue it ({sp(guest, "hp")})')
+    t0 = time.time()
+    while time.time() - t0 < 90 and (hp(guest)[2] == 2 or 'movie=1' in sp(guest, 'hp')):
+        guest.call('key enter')
+        time.sleep(3)
+    h = hp(guest)
+    ck(h[2] == 0 and h[0] == h[1], f'the guest\'s ship is respawned natively ({sp(guest, "hp")})')
 
-    # ---- a rejoin gets the mode and the war back
+    # ---- a rejoin gets the mode, the war and the own budget back
+    while hp(guest)[2] == 2 or 'movie=1' in sp(guest, 'hp'):  # (a lethal hit: the captions)
+        guest.call('key enter')
+        time.sleep(2)
+    mg_before = money(guest)
     guest.call('coop.leave')
     time.sleep(3)
     guest.call(lane.JOIN)
@@ -201,6 +234,22 @@ def main():
     ck(ok, f'after a rejoin the guest has rivals mode and the war ({riv(guest)["text"]})')
     # (the rejoin may reload the host's world: wait until the guest flies again)
     wait(lambda: hp(guest)[2] == 0 and 'place 8' in sp(guest, 'star'), 120, 2)
+    while hp(guest)[2] == 2 or 'movie=1' in sp(guest, 'hp'):
+        guest.call('key enter')
+        time.sleep(2)
+    ok = wait(lambda: money(guest) == mg_before, 30, 1)
+    ck(ok, f'after the rejoin the guest has its own budget: {mg_before} -> {money(guest)} ({riv(guest)["text"]})')
+    # a world load on the guest (the host sends its save again: its money is the host's, not the
+    # guest's budget): the guest gets its budget back from the host
+    r0 = riv(guest).get('restored', 0)
+    host.call('coop.share')
+    left = wait(lambda: 'Space' not in guest.call('game.mode')['out'], 60, 0.5)
+    ck(left, 'the guest loads the host\'s world again')
+    wait(lambda: 'Space' in guest.call('game.mode')['out'] and hp(guest)[1] > 0, 180, 2)
+    wait_guest_in(host, guest, 120)
+    ok = wait(lambda: money(guest) == mg_before and riv(guest).get('restored', 0) > r0, 40, 1)
+    ck(ok, f'after the world load the guest has its own budget again: {money(guest)} == {mg_before} '
+           f'({riv(guest)["text"]})')
     while hp(guest)[2] == 2 or 'movie=1' in sp(guest, 'hp'):
         guest.call('key enter')
         time.sleep(2)

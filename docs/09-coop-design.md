@@ -108,14 +108,14 @@ registry `mods/coop/space_ext.h` (MSG_SPACE kind ranges, frame tick, the F9 "Spa
 | 7 | Co-op contracts | `space_contracts.cpp` | 20-29 | jobs made for two (a pirate armada that needs two ships, escorts, joint expeditions), big rewards for both |
 | 8 | Shared diplomacy | `space_diplomacy.cpp` | 30-39 | an alliance, a war or a gift to an NPC empire by one player counts for every player |
 | 9 | The galaxy core together | `space_finale.cpp` | 40-49 | the trip to the core is a joint finale: the reward and the ending for everybody |
-| 10 | Rivals mode | `space_rivalry.cpp` | 50-59 | a host option: own budgets, players can declare war or alliance on each other, PvP between ships |
+| 10 | Rivals mode | `space_rivalry.cpp` | 50-59 | a host option on the F9 Space page ("Mode: Allies [Switch to rivals]"): every player is an empire of its own with its own budget (the shared money is split equally on the switch and summed on the way back); on the Space page each player sees the others as ally / neutral / at war and can propose an alliance (the other accepts), declare war (one-sided, everybody is told) or propose peace (the other accepts); ships of players at war damage each other with their real weapons (native death and respawn, an enemy never rescues) |
 
 Shared contracts between the features:
 * **Roster** (`space_map.h`, kinds 10-19): every player broadcasts, every few seconds and on a
   change, a summary of its empire: home star, current place, empire name and colour, and its
   colonies (StarID, PlanetID, planet name, spice). `roster_of(id)` / `roster_ids()` serve
   features 2, 4, 5, 7 and 10. A rejoining player gets the others' rosters within one period.
-* **Rivals** (`space_rivalry.h`): `rivals()` (the host's option, sent to everybody) and
+* **Rivals** (`space_ext.h`, owned by `space_rivalry.cpp`): `rivals()` (the host's option, sent to everybody) and
   `relation(a, b)` (ally / neutral / war between two players). Shared money, shared diplomacy and
   allied colonies follow it: in rivals mode money is per player and diplomacy is per player;
   a partner at war shows its colonies as an enemy empire.
@@ -149,6 +149,7 @@ Shared contracts between the features:
 | Civilization (co-op) | Roles, joint siege, alarm with beacon and speed boost, superweapon vote, gifts of vehicles and cities, trade between players | `civ.cpp`, `coop.cpp` | `coop_civ_play.py`, `coop_civ.py` |
 | Space | In the host's system/on the host's planet the NPC ships are the host's, the guest has mirrors (the guest's own NPCs there are removed); guest shots are applied by the host; NPC hits on the guest's ship are sent to the guest; mirrors do not fire on their own | `squadron.cpp` | `coop_space.py` |
 | Space (co-op) | Rescue of a disabled ship, jump to partner, raid alerts and bonus, shared mission reward tools, terraforming together, spice gifts | `spacecoop.cpp` | `coop_space_play.py` |
+| Space (rivals) | Host option "rivals": own budgets (fair split, merged back), alliance / war / peace between players by buttons on the F9 Space page, PvP by real weapons between players at war (an enemy's ship belongs to no empire in your game; hits go to its owner), rejoins keep mode, relations and budget | `space_rivalry.cpp` | `coop_space_rivalry.py` |
 
 Not done yet: shared colony ownership in space (separate saves; analysis in docs/re/space.md §5, §7), NPC civilizations' city growth
 on the guest still runs locally (the host's buildings do arrive, though), auto-launching the adventure on guests.

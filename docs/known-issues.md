@@ -167,6 +167,19 @@ Fixed entries move to the commit message (and a test).
   1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
   its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
 
+## Space rivals mode: limits (space_rivalry.cpp, 2026-10-23)
+
+* PvP damage is the raw damage of the shot: the shooter's damage-boost tool does not count (the base
+  TakeDamage of the shooter's game is not called for the puppet, docs/re/space.md 10.2).
+* Only hits of the own ship count: NPC ships and turrets of a player's game hit an enemy puppet only
+  on the host (squadron relays NPC hits on puppets to their owner), not on a guest's game.
+* A player who joins for the first time while rivals mode is on keeps the money of the host's save
+  it loaded (it had no budget yet); a rejoining player gets its own budget back from the host.
+* A guest that is not in space when the host switches the mode gets its share or merge when it is
+  back in space; the merge counts its last reported budget.
+* Spice gifts, tool gifts and the jump work between rivals as before (deliberate acts); mission
+  rewards are shared between allies only; raid alerts reach everybody.
+
 ## Not covered by tests yet
 
 * Tribe: duet and healer bonus in real play (play_tribe.py plays real raids since 2026-10-23:
