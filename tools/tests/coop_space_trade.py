@@ -92,6 +92,39 @@ def click_row(ui, con, text, pick=None, tries=8):
     return False
 
 
+def rivals(ck, host, guest, ui):
+    """rivals mode: own budgets; the host offers spice at 1.5x, the guest accepts on its own page
+    (a real click) and pays from its budget"""
+    print('  rivals:', sp(host, 'rivalry mode rivals'))
+    ck(wait(lambda: 'rivals=1' in sp(guest, 'rivalry') or 'mode rivals' in sp(guest, 'rivalry'), 20),
+       'rivals mode is on for the guest')
+    print('  guest rivalry:', sp(guest, 'rivalry').replace('\n', ' | ')[:200])
+    print('  spice:', sp(host, 'trade spice 0 10'), sp(host, 'trade spice 1 10'))
+    deal = sp(host, 'trade deal')
+    print('  host deal:', deal)
+    dm = re.search(r'spice (\S+) .* x(\d+) price (\d+)', deal)
+    ck(dm is not None, 'rivals: the host can offer spice to the guest\'s colony')
+    if not dm:
+        return
+    inst, n, price = dm.group(1), int(dm.group(2)), int(dm.group(3))
+    h0, g0, c0, gc0 = money(host), money(guest), cargo(host, inst), cargo(guest, inst)
+    print(f'  before: host money {h0} cargo {c0}, guest money {g0} cargo {gc0}; {n} x {price}')
+    ck(click_row(ui, host, 'Offer'), 'the offer row is clicked')
+    ck(cargo(host, inst) == c0 - n, f'the offered spice is held back ({cargo(host, inst)})')
+    gui = Ui(guest, 'guest')
+    ck(open_space_page(gui, guest), 'F9: the guest opens the Space page')
+    ck(wait(lambda: row_of(guest, 'offers')[0] is not None, 15), 'the guest\'s page shows the offer')
+    shot(guest, 'space_trade_offer.png')
+    ck(click_row(gui, guest, 'offers'), 'the guest accepts by a click')
+    total = n * price
+    ck(wait(lambda: money(host) == h0 + total), f'the host got {total} ({money(host) - h0})')
+    ck(wait(lambda: money(guest) == g0 - total), f'the guest paid {total} from its own budget ({money(guest) - g0})')
+    ck(wait(lambda: cargo(guest, inst) == gc0 + n), f'the spice is in the guest\'s cargo ({cargo(guest, inst)})')
+    gui.click('sback')
+    guest.call(f'key {VK_F9}')
+    print('  allies:', sp(host, 'rivalry mode allies'))
+
+
 def main():
     host, guest = start('space')
     ck = Checks()
@@ -151,7 +184,7 @@ def main():
 
     # ---- 4. rivals mode ----
     if 'rivalry: ' in sp(host, 'features'):
-        print('  rivals mode: space_rivalry is in the build: TODO when feature 10 lands')
+        rivals(ck, host, guest, ui)
     else:
         print('  rivals mode: UNTESTED (space_rivalry.cpp, feature 10, is not in this build)')
     ui.click('sback')
