@@ -780,7 +780,8 @@ opened with F9 but real clicks on it did nothing, and its jumps answered "a cine
 * On a planet the scene's origin is the planet's centre and a UFO flies on a sphere whose radius is
   its **zoom** (`mZoomAltitude` +0x768, §0; `MoveTo` = normalize(dir) * altitude). On the home
   planet of the `space` fixture (✔ `coop.fleet list` positions while turning the mouse wheel at the
-  ship): ~719 m from the centre right after a landing, ~15 m per wheel notch, **~520 m fully zoomed
+  ship): ~719 m from the centre right after a landing, ~15 m per single wheel notch on GOG 2024
+  (6 notches at once: 120-180 m; GOG 2016: 6 notches ~270 m, 8 ~360 m), **~520 m fully zoomed
   in** (clamped), still on the planet at ~990 m (further out the ship leaves for the system). The
   two players' heights are their own zooms: nothing keeps them equal.
 * **The bug (GOG 2024 lanes, lab 20261023-225702 lane 1):** the rescue measured the 3D distance
@@ -794,8 +795,9 @@ opened with F9 but real clicks on it did nothing, and its jumps answered "a cine
 * **Fix:** `spacecoop.cpp repair_distance`: on a planet the distance along the lower sphere (angle
   between the two directions times the smaller radius), elsewhere 3D. `coop.space dist` prints
   `<name> <3D> m; repair <that> m; alt <partner radius - own radius> m;` (alt on a planet only).
-  The bot (`Player.match_height`, play_space.py) zooms by -alt/15 notches before flying to a
-  disabled partner, as a player zooms to find it.
+  The bot (`Player.match_height`, play_space.py) zooms toward the partner's height (alt/30 notches,
+  at most 4, per step) while flying to a disabled partner, as a player zooms to find it, and stops
+  once the ground distance (`repair`) is under 40 m (screen distance alone kept it flying past).
 
 ## 8. Loading a save while a stage runs (leaving space)
 

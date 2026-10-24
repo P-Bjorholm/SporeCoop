@@ -268,7 +268,10 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   "bind() failed on port 47810" whenever lane 1 hosted at the same time (lab runs).
 * Ships on a planet fly at the height of their own zoom (docs/re/space.md 7.10): two bots that landed
   with different numbers of zoom-ins are 100-450 m apart in height, and a partner far above is not on
-  the screen at all. `coop.space dist` prints `alt <m>`; `Player.match_height()` zooms to it.
+  the screen at all. `coop.space dist` prints `repair <m>` (the ground distance) and `alt <m>`;
+  `Player.match_height()` zooms toward it step by step (one notch is ~15-30 m on GOG 2024, ~45 m on
+  GOG 2016) and `Player.rescue()` stops inside 40 m of ground distance. With the screen distance
+  alone (< 25 px) the host flew past the disabled guest or orbited it 60-150 m away.
   `coop_space_rescue.py` zooms the guest out 6 notches in round 1 so the rescue is always tested at
   different heights (it failed every time with the old 3D repair distance: lane 1, GOG 2024).
 * The player's ship in a star system can not be moved away from a test: writing its position or

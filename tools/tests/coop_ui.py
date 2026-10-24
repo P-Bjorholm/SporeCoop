@@ -165,9 +165,10 @@ def main():
         st = ui.wait(lambda s: s['menu']['vis'], 30, 'menu item')
         check(st is not None, f'{ui.who}: "Co-op" item in the main menu')
         if during:
-            seen = wait_intro(ui.c, True)
-            print(f'  {ui.who}: menu intro playing: {seen}')
-        else:
+            # (the intro may be over already: GOG 2016 reaches this point later, ~22 s after the menu)
+            during = wait_intro(ui.c, True, 20)
+            print(f'  {ui.who}: menu intro playing: {during}')
+        if not during:
             wait_intro(ui.c, False)
             time.sleep(4)  # the game drops clicks for ~2-3 s after the intro (docs/re/space.md 7.9)
         ui.click('menu')
