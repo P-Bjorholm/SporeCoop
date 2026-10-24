@@ -10,9 +10,9 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 SPORE = os.path.join(ROOT, 'tools', 'spore.sh')
 
 LANE = int(os.environ.get('SPORE_LANE', '1'))
-# lanes 1..8: console ports (TCP) 47800..47815, co-op ports (UDP) 47810..47824 do not collide
+# lanes 1..10: console ports (TCP) 47800..47819, co-op ports (UDP) 47810..47828 do not collide
 # (TCP and UDP ports are separate); LAN discovery finds hosts of lanes 1..5 only (the UI test)
-assert 1 <= LANE <= 8, 'lanes 1..8'
+assert 1 <= LANE <= 10, 'lanes 1..10 (9 and 10: copies of the GOG 2024 install, 2026-10-23)'
 HOST = 2 * LANE - 1   # SporeKit instance numbers: console port 47800 + N - 1
 GUEST = 2 * LANE
 PORT = 47810 + HOST - 1  # the host's co-op port
