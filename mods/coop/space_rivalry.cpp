@@ -744,7 +744,8 @@ static std::string status()
     s += " rel";
     for (auto& [id, nm] : roster())
         if (id != me())
-            s += " " + std::to_string(id) + "=" + rel_name(spaceext::relation(me(), id), false);
+            s += " " + std::to_string(id) + "=" +
+                 (spaceext::relation(me(), id) == Relation::War ? "war" : rel_name(spaceext::relation(me(), id), false));
     s += " budgets";
     for (auto& [id, v] : g_budget)
         s += " " + std::to_string(id) + ":" + std::to_string(v);
