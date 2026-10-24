@@ -199,3 +199,27 @@ civilization members use the host world's species.
 6. Space: shared enemies in the system, guest shots via the host, shared colonies.
 
 Each step is verified by an automated test on two game instances. Status is in the README.
+
+## 9.6 Ideas from players (backlog, not planned yet)
+
+Collected from player comments (Reddit, 2026-10-24) and sorted by what they need. "Builds on" is
+what SporeCoop already has; the effort is a rough guess from what is known about the game
+(docs/re/*.md). The key limit behind most of the hard ones: every game runs **one** stage at a
+time, and players only see each other when their stage and place match (the start of docs/07-modes.md).
+
+| Idea | Builds on | What is missing | Effort |
+|---|---|---|---|
+| Friends help to clear a stage faster | shared DNA / food / money, host-authoritative NPCs, joint bonuses (9.2) | mostly there; possible extras: a "contribution" line per player, a faster-together bonus | small |
+| PvP in the Creature stage | space rivals mode (`space_rivalry.cpp`: war between players, hits relayed to the victim, native death) | partners' creatures are invulnerable puppets; the same war switch and hit relay for creatures (TakeDamage needs a non-null direction, docs/re/creature.md), a respawn rule, no rescue between enemies | medium |
+| PvP in the Tribe / Civilization stage | members and vehicles already belong to players (tribe.cpp, civ.cpp), host-authoritative units | attacks on another player's members / cities by orders through the host, war / peace between players (the rivals storage of `space_ext.h`), captured cities changing owner | medium to large |
+| "Dominate the planet" race | the above PvP, shared world | a scored match mode on top of Tribe / Civ PvP: a goal (all cities / all tribes), a timer, a result screen | medium after PvP |
+| Visit another player's planet to help or sabotage | world transfer (the host's save goes to guests), allied colonies in Space (0.7) | a "visit" that loads a partner's own save for a while and brings everyone back, or in Space: rivals at war may attack the mirrored colonies (today a mirror is not synced back to its owner) | medium (Space), large (other stages) |
+| Mixed stages: Creature vs Tribe vs Civilization on one planet | puppets, NPC mirroring | the games run different simulators and scales; one player would have to appear in another's stage as something that stage knows (a creature player as an epic in Civ, Civ vehicles as creatures' enemies). Research first | very large |
+| Abducted by a Space player and dropped on another planet | the abduct tool (docs/re/space.md 0: ufo +0x7A4), stage switches through the galaxy menu | a Space player and a Creature player in the same world at once (mixed stages, above) | very large |
+| Walk through your city in the Civilization stage | Adventures have a walking captain; Civ has none | the Civ stage has no creature avatar on foot; spawning and controlling one there is unknown ground | very large / research |
+| Play as a rogue or an epic creature | own creature from My Creations (`SetSpecies`), epic spawning known (docs/re/tribe.md E: `isEpic`, archetypes) | the player's avatar with the epic archetype or size and health, balanced against the partners; NPC reactions to it | medium |
+| Balance: no wiping out other players from Space | rivals mode limits PvP to ships | any planet-level attack on another player (bombs, planet busters) needs rules or a switch before it exists | design note |
+
+Good next candidates: Creature PvP (reuses the rivals mode), play as an epic, and the Space
+"sabotage" part of visits (rivals at war attacking mirrored colonies). The mixed-stage ideas need a
+research spike first: can one game show a puppet of a player who is in another stage?
