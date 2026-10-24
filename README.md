@@ -150,7 +150,7 @@ Both:  F9 → I'm ready when the tribe is ready for Civilization.
 | Game build | System |
 |---|---|
 | GOG 2016 (`SporeApp.exe` SHA-256 `922af7c7…`) | Linux (Wine / Bottles) |
-| GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11 |
+| GOG 2024, the current GOG download (`dc04aee5…`) | Windows 11, Linux (Wine / Bottles) |
 
 The Steam, EA app and disc versions have not been tested; their `SporeApp.exe` is a different
 file, so co-op stays off with them unless its code is the same as one of the builds above. The

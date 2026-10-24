@@ -58,7 +58,7 @@ then says "its code is the same as build ...".
 | GOG 2024 (`dc04aee5…`) | Windows 11 | Yes (0.6.1): every stage (cell, creature, tribe, civilization, space) as host + guest, two game instances on one PC |
 | GOG 2024 with a changed header (same `code_sha256`) | Windows 11 | Only with a modified copy of the GOG 2024 exe (0.6.2): it loads the GOG 2024 addresses and joins a GOG 2024 host |
 | GOG 2016 | Windows | Not tested. Before 0.6.1 every address was wrong on Windows (it moves the exe in memory), so 0.6.0 and older could not work there |
-| GOG 2024 (`dc04aee5…`) | Linux, Wine / Bottles | Smoke test only (0.6.2): the release zip installed by hand, host + guest on one PC in the Creature stage (the guest joined from the main menu and loaded the host world, puppets, NPC damage through the host, shared DNA), no faults |
+| GOG 2024 (`dc04aee5…`) | Linux, Wine / Bottles | Yes (0.7.0): the full automated suite (every stage, every Space feature, host + guest, real clicks) on copies of the current GOG install; before that a smoke test of the 0.6.2 release zip |
 | Steam, EA app / Origin, disc | any | Not tested. Their `SporeApp.exe` is a different file; the game runs, co-op stays off unless its code matches a build above |
 | Two different PCs over the internet or a VPN | Windows | Not tested with 0.6.1 on Windows (the network code itself is the same as on Linux, where it was tested) |
 
