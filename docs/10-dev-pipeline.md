@@ -51,6 +51,9 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
   exclusive, length, save).
 * Scheduling: one test per lane at a time, longest first; a lane prefers a test on the save it
   has loaded (warm reset instead of a restart); exclusive tests (LAN discovery) run alone at the end.
+  They run on the run's first lane among 1-5 (LAN discovery sees only those) and are skipped when
+  the run has none; until 2026-10-23 they always took lane 1, even with `--skip 1` (a run on lanes
+  7/8 started the UI test in the real install's bottle while other agents had lane 1).
 * After a failure the lane restarts cold and the test runs once more: passing then = **flaky**.
   `out/lab/flaky.json` keeps the history; the summary lists the unstable tests - each one is a
   bug in the test or in the mod and gets fixed, not ignored.
