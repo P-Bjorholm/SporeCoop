@@ -233,7 +233,7 @@ Simulator::cTerraformingManager::AddTemperatureDelta=0x00BBC500 ; verified thisc
 Simulator::cTerraformingManager::GetTScore=0x00BBC7B0 ; verified thiscall(tm, cPlanetRecord* or null) ret 4
 Simulator::cTerraformingManager::CalculateTScore=0x00FC2040 ; verified cdecl(float b0, float b4) -> int 0..3
 Simulator::cSimulatorSpaceGame::ptr=0x016DD0DC ; verified getter 0x1002A70; +0x40 = cPlayerInventory*
-Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified thiscall(inv, const ResourceKey*) ret 4 -> cSpaceToolData* or null
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified thiscall(inv, const ResourceKey*) ret 4 -> cSpaceToolData* or null (the tool part of an inventory item is an embedded base at item+0x0C: Cast = (item+0xC)->vt[3](0x707459F0), no AddRef; runtime 2026-10-23: a Release after it freed the tool)
 Simulator::cPlayerInventory::AddItemByKey=0x00FF4490 ; verified thiscall(inv, const ResourceKey*) ret 4 (LoadTool + AddItem)
 Simulator::cPlayerInventory::AddItem=0x00FF4780 ; verified vt+0x80 thiscall(inv, item, cargoSlot or null, bool apply) ret 0xC
 Simulator::cPlayerInventory::TakeItem=0x00FF40B0 ; verified vt+0x7C thiscall(inv, int index, cSpaceInventoryItemPtr* out, int count) ret 0xC

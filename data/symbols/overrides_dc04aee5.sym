@@ -113,6 +113,7 @@ Simulator::cGamePersistenceManager::LoadGameByName=0x00B28020 ; verified port fr
 Simulator::cHerd::SetEnabled=0x00C6AE80 ; verified port from GOG 2016 0x00C6AE50: cand C6AE70 WRONG (not a start). C6AE80: stores arg byte at +0x218 (and nest+0xA9), loops members setting +0x1EC; called with push 0 from cHerd::Create 0xB23920 just before its ret 0x18; delta +0x30
 Simulator::cMission::SetState=0x00C47E20 ; verified port from GOG 2016 0x00C47E00 (ModAPI March2017 address of the same name)
 Simulator::cPlayerInventory::AddItemByKey=0x00FF4490 ; verified port from GOG 2016 0x00FF4490: ret 4; ToolManager getter 0xB3D490 -> LoadTool 0x104E350, then vt+0x80 AddItem
+Simulator::cPlayerInventory::GetTool=0x00FF3BF0 ; verified port from GOG 2016 0x00FF3BF0: same address (March2017 name GetUnlockableTool), identical body: stack purge 4, 173 bytes, items +0x34..+0x38 then +0x4C..+0x50, key compare via item vt+0x18, returns (item+0xC)->vt[3]
 Simulator::cSimulatorSpaceGame::ptr=0x016DC0FC ; verified port from GOG 2016 0x016DD0DC: getter 0x1002A70 (same addr): mov eax,[0x16DC0FC]; delta -0xFE0
 Simulator::cSpaceTrading::CreateTradingObject=0x0103A490 ; verified port from GOG 2016 0x0103A490 (same shift as a ModAPI function less than 0x100 bytes away, function start and ret N checked)
 Simulator::cSpeciesRelationshipManager::ApplyEvent=0x00BA4A00 ; verified port from GOG 2016 0x00BA49E0: thiscall ret 0xC, checks event==3, tuning [+0x400] compares, calls record lookup BA3B40 and threshold helper BA43E0 (uses +0x40C/+0x408/+0x404)

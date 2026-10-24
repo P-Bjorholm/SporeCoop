@@ -57,7 +57,7 @@ static const SkHost* H;
 static SkMod* M;
 static uintptr_t a_Enter, a_HasFlag, a_StarMgr, a_Context, a_ActiveStarRec, a_PlayerUFOGet, a_Teleport, a_ModeSpace,
     a_EnterSystem, a_MsgMgr, a_AchMgr, a_AchAdd,
-    a_CinematicMgr, a_SpaceGame, a_TimeMgr;
+    a_CinematicMgr, a_SpaceGame, a_TimeMgr, a_GetTool;
 
 struct Peer {
     uint8_t zone = Z_NONE, flags = 0;
@@ -139,21 +139,16 @@ static void* inventory()
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
 
-// charges of a tool in the cargo, -1 = no such tool
+// charges of a tool in the cargo, -1 = no such tool (cPlayerInventory::GetTool: the item's tool
+// part is an embedded base at item+0x0C, Cast without AddRef)
 static int tool_charges(uint32_t hash)
 {
     void* inv = spaceext::in_space() ? inventory() : nullptr;
-    if (!inv)
+    if (!inv || !a_GetTool)
         return -1;
     uint32_t key[3] = {hash, 0, 0};
-    if (!vcall<bool>(inv, 0x74 / 4, key)) // HasTool
-        return -1;
-    uint8_t* item = vcall<uint8_t*>(inv, 0x68 / 4, key); // GetItemByKey (tools)
-    void* sub = item && !IsBadReadPtr(item, 0x18) ? F<void*>(item, 0x0C) : nullptr;
-    // Cast -> cSpaceToolData; it does not AddRef (0xFF3CA0 AddRefs itself): no Release here (a
-    // Release freed the interstellar drive and the game crashed in the UI later, 2026-10-23)
-    void* tool = sub ? vcall<void*>(sub, 0x0C / 4, 0x707459F0u) : nullptr;
-    return tool ? F<int>(tool, 0x7C) : 0;
+    void* tool = thiscall<void*>(a_GetTool, inv, (const void*)key);
+    return tool ? F<int>(tool, 0x7C) : -1;
 }
 
 // the core star: the one star record of type 1 (StarType::GalacticCore), at the galaxy centre
@@ -777,6 +772,7 @@ static bool init(const SkHost* h, SkMod* m)
     a_CinematicMgr = S("Simulator::cCinematicManager::Get");
     a_SpaceGame = S("Simulator::cSimulatorSpaceGame::ptr");
     a_TimeMgr = S("Simulator::cGameTimeManager::Get");
+    a_GetTool = S("Simulator::cPlayerInventory::GetTool");
     if (!a_Enter || !a_HasFlag || !a_StarMgr || !a_Context || !a_ActiveStarRec || !a_PlayerUFOGet || !a_Teleport ||
         !a_ModeSpace || !a_EnterSystem || !a_MsgMgr || !a_SpaceGame)
         return false;
