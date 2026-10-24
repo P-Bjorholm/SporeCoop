@@ -391,6 +391,32 @@ static void* inventory()
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
 
+// The planets of a star are generated the first time something needs them (a flight there, the
+// jump, a mission: cStarManager::RequirePlanetsForStar 0xBB4C60 -> GeneratePlanetsForStar 0xBB4270)
+// from the game's global random generator (Math::RandomNumberGenerator, one LCG dword at
+// 0x1602760), so two games made different planets for the same unvisited star (count, kinds,
+// PlanetIDs: a partner's planet place did not exist on the other side). Seed it from the star
+// (StarID and its galaxy position, the same in both games) for the generation, then put the
+// sequence back (docs/re/space.md 7.3).
+using RequirePlanets_t = void(SK_THISCALL*)(void*, void*, void*);
+static RequirePlanets_t o_RequirePlanets;
+static uintptr_t a_Rng;
+static uint32_t g_planets_seeded;
+static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
+{
+    if (!a_Rng || !star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC)) {
+        o_RequirePlanets(sm, star, p3);
+        return;
+    }
+    uint32_t x, z, saved = *(uint32_t*)a_Rng;
+    memcpy(&x, (uint8_t*)star + 0x3C, 4);
+    memcpy(&z, (uint8_t*)star + 0x44, 4);
+    *(uint32_t*)a_Rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
+    o_RequirePlanets(sm, star, p3);
+    *(uint32_t*)a_Rng = saved;
+    g_planets_seeded++;
+}
+
 using SetState_t = void(SK_THISCALL*)(void*, int);
 static SetState_t o_SetState;
 static void SK_THISCALL h_SetState(void* m, int s)
@@ -801,6 +827,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     g_ok = a_PlayerUFOGet && a_Context && a_ActivePlanet;
     if (a_SetState)
         H->hook_create(M, (void*)a_SetState, (void*)h_SetState, (void**)&o_SetState);
+    a_Rng = S("Math::RandomNumberGenerator::global_ptr");
+    if (uintptr_t rp = S("Simulator::cStarManager::RequirePlanetsForStar"); rp && a_Rng)
+        H->hook_create(M, (void*)rp, (void*)h_RequirePlanets, (void**)&o_RequirePlanets);
     if (a_TerraA && a_TerraW && a_TerraT) {
         H->hook_create(M, (void*)a_TerraA, (void*)h_TerraA, (void**)&o_Terra[0]);
         H->hook_create(M, (void*)a_TerraW, (void*)h_TerraW, (void**)&o_Terra[1]);
@@ -906,10 +935,10 @@ std::string status()
     char b[400];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size());
     return b + spaceext::status_all();
 }
