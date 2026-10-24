@@ -37,8 +37,9 @@ constexpr uint32_t kDialogLayout = 0x34A6339E; // the game's account dialog (fra
 constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, kGreen = 0xFF8CF08C,
                    kRed = 0xFFFF7A6A, kYellow = 0xFFFFD866;
 constexpr float kW = 760, kH = 560;
-constexpr int kSpaceRows = 9;
+constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
+static int g_space_first; // the first row shown (pages of kSpaceRows rows)
 
 static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
 
@@ -187,7 +188,7 @@ struct Dialog {
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // Space page: the rows of the space features (space_ext.h)
     std::vector<Win> page_space;
-    Win space_title = nullptr, space_back = nullptr;
+    Win space_title = nullptr, space_back = nullptr, space_prev = nullptr, space_next = nullptr, space_pageno = nullptr;
     Win space_text[kSpaceRows] = {}, space_button[kSpaceRows] = {};
     std::function<void()> space_action[kSpaceRows];
 };
@@ -457,11 +458,11 @@ static void build_dialog()
     auto& S = D.page_space;
     D.space_title = add_label(S, {40, 104, 720, 130}, T("Your galaxy together", "Галактика вместе"), kGold);
     for (int i = 0; i < kSpaceRows; i++) {
-        float y = 138.f + i * 38;
+        float y = 136.f + i * 29;
         char nm[16];
-        D.space_text[i] = add_label(S, {40, y + 4, 545, y + 32}, "", kWhite);
+        D.space_text[i] = add_label(S, {40, y + 2, 545, y + 27}, "", kWhite);
         snprintf(nm, sizeof nm, "sbtn%d", i);
-        D.space_button[i] = add_button(S, nm, {555, y, 720, y + 34}, "", [i] {
+        D.space_button[i] = add_button(S, nm, {555, y, 720, y + 27}, "", [i] {
             if (!D.space_action[i])
                 return;
             // game calls and UI changes of a feature: outside the frame
@@ -477,6 +478,16 @@ static void build_dialog()
     }
     D.space_back = add_button(S, "sback", {40, 488, 240, 528}, T("< Lobby", "< Лобби"), [] {
         g_space_page = false;
+        g_dirty = true;
+    });
+    // more rows than fit: pages
+    D.space_prev = add_button(S, "sprev", {500, 488, 570, 528}, "<", [] {
+        g_space_first = std::max(0, g_space_first - kSpaceRows);
+        g_dirty = true;
+    });
+    D.space_pageno = add_label(S, {575, 494, 645, 522}, "", kDim, sui::kAlignCenter);
+    D.space_next = add_button(S, "snext", {650, 488, 720, 528}, ">", [] {
+        g_space_first += kSpaceRows;
         g_dirty = true;
     });
     // Enter in the chat field sends the message
@@ -620,20 +631,28 @@ static void refresh_lobby()
 static void refresh_space()
 {
     auto rows = spaceext::rows_all();
+    int n = (int)rows.size(), pages = std::max(1, (n + kSpaceRows - 1) / kSpaceRows);
+    if (g_space_first >= n)
+        g_space_first = (pages - 1) * kSpaceRows;
     for (int i = 0; i < kSpaceRows; i++) {
-        bool have = i < (int)rows.size();
+        int k = g_space_first + i;
+        bool have = k < n;
         show(D.space_text[i], have);
-        D.space_action[i] = have ? rows[i].on_click : nullptr;
-        show(D.space_button[i], have && !rows[i].button.empty() && rows[i].on_click);
+        D.space_action[i] = have ? rows[k].on_click : nullptr;
+        show(D.space_button[i], have && !rows[k].button.empty() && rows[k].on_click);
         if (!have)
             continue;
-        text(D.space_text[i], rows[i].text);
-        color(D.space_text[i], rows[i].color ? rows[i].color : kWhite);
-        text(D.space_button[i], rows[i].button);
+        text(D.space_text[i], rows[k].text);
+        color(D.space_text[i], rows[k].color ? rows[k].color : kWhite);
+        text(D.space_button[i], rows[k].button);
     }
     if (rows.empty())
         text(D.space_text[0], T("Nothing here yet", "Пока ничего"));
     show(D.space_text[0], true);
+    show(D.space_prev, pages > 1);
+    show(D.space_next, pages > 1);
+    show(D.space_pageno, pages > 1);
+    text(D.space_pageno, std::to_string(g_space_first / kSpaceRows + 1) + "/" + std::to_string(pages));
 }
 
 static void refresh()
@@ -781,6 +800,7 @@ std::string debug_state()
     if (D.lan_hdr)
         s += "lan '" + sui::caption(D.lan_hdr) + "'\n";
     s += "status '" + g_status + "'\n";
+    s += "spage first=" + std::to_string(g_space_first) + " rows=" + std::to_string(kSpaceRows) + "\n";
     return s;
 }
 
