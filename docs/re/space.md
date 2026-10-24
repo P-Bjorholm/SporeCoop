@@ -658,6 +658,49 @@ on the receiver; all safe in any context (no planet needed).
 * Mission state 0/4 meaning; how the UI picks the tracked mission.
 * ~~Political ids identical across two saves of the same galaxy~~: yes for the copies of one save (§10.3).
 
+### 7.9 The galaxy menu intro left playing after a load: the guest "movie" (✔ runtime lanes 10 + 4, Ghidra both builds, 2026-10-23, branch fix/space-guest-movie)
+
+Symptom (seen on GOG 2024 lanes 1, 9, 10): a guest that joined a host in Space sat in a HUD-less
+state (only the starfield), `coop.space hp` showed `movie=1`, Enter did nothing, the co-op window
+opened with F9 but real clicks on it did nothing, and its jumps answered "a cinematic is playing".
+* **What plays:** `cCinematicManager` (`[0x167FB30]` 2016 / `[0x167EB50]` 2024, same layout) +0x2C = 2,
+  +0x148 = **0x8915F9BB = FNV hash of "GGE_Intro"**: the galaxy menu's own intro cinematic (the camera
+  flight over the galaxy behind the main menu), not anything of Space. `cGameInputManager`
+  (0xB3D320 / 0xB3D350) +0x110 = 1: the input lock every cinematic holds while it plays, so the
+  game drops the clicks (the co-op window opens on the F9 key, which goes through the mod's own hook).
+* **How the intro runs (both builds, identical):** `Movie::MovieSystem::StopMovie` posts 0x49731AD
+  when the start-up video ends (~16 s after the galaxy menu appears in the test lanes, muted and
+  unwatched); the menu's handler `GalaxyGameEntry_IntroMessages` (0xDEA870 / 0xDEA820, state at
+  `[0x16A2324]+0x1EC` / `[0x16A1344]+0x1EC`) then plays "GGE_intro" (state 5) unless the video was
+  skipped with Escape (`CheckEscape` posts 0x61D72DE: state 3, no intro). The intro lasts ~10 s;
+  its end message 0x44F1189 (data+8 = the GGE_Intro id, from EndCinematic) or 0x66F6B6F (skip)
+  make the handler stop it (state 6, posts 0x66F8F25). Measured (a guest alone, sampling +0x2C/+0x148):
+  menu at 12 s, intro 28.4-38.1 s (2024) / 28.0-37.6 s (2016).
+* **The race:** world.cpp loads the received world from the menu (`LoadGameByName`) as soon as it
+  arrived. When that happens while GGE_intro plays, the intro is never ended: in Space it stays
+  "playing" forever (nothing advances it any more, the caption OK / Enter path 0x44EE075 only ends
+  captions), with the HUD hidden and the input lock held. A host that loads its game before the video
+  ends gets the intro *in Space* a few seconds later (seen in every run: ~17 s after its menu); that
+  one ends on its own after ~10 s, but blocks the HUD and the clicks meanwhile (the first landing of
+  coop_space_rescue.py and the "tutorial caption" the jump of coop_space_page.py had to force through).
+* **Why GOG 2024 only (in the tests):** timing, not a symbol. The 2024 lanes run at ~66-69 fps, the
+  2016 lanes at ~31 fps (the same `wait.frames 200` before the join takes 3 s instead of 6.5 s), and the
+  host's load is faster: the 2024 guest joined ~16.7 s after its menu and loaded at ~20 s (inside the
+  intro), the 2016 guest joined at ~22.8 s and loaded at ~26.3 s (just after it). The race is the
+  same on GOG 2016: in one of three ordinary starts on lane 4 the 2016 guest's world also arrived
+  during the intro (the fix ended it at the load). Real players on either build hit it when they
+  join within ~16-26 s of the menu coming up (the video not skipped).
+  Every Space symbol on that path was checked for 2024 (cinematic manager getter, EndCinematic);
+  none was wrong.
+* **Fix (world.cpp):** `load_now` ends a cinematic still playing in the menu with
+  **EndCinematic** (0xADFF20 / 0xADFF50, `thiscall(mgr)`, `ret`: stop, input lock -1, +0x148 = 0,
+  MessageSend 0x44F1189), so the menu handler stops its intro the native way before the load; and in
+  any stage a running GGE_Intro (+0x148 == 0x8915F9BB) is ended outside the frame after 1 s (the
+  host's late intro, or any load path that slipped past). Log: "world: cinematic 8915F9BB still
+  playing at the load / in a stage: ended it"; `coop.status` prints "cinematic <id> playing (menu
+  intro)" while one runs and "menu intro ended N". Calling EndCinematic on the stuck guest by hand
+  (`call 0xADFF50 thiscall <mgr>`) brought the HUD and the clicks back at once, no faults.
+
 ## 8. Loading a save while a stage runs (leaving space)
 
 Found while fixing "loading a Cell save from the Space stage crashes" (branch fix/stage-switch-load,
