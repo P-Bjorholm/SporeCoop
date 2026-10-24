@@ -532,8 +532,10 @@ static void send_snapshot(uint8_t reply_to);
 static void inbox_task(void*)
 {
     g_in_task = false;
-    if (!active() || !sharing()) {
+    if (!active() || !sharing()) { // not in Space (loading, another stage): entering Space asks again
         g_in.clear();
+        g_snap_in.clear();
+        g_snap_ready = false;
         return;
     }
     auto in = std::move(g_in);
