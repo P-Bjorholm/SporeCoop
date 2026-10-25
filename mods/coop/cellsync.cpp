@@ -1171,8 +1171,22 @@ static void hurt_avatar(int dmg, int type)
     h_KillCell(a, avatar_idx(), F<void*>(a, kRes), false, type, 0.f); // the pack may save us
 }
 
+// The mirrors live in the cell pool: once the stage is left (the editor's Creature switch, a
+// save loaded) their indices mean nothing and the pool may be freed. A player report (0.7.2.1,
+// 2026-10-25): the guest faulted in cell_at on session end in the Creature stage, destroying
+// mirrors the Cell stage had left behind.
+static void forget_mirrors()
+{
+    g_mirrors.clear();
+    g_host_of.clear();
+    g_touched.clear();
+    g_puppet_seen.clear();
+}
+
 void tick(double now)
 {
+    if (!in_cell() && !g_mirrors.empty())
+        forget_mirrors();
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     if (is_host())
@@ -1319,13 +1333,11 @@ void on_session_end()
         if (uint8_t* a = in_cell() ? avatar() : nullptr)
             F<uint8_t>(a, kInvuln) = 0;
     }
-    for (auto& [h, m] : g_mirrors)
-        if (m.local)
-            destroy_local(m.local);
-    g_mirrors.clear();
-    g_host_of.clear();
-    g_touched.clear();
-    g_puppet_seen.clear();
+    if (in_cell()) // outside the Cell stage the indices point into a pool that is gone
+        for (auto& [h, m] : g_mirrors)
+            if (m.local)
+                destroy_local(m.local);
+    forget_mirrors();
     g_food_sent = g_plant_sent = -1;
     g_pend_food = 0;
 }
