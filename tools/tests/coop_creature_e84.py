@@ -128,7 +128,10 @@ def main():
 
     # 3. the host attacks it: the game's attack message reaches CreatureStageEventHandler
     if nid:
-        out = host.call(f'coop.npc attackmsg {nid}')['out']
+        try:
+            out = host.call(f'coop.npc attackmsg {nid}')['out']
+        except OSError as e:  # the game died inside the call
+            out = f'no answer: {e}'
         time.sleep(2)
         ck(twoinst.alive(lane.HOST), f'the host survives an attack on it ({out.strip()})')
     if not twoinst.alive(lane.HOST):
