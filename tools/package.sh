@@ -63,6 +63,7 @@ EOF
 cat > "$STAGE/README-SporeCoop.txt" <<EOF
 SporeCoop $VER - co-op for every stage of SPORE (GOG "SPORE Collection" and Steam)
 https://github.com/WoodyWizard/SporeCoop
+Discord (players, help, reports): https://discord.gg/7Yre7u4b8x
 
 Install: extract this zip into SPORE\\SporebinEP1 and run install.bat (step by step: INSTALL.txt).
 Supported builds of SporebinEP1\\SporeApp.exe: GOG 2024 (sha256 dc04aee5...), Steam (3010a413...: the

@@ -1,6 +1,7 @@
 # Contributing to SporeCoop
 
-Thanks for your interest! Bug reports: see [docs/REPORTING.md](docs/REPORTING.md).
+Thanks for your interest! Bug reports: see [docs/REPORTING.md](docs/REPORTING.md). Talk to us on
+the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
 
 For code and research:
 

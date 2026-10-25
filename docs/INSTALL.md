@@ -234,6 +234,8 @@ and reuses it next time. If you already have your own save of the same planet, i
 
 ## 9. Troubleshooting
 
+Stuck? Ask in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x).
+
 | Problem | What to do |
 |---|---|
 | No **Co-op** item in the menu | Check the build (section 2). Check that `steam_api.dll` in `SporebinEP1` is the SporeCoop one (about 8 KB) and `steam_api_orig.dll` exists. Look at `mods\logs\sporekit.log`. If it says `WATCHDOG (no frames` while the game draws, another overlay (Steam, Discord, RivaTuner) keeps the frames from SporeKit: update to 0.7.2 or newer, which then takes the frames from the game loop. |

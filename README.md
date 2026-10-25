@@ -9,6 +9,7 @@
   <img src="https://img.shields.io/badge/game-Spore%20GA%20(GOG%20%7C%20Steam)-f0b44a" alt="Spore Galactic Adventures (GOG | Steam)">
   <img src="https://img.shields.io/badge/OS-Windows%20%7C%20Linux-5aa9e6" alt="Windows | Linux">
   <img src="https://img.shields.io/badge/players-2%E2%80%934-ff7a5f" alt="2–4 players">
+  <a href="https://discord.gg/7Yre7u4b8x"><img src="https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <!-- support:top:start -->
@@ -31,7 +32,7 @@ a pack, besiege a city from two sides, repair your partner's ship before it expl
 
 - [Features](#features) · [Every stage together](#every-stage-together) · [Install](#install) ·
   [Compatibility](#compatibility) · [How to play](#how-to-play) · [FAQ](#faq) · [Status and roadmap](#status-and-roadmap) ·
-  [Building from source](#building-from-source) · [Credits](#credits)
+  [Community](#community) · [Building from source](#building-from-source) · [Credits](#credits)
 
 ## Features
 
@@ -221,6 +222,13 @@ Next:
 - [ ] **Rivals mode**: every player with a base, a species, a tribe, a nation and an empire of its
   own in the same world, a race through every stage with war, peace and alliances
   ([design](docs/11-rivals.md))
+
+## Community
+
+Join the **[SporeCoop Discord](https://discord.gg/7Yre7u4b8x)**: find players to evolve with, ask for help with the setup,
+share your worlds and creatures, report problems and suggest ideas. Bug reports with files are
+easiest to follow up as a [GitHub issue](https://github.com/WoodyWizard/SporeCoop/issues/new/choose)
+([how to report](docs/REPORTING.md)).
 
 ## Building from source
 

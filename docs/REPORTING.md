@@ -36,6 +36,9 @@ crash") and write:
 Screenshots help a lot for "players see different things": one from each player at the same
 moment.
 
+No GitHub account? Post the same in the [SporeCoop Discord](https://discord.gg/7Yre7u4b8x) (the files can be attached there
+too).
+
 Please check [known issues](known-issues.md) first, and update to the
 [latest version](https://github.com/WoodyWizard/SporeCoop/releases/latest): many problems are
 already fixed there.
