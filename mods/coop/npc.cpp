@@ -127,6 +127,8 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     net::NpcSpawn sp;
     sp.net_id = id;
     game::Key k = game::species_key(c);
+    // one of our own creations (another creation of the guest may have its key): its records first
+    creations::host_species_out(guest, {k.instance, k.type, k.group});
     sp.key[0] = k.instance;
     sp.key[1] = k.type;
     sp.key[2] = k.group;
@@ -541,7 +543,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         destroy_proxy(sp.net_id);
         Proxy& px = g_proxies[sp.net_id];
-        px.key = {sp.key[0], sp.key[1], sp.key[2]};
+        // the host's own creations have keys of their own here (creations::local_species)
+        creations::Key lk = creations::local_species({sp.key[0], sp.key[1], sp.key[2]});
+        px.key = {lk.instance, lk.type, lk.group};
         px.flags = sp.flags;
         px.health = sp.health;
         px.max_health = sp.max_health;

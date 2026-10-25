@@ -200,6 +200,106 @@ std::vector<uint8_t> write(const std::vector<Record>& records)
     return f;
 }
 
+// every record of a DBPF 3.0 file with the file offset of its index entry
+struct Located {
+    Entry e;
+    size_t at; // index entry: offset field
+};
+static bool locate(const std::vector<uint8_t>& f, std::vector<Located>& out)
+{
+    IndexInfo info;
+    if (f.size() < 96 || memcmp(f.data(), "DBPF", 4) != 0 || !index_info(f.data(), f.size(), info) ||
+        info.offset + info.size > f.size())
+        return false;
+    const uint8_t* base = f.data() + info.offset;
+    std::vector<Entry> all;
+    if (!parse_index(base, info.size, info, all))
+        return false;
+    uint32_t flags = le32(base);
+    size_t p = 4 + (flags & 1 ? 4 : 0) + (flags & 2 ? 4 : 0) + (flags & 4 ? 4 : 0);
+    size_t per = (flags & 1 ? 0 : 4) + (flags & 2 ? 0 : 4) + 4 + 4 + 12;
+    for (size_t i = 0; i < all.size(); i++) {
+        size_t at = info.offset + p + i * per + per - 16; // the offset field: offset, size, usize, flags
+        if (all[i].offset + all[i].size <= f.size())
+            out.push_back({all[i], at});
+    }
+    return true;
+}
+
+static const uint8_t* find_prefix(const std::vector<uint8_t>& d, size_t from, const uint8_t pre[8])
+{
+    for (size_t i = from; i + 12 <= d.size(); i++)
+        if (d[i] == pre[0] && memcmp(d.data() + i, pre, 8) == 0)
+            return d.data() + i;
+    return nullptr;
+}
+
+static void be_prefix(uint32_t type, uint32_t group, uint8_t pre[8])
+{
+    uint32_t v[2] = {group, type};
+    for (int j = 0; j < 2; j++)
+        for (int b = 0; b < 4; b++)
+            pre[j * 4 + b] = (uint8_t)(v[j] >> (24 - 8 * b));
+}
+
+void find_be_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances)
+{
+    std::vector<Located> recs;
+    if (!locate(file, recs))
+        return;
+    uint8_t pre[8];
+    be_prefix(type, group, pre);
+    std::vector<uint8_t> d;
+    for (auto& r : recs) {
+        if (!decode(r.e, file.data() + r.e.offset, d))
+            continue;
+        for (const uint8_t* q = find_prefix(d, 0, pre); q; q = find_prefix(d, (size_t)(q - d.data()) + 12, pre)) {
+            uint32_t inst = be32(q + 8);
+            bool have = false;
+            for (uint32_t x : instances)
+                have |= x == inst;
+            if (!have)
+                instances.push_back(inst);
+        }
+    }
+}
+
+size_t remap_be_keys(std::vector<uint8_t>& file, uint32_t type, uint32_t group, const std::map<uint32_t, uint32_t>& map)
+{
+    std::vector<Located> recs;
+    if (map.empty() || !locate(file, recs))
+        return 0;
+    uint8_t pre[8];
+    be_prefix(type, group, pre);
+    size_t total = 0;
+    std::vector<uint8_t> d;
+    for (auto& r : recs) {
+        if (!decode(r.e, file.data() + r.e.offset, d))
+            continue;
+        size_t n = 0;
+        for (const uint8_t* q = find_prefix(d, 0, pre); q; q = find_prefix(d, (size_t)(q - d.data()) + 12, pre)) {
+            auto it = map.find(be32(q + 8));
+            if (it == map.end())
+                continue;
+            uint8_t* w = d.data() + (q - d.data()) + 8;
+            for (int b = 0; b < 4; b++)
+                w[b] = (uint8_t)(it->second >> (24 - 8 * b));
+            n++;
+        }
+        if (!n || file.size() + d.size() > 0x7FFFFFFFu)
+            continue;
+        uint32_t off = (uint32_t)file.size();
+        file.insert(file.end(), d.begin(), d.end());
+        put32(file, r.at, off);
+        put32(file, r.at + 4, (uint32_t)d.size() | 0x80000000u);
+        put32(file, r.at + 8, (uint32_t)d.size());
+        file[r.at + 12] = 0; // not compressed
+        file[r.at + 13] = 0;
+        total += n;
+    }
+    return total;
+}
+
 static std::string utf16le_to_utf8(const uint8_t* p, size_t chars)
 {
     std::string s;

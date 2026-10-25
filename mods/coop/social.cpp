@@ -1,4 +1,5 @@
 #include "social.h"
+#include "creations.h"
 
 #include <algorithm>
 #include <cmath>
@@ -258,10 +259,11 @@ bool goal_dna(float delta)
         g_goal_dna_dropped++;
         return true;
     }
-    net::Writer w; // guest: the host decides
+    net::Writer w; // guest: the host decides (on the host's key of the species)
     w.u8(K_GOAL);
     w.u16(0);
-    w.u32(k.instance); w.u32(k.type); w.u32(k.group);
+    creations::Key hk = creations::host_species({k.instance, k.type, k.group});
+    w.u32(hk.instance); w.u32(hk.type); w.u32(hk.group);
     w.u8((uint8_t)outcome);
     w.f32(delta);
     C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
@@ -536,6 +538,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (int i = 0; i < n && r.ok() && i < 512; i++) {
             SpeciesRec s;
             s.key[0] = r.u32(); s.key[1] = r.u32(); s.key[2] = r.u32();
+            // the host's own creations have keys of their own here (creations::local_species)
+            creations::Key lk = creations::local_species({s.key[0], s.key[1], s.key[2]});
+            s.key[0] = lk.instance; s.key[1] = lk.type; s.key[2] = lk.group;
             s.relation = (int32_t)r.u32(); s.x = r.u32(); s.impressed = r.u32(); s.killed = r.u32();
             t.push_back(s);
         }
