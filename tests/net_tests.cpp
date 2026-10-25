@@ -86,6 +86,31 @@ static void test_unreliable_chunks()
     CHECK(a.unreliable_queued() == 0);
 }
 
+static void test_be_keys()
+{
+    printf("dbpf: species keys inside a save's records\n");
+    auto key = [](uint32_t inst) {
+        std::vector<uint8_t> v = {0x40, 0x62, 0x62, 0x00, 0x2B, 0x97, 0x8C, 0x46};
+        for (int b = 0; b < 4; b++)
+            v.push_back((uint8_t)(inst >> (24 - 8 * b)));
+        return v;
+    };
+    std::vector<uint8_t> herd = {7, 7};
+    for (uint32_t k : {0x29020CC4u, 0x065CBE70u, 0x29020CC4u}) {
+        auto v = key(k);
+        herd.insert(herd.end(), v.begin(), v.end());
+        herd.push_back(1);
+    }
+    // the pack list: little-endian (type, instance, group)
+    std::vector<uint8_t> pack = {0x10, 0x01, 0, 0, 0x46, 0x8C, 0x97, 0x2B, 0xB9, 0x29, 0x02, 0x29, 0x00, 0x62, 0x62, 0x40, 0};
+    std::vector<dbpf::Record> recs = {{{0, 0x01BE418E, 0}, herd}, {{0, 0x02C21781, 0}, key(0x065CBE70)},
+                                      {{0, 0x01897C18, 0}, pack}};
+    std::vector<uint8_t> f = dbpf::write(recs);
+    std::vector<uint32_t> found;
+    dbpf::find_keys(f, 0x2B978C46, 0x40626200, found);
+    CHECK(found.size() == 3 && found[0] == 0x29020CC4 && found[1] == 0x065CBE70 && found[2] == 0x290229B9);
+}
+
 static void test_dbpf()
 {
     printf("dbpf write/read, EditorSaves of the test profile\n");
@@ -700,6 +725,7 @@ int main()
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
+    test_be_keys();
     test_dbbf();
     test_refpack_untrusted();
     test_updater();

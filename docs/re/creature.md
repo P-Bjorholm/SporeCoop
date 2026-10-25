@@ -541,3 +541,65 @@ the private Ghidra project, runtime on lane 4 (fix/creature-kills, `coop_creatur
   0xBC30E0 `thiscall(tod, int 0..3, void*)` (times 199.68 / 285.12 / 679.68 / 760.32 at
   0x156CFB8). Called from the console with a null or a short string buffer as `out` it faulted at
   0xBC2DC8 and the game stopped drawing: needs a real output buffer (a quaternion?).
+
+## 15. Another creation under the same key: the host's nests on the guest (2026-10-25)
+
+From the player report (screenshots of both players at one nest): the host saw blue "Woopsies" and
+"Impress 3 Woopsies to ally 0/3", the guest small creatures of another look and "The Datzu are your
+allies! You can heal at their nest or add them to your pack!" (fix/nest-species,
+`coop_nest_species.py`).
+
+* ✔ Creation ids are per profile and sequential (docs/re/creations.md 1.2: the first own cell was
+  0x290742F6 in both test profiles), and Spore populates a planet with the player's own creations
+  too. A guest that made creatures owns other creations under the keys of the host's: its game
+  resolved the host's species key to **its own creation** (the planet's herds and nests from the
+  received save, the NPC proxies from MSG_NPC_SPAWN, the species card's name), and its species
+  table entry of that key (the host's) went to a nest it saw as its own species. Nothing failed,
+  so the 0.7.2.3 species transfer (asks only for unknown keys) never ran.
+* ✔ **The game's caches go by key**: with the guest's My Creations holding the Kirgle under the
+  Judge's key 29020CC4, the guest still built the Judge there (exp. 2026-10-25, lane 5): its
+  `Pollination.package` held a `creaturedata` 0x0F43029A of 29020CC4 (and its graphics cache a baked
+  model) from earlier sessions in which it had got the host's Judge. So registering the host's
+  records under the host's key (priority 2000, above My Creations) cannot win over a guest that has
+  ever used its own creation of that key: the guest needs a key of its own for it.
+* ✔ `cSpeciesManager` keeps its profiles for the whole process (the map at mgr +4, node value
+  +0xC): after a world load the guest's profiles of the planet's species were the same objects
+  (pointers equal). `GetSpeciesProfile` 0x4DF5C0 (GOG 2024) creates one when the node's value is
+  null; `0x4DF740` (the lookup) reloads a profile whose `+0x53C` (version) is 0 from its
+  `creaturedata` (`LoadCreatureData` via 0x4D4F70). Not used by the fix.
+* ✔ A planet save names its species big-endian `{group 40626200, type 2B978C46, instance}` in the
+  records of herds (01BE418E), creatures (018EB45E), the cPlayer (02C21781), 03572E72 and the
+  self-keyed 01897C18 (Scalinus: 60 species, the planet's list), most records RefPack-compressed;
+  the pack list in 01897C18 names its members' species little-endian `{type, instance, group}`
+  (`00000110`, then one key per member: the avatar's species and a recruited Judge).
+* ✗ **Rewriting the received save to the guest's own key does not work.** With every key of a host
+  creation replaced (big- and little-endian, the changed records appended uncompressed, nothing else
+  different: a byte diff showed exactly those keys) the guest's load **dropped the herd and the
+  creature of that species** (none of them after the load, while the same save with the host's key
+  kept both: `coop.npc creatures`, exp. 2026-10-25), also with the species profile made beforehand,
+  the creation's `creaturedata` in the package and its metadata naming the new key. A pack member of
+  it then left an empty creature (+0xB20 and +0xB28 zero) in the pack vector (`cGameNounManager
+  +0x5C`), and the pack panel faulted building its item (0xD2C361 in 0xD2C2E0, `creature+0xB20
+  ->+0x50C`, then thousands of faults at 0x93B630; `coop_creature_desync.py`). The planet's
+  `stars.db` rewritten the same way made the load fault at once in `cStarRecord::GetPlanetRecord`
+  (0xBBABE2, null star record; `coop_editor_desync.py`). Why the game drops a species only a
+  registered package knows (an unknown key is replaced by a planet species instead, section 12) was
+  not found.
+* Co-op (creations.cpp, MSG_CREATION kind 5): the host finds the species keys in the files it
+  shares (`dbpf::find_keys`) and sends, before the offer, the records (bem, metadata and its
+  creaturedata, from the files the game reads them from) of every one its EditorSaves database
+  answers for; the same before an NPC spawn of one (`creations::host_species_out`). The guest
+  registers each under `0x7D000000 | fnv(bem + metadata) & 0xFFFFFF` (the same creation gets the
+  same key every session, which keeps the caches right), and under the host's key too when it has
+  nothing there. Its NPC proxies of the species use that key (`creations::local_species` on
+  MSG_NPC_SPAWN), go into the herd of the host's key (the save's nest: its archetype tuning), and the
+  host's species table is written under both keys; a goal reward goes back under the host's key.
+  The save keeps the host's key: the guest's own NPCs of it (built as the guest's creature) are
+  removed by the update filter as always, so what the guest sees are the host's creatures, and their
+  cards and relation are the host's. Premades and Sporepedia downloads keep their keys.
+* ? Still the guest's: a card made from the nest itself (the "The Datzu are your allies!" kind: the
+  nest's herd has the species of the host's key, which is the guest's creation there; its relation
+  is the host's record, its name the guest's). Not checked: a real nest (herd with an archetype) of a
+  host creation (the fixture planet has Maxis species only; the test's NPC comes from `coop.npc
+  spawn`), the Tribe and later stages with such species, a downloaded Sporepedia creation under a
+  colliding key (ids from the server: not expected to collide).

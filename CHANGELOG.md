@@ -26,6 +26,14 @@
   player's creature; on the host a creature nearer to a partner now treats that partner as the
   player (notices, chases, attacks; its hits go to the partner). Host option
   `npcs_target_partners` (on by default).
+- **Creature: the guest sees the host's species at the host's nests** (player report: at the same
+  nest the host saw its "Woopsies", the guest other creatures and "The Datzu are your allies!").
+  Spore populates a planet with the player's own creations, and creations are numbered per player:
+  a guest who made creatures has other ones under the same numbers, and its game showed those (and
+  their names and standing) instead of the host's. The host now sends its own creations that its
+  world uses, and the guest shows the host's creatures with them, under numbers of their own, with
+  the host's standings. Both players need this version. Test: `coop_nest_species.py` (suite
+  `nest_species`).
 
 ## [0.7.2.3] - 2026-10-25
 

@@ -36,6 +36,7 @@ void on_session_end();
 bool goal_dna(float delta);
 std::string status();
 std::string species_dump(); // coop.social species (tests)
+bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the
 // stimulus log
 bool debug_social(uint16_t npc_id, int slot);

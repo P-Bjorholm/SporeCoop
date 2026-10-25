@@ -200,6 +200,83 @@ std::vector<uint8_t> write(const std::vector<Record>& records)
     return f;
 }
 
+// every record of a DBPF 3.0 file with the file offset of its index entry
+struct Located {
+    Entry e;
+    size_t at; // index entry: offset field
+};
+static bool locate(const std::vector<uint8_t>& f, std::vector<Located>& out)
+{
+    IndexInfo info;
+    if (f.size() < 96 || memcmp(f.data(), "DBPF", 4) != 0 || !index_info(f.data(), f.size(), info) ||
+        info.offset + info.size > f.size())
+        return false;
+    const uint8_t* base = f.data() + info.offset;
+    std::vector<Entry> all;
+    if (!parse_index(base, info.size, info, all))
+        return false;
+    uint32_t flags = le32(base);
+    size_t p = 4 + (flags & 1 ? 4 : 0) + (flags & 2 ? 4 : 0) + (flags & 4 ? 4 : 0);
+    size_t per = (flags & 1 ? 0 : 4) + (flags & 2 ? 0 : 4) + 4 + 4 + 12;
+    for (size_t i = 0; i < all.size(); i++) {
+        size_t at = info.offset + p + i * per + per - 16; // the offset field: offset, size, usize, flags
+        if (all[i].offset + all[i].size <= f.size())
+            out.push_back({all[i], at});
+    }
+    return true;
+}
+
+// a key of `type` and `group` at d[i]: big-endian (group, type, instance) or little-endian (type,
+// instance, group); its instance's 4 bytes are at d[i + inst_at]
+struct KeyAt {
+    size_t pos;
+    int inst_at; // 8 (big-endian) or 4 (little-endian)
+};
+static void key_hits(const std::vector<uint8_t>& d, uint32_t type, uint32_t group, std::vector<KeyAt>& out)
+{
+    uint8_t be[8], lt[4], lg[4];
+    for (int b = 0; b < 4; b++) {
+        be[b] = (uint8_t)(group >> (24 - 8 * b));
+        be[4 + b] = (uint8_t)(type >> (24 - 8 * b));
+        lt[b] = (uint8_t)(type >> (8 * b));
+        lg[b] = (uint8_t)(group >> (8 * b));
+    }
+    for (size_t i = 0; i + 12 <= d.size(); i++) {
+        if (d[i] == be[0] && memcmp(d.data() + i, be, 8) == 0) {
+            out.push_back({i, 8});
+            i += 11;
+        } else if (d[i] == lt[0] && memcmp(d.data() + i, lt, 4) == 0 && memcmp(d.data() + i + 8, lg, 4) == 0) {
+            out.push_back({i, 4});
+            i += 11;
+        }
+    }
+}
+
+static uint32_t inst_of(const uint8_t* p, int inst_at) { return inst_at == 8 ? be32(p + 8) : le32(p + 4); }
+
+void find_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances)
+{
+    std::vector<Located> recs;
+    if (!locate(file, recs))
+        return;
+    std::vector<uint8_t> d;
+    std::vector<KeyAt> hits;
+    for (auto& r : recs) {
+        if (!decode(r.e, file.data() + r.e.offset, d))
+            continue;
+        hits.clear();
+        key_hits(d, type, group, hits);
+        for (auto& h : hits) {
+            uint32_t inst = inst_of(d.data() + h.pos, h.inst_at);
+            bool have = false;
+            for (uint32_t x : instances)
+                have |= x == inst;
+            if (!have)
+                instances.push_back(inst);
+        }
+    }
+}
+
 static std::string utf16le_to_utf8(const uint8_t* p, size_t chars)
 {
     std::string s;

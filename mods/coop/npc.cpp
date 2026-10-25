@@ -181,6 +181,8 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     net::NpcSpawn sp;
     sp.net_id = id;
     game::Key k = game::species_key(c);
+    // one of our own creations (another creation of the guest may have its key): its records first
+    creations::host_species_out(guest, {k.instance, k.type, k.group});
     sp.key[0] = k.instance;
     sp.key[1] = k.type;
     sp.key[2] = k.group;
@@ -311,10 +313,17 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
+    void* species_nest = species;
     if (flags & net::NF_FAMILY)
         if (void* h = game::avatar_herd())
             return h;
-    uint64_t hk = herd_key(k);
+    // the nest of the species in this world (from the save): by the host's key. A creation of the
+    // host's own has a key of its own here (creations::local_species), its nests the host's key
+    creations::Key hkey = creations::host_species({k.instance, k.type, k.group});
+    if (hkey.instance != k.instance)
+        if (void* sp = game::species_by_key({hkey.instance, hkey.type, hkey.group}))
+            species_nest = sp;
+    uint64_t hk = herd_key({hkey.instance, hkey.type, hkey.group});
     auto lh = g_local_herds.find(hk);
     if (lh != g_local_herds.end()) {
         if (game::object_alive(lh->second)) {
@@ -328,7 +337,7 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     struct Find {
         void* species;
         void* found;
-    } f{species, nullptr};
+    } f{species_nest, nullptr};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* f = (Find*)u;
@@ -643,7 +652,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         destroy_proxy(sp.net_id);
         Proxy& px = g_proxies[sp.net_id];
-        px.key = {sp.key[0], sp.key[1], sp.key[2]};
+        // the host's own creations have keys of their own here (creations::local_species)
+        creations::Key lk = creations::local_species({sp.key[0], sp.key[1], sp.key[2]});
+        px.key = {lk.instance, lk.type, lk.group};
         px.flags = sp.flags;
         px.health = sp.health;
         px.max_health = sp.max_health;
@@ -826,6 +837,24 @@ std::string status()
 
 namespace npc {
 
+// a fingerprint of a creature's body as the game built it: its abilities (count, type and level of
+// each; they come from the creation's parts). Two creations under one key give different prints
+// (tests: the guest must build the host's creation, not its own of the same key)
+static uint32_t body_print(void* c)
+{
+    if (!c || IsBadReadPtr(c, 0x1680))
+        return 0;
+    int n = skg::vcall<int>(c, 0xB0 / 4);
+    uint32_t h = 0x811C9DC5u ^ (uint32_t)n;
+    for (int i = 0; i < n && i < 64; i++) {
+        uint8_t* a = skg::vcall<uint8_t*>(c, 0xB4 / 4, i);
+        uint32_t v[2] = {a && !IsBadReadPtr(a, 0x14) ? *(uint32_t*)(a + 8) : 0u, a && !IsBadReadPtr(a, 0x14) ? *(uint32_t*)(a + 0xC) : 0u};
+        for (int j = 0; j < 8; j++)
+            h = (h ^ ((uint8_t*)v)[j]) * 0x01000193u;
+    }
+    return h;
+}
+
 std::string list()
 {
     std::string out;
@@ -842,9 +871,10 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s\n", hn.id, c,
-                     game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
-                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "", g_ai_target.count(c) ? " on_partner" : "");
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s body=%08X\n", hn.id,
+                     c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
+                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "", g_ai_target.count(c) ? " on_partner" : "",
+                     body_print(c));
             out += b;
         }
     } else {
@@ -858,10 +888,10 @@ std::string list()
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p\n",
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p body=%08X\n",
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
-                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr);
+                     px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c));
             out += b;
         }
     }
@@ -895,11 +925,11 @@ std::string creatures(bool untuned_only, uint32_t species)
             void* h = game::herd_of(o);
             bool ours = game::is_puppet(o) || g_proxy_of.count(o);
             bool hr = h && !IsBadReadPtr(h, 0x21C);
-            char b[320];
+            char b[352];
             net::Vec3 p = game::position(o);
-            snprintf(b, sizeof b, "  creature %p species=%08X prof=%p e84=%p herd=%p arch=%08X nest=%p flags=%08X%s%s%s%s pos=(%.1f %.1f %.1f)\n", o,
+            snprintf(b, sizeof b, "  creature %p species=%08X prof=%p e84=%p herd=%p arch=%08X nest=%p flags=%08X body=%08X%s%s%s%s pos=(%.1f %.1f %.1f)\n", o,
                      game::species_key(o).instance, game::species_profile(o), e84, h, hr ? *(uint32_t*)((uint8_t*)h + 0x88) : 0u,
-                     hr ? game::herd_nest(h) : nullptr, *(uint32_t*)((uint8_t*)o + 0xB58), ours ? " ours" : "",
+                     hr ? game::herd_nest(h) : nullptr, *(uint32_t*)((uint8_t*)o + 0xB58), body_print(o), ours ? " ours" : "",
                      o == a->av ? " avatar" : "", game::is_dead(o) ? " DEAD" : "", e84 ? "" : " untuned", p.x, p.y, p.z);
             a->out += b;
             a->n++;
@@ -947,9 +977,11 @@ std::string herds(bool all)
             if (*(uint32_t*)((uint8_t*)o + 0x88))
                 return true;
             a->plain++;
-            char b[200];
-            snprintf(b, sizeof b, "  herd %p species=%p arch=%08X target=%d enabled=%d nest=%p avatar_owned=%d\n", o,
-                     game::herd_species(o), *(uint32_t*)((uint8_t*)o + 0x88), *(int32_t*)((uint8_t*)o + 0xF4),
+            char b[220];
+            void* sp = game::herd_species(o); // a cSpeciesProfile: its key at +0x504
+            snprintf(b, sizeof b, "  herd %p species=%p key=%08X arch=%08X target=%d enabled=%d nest=%p avatar_owned=%d\n", o,
+                     sp, sp && !IsBadReadPtr(sp, 0x510) ? *(uint32_t*)((uint8_t*)sp + 0x504) : 0u,
+                     *(uint32_t*)((uint8_t*)o + 0x88), *(int32_t*)((uint8_t*)o + 0xF4),
                      *(uint8_t*)((uint8_t*)o + 0x218), game::herd_nest(o), *(uint8_t*)((uint8_t*)o + 0x84));
             a->out += b;
             return true;

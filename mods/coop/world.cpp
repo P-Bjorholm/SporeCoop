@@ -72,6 +72,8 @@ static bool safe_rel(const std::string& rel)
 }
 
 static std::deque<Out> g_out;
+static std::function<void(uint8_t, const std::vector<const std::vector<uint8_t>*>&)> g_share_hook;
+void set_share_hook(std::function<void(uint8_t, const std::vector<const std::vector<uint8_t>*>&)> f) { g_share_hook = std::move(f); }
 static bool g_auto_load = true;
 static In g_in;
 
@@ -421,6 +423,12 @@ bool share_now(uint8_t peer, std::string& err)
         total += (uint32_t)f.data.size();
     }
     o.world_id = crc;
+    if (g_share_hook) { // reliable and ordered: ahead of the offer (sent by tick)
+        std::vector<const std::vector<uint8_t>*> fs;
+        for (auto& f : o.files)
+            fs.push_back(&f.data);
+        g_share_hook(peer, fs);
+    }
     o.planet = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
     if (cur_planet.size() > 4) // a slot holds several planets: the one being played
         o.planet = cur_planet.substr(0, cur_planet.size() - 4);

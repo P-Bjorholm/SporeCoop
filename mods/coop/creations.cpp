@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 
 #include "game.h"
 #include "modes.h"
@@ -30,12 +31,14 @@ static const KindInfo kInfo[kKinds] = {
     {"cell", 0x3D97A8E4, 0x40616200},     // cll
     {"ufo", 0x476A98C7, 0x40656200},      // ufo
 };
-constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3;
+constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
 // MSG_CREATION kinds after the player creations (older versions drop kind >= kKinds): a species of
 // the host's world for a guest that lacks it (owner 0, id = the crt instance), and a guest's request
-constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4;
+// and a species of the host's world that is one of the host's own creations (owner 0, id = the crt
+// instance): the guest uses it under a key of its own (see creations.h)
+constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 
 static uintptr_t a_GetDb, a_OpNew, a_DbCtor, a_RmPtr, a_SetSpecies, a_GetEmpire, a_CellPreload;
 
@@ -81,6 +84,10 @@ static std::string g_last_error;
 static std::map<uint32_t, double> g_asked;        // guest: crt instance -> when asked
 static std::map<uint32_t, void*> g_species_db;    // guest: registered packages of world species
 static unsigned g_species_asked, g_species_got, g_species_sent, g_species_missing;
+// the host's own creations among its world's species (kOwnSpecies)
+static std::map<uint8_t, std::set<uint32_t>> g_own_sent; // host: guest -> crt instances checked / sent
+static std::map<uint32_t, uint32_t> g_remap, g_unmap;   // guest: host instance -> ours, and back
+static unsigned g_own_out, g_own_in;
 
 // ---- helpers ----
 static uint32_t fnv(const void* p, size_t n, uint32_t h = 0x811C9DC5)
@@ -574,6 +581,120 @@ void want_species(const Key& k)
     H->log(M, SK_INFO, "creations: species %08X of the host's world is unknown here: asked the host", k.instance);
 }
 
+// ---- the host's own creations among its world's species (creations.h) ----
+static bool in_my_creations(const Key& k);
+static bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
+
+void host_species_out(uint8_t peer, const Key& k)
+{
+    if (!is_host() || peer == 0 || !k.instance || !is_crt(k))
+        return;
+    auto& sent = g_own_sent[peer];
+    if (!sent.insert(k.instance).second)
+        return; // checked (and sent if ours) already
+    if (!in_my_creations(k)) // a premade or a Sporepedia download: the same creation everywhere
+        return;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs)) {
+        g_species_missing++;
+        return;
+    }
+    // and its creaturedata (the game's cache of the species' abilities and stats, in Pollination):
+    // a guest that has none computes it on first use, and a key first used while a world loaded
+    // left the pack member of it without a species (0xD2C361: coop_creature_desync.py 2026-10-25)
+    std::vector<dbpf::Record> cd;
+    if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+        for (auto& r : cd)
+            if (r.key.type == kCreatureData)
+                b.recs.push_back(std::move(r));
+    std::vector<uint8_t> data = pack(b);
+    send_bundle(peer, 0, (Kind)kOwnSpecies, k.instance, data);
+    g_own_out++;
+    H->log(M, SK_INFO, "creations: own creation %08X of this world (%u records%s) to player %u", k.instance,
+           (unsigned)b.recs.size(), cd.empty() ? ", no creaturedata" : "", peer);
+}
+
+void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files)
+{
+    if (!is_host())
+        return;
+    std::vector<uint32_t> keys;
+    for (auto* f : files)
+        dbpf::find_keys(*f, kInfo[kCreature].type, kInfo[kCreature].group, keys);
+    for (uint32_t inst : keys)
+        host_species_out(peer, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+}
+
+// guest: a creation of the host's own My Creations that its world uses: registered under a key of
+// our own (from its content: the same creation gets the same key in every session, which keeps the
+// game's caches by key right), not only under the host's key (our creation of that key would
+// answer: the game's creaturedata and baked models are cached by key, ✔ 2026-10-25). The world's
+// save keeps the host's key: a save rewritten to ours lost those herds and creatures at the load
+// and the pack panel faulted on a pack member of them (docs/re/creature.md 15)
+static void apply_own_species(const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
+        return;
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs) // the creation itself (not the host's creaturedata cache)
+        if (r.key.instance == b.key.instance && r.key.type != kCreatureData)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
+    uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
+    auto it = g_remap.find(b.key.instance);
+    if (it != g_remap.end() && it->second == ours)
+        return;
+    std::vector<dbpf::Record> recs = b.recs;
+    for (auto& r : recs) {
+        if (r.key.instance != b.key.instance)
+            continue;
+        r.key.instance = ours;
+        // the metadata names its own key (big-endian type, group, instance at +0x0C): ours too
+        uint8_t* d = r.data.data();
+        if (r.key.type == kMeta && r.data.size() >= 0x18 &&
+            ((uint32_t)d[0x14] << 24 | d[0x15] << 16 | d[0x16] << 8 | d[0x17]) == b.key.instance)
+            for (int i = 0; i < 4; i++)
+                d[0x14 + i] = (uint8_t)(ours >> (24 - 8 * i));
+    }
+    std::wstring path = g_dir + L"\\own_species_" + std::to_wstring(ours) + L".package";
+    if (!package_for(path, recs, kPrioWorld)) {
+        g_last_error = "cannot write a species package";
+        return;
+    }
+    // a guest that has nothing under the host's key gets the host's records there too (as for an
+    // unknown species, apply_species): whatever still names the species by that key finds it
+    if (!key_exists(b.key) && !g_species_db.count(b.key.instance)) {
+        std::wstring kp = g_dir + L"\\species_" + std::to_wstring(b.key.instance) + L".package";
+        if (void* db = package_for(kp, b.recs, kPrioWorld))
+            g_species_db[b.key.instance] = db;
+    }
+    g_remap[b.key.instance] = ours;
+    g_unmap[ours] = b.key.instance;
+    g_own_in++;
+    // the species profile now (the game keeps profiles for the whole process): the first proxy of
+    // it does not wait for its creaturedata
+    void* prof = game::species_by_key({ours, b.key.type, b.key.group});
+    std::string name, author;
+    for (auto& r : b.recs)
+        if (r.key.type == kMeta)
+            dbpf::metadata_names(r.data, author, name);
+    H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here%s", b.key.instance,
+           name.c_str(), ours, prof ? "" : " (no species profile yet)");
+}
+
+Key local_species(const Key& k)
+{
+    auto it = is_crt(k) ? g_remap.find(k.instance) : g_remap.end();
+    return it == g_remap.end() ? k : Key{it->second, k.type, k.group};
+}
+
+Key host_species(const Key& k)
+{
+    auto it = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
+    return it == g_unmap.end() ? k : Key{it->second, k.type, k.group};
+}
+
 bool species_pending(const Key& k) { return g_asked.count(k.instance) && !g_species_db.count(k.instance); }
 
 static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
@@ -619,7 +740,10 @@ static void share_own(double now)
         if (!o.key.instance)
             continue;
         Bundle b;
-        if (!make_bundle((Kind)k, o.key, b))
+        Key hk = host_species(o.key);
+        if (!(hk == o.key)) // a guest that plays the host world's species, a creation of the host: the
+            b.key = hk;     // host knows it under its own key (our records of that key are another one)
+        else if (!make_bundle((Kind)k, o.key, b))
             continue;
         // A creation the editor has just saved is in the game's EditorSaves database before our
         // copy of the file has it (read every 10 s). Sent without its records it was a key nobody
@@ -809,9 +933,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             serve_species(from, id);
         return;
     }
-    if (kind == kWorldSpecies && (is_host() || from != 0))
+    if ((kind == kWorldSpecies || kind == kOwnSpecies) && (is_host() || from != 0))
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies) || total > (8u << 20) || (uint64_t)off + n > total)
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies) || total > (8u << 20) ||
+        (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
         return;
@@ -840,6 +965,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         apply_species(data);
         return;
     }
+    if (kind == kOwnSpecies) {
+        apply_own_species(data);
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -853,6 +982,7 @@ void on_player_join(uint8_t id)
 {
     if (!is_host())
         return;
+    g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
     for (auto& [ok, data] : g_store)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
@@ -861,6 +991,9 @@ void on_player_join(uint8_t id)
 void on_session_end()
 {
     g_asked.clear(); // (registered species packages stay: the same world may come back)
+    g_own_sent.clear();
+    g_remap.clear(); // (their packages stay registered: the same world may come back)
+    g_unmap.clear();
     g_store.clear();
     g_rx.clear();
     for (auto& s : g_sent_id)
@@ -924,10 +1057,9 @@ std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing,
-             g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));
@@ -940,6 +1072,10 @@ std::string status()
         Option o = mine((Kind)k);
         snprintf(b, sizeof b, "  mine %s: %08X '%s' (%u own)\n", kInfo[k].name, o.key.instance, o.name.c_str(),
                  (unsigned)g_opts[k].size());
+        s += b;
+    }
+    for (auto& [hk, ours] : g_remap) {
+        snprintf(b, sizeof b, "  host species %08X = %08X here\n", hk, ours);
         s += b;
     }
     for (auto& [ok, ap] : g_applied) {
@@ -962,6 +1098,17 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t inst = a.size() > 2 && a[2] != "none" ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
         choose((Kind)k, inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{});
         return "chosen";
+    }
+    if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "bem " + hex(k.instance) + " none\n";
+        uint32_t h = 0;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                h = fnv(r.data.data(), r.data.size());
+        return "bem " + hex(k.instance) + " " + hex(h) + "\n";
     }
     if (!a.empty() && a[0] == "list") {
         std::string s;

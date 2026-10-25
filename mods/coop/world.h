@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "net/session.h"
 #include "sporekit.h"
@@ -28,6 +29,9 @@ void guest_tick(); // guests: load a world that arrived while in an editor
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
+// host: called with the files of a share before its offer goes out (creations: the species of the
+// host's own creations first)
+void set_share_hook(std::function<void(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files)> f);
 // guest: a world transfer in progress (bytes so far / total)
 bool progress(uint32_t& got, uint32_t& total);
 void set_auto_load(bool on);

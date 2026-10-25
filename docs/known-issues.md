@@ -496,3 +496,15 @@ Fixed entries move to the commit message (and a test).
   how many, which result), a screenshot, whether saving and loading again (or leaving to the galaxy
   and back) fixes it, and whether it happens with SporeCoop removed. Until then: set fullscreen in
   the game's options before loading a planet instead of using Alt+Enter in game.
+
+## Creature: the host's own creations on the guest, what is still open (2026-10-25)
+
+* Since fix/nest-species a guest builds the host's NPCs of the host's own creations from the host's
+  records under a key of its own (0x7D......, docs/re/creature.md 15). The host's world on the guest
+  still names them by the host's key, which is the guest's own creation there: a card the guest's
+  game makes from a nest (not from a creature) shows the guest's creation's name (with the host's
+  relation). Rewriting the save to the guest's key lost those herds at the load and crashed the
+  pack panel (section 15 there). Both players need this version: an older host sends nothing (the
+  guest shows its own creation of the key, as before), an older guest drops kind 5.
+* Not checked: a real nest (with an archetype) of a host creation on the guest (the fixture planet
+  has Maxis species only).

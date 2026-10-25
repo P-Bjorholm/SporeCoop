@@ -2151,6 +2151,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::species_dump().c_str());
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "record")) { // tests: record <hex crt> <relation> <impressed>
+        bool ok = social::debug_set_record(strtoul(argv[2], nullptr, 16), atoi(argv[3]), (uint32_t)atoi(argv[4]));
+        SAY(ok ? "record set" : "no relationship manager");
+        return ok ? 0 : 1;
+    }
     if (argc > 2 && !strcmp(argv[1], "goto")) {
         bool ok = social::debug_goto((uint16_t)atoi(argv[2]));
         SAY(ok ? "next to it" : "no such spawned proxy");
@@ -2627,6 +2632,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_save_blocker(save_blocker);
+    // species of the host's own creations: sent ahead of its world (creations.h)
+    world::set_share_hook([](uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files) {
+        creations::world_species_out(peer, files);
+    });
     shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

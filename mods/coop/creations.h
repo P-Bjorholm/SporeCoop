@@ -53,6 +53,19 @@ void* player_species(uint8_t player);
 void want_species(const Key& k); // guest: this NPC species is unknown here
 bool species_pending(const Key& k); // guest: asked, no answer yet
 
+// Species of the host's world that are the host's own creations (its My Creations). Creation ids
+// are per profile and sequential, so a guest often owns another creation under the same key, and its
+// game (its own records, its caches of creaturedata and baked models, all by key) showed that one
+// at the host's nests: the player report of 2026-10-25, "Woopsies" at the host's nest were the
+// guest's own "Datzu" on the guest. The host sends these creations to each guest before its world
+// and before an NPC of one; the guest registers each under a key of its own (0x7D......, from the
+// content) and builds the host's NPCs of it from that key; the host's species table reaches it
+// under both keys (docs/re/creature.md 15).
+void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of species k goes to peer
+void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
+Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
+Key host_species(const Key& k);  // guest: ours -> the host's
+
 // My Creations of this kind, newest first
 std::vector<Option> options(Kind k);
 Option mine(Kind k);
