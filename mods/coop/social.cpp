@@ -644,6 +644,21 @@ std::string species_dump()
     return out.empty() ? "no species records\n" : out;
 }
 
+// tests: the host's record of a creature species (as the game's ApplyEvent keeps it), sent on change
+bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+    if (!rec)
+        return false;
+    rec[0] = (uint32_t)relation;
+    rec[2] = impressed;
+    return true;
+}
+
 std::string debug_objects(uint32_t lo, uint32_t hi)
 {
     struct U {

@@ -963,6 +963,17 @@ std::string debug(const std::vector<std::string>& a)
         choose((Kind)k, inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{});
         return "chosen";
     }
+    if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
+        std::vector<dbpf::Record> recs;
+        if (!records_from_game(k, recs))
+            return "bem " + hex(k.instance) + " none\n";
+        uint32_t h = 0;
+        for (auto& r : recs)
+            if (r.key.type == kBem)
+                h = fnv(r.data.data(), r.data.size());
+        return "bem " + hex(k.instance) + " " + hex(h) + "\n";
+    }
     if (!a.empty() && a[0] == "list") {
         std::string s;
         for (int k = 0; k < kKinds; k++)
