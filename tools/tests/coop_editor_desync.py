@@ -64,11 +64,17 @@ def wait(cond, secs, step=1.0):
 def mating_call(con, name, until):
     """press the mating-call button and swim to the mate (clicks at it) until `until()`;
     returns (mate seen alive 3 s after the call, reached)"""
-    con.call('coop.pool mate button')
-    time.sleep(1)
-    con.call('click %d %d' % HEART)
-    time.sleep(3)
-    alive = 'alive=1' in mate(con)
+    # after a load the cell hatches (a cinematic, the HUD is hidden and takes no clicks)
+    wait(lambda: 'cine=0' in con.call('coop.pool')['out'], 30)
+    alive = False
+    for _ in range(3):  # a click right as the HUD comes back can be lost: a player clicks again
+        con.call('coop.pool mate button')
+        time.sleep(1)
+        con.call('click %d %d' % HEART)
+        time.sleep(3)
+        alive = 'alive=1' in mate(con)
+        if alive:
+            break
     print(f'  {name} mate 3 s after the call: {mate(con)}')
     for _ in range(25):
         if until():
@@ -100,6 +106,12 @@ def edit_cell(con, name):
     con.call('text ' + name)
     time.sleep(0.5)
     con.call('click %d %d' % DONE)
+
+
+def editor_ui(con):
+    """the editor's interface is up (a stuck editor showed only the creature: 2 UI windows)"""
+    tree = con.call('coop.ui tree 4')['out']
+    return tree.count('Window') > 15
 
 
 def add_legs(con):
@@ -141,12 +153,12 @@ def main():
     ck(st and "ready 380 728 580 768 1 'I'm ready'" in st, "the guest gets the vote with an I'm ready button")
     guest.call('click %d %d' % READY)
     ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens after the vote')
-    time.sleep(4)
-    v = host.call('coop.vote')['out']
-    print('  host:', v.replace('\n', ' | '))
-    ck('vote none' in v, 'no second vote while the host is in the editor')
-    gst = guest.call('coop.uistate')['out']
-    ck('wants to evolve' not in (field(gst, r"world '([^']*)'") or ''), 'the guest is not asked again')
+    second = False
+    for _ in range(8):  # the game asks again while the mate is near (a race: not every time)
+        second |= 'vote active' in host.call('coop.vote')['out']
+        time.sleep(1)
+    print('  host:', host.call('coop.vote')['out'].replace('\n', ' | '))
+    ck(not second, 'no second vote while the host is in the editor')
     shot(host, 'editor_desync_cell_editor.png')
 
     # 3. the host saves a new cell: the guest gets it with its records and keeps running
@@ -206,6 +218,9 @@ def main():
         shot(host, 'editor_desync_legs.png')
         host.call('click %d %d' % DONE)
         if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote opened it)
+            ui = wait(lambda: editor_ui(guest), 40)
+            shot(guest, 'editor_desync_guest_editor.png')
+            ck(ui, "the guest's own editor shows its interface (parts, done, cancel)")
             time.sleep(2)
             guest.call('click %d %d' % CANCEL)
         ck(wait(lambda: 'Creature' in mode(host), 40), 'the host is back in the Creature stage')

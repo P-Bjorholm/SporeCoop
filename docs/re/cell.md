@@ -371,6 +371,49 @@ What DamageCell does around a bite besides the hp, and how the co-op path replay
 * The jump tables of 0xE57710 and 0xE57930 (bytes at 0xE577AC / 0xE579C8, index ai.type − 0x1003)
   are `00 00 00 01 00 00 00 02 00 00 00 00`: only ai.type 0x1006 reaches the call.
 
+## 10. The mating call and the cell editor (2026-10-24, GOG 2024 addresses, Ghidra `out/ghidra-2024`)
+
+How a player gets into the cell editor (the real path, driven by `tools/tests/coop_editor_desync.py`;
+addresses of the **GOG 2024 build dc04aee5**, not the GOG 2016 ones above):
+
+1. **The button**: collecting a part token runs **0xE5D7B0** (thiscall, from the collision code
+   0xE7B630; also a debug key in 0xE81120): `S+0x34+4*part = 2` (unlocked), mission bookkeeping
+   (`S+0x90..+0x9C`), the first time the callout `Callout_CLG_Mate`, and **`S+0x68 = S+0x69 = 1`**.
+   `S+0x69` = the mating-call button is shown (a heart button at the bottom centre of the HUD,
+   1440x1080: 721, 1018). `coop.pool mate button` sets it for tests (✔ runtime: the button appears).
+2. **The call**: the button spawns the mate, **0xE760F0** ✔: if `G+0x51D4` (the mate's pool index)
+   holds no live cell, `CreateCellObject` at `mateSpawnDistance` (cell globals `+0x110`, from
+   GetGlobalsData; the mate came 12-16 m away at runtime) with resource 0xE4CC90(0x1A, ...), index into
+   `G+0x51D4`; the avatar plays animation 0x43. Effects `cell_call_avatar` / `cell_call_mate`
+   (0xE63BF0). Runtime: the mate swims towards the avatar; the HUD shows a ring with a heart towards it.
+3. **The meeting**: SimUpdate 0xE7F3A0 calls **0xE78D10** every step: avatar and mate alive and closer
+   than `mateTriggerDistance` (globals `+0x10C`, 4.0) → **0xE75EA0**: both not dying (`+0x112`,
+   `+0x113`), not locked (`+0x188`), **the same level** (0xE51670 on both; a co-op respawn as a small
+   cell, or food added by hand, can leave them at different levels and nothing happens) → mating
+   animations 0x41 / 0x42 and a timed event (pool object 0x2D) → ... → event **0x1E** in the event
+   dispatcher 0xE7E130 → **0xE72AC0** → **0xE59800(0)**.
+4. **The request**: 0xE59800(int debug) computes the editor id from the level table
+   (`DAT_01483b54 + 7*i`, by `S+0x1C`), the DNA to spend (0xE51410() - `S+0x2C`) and calls
+   **0xE84600**: `new EditorRequest` (0x9C bytes), `+0xC` editor id, `+0x10..+0x18` = `S+0x10` (the
+   player's cell model), `+0x90 = 0x1100000`, `+0x60` a float from 0xE51700, then
+   `Editors::EditorRequest::Submit` 0x5A92C0 and message 0x90A03FDF. With `G+0x410C` set and
+   debug = 0 nothing is submitted.
+5. **Asked twice**: while the mate is still within reach the game asks again: with the co-op vote
+   holding the first request, a second Submit came 13 ms after the vote ended (before the held
+   request reached the game) and started a second vote that ran on in the editor. The mod drops
+   requests while one is held or within 5 s of one reaching the game (`coop.vote` prints "repeated
+   requests dropped").
+6. **Back from the editor**: handler of message 0x30C11C7 (GOG 2016 0xE809A0, §4.2 of creations.md):
+   `S+0x10` = the new cell, RebuildLevel (the cell hatches again; a guest's mirrors are rebuilt by the
+   sync). The new cell is a new creation in My Creations (instance ids per profile: the host's and the
+   guest's first own cells were both 0x290742F6 in the test profiles).
+
+On a guest the mate is a local cell the host does not have: the sync's stray-cell purge removed it
+within a second, so a guest never reached its mate (report 2026-10-24: "the guest could not call a
+mate himself"). The purge now spares `G+0x51D4`. A guest's own cell editor opens without a vote
+(9.3: evolving inside a stage does not move the others) and its new cell goes to the others as its
+own creation.
+
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC
   with `+0x16C=1` stays passive and nothing resets it.

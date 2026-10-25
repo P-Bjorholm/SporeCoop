@@ -346,3 +346,49 @@ blocking errors still stop "done". Not done: native evolution data of the reques
 0x64AA168`, `+0x94` = object from `0xF67D40()+0x10E8`, `+0x70` vector of 4 values from
 `+0x10FC..+0x1108`, flags +0x34..+0x3D, see 0xD42F2C) is not filled by the mod's request; done and
 cancel work without it.
+
+## 8. After an editor: the new creation reaches the others (✔ runtime 2026-10-24, GOG 2024, lane 5)
+
+What an editor leaves behind, seen with two games (`tools/tests/coop_editor_desync.py`):
+
+* Every editor that saves makes a **new key** in My Creations (cell 0x4DA56CA5 premade → 0x29073D26,
+  creature 0x2907406F → 0x29074073). The record is in the game's EditorSaves database at once, but
+  **our copy of `EditorSaves.package` (read from disk every 10 s) lagged**: the first bundle of the
+  new creation went out with **0 records** ("creations: player 0 cell = 29073D26 (0 records)"), the
+  one with records 4 s later. A guest that got the key alone:
+  * Cell: forced the unknown model key into `CreateCellObject` for the host's puppet and **faulted at
+    0xE83EC8** (data 0x9C, from CreateCellObject+0x4B9 → ... → 0xE67A41), then the main thread hung
+    (watchdog after 30 s). Twice of twice on lane 5 with the old code.
+  * Creature: no species for the key, so the host's puppet took the guest's own avatar body until the
+    next bundle.
+  Since then a creation the game finds in the EditorSaves database (`FindRecord` returns that
+  database) is sent only with its records: the mod reads the file again at once and otherwise waits
+  for the next round (`coop.creations` prints `waits_on_disk`). A receiver does not use a bundle
+  without records whose key it does not know (`unusable`).
+* At the **start of the Creature stage** the game is in Creature mode (0x1654C01) with the creature
+  made from the cell (a creation saved already, legless) **before** the first creature editor: the
+  host's world goes to the guests with that creature, the editor request comes from inside the stage
+  (the vote), and the world goes again when the host is back ("evolved the species").
+* A guest **without own creations** plays the host world's species (its own creature = its avatar's
+  key, sent without records: everybody knows the host's creations). The vote opens its own editor on
+  the host's pre-editor creature; cancel keeps the world's species, which after the reload is the
+  host's evolved one.
+* The host's creations are registered under their original key on guests at priority 2000. A newer
+  version under the same key replaces the older package now (two packages at the same priority could
+  keep answering with the old one; not seen, editors make new keys); `world_swaps` counts it.
+* A bundle applied again (the same version after a rejoin) reuses the package registered for it:
+  writing the file again fails while the game has it open, and the creation was then not applied at
+  all.
+* After the player's **own cell editor** the new cell becomes the own one (as creatures since 7):
+  a guest with other cells in My Creations otherwise got its newest older cell back with a level
+  rebuild.
+* **The guest's own editor right after a world load came up without its interface**: at the start
+  of the Creature stage the host's world reaches the guest a few seconds before the vote ends; with
+  a quick "I'm ready" the guest's own editor opened 0.5-5 s after the load: the creature and the
+  background showed, but no palette and no buttons (`coop.ui tree 4`: 2-15 windows instead of 34),
+  cancel did nothing and the guest stayed in it (2 of 2 test runs). After that load the planet showed
+  6-15 s after the avatar appeared (black screen before). The mod now opens the own editor once the
+  avatar has played for 15 s and no cinematic or caption is up (`world::cinematic_playing`,
+  cCinematicManager +0x2C), at most 90 s after the vote. An editor opened by `coop.vote editor` while
+  the host's stage-intro caption ("It is the beginning of a new day...") waited for its check stayed
+  black after cancel too.

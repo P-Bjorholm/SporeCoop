@@ -342,7 +342,6 @@ static void unregister_package(void* db)
         vcall<bool>(rm, 0x50 / 4, false, db, 0);
 }
 
-// a bundle arrived (or is our own): store it here under a collision-free instance and register it
 // Packages we registered, by file: a bundle applied again (the same version after a rejoin) uses
 // its registered package. Writing the file again failed while the game had it open, and the
 // creation was then not applied at all (the partner's puppet fell back to the own avatar's body).

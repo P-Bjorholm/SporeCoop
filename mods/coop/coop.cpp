@@ -969,6 +969,65 @@ std::string make_report(const char* reason)
     return path;
 }
 
+// The guest's own editor after the vote opens once its stage has settled. At the start of the
+// Creature stage the world arrives a few seconds before the vote ends; an editor opened 4 s after
+// that load came up without its interface (no parts, no buttons, cancel did nothing) and the guest
+// was stuck in it (coop_editor_desync.py, 2026-10-24, also with 5 s of waiting). The planet showed
+// 6-15 s after the avatar appeared (the screen stayed black before). It waits until the avatar has
+// played for 15 s and no cinematic or caption is up, at most 90 s.
+uint32_t g_own_editor_due = 0;
+double g_own_editor_due_at = 0;
+bool g_own_editor_queued = false;
+unsigned g_own_editor_waits; // tests: frames the own editor waited for the stage to settle
+void* g_settle_avatar = nullptr;
+double g_settle_since = 0;
+bool pause_ui_up();
+
+void own_editor_tick(double now)
+{
+    void* av = g_mode == modes::kCreature ? game::avatar() : nullptr;
+    if (av != g_settle_avatar) {
+        g_settle_avatar = av;
+        g_settle_since = now;
+    }
+    if (!g_own_editor_due || g_own_editor_queued)
+        return;
+    if (now - g_own_editor_due_at > 90.0 || (g_mode != modes::kCreature && stage_mode(g_mode))) {
+        LOG("own editor not opened: the stage did not settle (or was left)");
+        feed("evolution: your editor did not open; evolve at your nest later");
+        g_own_editor_due = 0;
+        return;
+    }
+    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending()) {
+        g_own_editor_waits++;
+        return;
+    }
+    g_own_editor_queued = true;
+    H->run_outside_frame( // editors create D3D resources: outside the frame
+        [](void*) {
+            g_own_editor_queued = false;
+            uint32_t id = g_own_editor_due;
+            if (!id)
+                return;
+            // the player may have left the stage since (pause menu "Exit to Main Menu")
+            if (game::mode_id() != modes::kCreature || mode_switch_pending())
+                return; // own_editor_tick decides again
+            // an editor opened under the pause menu or its "save your game?" boxes: a click on
+            // "Don't Save" right after left the guest in a black editor for good
+            if (pause_ui_up()) {
+                LOG("own editor not opened: the pause menu is open");
+                feed("evolution: your editor did not open (pause menu); evolve at your nest later");
+                g_own_editor_due = 0;
+                return;
+            }
+            g_own_editor_due = 0;
+            bool ok = open_own_editor(id);
+            LOG("own editor %s (%.1f s after the vote)", ok ? "opened" : "not opened",
+                H->time_seconds() - g_own_editor_due_at);
+        },
+        nullptr);
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
@@ -980,6 +1039,7 @@ void on_frame(void*, int, void*)
     lobby_tick(now);
     vote_tick(now);
     submit_tick(now);
+    own_editor_tick(now);
     coop_ui::tick();
     menu_tick(now);
     if (g_sess.role() == net::Role::Host)
@@ -1456,26 +1516,11 @@ void setup_callbacks()
             bool started = on && !g_vote.active, ended = !on && g_vote.active;
             if (on)
                 g_vote.editor = editor;
-            // the evolution starts: everybody evolves its own creature in its own editor
-            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local)
-                H->run_outside_frame( // editors create D3D resources: outside the frame
-                    [](void* id) {
-                        // the player may have left the stage since (pause menu "Exit to Main Menu")
-                        if (game::mode_id() != modes::kCreature || mode_switch_pending()) {
-                            LOG("own editor not opened: the game left the creature stage");
-                            return;
-                        }
-                        // an editor opened under the pause menu or its "save your game?" boxes: a
-                        // click on "Don't Save" right after left the guest in a black editor for good
-                        if (pause_ui_up()) {
-                            LOG("own editor not opened: the pause menu is open");
-                            feed("evolution: your editor did not open (pause menu); evolve at your nest later");
-                            return;
-                        }
-                        bool ok = open_own_editor((uint32_t)(uintptr_t)id);
-                        LOG("own editor %s", ok ? "opened" : "not opened");
-                    },
-                    (void*)(uintptr_t)g_vote.editor);
+            // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
+            if (ended && g_vote.editor && g_mode == modes::kCreature && g_local) {
+                g_own_editor_due = g_vote.editor;
+                g_own_editor_due_at = H->time_seconds();
+            }
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;
@@ -2533,9 +2578,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
-                           "quit held for a save %u, repeated requests dropped %u",
+                           "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
-                           g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated);
+                           g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
+                           g_own_editor_due ? 1 : 0, g_own_editor_waits);
                        return 0;
                    },
                    nullptr, MT);
