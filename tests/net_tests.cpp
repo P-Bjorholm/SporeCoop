@@ -125,6 +125,57 @@ static void test_dbpf()
     }
     printf("  %d creatures, %d names\n", bems, names);
     CHECK(bems > 0 && names >= bems);
+    // Pollination.package is a DBBF (64-bit offsets): read piece by piece, as creations.cpp does
+    std::ifstream pf(path.substr(0, path.size() - strlen("EditorSaves.package")) + "Pollination.package", std::ios::binary);
+    if (!pf) {
+        printf("  (no test profile Pollination.package)\n");
+        return;
+    }
+    std::vector<uint8_t> pol((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
+    dbpf::IndexInfo info;
+    CHECK(dbpf::index_info(pol.data(), pol.size(), info) && info.big && info.offset + info.size <= pol.size());
+    std::vector<dbpf::Entry> all;
+    CHECK(dbpf::parse_index(pol.data() + info.offset, info.size, info, all) && all.size() == info.count);
+    int crts = 0;
+    for (auto& en : all) {
+        std::vector<uint8_t> d;
+        if (en.key.type == 0x2B978C46 && en.offset + en.size <= pol.size() && dbpf::decode(en, pol.data() + en.offset, d) &&
+            std::string(d.begin(), d.end()).find("sporemodel") != std::string::npos)
+            crts++;
+    }
+    printf("  Pollination: %zu entries, %d creature models\n", all.size(), crts);
+    CHECK(crts > 0);
+    dbpf::Package pp;
+    CHECK(pp.load(pol) && pp.entries().size() == all.size());
+}
+
+static void test_dbbf()
+{
+    printf("dbpf: a DBBF package (64-bit offsets)\n");
+    // the layout of DBBF: magic, the index offset as u64 at 0x38, entries with a u64 offset
+    std::vector<uint8_t> f(96, 0);
+    memcpy(f.data(), "DBBF", 4);
+    std::vector<uint8_t> data = {5, 6, 7};
+    size_t doff = f.size();
+    f.insert(f.end(), data.begin(), data.end());
+    size_t ioff = f.size();
+    auto put = [&](uint64_t v, int n) {
+        for (int i = 0; i < n; i++)
+            f.push_back((uint8_t)(v >> (8 * i)));
+    };
+    put(0, 4); // flags
+    put(0x2B978C46, 4); put(0x40626200, 4); put(0x12345678, 4);
+    put(doff, 8); put(3 | 0x80000000u, 4); put(3, 4); put(0, 2); put(1, 2);
+    uint32_t isize = (uint32_t)(f.size() - ioff);
+    f[0x24] = 1;
+    memcpy(&f[0x28], &isize, 4); // u64 index size at 0x28 (a DBPF has it at 0x2C)
+    uint64_t io = ioff;
+    memcpy(&f[0x38], &io, 8);
+    dbpf::Package pk;
+    CHECK(pk.load(f) && pk.entries().size() == 1);
+    std::vector<uint8_t> out;
+    const dbpf::Entry* e = pk.find({0x12345678, 0x2B978C46, 0x40626200});
+    CHECK(e && e->offset == doff && pk.read(*e, out) && out == data);
 }
 
 static void test_reliability()
@@ -649,6 +700,7 @@ int main()
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
+    test_dbbf();
     test_refpack_untrusted();
     test_updater();
     test_reliability();

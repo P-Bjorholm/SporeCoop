@@ -450,3 +450,19 @@ Fixed entries move to the commit message (and a test).
   Regression test: `tools/tests/coop_creature_death.py` (suite `creature_death`).
 * Next: the player's `mods\logs\sporekit.log` (a crash inside the mod is logged with its module and
   address; "exception ... calls:"), the game build (GOG / Steam) and Windows or Linux.
+
+## Creature: "he is my species from my view", "I don't see his changes" (player report 2026-10-25)
+
+* Not reproduced on 0.7.2.2 (lane 4, `coop_creature_desync.py`, the players' order: editors, both
+  games crash, the host loads its save, the guest joins again; the guest with and without own
+  creations): the host showed the guest's edited creature after the editors, after a rejoin and
+  after the reload. Two 0.7.2.1 causes fit the report and are fixed in 0.7.2.2: a rejoin of the
+  guest into a host that kept running did not apply the guest's creation again (writing its
+  package failed: the host's puppet of the guest fell back to the host's own species, `modes.cpp`
+  `creature_spawn`), and a new creation sent before it was on disk went out without its records
+  (unknown on the host: the same fallback until the next send).
+* ~ The guest's crash at 14:13 (the host's crash ended the session; fixed on fix/crash-reports-0725)
+  may have come while the guest was in its own editor: an edit not saved by "done" is lost, and a
+  guest without own creations then plays the world's species again, which the host shows as its own.
+* Still so: a puppet whose player's creation cannot be used here (no records and an unknown key)
+  is built from the local avatar's species, without any notice.

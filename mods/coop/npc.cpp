@@ -9,8 +9,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "creations.h"
 #include "driver.h"
 #include "game.h"
+#include "sporekit_game.hpp"
 
 namespace npc {
 
@@ -49,6 +51,7 @@ struct Proxy {
     float health = 0, max_health = 0;
     bool killed = false;
     int fail = 0; // 1 species, 2 herd, 3 create
+    double last_rx = 0; // local time of its last spawn / state from the host
     net::SnapshotBuffer buf;
     drive::State drv;
 };
@@ -64,6 +67,8 @@ static uint32_t g_proxies_in_nest = 0;
 static uint64_t herd_key(const game::Key& k) { return ((uint64_t)k.group << 32) | k.instance; }
 static std::vector<void*> g_kill;          // local NPCs to remove (guest)
 static uint32_t g_proxy_lost = 0;
+static double g_last_states_rx = -100; // guest: the last NPC state batch from the host
+static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
@@ -295,7 +300,10 @@ static void destroy_proxy(uint16_t id)
         return;
     if (it->second.c) {
         g_proxy_of.erase(it->second.c);
-        game::destroy_creature(it->second.c);
+        if (game::is_destroyed(it->second.c)) // the game removed it already: only forget it
+            game::puppet_unregister(it->second.c);
+        else
+            game::destroy_creature(it->second.c);
     }
     g_proxies.erase(it);
 }
@@ -324,6 +332,21 @@ static void guest_tick(double now)
     }
     if (now - s_av_t0 < 1.0)
         return;
+    // A proxy the host stopped sending states for while it sends them for the others is not an
+    // NPC of the host any more (its id belongs to a world the host has left: before 2026-10-25 the
+    // host renumbered its NPCs after its editor or a load without a despawn, and the guest kept
+    // the old ones for good: a second, living copy of every NPC, a kill of the host's left it
+    // standing). A host that stands still (pause menu) sends no states at all: nothing is dropped.
+    if (now - g_last_states_rx < 0.5) {
+        std::vector<uint16_t> stale;
+        for (auto& [id, px] : g_proxies)
+            if (now - px.last_rx > 5.0)
+                stale.push_back(id);
+        for (uint16_t id : stale) {
+            destroy_proxy(id);
+            g_stale_dropped++;
+        }
+    }
     for (auto& [id, px] : g_proxies) {
         net::PlayerState s;
         if (!px.buf.sample(now, s))
@@ -351,6 +374,10 @@ static void guest_tick(double now)
                     fail = 3;
             }
             if (fail) {
+                // a species of the host's world this game lacks (the host's own creations and its
+                // Sporepedia downloads populate its planet): the host sends it, the next try works
+                if (fail == 1)
+                    creations::want_species({px.key.instance, px.key.type, px.key.group});
                 if (px.fail != fail)
                     H->log(M, SK_WARN, "npc %u: proxy spawn failed (%s) key=%08X/%08X/%08X", id,
                            fail == 1 ? "unknown species" : fail == 2 ? "no herd" : "Create failed", px.key.instance,
@@ -413,6 +440,13 @@ void tick(double now)
 
 void on_world_change()
 {
+    // the host's NPCs of the old world are gone and the new ones get new ids: the guests drop the
+    // old ones (they mirrored them for good before 2026-10-25: a living copy of every NPC next to
+    // the new one after each editor or load of the host)
+    if (is_host())
+        for (auto& [g, ks] : g_known)
+            for (uint16_t id : ks)
+                send_despawn(g, id);
     for (auto& [id, px] : g_proxies) {
         if (px.c)
             game::puppet_unregister(px.c);
@@ -470,6 +504,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         s.health = sp.health;
         px.buf.delay = 0.15;
         px.buf.push(s, now);
+        px.last_rx = now;
         break;
     }
     case net::MSG_NPC_DESPAWN: {
@@ -499,7 +534,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             s.health = st.health;
             s.flags = st.flags;
             it->second.buf.push(s, now);
+            it->second.last_rx = now;
         }
+        g_last_states_rx = now;
         break;
     }
     case net::MSG_DAMAGE_REQ: { // host: a guest hit one of our NPCs
@@ -617,9 +654,9 @@ std::string status()
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
-                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u\n",
+                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
-                 g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size());
+                 g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped);
     }
     return b;
 }
@@ -646,7 +683,7 @@ std::string list()
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
             snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s\n", hn.id, c,
                      game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
-                     p.x, p.y, p.z, "");
+                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "");
             out += b;
         }
     } else {
@@ -713,6 +750,31 @@ int proxy_id_of_ai(void* ai)
         if (c && *(void**)((uint8_t*)c + 0xB4C) == ai) // cCreatureAnimal +0xB4C: the AI block
             return id;
     return -1;
+}
+
+// host: the pack recruits NPC #id, as the end of a social game with an ally does (tests)
+bool debug_recruit(uint16_t id)
+{
+    auto it = g_host_by_id.find(id);
+    if (!is_host() || it == g_host_by_id.end() || !g_seen_now.count(it->second))
+        return false;
+    static uintptr_t get = H->sym("SporeCoop::cPosseSimulator_Get"), add = H->sym("SporeCoop::cPosseSimulator_AddMember");
+    void* posse = get && add ? skg::cdecl_call<void*>(get) : nullptr;
+    return posse && skg::thiscall<bool>(add, posse, it->second);
+}
+
+// host: an NPC of the given species (crt instance) a few metres from the avatar, in a herd of its
+// own (tests: a species only the host's profile has, like a creation of its My Creations)
+void* debug_spawn(uint32_t instance)
+{
+    void* av = game::avatar();
+    void* sp = av ? game::species_by_key({instance, 0x2B978C46u, 0x40626200u}) : nullptr;
+    if (!sp)
+        return nullptr;
+    net::Vec3 p = game::position(av);
+    p.x += 4.f;
+    void* herd = game::create_herd(p, sp);
+    return herd ? game::spawn_creature(p, sp, herd) : nullptr;
 }
 
 bool debug_host_hit(uint16_t id, float damage)

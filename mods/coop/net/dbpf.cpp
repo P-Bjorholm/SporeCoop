@@ -14,44 +14,82 @@ static void put32(std::vector<uint8_t>& v, size_t at, uint32_t x)
     v[at + 3] = x >> 24;
 }
 
-bool Package::load(const std::vector<uint8_t>& file)
+static uint64_t le64(const uint8_t* p) { return le32(p) | (uint64_t)le32(p + 4) << 32; }
+
+bool index_info(const uint8_t* f, size_t n, IndexInfo& out)
 {
-    file_ = file;
-    entries_.clear();
-    const uint8_t* f = file_.data();
-    size_t n = file_.size();
-    if (n < 96 || memcmp(f, "DBPF", 4) != 0)
+    if (n < 96)
         return false;
-    uint32_t count = le32(f + 0x24), isize = le32(f + 0x2C), ioff = le32(f + 0x40);
-    if (!ioff)
-        ioff = le32(f + 0x28);
-    if ((size_t)ioff + isize > n || isize < 4)
+    out.count = le32(f + 0x24);
+    out.size = le32(f + 0x2C);
+    if (memcmp(f, "DBPF", 4) == 0) {
+        out.big = false;
+        out.offset = le32(f + 0x40);
+        if (!out.offset)
+            out.offset = le32(f + 0x28);
+    } else if (memcmp(f, "DBBF", 4) == 0) { // 64-bit offsets (Pollination.package, docs/re/creations.md 1.2)
+        out.big = true;
+        out.size = (uint32_t)le64(f + 0x28); // u64 index size at 0x28, u64 index offset at 0x38
+        out.offset = le64(f + 0x38);
+    } else
         return false;
-    const uint8_t* p = f + ioff;
-    const uint8_t* end = p + isize;
+    return out.size >= 4;
+}
+
+bool parse_index(const uint8_t* p, size_t n, const IndexInfo& info, std::vector<Entry>& out)
+{
+    const uint8_t* end = p + n;
+    if (n < 4)
+        return false;
     uint32_t flags = le32(p);
     p += 4;
     uint32_t ft = 0, fg = 0;
-    if (flags & 1) { ft = le32(p); p += 4; }
-    if (flags & 2) { fg = le32(p); p += 4; }
+    if (flags & 1) { if (p + 4 > end) return false; ft = le32(p); p += 4; }
+    if (flags & 2) { if (p + 4 > end) return false; fg = le32(p); p += 4; }
     if (flags & 4) p += 4;
-    for (uint32_t i = 0; i < count; i++) {
-        size_t need = (flags & 1 ? 0 : 4) + (flags & 2 ? 0 : 4) + 4 + 12 + 4;
+    size_t off_size = info.big ? 8 : 4;
+    for (uint32_t i = 0; i < info.count; i++) {
+        size_t need = (flags & 1 ? 0 : 4) + (flags & 2 ? 0 : 4) + 4 + off_size + 12;
         if (p + need > end)
             return false;
         Entry e;
         if (flags & 1) e.key.type = ft; else { e.key.type = le32(p); p += 4; }
         if (flags & 2) e.key.group = fg; else { e.key.group = le32(p); p += 4; }
         e.key.instance = le32(p); p += 4;
-        e.offset = le32(p);
-        e.size = le32(p + 4) & 0x7FFFFFFF;
-        e.usize = le32(p + 8);
-        e.refpack = (p[12] | p[13] << 8) == 0xFFFF;
-        p += 16;
-        if ((size_t)e.offset + e.size > n)
-            continue;
-        entries_.push_back(e);
+        e.offset = info.big ? le64(p) : le32(p);
+        p += off_size;
+        e.size = le32(p) & 0x7FFFFFFF;
+        e.usize = le32(p + 4);
+        e.refpack = (p[8] | p[9] << 8) == 0xFFFF;
+        p += 12;
+        out.push_back(e);
     }
+    return true;
+}
+
+bool decode(const Entry& e, const uint8_t* raw, std::vector<uint8_t>& out)
+{
+    if (!e.refpack) {
+        out.assign(raw, raw + e.size);
+        return true;
+    }
+    return refpack_decode(raw, e.size, out) && (e.usize == 0 || out.size() == e.usize);
+}
+
+bool Package::load(const std::vector<uint8_t>& file)
+{
+    file_ = file;
+    entries_.clear();
+    size_t n = file_.size();
+    IndexInfo info;
+    if (!index_info(file_.data(), n, info) || info.offset + info.size > n)
+        return false;
+    std::vector<Entry> all;
+    if (!parse_index(file_.data() + info.offset, info.size, info, all))
+        return false;
+    for (auto& e : all)
+        if (e.offset + e.size <= n)
+            entries_.push_back(e);
     return true;
 }
 
@@ -63,15 +101,7 @@ const Entry* Package::find(const Key& k) const
     return nullptr;
 }
 
-bool Package::read(const Entry& e, std::vector<uint8_t>& out) const
-{
-    const uint8_t* s = file_.data() + e.offset;
-    if (!e.refpack) {
-        out.assign(s, s + e.size);
-        return true;
-    }
-    return refpack_decode(s, e.size, out) && (e.usize == 0 || out.size() == e.usize);
-}
+bool Package::read(const Entry& e, std::vector<uint8_t>& out) const { return decode(e, file_.data() + e.offset, out); }
 
 // EA RefPack (QFS): 2 flag bytes, 3 or 4 byte big-endian size, then control codes
 bool refpack_decode(const uint8_t* src, size_t n, std::vector<uint8_t>& out)

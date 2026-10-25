@@ -92,6 +92,8 @@ void hit(void* c, float damage, int type, void* attacker_creature);          // 
 void set_health(void* c, float hp);
 // impressed by a social game (+0xB58 bit 0x80, set by the social success 0xD9BC40; docs/re/creature.md 8)
 inline bool impressed(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x80) != 0; }
+// a member of the player's pack (+0xB58 bit 0x100, set by AddPosseMember 0xB23430; docs/re/creature.md 11)
+inline bool pack_member(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x100) != 0; }
 inline void set_impressed(void* c, bool on)
 {
     uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);

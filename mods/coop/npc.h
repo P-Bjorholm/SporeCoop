@@ -36,6 +36,8 @@ void on_world_change();                       // world unloaded: forget (not des
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
+bool debug_recruit(uint16_t id);
+void* debug_spawn(uint32_t instance);           // host: an NPC of that crt species next to the avatar                 // host: NPC #id joins the pack (cPosseSimulator AddMember)
 void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();

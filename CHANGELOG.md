@@ -9,6 +9,15 @@
   cell pool the game had already torn down. The mirrors and the partners' cells are now forgotten
   once the Cell stage is left, and the cell console commands answer only in the Cell stage. Test:
   `coop_cell_leave.py` (suite `cell_leave`).
+- **Creature: the guest no longer sees NPCs the host killed standing alive** (player report). After
+  the host's editor or a load the host numbered its creatures anew, and the guest kept the old ones
+  next to the new: a living copy of every creature, which a kill on the host did not touch. The
+  guest now drops them. Test: `coop_creature_desync.py` (suite `creature_desync`).
+- **Creature: the guest sees creatures of species it does not have** (player report: "he doesn't
+  even see my companion"). The host's planet is populated from the host's own creations and
+  Sporepedia downloads too; a guest without them could not build those creatures, also not an
+  ally in the host's pack. The guest now gets them from the host. Both players need this version
+  for it (an older host does not answer, an older guest does not ask).
 - **Creature: no more crash of the host after an evolution, and no copies of the partner's
   creature left in the world** (player report, host crash at 0xB88BEA). After the editor the
   partner's old creature stayed on the planet as a wild creature next to the new one, and the
