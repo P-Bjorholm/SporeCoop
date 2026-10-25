@@ -384,7 +384,7 @@ static void guest_tick(double now)
     std::sort(g_kill.begin(), g_kill.end());
     g_kill.erase(std::unique(g_kill.begin(), g_kill.end()), g_kill.end());
     for (void* c : g_kill)
-        if (c != av && !game::is_puppet(c) && !game::is_destroyed(c)) {
+        if (c != av && !game::is_puppet(c) && !game::is_destroyed(c) && !game::destroy_pending(c)) {
             game::destroy_creature(c);
             g_removed_local++;
         }
@@ -513,7 +513,8 @@ static void remove_saved_strays(double now)
         [](void* o, uint32_t noun, void* u) {
             auto* a = (Acc*)u;
             if (noun != 0x18EB45Eu || o == a->av || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
-                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o))
+                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o) ||
+                game::destroy_pending(o))
                 return true;
             if (own_kind_herd(game::herd_of(o)))
                 a->v.push_back(o);
@@ -570,6 +571,7 @@ static void hatch_tick(double now, bool simulating)
 void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
+    game::destroy_deferred_tick();                      // creatures removed while a cinematic played
     if (game::in_creature_stage())
         remove_saved_strays(now);
     hatch_tick(now, !creatures.empty());
@@ -830,7 +832,7 @@ std::string status()
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played);
     }
-    return b;
+    return b + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc

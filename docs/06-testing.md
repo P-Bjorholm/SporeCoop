@@ -767,7 +767,7 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * `call` with a `thiscall` that writes through a pointer argument: pass a real buffer; a null (or
   a short `s:` string) made `cTimeOfDay` presets fault and the game stopped drawing for good.
 
-## 6.23 coop_creature_social.py is flaky in its ally phase (2026-10-25)
+## 6.24 coop_creature_social.py is flaky in its ally phase (2026-10-25)
 
 * Not in suite.py. Runs on 0.7.2.2, 0.7.2.3 and main (2026-10-25, lanes 2-4): 3 OK, 3 FAIL, on
   every version. The failing runs end the ally phase with the Kooks at (4, 2 impressed, 0): one of
@@ -776,3 +776,22 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   ally card fail together. A test timing (the NPC was still busy or out of the social range),
   not a co-op regression. One run also failed "the pause menu is up: the partner's name tag is not
   drawn" once (not seen again).
+
+## 6.23 Migration to a new nest (coop_migration.py, ~5 min cold)
+
+* `call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:250` on the host: the DNA sync
+  gives the guest the same total (cPlayer +0x10F0), both play CRG_BrainUpgrade1 (a caption: Enter).
+  After the evolution vote and both editors the host plays CRG_SpeciesMigrate; 1000 DNA jumps to
+  CRG_BrainUpgrade4 and blocks the vote for a while.
+* `coop.status` names the running cinematic by its FNV id (docs/re/creature.md 16 lists them); a
+  caption waits for Enter. `call SporeCoop::Player_GetProperty thiscall <player> 0x514A219` is the
+  migration state (2 = goal set), `call SporeCoop::CreatureGame_NestHerdFor cdecl 1` the new nest's
+  herd, `call SporeCoop::Herd_NestPosition thiscall <herd>` its position;
+  `coop.avatar tp x y z` puts the local creature there (walking 380 m is not needed for the claim).
+* The world the host sends right after its editor has the guest's creature as a hatchling (no goal,
+  no claim): the test saves again after the host's caption (`coop.save`, Enter on the box,
+  `coop.share`). `--without-fix` (`coop.npc cinedefer off` on the guest) must fail: 5 faults at
+  0xC6AE60 when the guest claims (4 of 4 runs on lane 6, 2026-10-25).
+* Starting a cinematic by hand on a guest: `call Simulator::cCinematicManager::PlayCinematic
+  thiscall <cm> s:CRG_ClaimNest 1 1 0 0 0` (cm from `call Simulator::cCinematicManager::Get
+  cdecl`), ended with `call SporeCoop::cCinematicManager_EndCinematic thiscall <cm>`.

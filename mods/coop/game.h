@@ -44,7 +44,13 @@ void* species_profile(void* c);
 // without a null check (0xD41A20 -> 0xC046B0, see docs/05-re-notes.md).
 void* avatar_herd();
 void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
+// cGameNounManager::DestroyInstance; a creature (cCreatureAnimal) is kept until the running
+// cinematic is over (it may be one of its actors), destroy_deferred_tick() removes it then
 void destroy_creature(void* c);
+void destroy_deferred_tick(); // once per frame
+void set_destroy_defer(bool on); // tests (off: at once)
+bool destroy_pending(void* c);     // queued by destroy_creature, still there
+std::string destroy_deferred_status();
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // cSpatialObject::SetPosition (vtable 0x38): moves without touching locomotion/animation
 void set_position(void* c, const net::Vec3& pos);

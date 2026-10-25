@@ -34,6 +34,12 @@
   world uses, and the guest shows the host's creatures with them, under numbers of their own, with
   the host's standings. Both players need this version. Test: `coop_nest_species.py` (suite
   `nest_species`).
+- **Creature: the guest no longer crashes when it reaches the new nest after a migration** (player
+  report: "My friend crashed after I completed migration to a new nest", guest crash at 0xC6AE60).
+  The guest's own game claims the new nest too and plays its cinematic with the creatures of that
+  nest; the mod was removing those creatures (on a guest the host owns the creatures) while the
+  cinematic still placed them. Creatures the mod removes during a cinematic now go when it is over.
+  Test: `coop_migration.py` (suite `migration`).
 
 ## [0.7.2.3] - 2026-10-25
 

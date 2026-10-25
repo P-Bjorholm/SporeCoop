@@ -52,8 +52,8 @@ def wait_together(host, guest, t=90):
     t0 = time.time()
     while time.time() - t0 < t:
         hs, gs = host.call('coop.status')['out'], guest.call('coop.status')['out']
-        if 'together 1 1' in hs and re.search(r"remote 1 'Bob' puppet=[1-9A-F]", hs) and \
-                re.search(r"remote 0 '\w+' puppet=[1-9A-F]", gs):
+        if 'together 1 1' in hs and re.search(r"remote 1 'Bob' puppet=(?!00000000)[0-9A-F]{8}", hs) and \
+                re.search(r"remote 0 '\w+' puppet=(?!00000000)[0-9A-F]{8}", gs):
             return True
         time.sleep(2)
     return False

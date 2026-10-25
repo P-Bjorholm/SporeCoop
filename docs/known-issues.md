@@ -3,6 +3,19 @@
 Bugs found and not fixed yet. Each entry: what happens, how to reproduce it, what is known.
 Fixed entries move to the commit message (and a test).
 
+## Creature: a guest that gets the world right after the host's editor stays a hatchling
+
+* After an evolution that starts a migration, the host's game plays CRG_SpeciesMigrate; the world
+  the host sends then is saved during it, with the host's creature still a hatchling (+0xB34 age 0)
+  and the migration at state 1. The guest's game loads that and its creature stays at age 0: its
+  game never sets the goal "Migrate to a new nest" (needs age 1) and never claims a nest (seen 6
+  times on lane 6, 2026-10-25, `coop_migration.py` steps 1-2; a save made after the host's caption
+  has age 1 and state 2). Not looked into: whether the hatchling grows later (another editor, a
+  load) and what the guest sees (size). docs/re/creature.md 16.
+* While a cinematic plays the creatures the mod removes on a guest (its own game's NPCs, proxies,
+  puppets) stay where they are until it is over (the fix for the guest crash at 0xC6AE60): they
+  stand still, a proxy the host replaced in that time can be seen twice for the cinematic.
+
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
 
 * `exception 0xC0000005 at 0x00B12D32` (data 0x2B4) on a guest of a 4-player tribe churn

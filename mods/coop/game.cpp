@@ -16,7 +16,7 @@ static SkMod* M;
 static bool g_ready;
 
 static uintptr_t a_NounGet, a_DestroyInstance, a_CreatureCreate, a_NPCTickAI, a_ModeMgrGet;
-static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd;
+static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd, a_CinematicGet;
 
 typedef void(SK_CDECL* AddEvo_t)(float);
 static AddEvo_t o_AddEvo;
@@ -309,6 +309,7 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
     if (uintptr_t a = H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"))
         H->hook_create(M, (void*)a, (void*)h_AddEvo, (void**)&o_AddEvo);
+    a_CinematicGet = H->sym("Simulator::cCinematicManager::Get");
     a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
     a_GetSpecies = H->sym("Editors::cSpeciesManager::GetSpeciesProfile");
     a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
@@ -396,14 +397,82 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd)
     return cdecl_call<void*>(a_CreatureCreate, &p, species, 1, herd, 0, 0);
 }
 
+// A cinematic of the creature stage (CRG_ClaimNest, CRG_SpeciesMigrate, ...) takes creatures as
+// actors when it starts (the avatar herd's members: the family at the nest) and places them later,
+// in callbacks the cinematic manager runs from a posted message (0x4470A41): an actor "relative to
+// its herd's nest" reads creature +0x1674 (mHerd) -> +0x160. A creature destroyed in between has no
+// herd any more (DestroyInstance -> 0xC083D0 clears +0x1674) and the game faulted at 0xC6AE60
+// (read 0x160, a guest's crash right after the host "completed migration to a new nest": the
+// guest's own game claimed the nest when it arrived there and cast the family the update filter
+// was removing, docs/re/creature.md 16). Creatures we remove while a cinematic plays go when it is
+// over.
+static std::vector<std::pair<void*, void*>> g_destroy_later; // creature, avatar when it was queued
+static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
+static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
+void set_destroy_defer(bool on) { g_destroy_defer = on; }
+
+// the creature world the pointers belong to: the noun manager's avatar (it stays through the
+// editors, a load or a stage change replaces it)
+static void* world_token()
+{
+    void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
+    return nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+}
+
+bool destroy_pending(void* c)
+{
+    for (auto& d : g_destroy_later)
+        if (d.first == c)
+            return true;
+    return false;
+}
+
+static bool cinematic_running()
+{
+    void* cm = a_CinematicGet ? cdecl_call<void*>(a_CinematicGet) : nullptr;
+    return cm && field<uint32_t>(cm, 0x2C) != 0; // cCinematicManager state: 0 none, 2 playing
+}
+
 void destroy_creature(void* c)
 {
     if (!g_ready || !c)
         return;
     puppet_unregister(c); // also used for UFOs and other cGameData puppets
+    if (g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running()) {
+        if (destroy_pending(c))
+            return;
+        g_destroy_later.push_back({c, world_token()});
+        g_destroys_deferred++;
+        return;
+    }
     void* nm = cdecl_call<void*>(a_NounGet);
     if (nm)
         thiscall<void>(a_DestroyInstance, nm, c);
+}
+
+void destroy_deferred_tick()
+{
+    if (g_destroy_later.empty() || cinematic_running())
+        return;
+    auto later = std::move(g_destroy_later);
+    g_destroy_later.clear();
+    void* world = world_token();
+    void* nm = cdecl_call<void*>(a_NounGet);
+    for (auto& [c, queued_in] : later) {
+        // another world since (a load, the stage left): the pointer may be another object now
+        if (queued_in != world || !creature_listed(c) || !nm)
+            continue;
+        thiscall<void>(a_DestroyInstance, nm, c);
+        g_destroys_late++;
+    }
+}
+
+std::string destroy_deferred_status()
+{
+    char b[120];
+    snprintf(b, sizeof b, "destroys during cinematics: deferred=%u done_after=%u pending=%u", g_destroys_deferred,
+             g_destroys_late, (unsigned)g_destroy_later.size());
+    return b;
 }
 
 static void* spatial(void* c) { return ptr_add<void>(c, kSpatialOff); }
