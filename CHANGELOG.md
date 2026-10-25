@@ -11,6 +11,13 @@
   creature is now removed when the players are back, a partner who comes back into the world
   appears where it is (not between its last position and the planet's centre), and the herd of
   a partner's creature stays under it. Test: `coop_editor_strays.py` (suite `editor_strays`).
+- **Creature: no crash when you attack or kill the creatures a save brought back** (player report,
+  host crash at 0xD48634, three times). A save made while the partner played kept the partner's
+  creature; loaded again after a restart it was a wild creature ("these guys appeared after I
+  loaded save"), and attacking it crashed the game. Such creatures are now removed when a world
+  loads (also from saves you already have), the game no longer crashes on any creature that lacks
+  that data, and the partner's creature no longer leaves a new herd in the world (and in every
+  save) each time it appears. Test: `coop_creature_e84.py` (suite `creature_e84`).
 
 ## [0.7.2.2] - 2026-10-25
 

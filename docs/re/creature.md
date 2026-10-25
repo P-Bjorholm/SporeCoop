@@ -59,6 +59,26 @@ Structures of `cCreatureAnimal` and the NPC sync: [05-re-notes.md](../05-re-note
   ? the meaning of tuning +0x32C.
 * ✔ 0xC0B890: `+0xB34 == 1` (age: 1 = adult ~). 0xC04260 `thiscall(victim, 0)` -> float: the DNA a
   kill of this creature is worth.
+* ✔ (2026-10-25, decompiled GOG 2024) The creature read at 0xD48634 is **not taken from a list**: it
+  is `msg+4` of the message, cast with `0xAC8010(obj, 0x18EB45E)` (vt 0x20 noun id == creature).
+  Path: 0x60B4123 (social win, `{avatar, other, 0}`) or 0xD335362C; for 0xD335362C `msg+0` may be
+  any creature (the avatar check at the top is skipped for it). Then: `other+0xB54` and
+  `(other+0xB54)+0x17C` set, `other+0xB58 & 2` clear (the handler sets it afterwards: one event per
+  creature), species pointer `+0xB20` differs from the avatar's, adult (0xC0B8D0), and for
+  0xD335362C the attacker is the avatar (`(+0xC0)->vt 0x58`) or of an allied species (relation 6)
+  with 0xFEB920 and a timer: then `(+0xE84)->+0x32C`. -1 there keeps the event's flag at 1.
+* ✔ Who posts 0xD335362C: **0xC02B40**, the creature's attack (creature vt 0xB8 at .rdata 0x146A138,
+  `thiscall(attacker, target, a3, a4) ret 0xC`, called by the ability code 0xC1E8B0 at 0xC1F67F with
+  `(target, attacker+0xE8C, 0)`): 0xC20390 does the hit, then
+  `cCreatureModeStrategy::ExecuteAction(Get(), 0xD335362C, {attacker, target, 0})`.
+  `App::cCreatureModeStrategy::Get` 0xD38840 = `mov eax,[0x169E294]`; `ExecuteAction` 0xD39360
+  `thiscall(strategy, id, msg*) ret 8` hands the message to every listener (`+0xBC..+0xC0`, vt
+  0x18), the event handler among them, then handles 0x533535DA / 0x45AB96E / 0x60B4123 / 0x60B4124 /
+  0xD335362C / 0xD3353637 itself. Other posters of 0xD335362C: 0xD35190, 0xD3A5A0. The players'
+  stacks (0xC1F681, 0xC02C5D, 0xD3938E) are exactly this path.
+* ✔ `coop.npc attackmsg <id>` (host) posts that message for the host avatar and host NPC `id`
+  (tests); `coop.npc untuned` / `creatures [species]` list creatures with their +0xE84, herd,
+  archetype; `coop.npc archless` the herds without an archetype (ours).
 
 ## 5. What a player meets that tests did not do (play_creature.py)
 
@@ -322,3 +342,34 @@ Player report (0.7.2.1, GOG 2024, Windows): the host crashed at SporeApp 0xB88BE
   a load as NPCs in herds we cannot tell from the game's (docs/known-issues.md); their homes are on
   the surface now. Each puppet spawn still makes a herd (2 per evolution on the host, empty
   afterwards and saved with the planet).
+
+## 11. Saves keep our creatures (host crash 0xD48634, 2026-10-25)
+
+* ✔ A creature-stage save holds the herds and, with them, their creatures: a host save made while
+  the partner's puppet existed keeps the puppet and its herd (`CreateHerd(.., 0, 0, 0, 0)`:
+  archetype +0x88 = 0, no nest +0x160, not avatar-owned +0x84; target size 0, enabled 0 or 1 as we
+  left them). Every herd of the game has an archetype (137 herds on Scalinus, none without), so
+  "no archetype, no nest, not the avatar's" marks a herd of ours.
+* ✔ Loaded in the same game process (no restart) the puppet did **not** come back (its herds did).
+  Loaded after a restart of the game (the players' "after I loaded save after crash"), it is back
+  as a plain game creature: no tuning (+0xE84 = 0, its herd has no archetype), AI on, flags 0x800,
+  in the last puppet herd, and of **another species** than the partner's (the partner's creation
+  key 0x7C.. is unknown before it joins; runs gave 067CCFEC, 06538DD6, 065CBC7C, 065CBE27, 068058BD,
+  a creature of the planet's species list): "these guys appeared after I loaded save". The host
+  tracks it as an NPC; the first attack on it reaches the handler of section 4 and faults at
+  0xD48634 (`eax=0`, `ecx=esi=` the creature, `edi=-1`, the registers of the players' report).
+* ✔ Each puppet spawn used to make a new herd (`creature_spawn`), never destroyed: a session with
+  rejoins and editors left one per spawn (4 after two rejoins), and every save kept them all.
+* Co-op (fix/creature-e84): the handler's guard (coop.cpp h_StageMsg) also gives the creature of
+  0xD335362C / 0x60B4123 `msg+4` a blank tuning when it has none, whatever it is;
+  `npc.cpp remove_saved_strays` removes, once a second in the creature stage on every machine (also
+  without a session), every creature without tuning in a herd like ours that is not ours (also from
+  saves that hold them already; log line "removed a creature of species .. without tuning");
+  `creature_spawn` reuses a herd like ours of the species (`game::own_herd_for`) instead of a new one.
+  Not done: our creatures are still written into saves (the save is the game's generic
+  `COMSerializer::SaveClassObjects` 0x69FB90 over all objects; no per-object "do not save" flag
+  found), and the empty herds stay (harmless: target 0). Regression: `coop_creature_e84.py`.
+* ? `+0xB54` of a creature (the handler needs it and its `+0x17C` set).
+* ✗ Real input: in the fixture the host's clicks on the restored creature did not make the avatar
+  walk or attack (WASD did move it; key 1 hit nothing at 3-5 m); the test posts the game's attack
+  message instead (`coop.npc attackmsg`).
