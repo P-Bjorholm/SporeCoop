@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Creature stage: the species migrates to a new nest, both players claim it (a player report,
 2026-10-25, 0.7.2.3: "My friend crashed after I completed migration to a new nest"; the guest's
-game faulted at SporeApp 0xC6AE60 reading 0x160, docs/re/creature.md 13).
+game faulted at SporeApp 0xC6AE60 reading 0x160, docs/re/creature.md 16).
 
 1. The pack earns enough DNA for a bigger brain: the host gets it (AddEvolutionPoints), the mod
    gives the guest the same total. The evolution vote, both players leave their editors: the host's
@@ -175,6 +175,7 @@ def main():
     # (the world sent after the host's editor was saved during CRG_SpeciesMigrate: the guest's
     # creature is still the hatchling, age 0, and its game never sets the goal; a save made now has
     # the grown-up creature and the goal, like a rejoin after the caption)
+    print(f'   guest before the second world: migration state {migration(guest)}')
     print('  ', host.call('coop.save')['out'].strip())
     close_boxes(host, 10)
     print('  ', host.call('coop.share')['out'].strip())

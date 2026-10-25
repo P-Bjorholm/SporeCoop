@@ -603,3 +603,56 @@ allies! You can heal at their nest or add them to your pack!" (fix/nest-species,
   host creation (the fixture planet has Maxis species only; the test's NPC comes from `coop.npc
   spawn`), the Tribe and later stages with such species, a downloaded Sporepedia creation under a
   colliding key (ids from the server: not expected to collide).
+
+## 16. Migration to a new nest, cinematics and their actors (guest crash 0xC6AE60, 2026-10-25)
+
+Player report (0.7.2.3, GOG 2024, Windows): "My friend crashed after I completed migration to a new
+nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`. Addresses GOG
+2024, static analysis in the private Ghidra project, runtime on lane 6 (`coop_migration.py`).
+
+* ✔ 0xC6AE60 `SporeCoop::Herd_NestPosition` (herd in ecx) -> `herd+0x160 ? nest+0x34 vt 0x2C : herd+0x34`,
+  no null check: the herd was null. The caller 0xAD2A20 (ret 0xAD2CAC) is the cinematic code that
+  computes an actor's position from a mode: mode 3 = "relative to the nest of the creature's herd"
+  (`NounCast(actor, 0x18EB45E)` -> `+0x1674` getter 0xC046F0 -> 0xC6AE60). It runs in callbacks the
+  cinematic manager executes for the posted message 0x4470A41 (msg+8 -> {+0xC arg, +0x10 fn},
+  handler 0xAE0DB0 at 0xAE1E02, from `MessageSend` 0x88568C): the players' stack scan and the
+  lane's `exc` give the same chain (0x88568C, 0xADB1E7, 0xAD8FF3, 0xAD37F1, 0xAD46A4, 0xAD91D9,
+  0xAD7296, 0xAE1E04). Actor ids of the crashed cinematic on the stack: 0xEFE76209 (the actor
+  placed with mode 3), 0xF772903D.
+* ✔ Cinematic ids are the FNV-1 hashes of the lower-case names (`coop.status` "cinematic X
+  playing"): CRG_SpeciesMigrate FBB3661D, CRG_ClaimNest 63B7060A, CRG_BrainUpgrade1..4
+  F6A4B1E1..E4, CRG_Fade_From_Black_Egg F4F96E43, CRG_LaidEgg B6A1DBE1, CRG_FirstPartUnlock
+  16339295. Started by hand on a guest (`call Simulator::cCinematicManager::PlayCinematic thiscall
+  <cm> s:<name> 1 1 0 0 0`), only CRG_ClaimNest places actors with mode 3 (actor 0xEFE76209 = each
+  member of the avatar's herd, +0x40..+0x44: the avatar, the family); CRG_SpeciesMigrate uses modes
+  7/8, the brain upgrades and the egg mode 0.
+* ✔ The migration (player properties at cPlayer +0x69C, `SporeCoop::Player_GetProperty` 0xC774E0;
+  cPlayer = noun manager +0x74): the total DNA earned in the stage is cPlayer +0x10F0
+  (AddEvolutionPoints adds to it, the co-op DNA sync too, so both players cross the thresholds
+  together). Back from the editor (`CreatureGame_AfterEditor` 0xD40FA0, message 0x4F60B92) a total
+  above the next threshold of tuning 0x4098097 (last one in property 0x54FB6BF) sets 0x514A219 = 1,
+  empties the avatar herd's brain range (+0x120 = 5, +0x124 = -1) and plays CRG_SpeciesMigrate
+  ("Your species is migrating to a new nest. Follow them ..."). The creature is a hatchling
+  (+0xB34 age 0) until that cinematic ends (age 1). `CreatureGame_NestTick` 0xD41510 (every frame):
+  0x514A219 == 1 and age 1 -> the goal "Migrate to a new nest" (25 DNA), state 2; state 2 and the
+  avatar near the nest of `CreatureGame_NestHerdFor(1)` 0xD40AF0 (nearest herd of the player species
+  with a nest whose brain range holds the level 0x169E370) -> `CreatureGame_JoinNestHerd` 0xD40C70
+  (the avatar moves into that herd, the property goes) and CRG_ClaimNest ("You have claimed this
+  nest"). 250 DNA from 0 gave CRG_BrainUpgrade1 and one migration; 1000 gave CRG_BrainUpgrade4
+  ("Get ready to evolve to the tribal stage").
+* ✔ The guest's game has the same migration when the host's world carries it: a save made after
+  the host confirmed the caption has state 2 and the grown-up creature, so the guest's own game
+  claims the nest when the guest arrives there with the host, and plays CRG_ClaimNest with the new
+  nest herd's members as the family. On the guest those members are its own game's creatures; the
+  update filter (npc.cpp, the host owns the NPCs) removes them in the same frame (DestroyInstance ->
+  0xC083D0 removes the creature from its herd and clears +0x1674), and the placement callbacks of
+  the cinematic run after that: 5 faults at 0xC6AE60 on the lane (`coop_migration.py --without-fix`),
+  a crash on Windows. The host's own claim is fine (its game's creatures stay).
+* ~ The world the host sends right after its editor is saved during CRG_SpeciesMigrate: the guest's
+  creature is then the hatchling (age 0, state 1) and its game never sets the goal or claims (seen 3
+  times on lane 6). The players' guest got a later save (a rejoin, a reload) or the timing differs.
+* Fix (fix/migration-crash): `game::destroy_creature` keeps a creature (noun 0x18EB45E) while a
+  cinematic plays (cCinematicManager +0x2C) and removes it when it is over
+  (`destroy_deferred_tick`, from npc.cpp every frame; not after a world change). `coop.npc` prints
+  "destroys during cinematics: deferred= done_after= pending="; `coop.npc cinedefer off` restores
+  the old behaviour for tests. In the test 19-25 removals per claim waited, all gone afterwards.

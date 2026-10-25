@@ -404,7 +404,7 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd)
 // herd any more (DestroyInstance -> 0xC083D0 clears +0x1674) and the game faulted at 0xC6AE60
 // (read 0x160, a guest's crash right after the host "completed migration to a new nest": the
 // guest's own game claimed the nest when it arrived there and cast the family the update filter
-// was removing, docs/re/creature.md 13). Creatures we remove while a cinematic plays go when it is
+// was removing, docs/re/creature.md 16). Creatures we remove while a cinematic plays go when it is
 // over.
 static std::vector<std::pair<void*, void*>> g_destroy_later; // creature, avatar when it was queued
 static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
