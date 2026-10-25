@@ -32,6 +32,10 @@ anything new, write it down in the same change.**
     ended. A new report gets a ticket first (`tools/tickets.py new`); the fix commits name it
     (`BUG-0012` in the message); the ticket is updated when the fix is merged and released
     (`tools/tickets.py release <version>`). Open security problems: `--private` (out/tickets/).
+    **Agents open tickets themselves** for every bug they find on the way (in their own worktree:
+    `tools/tickets.py new`; the number is free across all worktrees), fill in what they saw and
+    how to reproduce it, fix it only when it is part of their task, and list the new tickets in
+    their report.
   * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them), each with its
     ticket id.
   * `docs/06-testing.md`: test tools, fixtures, how long things take, test pitfalls.

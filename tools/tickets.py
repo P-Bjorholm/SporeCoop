@@ -114,9 +114,32 @@ def slug(s):
     return s[:48].rstrip('-') or 'ticket'
 
 
+def worktree_ticket_dirs():
+    """docs/tickets of every worktree of this repository (parallel agents) and the main checkout's
+    out/tickets: a new id must be free in all of them."""
+    dirs = {PUBLIC, PRIVATE}
+    try:
+        out = subprocess.run(['git', '-C', ROOT, 'worktree', 'list', '--porcelain'], capture_output=True,
+                             text=True, check=True).stdout
+        for line in out.splitlines():
+            if line.startswith('worktree '):
+                wt = line[len('worktree '):]
+                dirs.add(os.path.join(wt, 'docs', 'tickets'))
+                dirs.add(os.path.join(wt, 'out', 'tickets'))
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return dirs
+
+
 def next_id():
-    nums = [int(ID_RE.match(t.get('id', '')).group(1)) for t in all_tickets() if ID_RE.match(t.get('id', ''))]
-    return f'BUG-{(max(nums) + 1) if nums else 1:04d}'
+    nums = [0]
+    for d in worktree_ticket_dirs():
+        if os.path.isdir(d):
+            for n in os.listdir(d):
+                m = re.match(r'^BUG-(\d{4})-', n)
+                if m:
+                    nums.append(int(m.group(1)))
+    return f'BUG-{max(nums) + 1:04d}'
 
 
 def index_text():
@@ -130,8 +153,13 @@ def index_text():
 
 
 def cmd_new(a):
+    import fcntl
     d = PRIVATE if a.private else PUBLIC
     os.makedirs(d, exist_ok=True)
+    # one lock for all worktrees: the common git dir is shared by them
+    common = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--git-common-dir'], capture_output=True, text=True).stdout.strip()
+    lock = open(os.path.join(ROOT, common, 'tickets.lock') if common else os.path.join(d, '.lock'), 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
     tid = next_id()
     path = os.path.join(d, f'{tid}-{slug(a.title)}.md')
     with open(path, 'w', encoding='utf-8') as f:

@@ -29,8 +29,11 @@ description: Fix one SporeCoop player bug or crash report on your own branch, wo
    `docs/re/<area>.md` (unnumbered section + anchor),
    `docs/06-testing.md`, `docs/known-issues.md`, a CHANGELOG [Unreleased] line. Append one-line
    findings to `out/findings.md` (main checkout) as you go.
-8. Small commits; never merge or push.
-9. **Report**: what the player hit | root cause (observed vs inferred) | fix | test: FAIL run,
-   PASS runs | other tests | docs touched (anchors) | not verified / fragile | files changed.
+8. Another bug found on the way: `tools/tickets.py new "<title>" --kind ... --stage ...` (open,
+   what you saw, how to reproduce); fix it only when it belongs to your task. Small commits;
+   never merge or push.
+9. **Report**: ticket id | what the player hit | root cause (observed vs inferred) | fix | test:
+   FAIL run, PASS runs | other tests | docs touched (anchors) | new tickets opened | not verified /
+   fragile | files changed.
 
 Details: CLAUDE.md, docs/06-testing.md, docs/10-dev-pipeline.md.
