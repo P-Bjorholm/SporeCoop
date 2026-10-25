@@ -56,6 +56,7 @@ std::string current_world_name(); // the planet file being played, UTF-8 ("Name.
 uint8_t* cell_game();             // cCellGame*
 uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
 bool cell_is_puppet(void* cell);  // a remote player's cell
+void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
 void cell_destroy(uint32_t idx);
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)

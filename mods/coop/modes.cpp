@@ -386,6 +386,15 @@ static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
 
 bool cell_is_puppet(void* c) { return g_cell_ids.count(c) != 0; }
 
+// The Cell stage was left (an editor, the Creature stage, a load): the pool the puppets lived in is
+// rebuilt or gone. Stale entries could match a new cell at the same address and index in the next
+// pool (h_SimUpdate would then pose an NPC as the partner); coop.cpp forgets the puppets themselves.
+void cell_forget()
+{
+    g_cell_ids.clear();
+    g_cell_pose.clear();
+}
+
 void cell_destroy(uint32_t idx)
 {
     // DestroyCell(idx, spawnLoot, float, int): the game's own removal (setting hp 0 does not remove)

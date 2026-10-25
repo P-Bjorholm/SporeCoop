@@ -5,6 +5,7 @@
 #include <string>
 
 #include "game.h"
+#include "modes.h"
 #include "world.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -57,7 +58,8 @@ int c_load(void*, int argc, const char* const* argv, SkOut* out)
 int c_cell(void*, int argc, const char* const* argv, SkOut* out)
 {
     using namespace skg;
-    uint8_t* g = *(uint8_t**)H->sym("Simulator::Cell::cCellGame::_ptr");
+    // cCellGame stays allocated after the Cell stage, its pool does not: only in the stage
+    uint8_t* g = game::mode_id() == modes::kCell ? modes::cell_game() : nullptr;
     if (!g) {
         SAY("not in the cell stage");
         return 1;

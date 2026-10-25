@@ -42,9 +42,13 @@ static uint8_t* avatar() { return G() ? modes::cell_at(avatar_idx()) : nullptr; 
 // the mate the player's mating call brought (0 = none); the editor opens when the avatar reaches it
 static uint32_t mate_idx() { return G() ? F<uint32_t>(G(), 0x51D4) : 0; }
 static void* fg_query() { return G() ? F<void*>(G(), 0x40FC) : nullptr; }
-// cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer)
+// cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer).
+// Only in the Cell stage: cCellGame stays allocated after it (the Creature stage), its pool and
+// what it points to do not (the player report of 2026-10-25, cell_at in the Creature stage).
 static uint8_t* S()
 {
+    if (!in_cell())
+        return nullptr;
     uint8_t* g = G();
     uint8_t* s = g ? F<uint8_t*>(g, 0x5190) : nullptr;
     return s ? s : (a_S ? *(uint8_t**)a_S : nullptr);
@@ -1185,8 +1189,14 @@ static void forget_mirrors()
 
 void tick(double now)
 {
-    if (!in_cell() && !g_mirrors.empty())
+    static bool was_in_cell;
+    bool cell = in_cell();
+    if (!cell && (was_in_cell || !g_mirrors.empty())) {
         forget_mirrors();
+        g_loot_recent.clear();
+        modes::cell_forget(); // the partners' puppets were in the same pool
+    }
+    was_in_cell = cell;
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     if (is_host())
@@ -1571,7 +1581,7 @@ static std::string prey_report(float r, bool rows)
 
 std::string debug(const std::vector<std::string>& a)
 {
-    uint8_t* av = avatar();
+    uint8_t* av = in_cell() ? avatar() : nullptr; // G() outlives the stage, its pool does not
     if (!av)
         return "not in the cell stage";
     if (!a.empty() && a[0] == "why") { // which game code destroyed mirrors on this guest
