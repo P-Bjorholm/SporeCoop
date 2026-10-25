@@ -257,3 +257,68 @@ broken save were kept in `out/vote-load-hang/`, not in git).
   saves only once the player controls something again, and a hook on `Simulator_HandleMessage`
   0xB63610 posts the quit message 0x4715068 again while our save is written (`world::save_busy`),
   as the game itself does while a mode switch is pending (`coop.vote`: "quit held for a save N").
+
+## 10. A herd's land search and its home (host crash 0xB88BEA, 2026-10-25)
+
+Player report (0.7.2.1, GOG 2024, Windows): the host crashed at SporeApp 0xB88BEA reading
+0x18693000 (a page start) inside an NPC's behaviour tree tick. Addresses here are GOG 2024
+(dc04aee5); static analysis in the private Ghidra project, runtime on lane 3.
+
+* ✔ Call chain (the exception report's frame walk): `cCreatureAnimal::Update` 0xC0AF68 ->
+  `NPCTickAI` 0xC09B2E -> `BehaviorTreeTick` 0xD99585 -> `BehaviorTreeTickGeneric` 0xBC953A ->
+  a BT node 0xD7B180 (no static references: a node table entry) -> 0xC6BF60 -> 0xC6B750 ->
+  0xB8BCC0 -> **0xB888C0** (the fault). The other return addresses of the stack scan are stale.
+* ✔ 0xD7B180 (BT node, returns a float score): `herd = creature+0x1674` (getter 0xC046F0), asks
+  the herd's land point (0xC6BF60) and scores 1.0 when the creature can go there.
+* ✔ `cHerd` 0xC6BF60 `fastcall(herd) -> Vector3*`: computes once (flag +0x208) and returns the
+  point at +0x20C. 0xC6B750 `thiscall(herd)`: centre = the nest's position (`+0x160` mpNest, its
+  +0x34 interface vt 0x2C) or, **without a nest, the herd's home +0x34**; radius = +0x108
+  mTerritoryRadius, or 100.0 (0x1582E8C) when it is 0; calls 0xB8BCC0(centre, radius, &out)
+  on the planet model (`cPlanetModel::Get` 0xB3D450). Other callers of 0xC6BF60: 0xCD48F0,
+  0xD818C0; of 0xC6B750: 0xC6CD90 (the herd's flora cache, flag +0x7C, points at +0x68..+0x70).
+* ✔ 0xB8BCC0 `thiscall(planet, const Vector3* centre, float radius, Vector3* out) ret 0xC` =
+  0xB888C0(centre, radius, out, 1.0, 1, 0): the nearest point within `radius` whose cell has the
+  sign bit set (~ land) in the planet's cube map. **0xB888C0** `thiscall(planet, centre, radius,
+  out, step, bool want, uint minRegion) ret 0x18`: the cube map is `planet+0x4C`, 6 faces x 128 x
+  128 dwords (bit 31 the flag, bits 16..25 a region index into the vector +0x50..+0x54); radius
+  capped at 500 (0x14654D4); the face rectangle is `ceil(128 * radius / |centre|)` cells around the
+  centre's cell (0x685410 -> 0x685070 clamps the centre face and spills the rest onto the
+  neighbour faces through 0x684EA0). The spill is only right while it is smaller than a face: for
+  `radius / |centre|` above ~1 (a centre deep inside the planet) the neighbour rectangles start far
+  below row/column 0 and the loop reads before the map (no bounds check).
+* ✔ The crash: centre |c| = 12.3 (direction (0.58, 0.58, 0.58)), radius 100 (the default), so
+  1039 cells; spans on the stack: face 4 0..128 x 0..128, face 1 rows -850..128, face 0 rows
+  -845..128, face 3, face 2 columns -890..128. At face 1 row -233 the read hit an unmapped page
+  53 KB below the map (map at 0x186A0008, a block of its own there). On lane 3 (Wine) the same call
+  with a home 7.3 from the centre (`call 0xC6BF60 thiscall <herd>`) read about 870 KB before the map
+  without a fault (the map sits inside the heap) and returned a land point anyway: the reads past
+  the map happen every time, the fault depends on what lies before it.
+* ✔ Only enabled herds are updated (`cHerd` update 0xC6D960 is called from 0xD45740 only when
+  +0x218 is set, getter 0xC6A1C0); it also runs 0xC6CD90 -> 0xC6B750. Our herds are disabled
+  (`herd_quiet`), so the land point of a herd of ours is computed when an NPC of it runs the BT node
+  above (seen: `land_cached` 1 on a herd whose only member was a left-over puppet), or when the game
+  enables the herd again (seen after the editor: empty herds of ours with `en=1`).
+* ✔ Why a herd of ours had such a home (mod bug, two parts, both seen on lane 3 with
+  `coop.npc herds`):
+  1. `CreateHerd(pos)` stores `pos` as the home (+0x34) and nothing moves it later. The puppet's
+     `pos` came from `SnapshotBuffer::sample`, which blended the first snapshot of a player back in
+     the world with the one before it, sent while the player was out of it (editor, load: position
+     (0,0,0), no PF_IN_WORLD). A puppet made at that moment got a herd home anywhere between the
+     centre and the surface: homes 264, 322, 114, 97, 73, 45, 32 seen (planet radius 505), one or
+     two per evolution.
+  2. When the local player leaves the world (`g_local` null in the editor) `forget_puppets` only
+     unregistered the puppets ("destroyed with the world"), but the creature world stays through the
+     editor: the old puppet stood on as an unregistered creature, an NPC with AI (NPCTickAI no
+     longer skipped it) in its nestless herd, next to the new puppet, mirrored to the guests as an
+     NPC (the players' "these guys look like our species"). Its BT ran the land search around the
+     bad home: the crash.
+* Fix (2026-10-25, fix/creature-ai-crash): the snapshot buffer does not blend across a change of
+  mode, world or PF_IN_WORLD (`net/interp.h`, unit test `test_interp_gap`); puppets the game did
+  not destroy are removed once the player is back in the same world (`coop.cpp` strays,
+  `coop.status` "strays: pending removed"); a puppet's herd keeps its home under the puppet
+  (`game::herd_home`, clears +0x208). Test: `coop_editor_strays.py` (before: homes [322, 73, 97],
+  a left-over puppet per evolution on the host; after: all homes 505, none left over).
+* ? Not done: puppets saved into the host's planet (a save while a partner plays) come back after
+  a load as NPCs in herds we cannot tell from the game's (docs/known-issues.md); their homes are on
+  the surface now. Each puppet spawn still makes a herd (2 per evolution on the host, empty
+  afterwards and saved with the planet).
