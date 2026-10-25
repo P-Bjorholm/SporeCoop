@@ -45,7 +45,8 @@ def files_of(d):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', default='cell', choices=('cell', 'creature'))
-    ap.add_argument('--name', default='Земля', help='the new planet name the host types')
+    ap.add_argument('--name', default='Земля', help='the new planet name the host types (the game drops '
+                    "an apostrophe; '!' and spaces stay)")
     a = ap.parse_args()
     ck = Checks()
     old_planet = 'Scalinus'  # the fixture's game (tools/tests/fixtures.py)
@@ -64,7 +65,6 @@ def main():
             run()
             assert wait_up(inst), f'instance {inst} did not start'
     host, guest = Console(lane.HOST), Console(lane.GUEST)
-    watch(lane.HOST, lane.GUEST)
 
     # the host starts a new game on a free disc of its galaxy (slot 0 is free in this fixture's galaxy)
     t0 = time.time()
@@ -74,6 +74,8 @@ def main():
     if not ck(r.returncode == 0, f'the host started a new {a.stage} game ({time.time() - t0:.0f} s)'):
         shot(host, 'join_new_game_wizard.png')
         return ck.result()
+    # the invariants (freezes, crashes) from here: building a new planet can hold the console longer
+    watch(lane.HOST, lane.GUEST)
     hw = world_of(host)
     ck(hw == a.name + '.spo', f'the host plays the new planet ({hw!r}, typed {a.name!r})')
     slot0 = os.path.join(lane.HOST_DIR, 'Games', 'Game0')
