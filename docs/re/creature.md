@@ -257,3 +257,38 @@ broken save were kept in `out/vote-load-hang/`, not in git).
   saves only once the player controls something again, and a hook on `Simulator_HandleMessage`
   0xB63610 posts the quit message 0x4715068 again while our save is written (`world::save_busy`),
   as the game itself does while a mode switch is pending (`coop.vote`: "quit held for a save N").
+
+## 10. The pack, NPC ids across worlds, NPC species only the host has (2026-10-25)
+
+From the player report "after customization ... he doesn't even see my companion ... he can't eat
+the ones I killed since he still sees them alive" (fix/creature-desync, `coop_creature_desync.py`).
+
+* ✔ The pack: `cPosseSimulator_Get` 0xD53980 (cdecl, no args; vtable 0x147B760) and
+  `cPosseSimulator_AddMember` 0xD542E0 `thiscall(posse, creature) ret 4 -> bool` (GOG 2024). The end
+  of a social game with an ally (0xD9F7A0, session flag `+0x1FC & 0x10`: "recruit") calls them.
+  AddMember calls the noun manager's AddPosseMember 0xB23430: creature `+0xB58 |= 0x100` and a
+  push onto `cGameNounManager +0x5C` (mPosseMembers, begin / end / capacity at +0x5C / +0x60 /
+  +0x64; 0xB1F900 returns its address), then audio, a random name if it has none, the "first
+  posse" hint (message 0x533535DA, `CRG_FirstPosse`) and achievements. ✔ runtime: a Kook made a
+  member this way walks to the host and stays with it; it keeps its own (nest) herd, so the guest
+  mirrors it like any NPC (into its nest herd, not the avatar's), also after the host loads a save
+  with it. `coop.npc recruit <id>` (host) does it for tests; `coop.npc list` marks members `pack`.
+* ✔ The host numbers its NPCs per world: when its avatar changes (back from an editor, a load) every
+  NPC gets a new net id. Before 2026-10-25 the old ids were not despawned and the guest kept every
+  old proxy (no timeout): after one host editor the guest showed 40 NPCs for the host's 20, the old
+  ones standing where they were. A kill on the host killed the new copy only: "he still sees them
+  alive". Now the host despawns them (`npc::on_world_change`) and a guest drops a proxy the host
+  sent no state for in 5 s while it sends states for others (`stale_dropped` in `coop.npc`).
+* ✔ NPC species of the host's planet need not exist on the guest: a creature of the host's own My
+  Creations (a test: `coop.npc spawn 29020CC4`, the fixture's "Judge") was "proxy spawn failed
+  (unknown species)" on a guest without it, never shown (the guest's own copy of the NPC, if its
+  world had one, is removed by the update filter). A world load with such a creature did not fault
+  on the guest. ~ Spore populates planets from the player's own creations and Sporepedia downloads
+  (Pollination.package), so a real host's planet has such species and its allies may be of them.
+  Now the guest asks the host (MSG_CREATION kind 4, id = crt instance), the host reads the records
+  (bem / crt XML + pollen metadata) from the file of the database the game finds the key in
+  (`FindRecord` RM vt 0x30, `GetLocation` db vt 0x28: EditorSaves.package DBPF or
+  Pollination.package DBBF, read piece by piece) and sends them (kind 3); the guest registers them
+  under the same key (priority 2000) and the next proxy try builds the NPC (~60 ms on one PC).
+* ? Not checked: a downloaded Sporepedia creature as the species (the test profiles are offline:
+  their Pollination holds 7 imported XML crt), the Tribe stage mirrors (tribe.cpp) of such species.

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Creature: the guest no longer sees NPCs the host killed standing alive** (player report). After
+  the host's editor or a load the host numbered its creatures anew, and the guest kept the old ones
+  next to the new: a living copy of every creature, which a kill on the host did not touch. The
+  guest now drops them. Test: `coop_creature_desync.py` (suite `creature_desync`).
+- **Creature: the guest sees creatures of species it does not have** (player report: "he doesn't
+  even see my companion"). The host's planet is populated from the host's own creations and
+  Sporepedia downloads too; a guest without them could not build those creatures, also not an
+  ally in the host's pack. The guest now gets them from the host. Both players need this version
+  for it (an older host does not answer, an older guest does not ask).
+
 ## [0.7.2.2] - 2026-10-25
 
 Fixes from a player report (two brothers playing the Cell and the Creature stage). 0.7.2.2 plays
