@@ -54,6 +54,8 @@ void stop(void* c);
 void set_speed(void* c, float speed);
 float scale(void* c);
 float bounding_radius(void* c);
+// the terrain's distance from the planet's centre in the direction of pos (cPlanetModel::GetHeightAt), 0 without a planet
+float ground_radius(const net::Vec3& pos);
 void set_scale(void* c, float s);
 
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.

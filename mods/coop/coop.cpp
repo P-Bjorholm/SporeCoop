@@ -1949,6 +1949,12 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
         g_adapter->mode == modes::kSpace ? nullptr : game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
         std::sqrt(st.pos.x * st.pos.x + st.pos.y * st.pos.y + st.pos.z * st.pos.z), st.rot.x, st.rot.y,
         st.rot.z, st.rot.w, st.vel.x, st.vel.y, st.vel.z, st.health, st.max_health, st.flags);
+    if (g_adapter->mode != modes::kSpace && g_adapter->mode != modes::kCell) {
+        float g = game::ground_radius(st.pos); // tests: the avatar's height above the terrain
+        float r = std::sqrt(st.pos.x * st.pos.x + st.pos.y * st.pos.y + st.pos.z * st.pos.z);
+        if (g > 0)
+            SAY("\nground=%.2f above=%.2f", g, r - g);
+    }
     return 0;
 }
 
@@ -2620,7 +2626,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
     H->command_add(M, "coop.name", "coop.name <nick>", c_name, nullptr, MT);
     H->command_add(M, "coop.say", "coop.say <text> - chat", c_say, nullptr, MT);
-    H->command_add(M, "coop.avatar", "print local avatar state", c_avatar, nullptr, MT);
+    H->command_add(M, "coop.avatar", "print local avatar state (planet stages: ground = terrain radius under it, above = height over it)", c_avatar, nullptr, MT);
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);

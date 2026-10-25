@@ -377,6 +377,16 @@ void set_speed(void* c, float speed) { vcall<void>(spatial(c), 0xC4 / 4, speed, 
 
 float scale(void* c) { return vcall<float>(spatial(c), 0x34 / 4); }       // GetScale
 float bounding_radius(void* c) { return vcall<float>(spatial(c), 0x70 / 4); } // GetBoundingRadius
+float ground_radius(const net::Vec3& pos)
+{
+    static uintptr_t get = H->sym("Simulator::cPlanetModel::Get"), height = H->sym("Simulator::cPlanetModel::GetHeightAt");
+    void* pm = get ? cdecl_call<void*>(get) : nullptr;
+    if (!pm || !height || !(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z > 1.f))
+        return 0.f;
+    float v[3] = {pos.x, pos.y, pos.z};
+    return thiscall<float>(height, pm, v);
+}
+
 void set_scale(void* c, float s) { vcall<void>(spatial(c), 0x40 / 4, s); } // SetScale
 
 Key species_key(void* c)
