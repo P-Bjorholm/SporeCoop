@@ -118,7 +118,7 @@ static const char* h_kit_version() { return SK_VERSION; }
 static const char* h_build_name() { return build_name(); }
 static int h_diag_report(const char* reason, char* out, int cap)
 {
-    std::string p = diag_write_report(reason, nullptr);
+    std::string p = diag_write_bundle(reason);
     if (out && cap > 0)
         snprintf(out, (size_t)cap, "%s", p.c_str());
     return (int)p.size();

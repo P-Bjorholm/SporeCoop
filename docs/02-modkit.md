@@ -149,8 +149,14 @@ For bug reports of players, who send a file, not a debugger session:
   so two more paths: `ExitProcess` / `TerminateProcess` of the game within 15 s after a fault (or
   with an error code) write the crash report of the last fault, and the watchdog writes a `report`
   "hang" once when there are no frames for 30 s while the game window has the focus.
-* **Reports on request.** Console `report [reason]`, the mods' `H->diag_report` (the co-op window's
-  "Report a problem" button): the same without an exception.
+* **Reports on request: one archive.** Console `report [reason]`, the mods' `H->diag_report` (the
+  co-op window's "Report a problem" button) write `mods\logs\SporeCoop-report-<time>.zip`
+  (`sporekit/zip.cpp`, stored entries): README.txt, a fresh `report-<time>.txt` (the crash report's
+  sections without an exception), `logs/` (every instance's current log), `crashes/` (the newest 3
+  crash reports with their minidumps), `reports/` (the newest 3 earlier reports: hangs),
+  `previous/` (the newest 6 kept logs), `settings/` (mods\*.ini, `last_address` hidden). Logs are
+  cut to their last 8 MB, the archive stays under 24 MB (GitHub takes 25 MB): the older optional
+  files go first and `LEFT_OUT.txt` names them.
 * **Faults in our code.** A first-chance fault inside `sporekit.dll` or a DLL under `mods\` fires
   `SK_EV_FAULT` (on the main thread at the next frame, arg "address module+offset"): SporeCoop tells
   the player once per run where to find the report.

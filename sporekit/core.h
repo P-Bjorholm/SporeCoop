@@ -171,7 +171,15 @@ std::string ftrace_set(const std::string& substr);
 // exceptions.cpp (more below)
 void exceptions_pump(); // every frame: SK_EV_FAULT for a fault caught in SporeKit / mod code
 bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t); // the last fault seen (copies)
+// zip.cpp
+struct ZipEntry {
+    std::string name; // UTF-8, '/' separated
+    std::vector<uint8_t> data;
+};
+bool zip_write(const std::wstring& path, const std::vector<ZipEntry>& entries); // stored entries
+bool read_file_tail(const std::wstring& path, size_t cap, std::vector<uint8_t>& out);
 // diag.cpp
+std::string diag_write_bundle(const char* reason); // report + logs + crash files + settings as one .zip
 const char* build_name();     // "GOG 2024", "Steam (the GOG 2024 code)", ...
 std::string diag_env();       // the environment, several lines
 std::string foreign_hooks();  // overlays / wrappers / ModAPI loaded in the game

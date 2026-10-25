@@ -605,9 +605,9 @@ void register_builtin_commands()
                     return 0;
                 },
                 nullptr, M);
-    command_add(k, "report", "report [reason] - write mods\\logs\\report-<time>.txt for a bug report",
+    command_add(k, "report", "report [reason] - write mods\\logs\\SporeCoop-report-<time>.zip (report, logs, crashes, settings) for a bug report",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
-                    outf(out, "%s", diag_write_report(argc > 1 ? argv[1] : "requested", nullptr).c_str());
+                    outf(out, "%s", diag_write_bundle(argc > 1 ? argv[1] : "requested").c_str());
                     return 0;
                 },
                 nullptr, M);

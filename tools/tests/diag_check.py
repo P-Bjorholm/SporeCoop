@@ -4,7 +4,8 @@
   1. the log of the previous run is kept (mods/logs/previous/sporekit.N-<time>.log)
   2. the log starts with the environment: Windows / Wine, memory and the large-address flag, the game
      build, SporeCoop + SporeKit versions; after a few frames the GPU and other hooks
-  3. `env` and `report` work; a report has every section
+  3. `env` and `report` work: one archive (report, logs, previous logs, crashes, settings with the
+     last joined address hidden), the report has every section
   4. the main menu shows "SporeCoop <version>" under the Co-op item, the co-op window shows the
      version line, and its "Report a problem" button (a real click) writes a report
   5. --crash: a call to address 1 kills the game: crash-<time>.txt with the exception, the call
@@ -17,6 +18,7 @@ import os
 import re
 import sys
 import time
+import zipfile
 
 import lane
 from coop_ui import VK_F9, Ui
@@ -71,13 +73,20 @@ def main():
     ck('SporeKit' in env and 'mods: ' in env and 'coop' in env, 'env names SporeKit, the game build and the mods')
     rep = c.call('report test')['out'].strip()
     path = os.path.join(LOGDIR, os.path.basename(rep.replace('\\', '/')))
-    ck(os.path.exists(path), f'report writes {os.path.basename(path)}')
-    if os.path.exists(path):
-        txt = open(path, errors='replace').read()
+    ck(path.endswith('.zip') and os.path.exists(path), f'report writes one archive {os.path.basename(path)}')
+    if os.path.exists(path) and path.endswith('.zip'):
+        z = zipfile.ZipFile(path)
+        names = z.namelist()
+        print('  archive:', ', '.join(names)[:300], f'({os.path.getsize(path) >> 10} KB)')
+        ck(z.testzip() is None, 'the archive is a valid zip')
+        ck('README.txt' in names and any(n.startswith('report-') for n in names), 'it has README and the report')
+        ck(any(n.startswith('logs/sporekit') for n in names), 'it has the current log')
+        ck(any(n.startswith('previous/') for n in names), 'it has the logs of the previous runs')
+        ini = [n for n in names if n.startswith('settings/coop.ini')]
+        ck(ini and b'last_address=(hidden in reports)' in z.read(ini[0]), 'coop.ini is in it, the last address hidden')
+        txt = z.read(next(n for n in names if n.startswith('report-'))).decode('utf-8', 'replace')
         for sec in ('== Environment', '== coop', '== Faults caught before', '== Modules', '== The last log lines'):
             ck(sec in txt, f'the report has "{sec}"')
-        ck('SporeCoop ' in txt and 'SporeApp.exe' in txt, 'the report names SporeCoop and lists the modules')
-
     # the menu: the version under the Co-op item; the window: the version line and the report button
     found = c.call('coop.ui find "SporeCoop 0."')['out'] + c.call('coop.ui find SporeCoop')['out']
     ck(re.search(r'SporeCoop \d+\.\d+\.\d+', found), f'the main menu shows the version ({found.strip()[:80]})')
@@ -85,12 +94,12 @@ def main():
     c.call(f'key {VK_F9}')
     st = ui.wait(lambda s: s['open'] == '1' and s['report']['vis'], 20, 'the co-op window')
     ck(st is not None, 'the co-op window has "Report a problem"')
-    n0 = len(glob.glob(os.path.join(LOGDIR, 'report-*.txt')))
+    n0 = len(glob.glob(os.path.join(LOGDIR, 'SporeCoop-report-*.zip')))
     time.sleep(1.1)  # a new file name (seconds in it)
     ui.click('report')
     time.sleep(2)
-    n1 = len(glob.glob(os.path.join(LOGDIR, 'report-*.txt')))
-    ck(n1 > n0, f'"Report a problem" writes a report ({n0} -> {n1})')
+    n1 = len(glob.glob(os.path.join(LOGDIR, 'SporeCoop-report-*.zip')))
+    ck(n1 > n0, f'"Report a problem" writes the archive ({n0} -> {n1})')
     st = ui.state()
     print('  status after the click:', st.get('status', ''))
     c.call(f'key {VK_F9}')

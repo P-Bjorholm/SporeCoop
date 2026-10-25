@@ -11,6 +11,7 @@
 
 #include <d3d9.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
@@ -397,6 +398,128 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     if (ep)
         write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep);
     return narrow(txt);
+}
+
+// ---------------- the archive for a bug report ----------------
+// One file a player can send: SporeCoop-report-<time>.zip in mods\logs with a fresh report, the
+// current logs (every instance), the newest crash reports with their minidumps, the newest hang /
+// problem reports, the logs of the previous runs and the mod settings (the last joined address is
+// hidden). About 24 MB at most (GitHub takes 25 MB attachments): the older files go first.
+static constexpr size_t kBundleMax = 24u << 20, kLogCap = 8u << 20;
+
+static std::vector<std::wstring> files_in(const std::wstring& dir, const wchar_t* pattern)
+{
+    std::vector<std::wstring> v;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\" + pattern).c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return v;
+    do
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            v.push_back(fd.cFileName);
+    while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(v.begin(), v.end()); // names carry the time: oldest first
+    return v;
+}
+
+// a settings file without the address of the last host joined (a friend's IP)
+static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
+{
+    std::string s(d.begin(), d.end()), out;
+    size_t i = 0;
+    while (i < s.size()) {
+        size_t e = s.find('\n', i);
+        std::string line = s.substr(i, e == std::string::npos ? std::string::npos : e - i + 1);
+        if (line.rfind("last_address=", 0) == 0)
+            line = "last_address=(hidden in reports)\n";
+        out += line;
+        if (e == std::string::npos)
+            break;
+        i = e + 1;
+    }
+    return std::vector<uint8_t>(out.begin(), out.end());
+}
+
+std::string diag_write_bundle(const char* reason)
+{
+    std::string report = diag_write_report(reason, nullptr);
+    std::wstring dir = logs_dir();
+    std::vector<ZipEntry> z;
+    size_t total = 0;
+    std::vector<std::string> left_out;
+    auto add = [&](const std::wstring& full, const std::string& name, size_t cap, bool optional) {
+        std::vector<uint8_t> d;
+        if (!read_file_tail(full, cap, d))
+            return;
+        if (optional && total + d.size() > kBundleMax) {
+            left_out.push_back(name);
+            return;
+        }
+        total += d.size();
+        z.push_back({name, std::move(d)});
+    };
+    std::string stamp_now = stamp();
+    std::string readme =
+        "SporeCoop problem report " + stamp_now + "\n"
+        "Please attach this .zip to an issue: https://github.com/WoodyWizard/SporeCoop/issues\n"
+        "and say what you did when the problem happened.\n\n"
+        "Inside:\n"
+        "  report-*.txt      the game build, Windows / Wine, memory, graphics card, other overlays and mods,\n"
+        "                    the co-op session, faults, loaded modules, the last log lines\n"
+        "  logs/             the logs of this run (sporekit.log; sporekit.N.log of other instances)\n"
+        "  crashes/          crash reports and minidumps (.dmp: memory of the crashed game, no files of yours)\n"
+        "  reports/          earlier reports (hangs, problems)\n"
+        "  previous/         the logs of the last runs\n"
+        "  settings/         mods\\*.ini (your player name is in coop.ini; the last address you joined is hidden)\n";
+    z.push_back({"README.txt", std::vector<uint8_t>(readme.begin(), readme.end())});
+    std::wstring rep_w = widen(report);
+    std::wstring rep_name = rep_w.substr(rep_w.find_last_of(L"\\/") + 1);
+    add(rep_w, narrow(rep_name), kLogCap, false);
+    for (auto& f : files_in(dir, L"sporekit*.log"))
+        add(dir + L"\\" + f, "logs/" + narrow(f), kLogCap, false);
+    auto newest = [](std::vector<std::wstring> v, size_t n) {
+        if (v.size() > n)
+            v.erase(v.begin(), v.end() - (ptrdiff_t)n);
+        std::reverse(v.begin(), v.end()); // newest first: they win the space
+        return v;
+    };
+    for (auto& f : newest(files_in(dir, L"crash-*.txt"), 3)) {
+        add(dir + L"\\" + f, "crashes/" + narrow(f), kLogCap, true);
+        std::wstring dmp = f.substr(0, f.size() - 4) + L".dmp";
+        add(dir + L"\\" + dmp, "crashes/" + narrow(dmp), kBundleMax, true);
+    }
+    std::vector<std::wstring> reps;
+    for (auto& f : files_in(dir, L"report-*.txt"))
+        if (f != rep_name)
+            reps.push_back(f);
+    for (auto& f : newest(reps, 3))
+        add(dir + L"\\" + f, "reports/" + narrow(f), kLogCap, true);
+    std::wstring mods = mods_dirw();
+    for (auto& f : files_in(mods, L"*.ini")) {
+        std::vector<uint8_t> d;
+        if (read_file_tail(mods + L"\\" + f, 1u << 20, d)) {
+            total += d.size();
+            z.push_back({"settings/" + narrow(f), redacted_ini(d)});
+        }
+    }
+    for (auto& f : newest(files_in(dir + L"\\previous", L"*.log"), 6))
+        add(dir + L"\\previous\\" + f, "previous/" + narrow(f), kLogCap, true);
+    if (!left_out.empty()) {
+        std::string s = "Left out (the archive would be over 24 MB):\n";
+        for (auto& n : left_out)
+            s += "  " + n + "\n";
+        z.push_back({"LEFT_OUT.txt", std::vector<uint8_t>(s.begin(), s.end())});
+    }
+    std::wstring zip = dir + L"\\SporeCoop-report-" + widen(stamp_now) +
+                       (instance_id() > 1 ? L"-i" + std::to_wstring(instance_id()) : L"") + L".zip";
+    if (!zip_write(zip, z)) {
+        logf(&g_kit_mod, SK_ERROR, "report archive: cannot write %s", narrow(zip).c_str());
+        return report;
+    }
+    logf(&g_kit_mod, SK_INFO, "report archive: %s (%u files, %u KB)", narrow(zip).c_str(), (unsigned)z.size(),
+         (unsigned)(total >> 10));
+    return narrow(zip);
 }
 
 // ---------------- the unhandled-exception filter ----------------

@@ -9,7 +9,10 @@
   `report` too.
 - **Logs are kept:** the logs of the last 10 runs stay in `mods\logs\previous\` (restarting the game
   after a crash used to overwrite the crash's log).
-- **"Report a problem"** in the co-op window (F9) writes a report and opens its folder.
+- **"Report a problem"** in the co-op window (F9) packs everything into one file to send,
+  `mods\logs\SporeCoop-report-<date-time>.zip` (the report, this run's and the last runs' logs, the
+  newest crash reports with minidumps, the mod settings with the last joined address hidden), and
+  opens its folder with the file selected.
 - **The version in the game:** under the Co-op item of the main menu and at the bottom of the co-op
   window (with the game build: GOG 2024, Steam, ...).
 - The log starts with the environment: Windows or Wine, memory and the 4GB flag, the graphics card,

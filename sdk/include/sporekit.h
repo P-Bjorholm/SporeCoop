@@ -142,8 +142,10 @@ typedef struct SkHost {
     /* ---- since 0.3.4 (check size) ---- */
     const char* (*kit_version)(void);
     const char* (*build_name)(void); /* "GOG 2024", "Steam (the GOG 2024 code)", "GOG 2016", "unknown build ..." */
-    /* writes mods\logs\report-<time>.txt (environment, every mod's diag_context, faults, modules, the
-     * last log lines); its path into out. Returns the path length. Main thread. */
+    /* writes mods\logs\SporeCoop-report-<time>.zip: a fresh report-<time>.txt (environment, every
+     * mod's diag_context, faults, modules, the last log lines), the current and previous logs, the
+     * newest crash reports with minidumps, the settings; its path into out. Returns the path
+     * length. Main thread. */
     int (*diag_report)(const char* reason, char* out, int cap);
     /* a text block of the mod's own state for crash and diag reports; fn's string stays valid until
      * its next call. fn NULL removes it. Removed automatically when the mod unloads. */
