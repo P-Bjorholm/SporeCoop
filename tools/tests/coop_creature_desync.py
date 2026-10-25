@@ -153,6 +153,7 @@ def crash_and_reload(host, guest, planet):
     wait(lambda: 'GalaxyGameEntry' in mode(host), 180)
     host.call('wait.frames 240 90000')
     slot, name = planet.split('/')
+    host.call('coop.npc strays off')  # keep the test's companion (see main)
     host.call(f'coop.load {slot} {name}')  # its own save: written by the share after the editor
     wait(lambda: host.call('coop.avatar')['ok'], 240, 2)
     time.sleep(4)
@@ -171,7 +172,11 @@ def main():
     for c in (host, guest):
         c.call('coop.team hp 1000')
 
-    # the host's companion: an NPC of a species only the host's profile has, in its pack
+    # the host's companion: an NPC of a species only the host's profile has, in its pack. It is
+    # spawned by console in a herd without an archetype, so it has no tuning (+0xE84) and looks
+    # like a creature a save brought back from a partner's puppet: the stray removal
+    # (creature_e84) would take it. A real companion comes from a game herd and has its tuning.
+    host.call('coop.npc strays off')
     out = host.call(f'coop.npc spawn {HOST_ONLY}')['out']
     ck('spawned' in out, f'an NPC of the host-only species {HOST_ONLY} ({out.strip()})')
     nid = wait(lambda: [i for i, (sp, st, p) in npcs(host).items() if sp == HOST_ONLY], 10)
