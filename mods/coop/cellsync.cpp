@@ -21,7 +21,7 @@ static Ctx C;
 static bool g_ok;
 static uintptr_t a_Wipe, a_Cine, a_Pair, a_GetData, a_DamageCell, a_KillCell, a_Break, a_Destroy, a_AddFood, a_Populate, a_Rollover, a_GetDamage,
     a_RefCreate, a_Serializer, a_S, a_Fnv, a_Effect, a_TargetParams, a_IsPrey, a_IsThreat, a_ScaleDiff, a_NoAttack, a_Alert, a_React, a_Rest,
-    a_SpawnLoot, a_Bite, a_EatFood;
+    a_Soft, a_ChunkA, a_ChunkB, a_Bite, a_SpawnLoot, a_EatFood;
 
 // ---- cCellObjectData fields (docs/re/cell.md) ----
 constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C, kSize = 0x58, kRot = 0x5C,
@@ -89,6 +89,8 @@ static void set_pos(uint8_t* c, const net::Vec3& p)
 // ---------------- host ----------------
 static double g_last_send, g_last_food;
 static uint16_t g_cycle;
+static uint32_t g_own_bites, g_own_hits; // DamageCell by our avatar / that took hp
+static uint32_t g_own_chunks; // chunks our avatar bit off the host's cells (EatChunk)
 static uint32_t g_hits_in, g_eats_in, g_hits_aggro, g_bitten_in, g_puppet_hits_dropped, g_kills_in, g_eats_late;
 static int32_t g_food_sent = -1, g_plant_sent = -1;
 
@@ -110,9 +112,12 @@ static bool g_our_destroy, g_food_guard, g_replay;
 // host adds it only if the cell was still there (eaten once), else on its own at the end of the frame
 static int g_pend_food;
 static bool g_pend_plant;
-static uint32_t g_kills_sent, g_death_replays, g_loot_skipped, g_hp_fwd;
+static uint32_t g_kills_sent, g_death_replays, g_loot_skipped;
 static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_taken;
-static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bitten_sent;
+// coop.pool mirrorfix 0|1 (tests): 0 = the guest of 0.7.2 (mirrors not turned, chunk and lethal bites not
+// sent to the host), to show what the fixes change in the same session
+static bool g_mirror_fixes = true;
+static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bitten_sent, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent;
 
 // ---------------- both: symbiosis ----------------
 // A lethal hit does not kill a player who has a partner in the pool: the cell is knocked out for
@@ -389,6 +394,17 @@ using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int,
 static DamageCell_t o_DamageCell;
 static void hurt_avatar(int dmg, int type);
 
+// guest: our cell bit the host's cell <hidx> (its mirror here): the host applies it (MSG_CELL_HIT)
+static void send_hit(uint32_t hidx, int dmg, int type)
+{
+    net::Writer w;
+    w.u32(hidx);
+    w.u8((uint8_t)std::max(0, std::min(dmg, 255)));
+    w.u8((uint8_t)type);
+    C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
+    g_hits_sent++;
+}
+
 static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir, int type, int x, float dt)
 {
     if (!in_cell())
@@ -406,15 +422,8 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     if (is_guest() && victim) {
         auto it = g_host_of.find(F<uint32_t>(victim, 0));
         if (it != g_host_of.end()) { // a mirror: the host applies the bite
-            if (attacker == avatar()) {
-                int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1;
-                net::Writer w;
-                w.u32(it->second);
-                w.u8((uint8_t)std::max(0, std::min(dmg, 255)));
-                w.u8((uint8_t)type);
-                C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
-                g_hits_sent++;
-            }
+            if (attacker == avatar())
+                send_hit(it->second, a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, attacker, victim) : 1, type);
             return false;
         }
         if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
@@ -441,8 +450,70 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
         }
         return r;
     }
+    if (victim && attacker && attacker == avatar()) { // our own bites on the host's cells (diagnostics)
+        int before = F<int>(victim, kHp);
+        bool r = o_DamageCell(victim, attacker, dir, type, x, dt);
+        g_own_bites++;
+        if (F<int>(victim, kHp) < before || F<uint8_t>(victim, kDying))
+            g_own_hits++;
+        return r;
+    }
     return o_DamageCell(victim, attacker, dir, type, x, dt);
 }
+
+// A carnivore's mouth does not bite through DamageCell: the event dispatcher 0xE7E130 runs
+// EatChunkA 0xE7DD90 (event 0x13) / EatChunkB 0xE7DBD0 (0x14), cdecl void(u32 eaterIdx,
+// u32 victimIdx, u32 ev+0x30, u32 ev+0x3C, float dt): the eater gets the food (OnEat), the victim
+// loses GetDamageAmount(eater, victim) hp and KillIfDead may kill it (docs/re/cell.md 10). On the
+// guest the victim is a mirror: its hp came back with the next state of the host, the host never
+// heard of the bite (the guest could not hurt the host's creatures with a mouth), and a lethal
+// chunk killed the mirror only here. The guest now sends the bite to the host as MSG_CELL_HIT
+// (type 6, as the host's own chunk bites) and keeps the mirror alive until the host decides.
+using Chunk_t = void(SK_CDECL*)(uint32_t, uint32_t, uint32_t, uint32_t, float);
+static Chunk_t o_ChunkA, o_ChunkB;
+
+static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uint32_t b, float dt)
+{
+    uint8_t* e = in_cell() ? modes::cell_at(eater) : nullptr;
+    uint8_t* v = e ? modes::cell_at(victim) : nullptr;
+    if (!v) {
+        orig(eater, victim, a, b, dt);
+        return;
+    }
+    if (e == avatar() && !is_guest())
+        g_own_chunks++;
+    auto it = is_guest() ? g_host_of.find(victim) : g_host_of.end();
+    if (g_mirror_fixes && it != g_host_of.end() && e == avatar()) {
+        int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, e, v) : 1;
+        send_hit(it->second, dmg, 6);
+        g_chunks_sent++;
+        // the bite shows here (food, health ring, push), but the mirror does not die here
+        int hp = F<int>(v, kHp);
+        if (hp - dmg < 1)
+            F<int>(v, kHp) = dmg + 1;
+        orig(eater, victim, a, b, dt);
+        F<int>(v, kHp) = std::max(1, hp - dmg);
+        return;
+    }
+    int before = victim == avatar_idx() ? F<int>(v, kHp) : 0;
+    orig(eater, victim, a, b, dt);
+    if (victim == avatar_idx() && F<int>(v, kHp) < before && !g_downed) {
+        g_bites_taken++;
+        g_damage_taken += before - F<int>(v, kHp);
+        if (is_guest()) { // a mirror bit a chunk off us: the host's NPC rests after it (as for a bite)
+            auto at = g_host_of.find(eater);
+            if (at != g_host_of.end()) {
+                g_chunks_taken++;
+                net::Writer w;
+                w.u32(at->second);
+                C.sess->send_reliable_to(0, net::MSG_CELL_BITTEN, w);
+                g_bitten_sent++;
+            }
+        }
+    }
+}
+static void SK_CDECL h_ChunkA(uint32_t e, uint32_t v, uint32_t a, uint32_t b, float dt) { chunk(o_ChunkA, e, v, a, b, dt); }
+static void SK_CDECL h_ChunkB(uint32_t e, uint32_t v, uint32_t a, uint32_t b, float dt) { chunk(o_ChunkB, e, v, a, b, dt); }
 
 using KillCell_t = bool(SK_CDECL*)(uint8_t*, uint32_t, void*, bool, int, float);
 static KillCell_t o_KillCell;
@@ -450,7 +521,7 @@ static std::unordered_map<uintptr_t, uint32_t> g_destroy_callers; // diagnostics
 static uint32_t g_mirror_kills, g_npc_deaths; // npc_deaths: NPCs of this pool killed / broken by the game
 static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt)
 {
-    if (uint32_t hidx = !g_replay && in_cell() ? mirror_key(c) : 0) {
+    if (uint32_t hidx = !g_replay && g_mirror_fixes && in_cell() ? mirror_key(c) : 0) {
         // Our avatar killed a cell of the host's pool (a lethal bite, the chunks a mouth tears off
         // 0xE7DD90 / 0xE7DBD0 -> KillIfDead, ...). Killed here, its death and its meat (KillCell's loot)
         // stayed on this machine: the loot was purged as cells the host does not have, the host's
@@ -476,17 +547,19 @@ using Break_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Break_t o_Break;
 static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 {
-    if (uint32_t hidx = in_cell() ? mirror_key(victim) : 0) {
-        // the lethal bite (Bite 0xE7B0A0: damage >= hp) breaks the victim: effect, then (event 5
-        // 0xE7ADD0) its loot and DestroyCell(idx, 1). On a mirror all of it happened here only (the
-        // guest's meat vanished, the host never saw the kill): the host breaks its cell instead.
+    if (uint32_t hidx = g_mirror_fixes && in_cell() ? mirror_key(victim) : 0) {
+        // Bite 0xE7B0A0 breaks the victim instead of damaging it when the bite is lethal: effect, then
+        // (event 5 0xE7ADD0) its loot and DestroyCell(idx, 1). On a mirror all of it happened here only
+        // (the meat stayed on the guest and was purged as stray, the host never saw the kill): the
+        // host breaks its own cell (ACT_BREAK), with the same death and loot, mirrored back.
         g_mirror_kills++;
         g_destroy_callers[((uintptr_t)__builtin_return_address(0) - H->rebase(0)) | 0x10000000u]++;
         int st = F<int>(victim, 0x18C);
-        if (st != 7 && st != 8 && st != 9 && !F<uint8_t>(victim, kDead)) {
+        if (attacker && attacker == avatar() && st != 7 && st != 8 && st != 9 && !F<uint8_t>(victim, kDead)) {
             effect(victim, "cell_death_break");
             send_act(hidx, ACT_BREAK, 0, 0, false);
             g_kills_sent++;
+            g_breaks_sent++;
         }
         return;
     }
@@ -580,8 +653,22 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
 using Pair_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Pair_t o_Pair;
 static uint32_t g_pairs_skipped;
+static const char* kind_of(uint8_t* c);
+// what our cell does to creatures (tests: how often a player gets to bite): collision pairs of our
+// cell with a creature, interaction events of kind 10 our cell started (Bite 0xE7B0A0)
+static uint32_t g_creature_pairs, g_bite_events;
+using Bite_t = bool(SK_CDECL*)(uint32_t, uint32_t, void*, void*, int, float);
+static Bite_t o_Bite;
+static bool SK_CDECL h_Bite(uint32_t att, uint32_t vic, void* p, void* d, int x, float dt)
+{
+    if (in_cell() && att == avatar_idx())
+        g_bite_events++;
+    return o_Bite(att, vic, p, d, x, dt);
+}
 static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
 {
+    if (in_cell() && a && b && (a == avatar() || b == avatar()) && !strcmp(kind_of(a == avatar() ? b : a), "creature"))
+        g_creature_pairs++;
     if (in_cell() && (modes::cell_is_puppet(a) || modes::cell_is_puppet(b))) {
         // a partner's cell is a picture of a cell simulated on its owner's machine: here nothing eats
         // it, swallows it or is eaten by it (the owner's own game does that, with our cells mirrored)
@@ -691,6 +778,69 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
     }
 }
 
+// SoftBodyStep 0xE5A430 (cdecl void(cell*, resData*, float dt), docs/re/cell.md 10): a soft body
+// takes its rotation +0x5C from its particles (shape matching) every cell step, after the AI. A
+// mirror's particles are only moved, never turned, by guest_tick: their cloud kept whatever
+// orientation the guest's collisions and the shape matching gave it, so the rotation the guest wrote
+// was replaced before every drawing and collision step and the host's NPC spun on the guest (and its
+// mouth and body faced elsewhere than on the host). For a mirror the
+// particle cloud is turned about its centre onto the host's facing right after the fit, and the
+// host's matrix is written: what is drawn and what bites or is bitten here faces as on the host.
+using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
+static Soft_t o_Soft;
+static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
+{
+    o_Soft(c, res, dt);
+    if (!c || !g_mirror_fixes || !is_guest() || !in_cell() || g_mirrors.empty())
+        return;
+    auto hit = g_host_of.find(F<uint32_t>(c, 0));
+    if (hit == g_host_of.end())
+        return;
+    auto mit = g_mirrors.find(hit->second);
+    int n = F<int>(c, 0x250);
+    uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+    if (mit == g_mirrors.end() || !parts || !F<uint32_t>(c, 0x248) || n < 2 || n > 64)
+        return;
+    float want[9];
+    modes::quat_to_mat(mit->second.rot, want);
+    auto* m = (float*)(c + kRot);
+    // row-vector convention (goal = rest * M + centre): the image of the x axis is row 0
+    float d = std::atan2(want[1], want[0]) - std::atan2(m[1], m[0]);
+    float cs = std::cos(d), sn = std::sin(d);
+    float cx = 0, cy = 0;
+    int used = 0;
+    for (int i = 0; i < n; i++) {
+        uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+        if (k >= 1500)
+            continue;
+        auto* q = (float*)(parts + 4 + 12 * (size_t)k);
+        cx += q[0];
+        cy += q[1];
+        used++;
+    }
+    if (!used)
+        return;
+    cx /= used;
+    cy /= used;
+    auto turn = [&](float* v, float ox, float oy) {
+        float x = v[0] - ox, y = v[1] - oy;
+        v[0] = ox + x * cs - y * sn;
+        v[1] = oy + x * sn + y * cs;
+    };
+    for (int i = 0; i < n; i++) {
+        uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+        if (k >= 1500)
+            continue;
+        turn((float*)(parts + 4 + 12 * (size_t)k), cx, cy);       // position, about the centre
+        turn((float*)(parts + 0x4654 + 12 * (size_t)k), 0, 0);    // velocity
+        turn((float*)(parts + 0x11944 + 12 * (size_t)k), 0, 0);   // goal offset of the shape matching
+    }
+    memcpy(m, want, sizeof want);
+    memcpy(c + 0x24, want, sizeof want); // the shape matrix the fit wrote with it (blend 0: the same)
+    F<uint16_t>(c, kFlags) |= 2;
+    g_soft_turns++;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -718,8 +868,11 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Alert = H->sym("Simulator::Cell::AlertSpeciesOfAttack");
     a_React = H->sym("Simulator::Cell::ReactToAttacker");
     a_Rest = H->sym("Simulator::Cell::RestAfterBite");
-    a_SpawnLoot = H->sym("Simulator::Cell::SpawnLoot");
+    a_Soft = H->sym("Simulator::Cell::SoftBodyStep");
+    a_ChunkA = H->sym("Simulator::Cell::EatChunkA");
+    a_ChunkB = H->sym("Simulator::Cell::EatChunkB");
     a_Bite = H->sym("Simulator::Cell::Bite");
+    a_SpawnLoot = H->sym("Simulator::Cell::SpawnLoot");
     a_EatFood = H->sym("Simulator::Cell::EatFood");
     a_RefCreate = H->sym("Simulator::Cell::cCellDataReference_::Create");
     a_Serializer = H->sym("Simulator::Cell::cCellSerializer::_ptr");
@@ -744,6 +897,14 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_NoAttack, (void*)h_NoAttack, (void**)&o_NoAttack);
     if (a_SpawnLoot)
         H->hook_create(M, (void*)a_SpawnLoot, (void*)h_SpawnLoot, (void**)&o_SpawnLoot);
+    if (a_Soft)
+        H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
+    if (a_Bite)
+        H->hook_create(M, (void*)a_Bite, (void*)h_Bite, (void**)&o_Bite);
+    if (a_ChunkA && a_ChunkB) {
+        H->hook_create(M, (void*)a_ChunkA, (void*)h_ChunkA, (void**)&o_ChunkA);
+        H->hook_create(M, (void*)a_ChunkB, (void*)h_ChunkB, (void**)&o_ChunkB);
+    }
     return true;
 }
 
@@ -915,18 +1076,6 @@ static void guest_tick(double now)
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         if (!c)
             continue;
-        // Our avatar took hp off a mirror without DamageCell (the chunk eats 0xE7DD90 / 0xE7DBD0 write
-        // hp directly): the next state would undo it, so the host never felt those bites
-        int lhp = F<int>(c, kHp);
-        if (lhp < m.hp && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
-            net::Writer w;
-            w.u32(hidx);
-            w.u8((uint8_t)std::min(m.hp - lhp, 255));
-            w.u8(6);
-            C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
-            g_hp_fwd++;
-        }
-        m.hp = lhp;
         double age = std::min(now - m.seen, 0.5);
         net::Vec3 want{m.pos.x + m.vel.x * (float)age, m.pos.y + m.vel.y * (float)age, m.pos.z};
         net::Vec3 cur = pos_of(c);
@@ -1126,7 +1275,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         } else if (c && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
             // the guest's bite killed it: the kill happens here, with the death and the loot
             g_kills_in++;
-            if (kind == ACT_BREAK) {
+            if (kind == ACT_BREAK) { // the lethal bite: also a hit that arrived (hits_in)
+                g_hits_in++;
+                F<int>(c, kHp) = 0;
                 h_Break(c, pc ? pc : avatar(), 1.f / 30.f);
             } else {
                 F<int>(c, kHp) = 0;
@@ -1567,6 +1718,48 @@ std::string debug(const std::vector<std::string>& a)
                  pos_of(c).x, pos_of(c).y, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
+    if (!a.empty() && a[0] == "realbite") { // realbite [max distance | c<key>]: our cell bites the nearest
+        // creature (or that one) through the game's Bite 0xE7B0A0, what a bite event runs: DamageCell,
+        // or BreakOrSwallow when the bite is lethal
+        uint8_t* best = nullptr;
+        float bd = a.size() > 1 && a[1][0] != 'c' ? (float)atof(a[1].c_str()) : 30.f;
+        if (a.size() > 1 && a[1][0] == 'c') {
+            uint32_t key = (uint32_t)strtoul(a[1].c_str() + 1, nullptr, 10);
+            auto mi = g_mirrors.find(key);
+            best = is_guest() ? (mi != g_mirrors.end() && mi->second.local ? modes::cell_at(mi->second.local) : nullptr)
+                              : modes::cell_at(key);
+            bd = best ? net::dist(pos_of(best), pos_of(av)) : 0.f;
+        } else {
+            for_each_cell([&](uint8_t* c, uint32_t idx) {
+                if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || strcmp(kind_of(c), "creature"))
+                    return;
+                if (is_guest() && !g_host_of.count(idx))
+                    return;
+                float d = net::dist(pos_of(c), pos_of(av));
+                if (d < bd) {
+                    bd = d;
+                    best = c;
+                }
+            });
+        }
+        if (!best || !o_Bite)
+            return "no creature";
+        net::Vec3 p = pos_of(best), me = pos_of(av);
+        float at[3] = {p.x, p.y, p.z}, dir[3] = {p.x - me.x, p.y - me.y, 0};
+        float n = std::max(0.01f, std::sqrt(dir[0] * dir[0] + dir[1] * dir[1]));
+        dir[0] /= n;
+        dir[1] /= n;
+        uint32_t idx = F<uint32_t>(best, 0);
+        auto it = g_host_of.find(idx);
+        char b[160];
+        snprintf(b, sizeof b, "bit c%u hp=%d at %.1f: %d", it != g_host_of.end() ? it->second : idx, F<int>(best, kHp), bd,
+                 (int)h_Bite(avatar_idx(), idx, at, dir, 0, 0.033f));
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "mirrorfix") { // 0: the guest as in 0.7.2 (see g_mirror_fixes)
+        g_mirror_fixes = atoi(a[1].c_str()) != 0;
+        return g_mirror_fixes ? "mirror fixes on" : "mirror fixes off (as in 0.7.2)";
+    }
     if (a.size() >= 2 && a[0] == "food") { // the game's AddFoodPoints (hooked: shared)
         h_AddFood(atoi(a[1].c_str()), false);
         return "food added";
@@ -1644,22 +1837,24 @@ std::string debug(const std::vector<std::string>& a)
 
 std::string status()
 {
-    char b[800];
+    char d[96];
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u\n", g_creature_pairs, g_bite_events);
+    char b[900];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d hits_in=%u hits_aggro=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_hits_in, g_hits_aggro, g_bitten_in, g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped,
-                 g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late);
+        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_bitten_in,
+                 g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped, g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late);
     else
         snprintf(b, sizeof b,
                  "cell(guest): food=%d mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
-                 "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
-                 "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u hp_fwd=%u\n",
+                 "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u soft_turns=%u chunks_sent=%u chunks_taken=%u breaks_sent=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
+                 "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u\n",
                  food, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
-                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
-                 g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped, g_hp_fwd);
-    return b;
+                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
+                 g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped);
+    return b + std::string(d);
 }
 
 std::vector<syncdbg::Entry> sync_entries()

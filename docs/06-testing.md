@@ -113,7 +113,14 @@ New symbols in `data/symbols/*.sym` reach a running game only with `sym.reload` 
 `mod.reload coop` ends the co-op session (both sides show `offline`): to look at a two-player state
 again, start the pair anew (`twoinst.start`, ~40 s). Cell stage: `coop.pool prey [r]` on the host
 lists the NPCs within r m of a player with the game's own prey / threat answers for each player
-(docs/re/cell.md 9), `coop.pool prey 30 sum` only the totals (play_cell.py samples them).
+(docs/re/cell.md 9), `coop.pool prey 30 sum` only the totals (play_cell.py samples them). `coop.pool realbite [r | c<key>]`
+bites the nearest creature (or that one) through the game's Bite 0xE7B0A0 (DamageCell, or
+BreakOrSwallow when lethal), as a bite event does; on a guest `coop.pool mirrorfix 0` turns the
+2026-10-24 mirror fixes off (no facing correction, chunk and lethal bites stay local: the 0.7.2
+guest) to show the difference in one session (`coop_cell_spin.py --without-fix` must fail).
+`coop.pool` prints `cell_contacts: creature_pairs=… bite_events=…` (collision pairs of the own
+cell with creatures, Bite calls of the own cell), on the host `own_bites` / `own_hits` /
+`own_chunks`, on the guest `soft_turns`, `chunks_sent`, `chunks_taken`, `breaks_sent`.
 
 ## 6.4 Test levels
 
