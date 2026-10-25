@@ -468,3 +468,19 @@ Fixed entries move to the commit message (and a test).
   guest without own creations then plays the world's species again, which the host shows as its own.
 * Still so: a puppet whose player's creation cannot be used here (no records and an unknown key)
   is built from the local avatar's species, without any notice.
+
+## Creature: "Game puts me underground after I use Alt + Enter" (player report 2026-10-25, not reproduced)
+
+* The host (Windows, AMD GPU driver AMDXN32.DLL, SporeCoop 0.7.2.3) after Alt+Enter to fullscreen.
+  Its two crashes the same day were Alt+Shift+Enter (the game's "next display adapter" key, a game
+  bug, fixed: docs/re/graphics.md 3), so Shift was likely held on some of the Alt+Enter presses.
+* Not reproduced under Wine/DXVK (lane 2, `coop_alt_enter.py` and by hand): every Alt+Enter is one
+  device Reset, the avatar's height over the terrain (`coop.avatar` `above=`) stays 0.0 while it
+  walks, the ground radius under it does not change. The game puts a creature below the terrain back
+  on it within a frame, so a fix that lifts the avatar would do nothing: on that machine the terrain
+  is most likely drawn higher than its collision height after the Reset (the terrain redraws on
+  message 0x44EDD9C). SporeCoop does not move the local avatar.
+* Next: the player's `mods\logs\sporekit.log` around the toggle ("device Reset -> 0x..." lines:
+  how many, which result), a screenshot, whether saving and loading again (or leaving to the galaxy
+  and back) fixes it, and whether it happens with SporeCoop removed. Until then: set fullscreen in
+  the game's options before loading a planet instead of using Alt+Enter in game.

@@ -703,3 +703,16 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * Rule: at most 6 lanes (12 games) at once on this machine (`tools/lab.py run ... --lanes 6`),
   fewer when the user works on the desktop. `journalctl -k | grep amdgpu` shows such resets;
   `coredumpctl list` the aborted programs.
+
+## 6.20 Fullscreen keys (coop_alt_enter.py)
+
+* The headless test display has two monitors, so Wine reports two D3D9 adapters ([0x1712438] = 2):
+  the game's adapter switch (Alt+Shift+Enter) works there as on a two-monitor PC (docs/re/graphics.md).
+* `key alt down`, `key enter`, `key alt up` is a real Alt+Enter: the game reads the modifiers with
+  GetKeyState, which SporeKit's input hook answers while a key is held. Each toggle is one device
+  Reset in the game log ("sporekit: device Reset -> 0x00000000"); fullscreen under the headless
+  shell works and keeps 1440x1080. The test reads the renderer's fullscreen flag (IRenderer +0x6C)
+  and ends windowed.
+* `coop.avatar` prints `ground=` (cPlanetModel::GetHeightAt under the avatar) and `above=` (its
+  height over the terrain) in the planet stages. A creature moved under the terrain (set_position 3 m
+  down) is back on it within a frame: the game clamps it.
