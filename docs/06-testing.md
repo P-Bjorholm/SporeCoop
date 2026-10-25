@@ -703,3 +703,27 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * Rule: at most 6 lanes (12 games) at once on this machine (`tools/lab.py run ... --lanes 6`),
   fewer when the user works on the desktop. `journalctl -k | grep amdgpu` shows such resets;
   `coredumpctl list` the aborted programs.
+
+## 6.20 Creature tests that stand around (coop_creature_kills.py, 2026-10-25)
+
+* `coop_creature_kills.py` (~2 min after the start): the guest hunts a host NPC with real input
+  (`coop.social goto <id>` puts the guest next to the mirror, the combat stance button, a click on
+  the target from `coop.targets all`, key 1: ~11 bites for a 7.5 hp Kook), then checks the game's
+  death flag of the guest's mirror (`coop.npc creatures <species>` " DEAD", not our "DEAD" of
+  `coop.npc list`, which is only our bookkeeping) and the kill counts (`coop.social species`). Then
+  the guest stands next to an NPC 45+ m from the host and the test reads that NPC's behaviour-tree
+  stimulus slots with `mem.read` (docs/re/creature.md 13.2): works on old builds too (no new
+  console command needed), which is how it failed before the fix.
+* Long manual sessions: the creature's food runs out after ~10-15 minutes and it loses ~0.05 hp/s
+  until "You starved to death! Remember to eat regularly!" (a caption that waits for OK, `key
+  enter`); `coop.team hp N` refills the health, not the food. A test that stands still for minutes
+  needs a fresh start.
+* `tools/lab.py reload` (hot reload of coop.dll) ends the session: host and join again (`cheat coop
+  host <port> Alice`, `cheat coop join 127.0.0.1:<port> Bob`; the join re-sends and reloads the
+  world on the guest).
+* Test helpers (host): `coop.npc epic <player> [dist] [archetype] [species]` (an epic near a
+  player's creature; it does not attack the avatar, docs/re/creature.md 13.2), `coop.npc goherd
+  <herd> [d]`, `gonpc <id> [d]`, `gopos x y z` (teleport the own avatar), `coop.npc archless all`
+  (every herd with archetype and distance), `coop.npc partners on|off`.
+* `call` with a `thiscall` that writes through a pointer argument: pass a real buffer; a null (or
+  a short `s:` string) made `cTimeOfDay` presets fault and the game stopped drawing for good.
