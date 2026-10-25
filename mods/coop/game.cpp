@@ -1,6 +1,8 @@
 #include "game.h"
 
 #include <algorithm>
+#include <cmath>
+#include <string>
 #include <vector>
 
 #include "sporekit_game.hpp"
@@ -28,6 +30,7 @@ static void SK_CDECL h_AddEvo(float delta)
 }
 
 static std::vector<void*> g_puppets;
+static std::vector<void*> g_our_herds; // made by create_herd (puppets, proxies); diagnostics only
 
 // ---- registry via cCreatureAnimal::Update (thiscall, int deltaTime) ----
 typedef void(SK_THISCALL* Update_t)(void*, int);
@@ -400,6 +403,11 @@ void* create_herd(const net::Vec3& pos, void* species)
     // CreateHerd(const Vector3&, cSpeciesProfile*, herdSize, isOwnedByAvatar, personality, createNest)
     void* h = nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, 0, 0, 0, 0) : nullptr;
     herd_quiet(h);
+    if (h) {
+        if (g_our_herds.size() > 256)
+            g_our_herds.erase(g_our_herds.begin());
+        g_our_herds.push_back(h);
+    }
     return h;
 }
 
@@ -436,6 +444,22 @@ void herd_quiet(void* h)
     static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
     if (enable && field<uint8_t>(h, 0x218))
         thiscall<void>(enable, h, false); // mbEnabled
+}
+
+// The home of a herd without a nest (+0x34) is where its members' AI looks for land and water
+// (0xC6B750 caches the result at +0x20C, flag +0x208): it must lie on the surface. A puppet's
+// herd follows the puppet (docs/re/creature.md 10).
+void herd_home(void* h, const net::Vec3& pos)
+{
+    if (!h || herd_nest(h) || !skg::readable(h, 0x21C))
+        return;
+    auto& home = field<Vector3>(h, 0x34);
+    net::Vec3 cur{home.x, home.y, home.z};
+    float dx = cur.x - pos.x, dy = cur.y - pos.y, dz = cur.z - pos.z;
+    if (dx * dx + dy * dy + dz * dz < 20.f * 20.f)
+        return;
+    home = Vector3{pos.x, pos.y, pos.z};
+    field<uint8_t>(h, 0x208) = 0; // the land point is searched again around the new home
 }
 
 void* herd_of(void* c) { return field<void*>(c, kHerdOff); }
@@ -498,5 +522,81 @@ void puppet_unregister(void* c)
 
 bool is_puppet(void* c) { return std::find(g_puppets.begin(), g_puppets.end(), c) != g_puppets.end(); }
 const std::vector<void*>& puppets() { return g_puppets; }
+
+bool creature_listed(void* c)
+{
+    struct F {
+        void* c;
+        bool found;
+    } f{c, false};
+    if (!c)
+        return false;
+    for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* f = (F*)u;
+            if (o != f->c)
+                return true;
+            f->found = noun == 0x18EB45Eu && object_alive(o);
+            return false;
+        },
+        &f);
+    return f.found;
+}
+
+std::string herds_dump()
+{
+    std::string out;
+    char b[320];
+    void* av = avatar();
+    float ar = 0;
+    if (av) {
+        net::Vec3 p = position(av);
+        ar = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    }
+    snprintf(b, sizeof b, "avatar |pos|=%.1f\n", ar);
+    out += b;
+    struct U {
+        std::string* out;
+        float ar;
+        int herds, low;
+    } u{&out, ar, 0, 0};
+    for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto* u = (U*)up;
+            char b[320];
+            if (noun == kHerdNoun && object_alive(o) && skg::readable(o, 0x220)) {
+                auto& h = field<Vector3>(o, 0x34);
+                float hr = std::sqrt(h.x * h.x + h.y * h.y + h.z * h.z);
+                bool ours = std::find(g_our_herds.begin(), g_our_herds.end(), o) != g_our_herds.end();
+                u->herds++;
+                if (hr < u->ar * 0.8f)
+                    u->low++;
+                if (!ours && hr >= u->ar * 0.8f)
+                    return true; // the game's herds on the surface: only counted
+                auto** m0 = field<void**>(o, 0x40);
+                auto** m1 = field<void**>(o, 0x44);
+                snprintf(b, sizeof b,
+                         "herd %p ours=%d nest=%p en=%d target=%d members=%d home=(%.1f %.1f %.1f) |home|=%.1f radius=%.0f "
+                         "land_cached=%d\n",
+                         o, (int)ours, herd_nest(o), (int)field<uint8_t>(o, 0x218), field<int32_t>(o, 0xF4), (int)(m1 - m0), h.x,
+                         h.y, h.z, std::sqrt(h.x * h.x + h.y * h.y + h.z * h.z), field<float>(o, 0x108),
+                         (int)field<uint8_t>(o, 0x208));
+                *u->out += b;
+            } else if (noun == 0x18EB45Eu && object_alive(o)) {
+                void* h = herd_of(o);
+                if (h && !herd_nest(h)) { // members of nestless herds: ours (puppets, proxies) or the game's
+                    net::Vec3 p = position(o);
+                    snprintf(b, sizeof b, "  creature %p herd=%p puppet=%d avatar=%d dead=%d species=%08X |pos|=%.1f\n", o,
+                             h, (int)is_puppet(o), (int)(o == avatar()), (int)is_dead(o), species_instance(o),
+                             std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z));
+                    *u->out += b;
+                }
+            }
+            return true;
+        },
+        &u);
+    snprintf(b, sizeof b, "herds=%d below_surface=%d ours=%d\n", u.herds, u.low, (int)g_our_herds.size());
+    return out + b;
+}
 
 } // namespace game

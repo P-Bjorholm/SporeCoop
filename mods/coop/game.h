@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "net/protocol.h"
@@ -76,6 +77,7 @@ void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 void* herd_of(void* c);
 void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it
+void herd_home(void* herd, const net::Vec3& pos); // a nestless herd's home follows its puppet
 constexpr uint32_t kHerdNoun = 0x01BE418E;      // cHerd (runtime: nest herds of the creature stage)
 inline void* herd_species(void* herd) { return *(void**)((uint8_t*)herd + 0xA4); } // cSpeciesProfile*
 inline void* herd_nest(void* herd) { return *(void**)((uint8_t*)herd + 0x160); }    // cNest* (mpNest)
@@ -127,5 +129,10 @@ void puppet_register(void* c);
 void puppet_unregister(void* c);
 bool is_puppet(void* c);
 const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO puppets in space
+
+// `c` is still a live cCreatureAnimal of the world (compares pointers only: safe on a freed one)
+bool creature_listed(void* c);
+// diagnostics (coop.npc herds): every herd, and the creatures of herds without a nest
+std::string herds_dump();
 
 } // namespace game

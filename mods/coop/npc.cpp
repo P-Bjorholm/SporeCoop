@@ -76,7 +76,7 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
 bool is_proxy(void* c) { return g_proxy_of.count(c) != 0; }
-static bool g_strays_on = true; // tests: remove_strays on/off
+static bool g_strays_on = true; // tests: remove_saved_strays on/off
 void set_strays(bool on) { g_strays_on = on; }
 void set_enabled(bool on) { g_enabled = on; }
 bool enabled() { return g_enabled; }
@@ -404,7 +404,7 @@ static bool own_kind_herd(void* h)
            *(uint32_t*)((uint8_t*)h + 0x88) == 0 && !game::herd_nest(h) && !*(uint8_t*)((uint8_t*)h + 0x84);
 }
 
-static void remove_strays(double now)
+static void remove_saved_strays(double now)
 {
     if (!g_strays_on || now - g_strays_at < 1.0)
         return;
@@ -436,7 +436,7 @@ void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
     if (game::in_creature_stage())
-        remove_strays(now);
+        remove_saved_strays(now);
     // creature stage only: adventure creatures are scripted by the adventure on every machine
     if (!g_enabled || !C.sess || !npc_stage())
         return;

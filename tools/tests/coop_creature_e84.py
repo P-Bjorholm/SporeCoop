@@ -34,7 +34,7 @@ def untuned(con):
 
 
 def archless_herds(con):
-    m = re.search(r'without an archetype (\d+)', con.call('coop.npc herds')['out'])
+    m = re.search(r'without an archetype (\d+)', con.call('coop.npc archless')['out'])
     return int(m.group(1)) if m else -1
 
 

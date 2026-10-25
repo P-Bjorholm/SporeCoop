@@ -46,7 +46,7 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
     // the world after the puppet was gone
     void* herd = own ? game::own_herd_for(own) : nullptr;
     if (herd) {
-        skg::field<skg::Vector3>(herd, 0x34) = skg::Vector3{s.pos.x, s.pos.y, s.pos.z}; // cHerd position
+        game::herd_home(herd, s.pos); // (a reused herd's home may be anywhere)
         game::herd_quiet(herd);
     } else if (own)
         herd = game::create_herd(s.pos, own);
@@ -66,8 +66,10 @@ static void creature_drive(void* p, const net::PlayerState& s, drive::State& ds,
     // animations undo the nudges (~10-20 % of them in fights): it trailed by 5-8 m after a fight
     // move (play_creature.py 2026-10-23); snap at 4 m instead of 8
     drive::step(p, s.pos, s.rot, s.vel, ds, now, 0, true, 4.f);
-    if (game::herd_of(p) != game::avatar_herd())
+    if (game::herd_of(p) != game::avatar_herd()) {
         game::herd_quiet(game::herd_of(p)); // (the game may enable a herd again)
+        game::herd_home(game::herd_of(p), game::position(p));
+    }
     float mh = game::max_health(p); // puppets mirror the remote health, never die locally
     if (mh > 0)
         game::set_health(p, mh);
