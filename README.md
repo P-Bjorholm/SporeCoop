@@ -210,7 +210,8 @@ shared diplomacy, the galactic core together, rivals mode). Tested automatically
 instances: 50+ scenario tests with real clicks, bots that play every stage through real input for
 hours, 4-player sessions with rejoins, a chaos bot and simulated bad networks
 ([stability report](docs/stability-report.md)).
-Known issues: [docs/known-issues.md](docs/known-issues.md).
+Known issues: [docs/known-issues.md](docs/known-issues.md). Found a problem? See
+[how to report it](docs/REPORTING.md).
 
 Next:
 

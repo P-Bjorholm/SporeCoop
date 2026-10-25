@@ -12,6 +12,8 @@
 10. [Development pipeline](10-dev-pipeline.md) - test lanes, the lab, warm resets, invariants, chaos bot, bad network, fixtures, git and knowledge rules. Bugs not fixed yet: [known-issues.md](known-issues.md).
 11. [Rivals: own bases in one world](11-rivals.md) - the second session mode (design): every player with its own nest, tribe, nation and empire, a race through every stage, war, peace and alliances between players, influence over NPC factions, the draft and the Chronicle.
 
+* [Reporting a problem](REPORTING.md) (for players), [known issues](known-issues.md), [contributing](../CONTRIBUTING.md).
+
 Target game versions: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`:
 the 2016 build, SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`,
 24,888,320 bytes (not supported by Spore ModAPI, which only knows Disk and March2017, so its

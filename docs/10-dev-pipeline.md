@@ -128,3 +128,25 @@ Search before analysing, write down after learning: `data/symbols/overrides_*.sy
 confidence and signature), `docs/re/<area>.md`, `docs/known-issues.md`, this file and
 `docs/06-testing.md`. `tools/re_lint.py` keeps the symbol file honest. Subagents get the same rule
 in their prompt.
+
+## Batches of agents: the brief (2026-10-25)
+<a id="pipeline-agent-brief"></a>
+
+Player reports and work packages are handed to parallel agents, one per branch, worktree and lane.
+The steps an agent follows are in the skill `.claude/skills/fix-player-report` (the orchestrator's
+merge steps: `.claude/skills/merge-batch`), so a brief only says what is specific:
+
+```
+Fix player report: <one line> (source: issue #N | report zip path | screenshot text below)
+Branch fix/<name>, worktree ../SporeCoop-wt/fix/<name>, lane <N> only.
+Follow .claude/skills/fix-player-report and return its report format.
+Context: <known-issues anchor, docs/re anchor, crash_triage output>
+Others in this batch: <branches and the files or areas they own>
+```
+
+Agents append one line per finding to `out/findings.md` in the main checkout (not in git:
+`<date> <branch> <area>: <finding> (<anchor>)`), and read it before analysing, so siblings in the
+same batch do not find the same thing twice; the orchestrator folds the lines into the docs when it
+merges. Practices taken over from a review of another co-op modding project (2026-10-25): unnumbered
+sections with anchors, CORRECTION lines, union merges of shared files, "a test you never saw fail
+proves nothing", oracles on the other machine, crash triage by signature (CLAUDE.md).

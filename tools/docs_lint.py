@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEXT_EXT = ('.md', '.cpp', '.h', '.c', '.py', '.sh', '.ini', '.sym', '.yml', '.yaml', '.txt', '.json',
             '.java', '.rc', '.mk', '')
-EM_DASH = '—'
+EM_DASH = chr(0x2014)
 LINK = re.compile(r'\]\(([^)\s]*?)(?:\s+"[^"]*")?\)')
 ANCHOR = re.compile(r'<a\s+(?:id|name)="([^"]+)"')
 HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')

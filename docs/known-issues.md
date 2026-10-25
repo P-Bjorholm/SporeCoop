@@ -3,6 +3,20 @@
 Bugs found and not fixed yet. Each entry: what happens, how to reproduce it, what is known.
 Fixed entries move to the commit message (and a test).
 
+A new entry (and every branch that stops without a fix leaves one) uses this shape, with an
+anchor so other docs can link to it:
+
+```
+## <Stage>: <what the player sees> (<date>, <source: player report / test / branch>)
+<a id="issue-<slug>"></a>
+
+* What happens: ...
+* Reproduce: ... (test, fixture, steps)
+* Known: ... (observed vs inferred, addresses, links to docs/re anchors)
+* Not checked: ...
+* Next steps: ... (branch, if any)
+```
+
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 
 * After an evolution that starts a migration, the host's game plays CRG_SpeciesMigrate; the world
