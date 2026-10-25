@@ -13,7 +13,6 @@
   vanished; now the kill happens on the host with the game's own death and meat, which both see. A
   creature the host kills also dies on the guest's screen (before it stayed there as if alive). Food
   from a chunk both eat at the same moment counts once. Test: `coop_cell_meat.py` (suite `cell_meat`).
-
 - **Joining sends the game the host plays now:** a guest that joined a host who had started a new game
   could be put into an older game of the host (the host had to delete it). Every game of a galaxy is
   in the same save folder, and a planet named with letters outside English (for example in Cyrillic)
