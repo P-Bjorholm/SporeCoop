@@ -137,7 +137,7 @@ Moving a mirror: set velocity `+0x90` (dead reckoning happens in 0xE7C080), add 
 | **0xE7A4A0** | `bool KillCell(cell*, u32 killerIdx, ref* killerRes, bool byPlayer, int dmgType, float dt)` | ✔ 6 args. NPC: +0x113=1, death effect via InstanceEffectOnCell, alert same species 0xE71F00, if byPlayer telemetry + `S+0x6C` killCount++, loot (0xE52A30/0xE771D0) if level within ±1 of player, anims 10/7, event 6 (→ +0x112), locks 0xE59190. Avatar → PlayerDeath (unless `G+0x5169` or state `G+0x5158`∈{3,5}) |
 | 0xE72060 | `bool PlayerDeath(cell*, u32 killerIdx, ref*, float)` | ✔ +0x113, UI `cCellUI+0x936=1`, telemetry 0xE5C900, anims 10/7, event 0x1D in pool G+0x54 (index stored at `G+0x5194`), locks +0x16C/+0x178/+0x17C, state 7 |
 | 0xE7AEE0 | `void BreakOrSwallow(cell* victim, cell* attacker, float)` | ✔ effect "cell_death_break"; avatar victim: `S+0x70` deathCount++; event 5 → 0xE7ADD0 (loot; avatar → 0xE72200 respawn request; NPC → DestroyCell(idx,1,…)) |
-| 0xE7B0A0 | `bool Bite(u32 attackerIdx, float* dir, ?, float)` | ~ DamageCell type 4, or BreakOrSwallow when victim is ≥3 levels smaller and would die |
+| 0xE7B0A0 | Bite: see §10 (signature) and §11 | ✔ DamageCell type 4 while the damage is below the victim's hp; **the lethal bite goes to BreakOrSwallow** (not KillCell) |
 | 0xE7E7F0 | collision interaction executor (switch on kind) | ~ |
 | 0xE62350 | `void ShowHealthRollover(cell*, int oldHp)` | ✔ needs GFX (+0x248≠0) |
 | 0xE66850 | `IVisualEffect* InstanceEffectOnCell(cell*, u32 effectId)` | ✔ ids: `0x932E50(name, 0x811C9DC5, 1)` (FNV) e.g. "cell_death_oneshot(_small/_large)" |
@@ -196,8 +196,8 @@ thresholds every 50 points (0,50,100,…).
 - Population: `PopulateTiles` 0xE7D370 → `PopulateTile` 0xE7C6C0(tile*, …) → **`PopulateMarker`
   0xE7C500** ✔ cdecl `(float prob, int layer, int level, query*, bbox*, markerRef, int)` (recursive).
   Skipping it when `query == *(void**)(G+0x40FC)` suppresses all gameplay-layer spawns (creatures,
-  food, parts) while keeping the background. Other spawn sources: loot on death/break (0xE771D0 via
-  DestroyCell(…,1)/KillCell), NPC growth/spawnOutput (behaviours - off for passive cells).
+  food, parts) while keeping the background. Other spawn sources: loot on death/break
+  (**SpawnLoot 0xE771D0**, §11), NPC growth/spawnOutput (behaviours - off for passive cells).
 - Active area: tiles stream around the **local** player's view (`G+0x4128`, bbox 0x16B4C68..7C);
   cells outside it are destroyed unless `+0x354` (0xE7C080) or level −1. ⇒ on the host, NPCs near a
   guest far from the host do not exist.
@@ -432,11 +432,56 @@ The host's handler has no distance or facing test: it applies the hp, the specie
 victim's reaction, and KillCell when hp reaches 0 (`hits_in`, `hits_aggro`).
 A mirror that bites a chunk off the guest now also sends `MSG_CELL_BITTEN` (the NPC's rest).
 
-Not changed: a creature the host killed stays a full mirror on the guest with hp 0 until the host
-removes it (the state's dying/dead flags only stop new mirrors); how often a player's weapon gets to
+Changed since by fix/cell-meat (§11): the lethal bite goes to the host as a break (`MSG_CELL_EAT`
+kind 2, the host runs BreakOrSwallow with its loot) rather than a hit (KillCell drops no loot at the
+players' level), and a creature the host killed dies on the guest too (KillCell replayed on the
+mirror). Not changed: how often a player's weapon gets to
 a creature in the bots' chase (`cell_contacts:` `creature_pairs`, `bite_events`): host 1-3 bites per
 20 s, guest 0-3, with or without the fix; the Karke fixture cell has no weapon (§8), premade cell
 `BAF1AD40` (`coop.creations choose cell BAF1AD40`) has one.
+
+## 11. Kills and their meat; eating once (2026-10-24, GOG 2024, branch fix/cell-meat)
+
+Player report (0.7.x): "when one of us killed an enemy, the other did not see the meat that should
+drop". `tools/tests/coop_cell_meat.py`.
+
+**Where the meat of a kill comes from** ✔ (Ghidra + runtime, `coop.pool loot`):
+
+| addr | what |
+|---|---|
+| **0xE771D0 SpawnLoot** | cdecl `void(ref* res, ResourceKey* model, query*, Vec3* pos, float size, int level, ref* lootTable, float dt, u32* outIdx, int* outCount)`, plain ret. Picks one entry of the loot table (`res+0xD4` passed by the callers) by weight: type 1 = RandomInt(`+0x14`) + `+0x10` cells of the entry's `.cell` (`+4`) via 0xE76480 with an outward velocity (`+0x18` added to the level), type 2 = repeat, 0 = nothing. Appends every new cell to `outIdx` when given (no bound check), so a hook can list them |
+| KillCell 0xE7A4A0 | loot only when the victim's level `+0x358` ≠ 0 and within (player level − 1, player level + 2) (0xE4EE40, the level of the food progress); loot level = victim level − 1 (0xE52A20) |
+| BreakOrSwallow 0xE7AEE0 | effect `cell_death_break`, anim 8, event 5 → **0xE7ADD0**: SpawnLoot (level − 1), then (NPC) DestroyCell(idx, 1) → **DestroyCell's own SpawnLoot** when the level is not the player's − 1. A lethal Bite of a creature of the players' level left 6 loot cells (3 meat chunks still there 3 s later) in every one of 24 kills in the test |
+| 0xE7D880 / 0xE791A0 | swallowing whole: DestroyCell(victim, 1) (loot as above) |
+| EatFood 0xE7DF40 | event 0x12: OnEat (avatar: AvatarEat, AddFoodPoints), then the food shrinks one level or DestroyCell(food, 1, 0, 0). A meat chunk gave 12 points |
+
+KillCell at the players' level dropped nothing in the test (4 of 4 kills through DamageCell); the
+dead creature stays (hp 0, `+0x113`, later `+0x112`) until something removes it.
+
+**What went wrong in co-op (0.7.x)**: the host's kills were fine (loot cells are ordinary pool
+cells, the state carries them; measured: every loot cell of a host kill was on the guest within
+0.1-0.3 s). The guest's lethal bite on a mirror ran BreakOrSwallow **on the guest**: effect, loot
+(local cells the host does not have, purged as strays by the next state 0.1 s later: `purged`),
+DestroyCell → `MSG_CELL_EAT` → the host removed its creature with `DestroyCell(idx, 0)`: no death,
+no meat on the host, and the guest's meat vanished at once (test before the fix: 4 of 4 guest kills
+not killed by the host's game, 24 loot cells spawned on the guest, none on the host for them).
+Eating: the guest sent its food gain (`MSG_CELL_FOOD`) and the eaten cell separately, so a chunk
+both players ate at the same moment counted twice. And a creature the host killed never died on the
+guest (the state's dying flag was not applied).
+
+**Fix** (cellsync.cpp): the guest's game spawns no gameplay loot (`h_SpawnLoot`: foreground query →
+skipped, `loot_skipped`); a mirror the guest's avatar breaks or kills is not broken / killed there:
+`MSG_CELL_EAT {u32 host index, u8 kind 0 gone / 1 kill / 2 break, u8 arg (loot flag / damage type),
+i32 food, u8 plant}` and the host runs BreakOrSwallow / KillCell / DestroyCell(idx, loot) on its cell
+(attacker: the guest's puppet), so death and loot happen once, on the host, and come back with the
+state; a dying/dead flag in the state replays KillCell on the mirror (`death_replays`, with
+SpawnLoot off); the guest's AddFoodPoints is held until the end of the frame and goes with the eaten
+cell: the host adds it only if the cell was still there, else (`eats_late`) it resends its total and
+the guest's AddFoodPoints(diff) takes the points back. Older guests (index only) still work.
+
+Debug (`coop.pool`): `kill [c<key>|-] [hit]` one bite of the own cell through Bite (or DamageCell
+only with `hit`), `meat` every meat cell, `loot` (host) the cells of the last loot drops, `eat <key>`
+the game's eat handler on a cell, `swimto <key> [tp]`.
 
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC

@@ -8,6 +8,11 @@
   host and the guest), so its mouth and spikes are where they are for the host. The guest's
   killing bite and bites with a mouth that eats chunks now reach the host (before, the guest could
   wound a creature but never finish it). Test: `coop_cell_spin.py` (suite `cell_spin`).
+- **Cell: both players see the meat of a kill, and a chunk is eaten once.** When the guest killed a
+  creature, its meat appeared only on the guest's screen for a moment and the host's creature just
+  vanished; now the kill happens on the host with the game's own death and meat, which both see. A
+  creature the host kills also dies on the guest's screen (before it stayed there as if alive). Food
+  from a chunk both eat at the same moment counts once. Test: `coop_cell_meat.py` (suite `cell_meat`).
 
 ## [0.7.2.1] - 2026-10-24
 

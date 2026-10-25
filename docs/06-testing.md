@@ -121,6 +121,14 @@ guest) to show the difference in one session (`coop_cell_spin.py --without-fix` 
 `coop.pool` prints `cell_contacts: creature_pairs=… bite_events=…` (collision pairs of the own
 cell with creatures, Bite calls of the own cell), on the host `own_bites` / `own_hits` /
 `own_chunks`, on the guest `soft_turns`, `chunks_sent`, `chunks_taken`, `breaks_sent`.
+Kills and meat (docs/re/cell.md 11, `coop_cell_meat.py`): `coop.pool kill [c<key>|-] [hit]` (one
+bite through Bite, or DamageCell only; call it about once a second: a bitten cell is not hurt again
+at once), `coop.pool meat` (all meat cells, `l…` = a guest's own), `coop.pool loot` (host: cells of
+the last loot drops with age and position), `coop.pool eat <key>` (the game's EatFood on a cell: the
+Karke fixture's cell is a herbivore, its mouth does not take meat), `coop.pool swimto <key> [tp]`;
+counters `npc_deaths`, `loot_calls`, `loot_cells`, `kills_in`, `eats_late` (host), `mirror_kills`,
+`kills_sent`, `death_replays`, `loot_skipped` (guest). Loot cells are not kept alive: teleporting the
+players away removes them (eat right after a kill).
 
 ## 6.4 Test levels
 
