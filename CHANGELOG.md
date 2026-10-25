@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.2.2] - 2026-10-25
+
+Fixes from a player report (two brothers playing the Cell and the Creature stage). 0.7.2.2 plays
+together with 0.7.x (the network protocol did not change), but the fixes need both players on
+0.7.2.2: host and guest share the work of kills, meat and editors.
+
 ### Fixed
 - **Cell: the host's creatures no longer spin on the guest's screen, and the guest can kill them.**
   A creature now faces the same way for both players (it kept turning on the guest, between the
@@ -29,6 +35,9 @@
   one; the guest's own creature editor after the vote opens once its world has loaded (opened right
   after the start-of-Creature world arrived, it came up without parts or buttons and the guest was
   stuck in it). Test: `coop_editor_desync.py` (suite `editor_desync`).
+- **Crash reports:** the minidump of a crash came out empty on some systems and then the archive was
+  not made; now the report, the archive and the mark for the next start come first, the minidump
+  (of the crashed thread) last, and the archive is made again with it.
 
 ## [0.7.2.1] - 2026-10-24
 
