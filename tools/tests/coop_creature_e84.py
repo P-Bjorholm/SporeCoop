@@ -12,8 +12,8 @@ killed them"; the host crashed 3 times at 0xD48634, CreatureStageEventHandler re
    creature attack vt 0xB8 posts) goes through the game's dispatcher to every creature-stage
    listener, CreatureStageEventHandler among them. Before the fix the host crashed at 0xD48634.
 4. The removal on again (as in normal play): the creature is gone within seconds.
-5. The guest joins: its puppet reuses the herd of its species (no new herd per spawn), also after
-   a rejoin.
+5. The guest joins: its puppet gets a herd of its species, reused after a rejoin (a new herd per
+   spawn stayed in the world and in every save).
 
   SPORE_LANE=2 python3 tools/tests/coop_creature_e84.py
 """
@@ -159,7 +159,9 @@ def main():
     wait_guest_in(host, guest, 120)
     wait_puppet(host)
     h2 = archless_herds(host)
-    ck(h1 == h0 and h2 == h0, f'no new herd per puppet spawn (herds without an archetype {h0} -> {h1} -> {h2})')
+    # the herd the save brought back is of the species the game gave the unknown creature after the
+    # restart (the guest's creation is registered only when it joins): the first spawn may add one
+    ck(h1 <= h0 + 1 and h2 == h1, f'no new herd per puppet spawn (herds without an archetype {h0} -> {h1} -> {h2})')
     ours, other, _ = untuned(host)
     ck(other == 0, f'no creature without tuning but ours ({ours} ours, {other} other)')
     ck.faults(host=host, guest=guest)

@@ -403,6 +403,28 @@ void* create_herd(const net::Vec3& pos, void* species)
     return h;
 }
 
+// A herd like the ones create_herd makes (no archetype, no nest, not the avatar's) of this species, or
+// null. Each puppet used to get a new herd and the herd stayed after the puppet was gone: a session
+// with rejoins and editors left one per spawn in the world, and every save kept them all.
+void* own_herd_for(void* species)
+{
+    struct F {
+        void* species;
+        void* found;
+    } f{species, nullptr};
+    for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* f = (F*)u;
+            if (noun != kHerdNoun || !object_alive(o) || IsBadReadPtr(o, 0x21C) || herd_species(o) != f->species ||
+                field<uint32_t>(o, 0x88) || herd_nest(o) || field<uint8_t>(o, 0x84))
+                return true;
+            f->found = o;
+            return false;
+        },
+        &f);
+    return f.found;
+}
+
 // A herd of our own (puppets, NPC proxies) must not grow: CreateHerd gives it a target size of 5
 // and it was enabled, so the game filled it with 4 clones of the guest's creature on the host
 // (real NPCs, mirrored to the guest too; play_creature.py 2026-10-23, docs/re/creature.md 6).

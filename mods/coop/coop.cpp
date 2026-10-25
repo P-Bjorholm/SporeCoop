@@ -447,9 +447,13 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
 }
 
 // The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
-// the adult creature of another species an event is about (0xD48634). Our puppets and NPC proxies
-// have no +0xE84 object: the guest faulted there while it fought proxies (play_creature.py,
-// 2026-10-23). During the handler they get a blank one whose +0x32C is -1 ("none").
+// the creature an event is about (msg+4: the attacked creature of 0xD335362C, the impressed one of
+// 0x60B4123) when it is an adult of another species, without a null check (0xD48634). Our puppets
+// and NPC proxies have no +0xE84 object: the guest faulted there while it fought proxies
+// (play_creature.py, 2026-10-23). The host of a player's report faulted there 3 times on a
+// creature that was none of ours (a puppet brought back by a save, npc.cpp remove_strays), so the
+// creature of the message itself is checked too, whatever it is. During the handler these get a
+// blank object whose +0x32C is -1 ("none"); a creature with tuning is never touched.
 typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
 StageMsg_t o_StageMsg;
 alignas(16) uint8_t g_blank_e84[0x1000];
@@ -457,7 +461,7 @@ unsigned g_stage_msg_guards; // handler calls that needed the blank object (test
 unsigned g_stage_msg_other;  // ... for a creature of the message that was none of ours (tests)
 bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 {
-    void* patched[256];
+    void* patched[257];
     int n = 0;
     if (g_mode == modes::kCreature)
         for (void* c : game::puppets()) {
@@ -467,6 +471,17 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
                 patched[n++] = c;
             }
         }
+    // the two messages whose msg+4 is the creature read at 0xD48634 (cast with noun 0x18EB45E, 0xAC8010)
+    if ((id == 0xD335362Cu || id == 0x60B4123u) && msg && !IsBadReadPtr(msg, 8)) {
+        void* c = ((void**)msg)[1];
+        void** e84 = c ? (void**)((uint8_t*)c + 0xE84) : nullptr;
+        if (c && !IsBadReadPtr(c, 0xE88) && !IsBadReadPtr(*(void**)c, 0x24) && game::noun_id(c) == 0x18EB45Eu &&
+            *e84 == nullptr) {
+            *e84 = g_blank_e84;
+            patched[n++] = c;
+            g_stage_msg_other++;
+        }
+    }
     if (n)
         g_stage_msg_guards++;
     bool r = o_StageMsg(self, id, msg);

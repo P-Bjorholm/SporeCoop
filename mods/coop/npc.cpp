@@ -387,9 +387,56 @@ static void guest_tick(double now)
     }
 }
 
+// Our creatures (the partner's puppet, NPC proxies) live in herds of our own (CreateHerd(.., 0, 0, 0,
+// 0): no archetype, no nest, not the avatar's) and have no archetype tuning (+0xE84). A save made
+// while they existed keeps them: loaded again (after a restart of the game) such a puppet is a
+// plain game creature of the partner's species, without tuning and with its AI on, and the first
+// attack on it read (+0xE84)->+0x32C in CreatureStageEventHandler (0xD48634: the host crashed 3
+// times after killing "these guys", 2026-10-25; docs/re/creature.md 4). Every such creature that is
+// not one of ours now is removed (also from saves that already hold them). Herds of the game always
+// have an archetype (137 herds on Scalinus, none without), so a creature of the game is never one.
+static uint32_t g_strays_removed = 0;
+static double g_strays_at = 0;
+
+static bool own_kind_herd(void* h)
+{
+    return h && !IsBadReadPtr(h, 0x21C) && game::object_alive(h) && game::noun_id(h) == game::kHerdNoun &&
+           *(uint32_t*)((uint8_t*)h + 0x88) == 0 && !game::herd_nest(h) && !*(uint8_t*)((uint8_t*)h + 0x84);
+}
+
+static void remove_strays(double now)
+{
+    if (!g_strays_on || now - g_strays_at < 1.0)
+        return;
+    g_strays_at = now;
+    struct Acc {
+        std::vector<void*> v;
+        void* av;
+    } a{{}, game::avatar()};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* a = (Acc*)u;
+            if (noun != 0x18EB45Eu || o == a->av || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
+                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o))
+                return true;
+            if (own_kind_herd(game::herd_of(o)))
+                a->v.push_back(o);
+            return true;
+        },
+        &a);
+    for (void* c : a.v) {
+        H->log(M, SK_INFO, "removed a creature of species %08X without tuning in a herd like ours (from a save made "
+               "while a partner's puppet existed)", game::species_key(c).instance);
+        game::destroy_creature(c);
+        g_strays_removed++;
+    }
+}
+
 void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
+    if (game::in_creature_stage())
+        remove_strays(now);
     // creature stage only: adventure creatures are scripted by the adventure on every machine
     if (!g_enabled || !C.sess || !npc_stage())
         return;
@@ -614,17 +661,17 @@ std::string status()
         size_t known = 0;
         for (auto& [g, ks] : g_known)
             known += ks.size();
-        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u\n",
+        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
-                 g_kills_credited);
+                 g_kills_credited, g_strays_removed);
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
-                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u\n",
+                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u strays_removed=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
-                 g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size());
+                 g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_strays_removed);
     }
     return b;
 }
