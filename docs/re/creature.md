@@ -408,3 +408,47 @@ the ones I killed since he still sees them alive" (fix/creature-desync, `coop_cr
 * ✗ Real input: in the fixture the host's clicks on the restored creature did not make the avatar
   walk or attack (WASD did move it; key 1 hit nothing at 3-5 m); the test posts the game's attack
   message instead (`coop.npc attackmsg`).
+
+## 13. Another creation under the same key: the host's nests on the guest (2026-10-25)
+
+From the player report (screenshots of both players at one nest): the host saw blue "Woopsies" and
+"Impress 3 Woopsies to ally 0/3", the guest small creatures of another look and "The Datzu are your
+allies! You can heal at their nest or add them to your pack!" (fix/nest-species,
+`coop_nest_species.py`).
+
+* ✔ Creation ids are per profile and sequential (docs/re/creations.md 1.2: the first own cell was
+  0x290742F6 in both test profiles), and Spore populates a planet with the player's own creations
+  too. A guest that made creatures owns other creations under the keys of the host's: its game
+  resolved the host's species key to **its own creation** (the planet's herds and nests from the
+  received save, the NPC proxies from MSG_NPC_SPAWN, the species card's name), and its species
+  table entry of that key (the host's) went to a nest it saw as its own species. Nothing failed,
+  so the 0.7.2.3 species transfer (asks only for unknown keys) never ran.
+* ✔ **The game's caches go by key**: with the guest's My Creations holding the Kirgle under the
+  Judge's key 29020CC4, the guest still built the Judge there (exp. 2026-10-25, lane 5): its
+  `Pollination.package` held a `creaturedata` 0x0F43029A of 29020CC4 (and its graphics cache a baked
+  model) from earlier sessions in which it had got the host's Judge. So registering the host's
+  records under the host's key (priority 2000, above My Creations) cannot win over a guest that has
+  ever used its own creation of that key: the guest needs a key of its own for it.
+* ✔ `cSpeciesManager` keeps its profiles for the whole process (the map at mgr +4, node value
+  +0xC): after a world load the guest's profiles of the planet's species were the same objects
+  (pointers equal). `GetSpeciesProfile` 0x4DF5C0 (GOG 2024) creates one when the node's value is
+  null; `0x4DF740` (the lookup) reloads a profile whose `+0x53C` (version) is 0 from its
+  `creaturedata` (`LoadCreatureData` via 0x4D4F70). Not used by the fix.
+* ✔ A planet save names its species big-endian `{group 40626200, type 2B978C46, instance}` in the
+  records of herds (01BE418E), creatures (018EB45E), the cPlayer (02C21781), 03572E72 and the
+  self-keyed 01897C18 (Scalinus: 60 species), most records RefPack-compressed. No little-endian
+  copies of the keys.
+* Co-op (creations.cpp, MSG_CREATION kind 5): the host finds the species keys in the files it
+  shares (`dbpf::find_be_keys`) and sends, before the offer, the records (bem + metadata, from the
+  file the game reads them from) of every one its EditorSaves database answers for; the same before
+  an NPC spawn of one (`creations::host_species_out`). The guest registers each under
+  `0x7D000000 | fnv(content) & 0xFFFFFF` (the same creation gets the same key every session, which
+  keeps the caches right), writes that key into the received save files before they are written
+  (`dbpf::remap_be_keys`: a changed record goes uncompressed to the end of the file, its index entry
+  points there) and maps it in NPC spawns, the host's species table and the goal reward it reports
+  (`creations::local_species` / `host_species`). The planet, its nests, the proxies, the cards and
+  the table then agree on the host's creation. Premades and Sporepedia downloads keep their keys.
+* ? Not checked: a real nest (herd with an archetype) of a host creation (the fixture planet has
+  Maxis species only; the test's herd comes from `coop.npc spawn` and a save), the Tribe and later
+  stages with such species (the save rewrite covers every stage), a downloaded Sporepedia creation
+  under a colliding key (ids from the server: not expected to collide).

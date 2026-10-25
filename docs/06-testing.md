@@ -100,6 +100,12 @@ Test runs don't get in the way of whoever is at the computer:
   stops the headless shell. Sharing the real runtime folder with it would unmount the Flatpak
   document portal, so it never does.
 
+* The test profiles' caches by key: a creation key a guest profile ever built (the host's "Judge"
+  29020CC4, sent by `coop_creature_desync.py`) left its `creaturedata` in the guest's
+  Pollination.package and a baked model in its graphics cache; the guest builds that body for the key
+  whatever its own records hold (docs/re/creature.md 13). A test of "another creation under the same
+  key" takes a key the guest never had (`coop_nest_species.py`: 290229B9).
+
 ## 6.3 Development loop
 
 ```bash
@@ -149,6 +155,7 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
 | Space trade | a tool gift by a real click on the F9 Space page (Antimatter Bomb: 5 of 12 charges, a new tool for the guest), no room (the guest at 97/99 keeps 2, 3 come back), a spice sale to the guest's home colony from the roster (both games' shared money +10 x price, the spice moves from the host's cargo to the guest's), faults; rivals mode reported as untested without space_rivalry; about 1 min after the 45 s cold start | `coop_space_trade.py` |
 | Creature desync | the players' order of 2026-10-25 from the `creature` fixture, the guest without own creations: the host's pack gets a companion of a species only the host has (`coop.npc spawn 29020CC4` + `coop.npc recruit <id>`), both evolve through the vote (real "I'm ready", a body drag, "done"), both games are killed, the host loads its save, the guest joins again; after the editors and after the reload: the guest builds the companion, mirrors no NPC the host does not have, sees the host's kill, the host shows the guest's edited creature (fails on 0.7.2.2: companion "pending" (unknown species), 22 living copies after the editors) | `coop_creature_desync.py` (~2.5 min, cold start) |
+| Nest species | the guest's My Creations get its Kirgle also under the key of the host's TigerHorse (290229B9; a guest profile restarted with that package), the host spawns an NPC of it (`coop.npc spawn`), sets its species record (`coop.social record`), saves and sends the world again: the guest builds the NPC from the host's records (`coop.creations bem <key>` on both), the received save names the species by the guest's key (`coop.npc archless`), the host's record reaches the guest under that key (fails on 0.7.2.3: the guest's own body, the host's key in the save) | `coop_nest_species.py` (~4 min, cold start) |
 | New game join | the host has an old game (fixture `creature`), starts a new one with a typed planet name ("Земля"; `--stage creature`, `--name`), hosts; the guest joins from its menu and must play the new planet (before the 0.7.2.1 fix: the guest got no game or an old one) | `coop_join_new_game.py` (~5 min, cold start) |
 | Modes | any mode from a fixture: guest joins from the menu, receives and loads the world, both puppets, movement | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Planet`, `coop_mode.py --adventure` |
 | Bad network | the guest leaves and joins again (even rounds lose the goodbye), timings of handshake, world transfer and reload | `SPORE_NET=awful python3 tools/tests/coop_rejoin_net.py --rounds 4` |

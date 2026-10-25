@@ -91,6 +91,9 @@ creations are 0x29xxxxxx keys from **their** EditorSaves.package and are unknown
 (both test profiles contain the same 0x2902xxxx set with *different* history possible). Two
 players can own different creations with the same key ⇒ a receiver must remap the instance
 (e.g. `0x7C000000 | hash(peer, instance) & 0x00FFFFFF`; bem has no self reference ✔).
+The same holds for the host's creations that populate its planet: the guest's game, its
+`creaturedata` in Pollination.package and its baked models answer for the key with the guest's own
+creation, also when the host's records are registered above My Creations (docs/re/creature.md 13).
 
 ### 1.3 Where the game opens My Creations (✔ 0x6B3930…0x6B39DE)
 

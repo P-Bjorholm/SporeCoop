@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Creature: the guest sees the host's species at the host's nests** (player report: at the same
+  nest the host saw its "Woopsies", the guest other creatures and "The Datzu are your allies!").
+  Spore populates a planet with the player's own creations, and creations are numbered per player:
+  a guest who made creatures has other ones under the same numbers, and its game showed those (and
+  their names and allied state) instead of the host's. The host now sends its own creations that
+  its world uses, and the guest gives them numbers of their own in the host's world, its creatures
+  and its species standings. Both players need this version. Test: `coop_nest_species.py` (suite
+  `nest_species`).
+
 ## [0.7.2.3] - 2026-10-25
 
 Fixes from players' crash reports and screenshots (Cell and Creature stage). 0.7.2.3 plays
