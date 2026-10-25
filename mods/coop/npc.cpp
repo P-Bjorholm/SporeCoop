@@ -570,6 +570,7 @@ static void hatch_tick(double now, bool simulating)
 void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
+    game::destroy_deferred_tick();                      // creatures removed while a cinematic played
     if (game::in_creature_stage())
         remove_saved_strays(now);
     hatch_tick(now, !creatures.empty());
@@ -830,7 +831,7 @@ std::string status()
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played);
     }
-    return b;
+    return b + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc
