@@ -696,11 +696,15 @@ std::string current_world_name()
         return {};
     const char16_t* b = skg::field<const char16_t*>((void*)a, 0);
     const char16_t* e = skg::field<const char16_t*>((void*)a, 4);
-    std::string out;
     if (!b || e < b || e - b > 260 || !skg::readable(b, (e - b) * 2))
         return {};
-    for (; b < e; b++)
-        out += *b < 128 ? (char)*b : '_';
+    // UTF-8, the way world.cpp names the files it sends: a player may type any name for a new planet
+    // ("Земля"), and the save file has that name. Non-ASCII letters used to become '_', so the host did
+    // not find the file of the planet it played and sent another one (docs/07-modes.md 7.2).
+    int n = WideCharToMultiByte(CP_UTF8, 0, (const wchar_t*)b, (int)(e - b), nullptr, 0, nullptr, nullptr);
+    std::string out(n > 0 ? n : 0, 0);
+    if (n > 0)
+        WideCharToMultiByte(CP_UTF8, 0, (const wchar_t*)b, (int)(e - b), out.data(), n, nullptr, nullptr);
     return out;
 }
 

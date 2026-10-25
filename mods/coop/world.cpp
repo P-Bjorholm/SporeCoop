@@ -59,11 +59,13 @@ static bool safe_rel(const std::string& rel)
         if (end == std::string::npos)
             end = rel.size();
         std::string part = rel.substr(start, end - start);
-        if (part.empty() || part == "." || part == ".." || ++depth > 4)
-            return false; // also rejects leading or doubled separators
+        if (part.empty() || part.back() == '.' || part.back() == ' ' || ++depth > 4)
+            return false; // also rejects leading or doubled separators, "." and ".." (Windows drops trailing dots)
+        // a planet file is named as the player typed it ("Bob's World!.spo"): any character a Windows
+        // file name may have, but no ':' (drives, streams), wildcards or control characters
         for (unsigned char c : part)
-            if (!(isalnum(c) || c == ' ' || c == '_' || c == '-' || c == '.' || c == '(' || c == ')' || c >= 0x80))
-                return false; // no ':' (drives, streams), no control characters
+            if (c < 0x20 || c == 0x7F || strchr("<>:\"|?*", c))
+                return false;
         start = end + 1;
     }
     return true;
@@ -173,35 +175,62 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     g_feed = std::move(feed);
 }
 
-// slot holding the planet file the game is playing now (newest copy), else the newest slot
-static std::wstring current_slot(std::string& planet)
+static std::wstring current_db_dir(bool lower = true);
+static bool dir_has(const std::wstring& dir, const std::wstring& file);
+
+// "<name>.spo" of a planet ("snapshot.spo" is the game's temporary file of an unsaved game)
+static bool is_planet_file(const std::string& n)
 {
-    planet = modes::current_world_name(); // "Name.spo"
-    std::wstring dir = games_dir(), best;
-    if (!planet.empty()) {
-        FILETIME bt{};
-        WIN32_FIND_DATAW fd;
-        HANDLE h = FindFirstFileW((dir + L"\\Game*").c_str(), &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                    continue;
-                std::wstring p = dir + L"\\" + fd.cFileName;
-                WIN32_FILE_ATTRIBUTE_DATA a;
-                if (!GetFileAttributesExW((p + L"\\" + widen(planet)).c_str(), GetFileExInfoStandard, &a))
-                    continue;
-                if (best.empty() || CompareFileTime(&a.ftLastWriteTime, &bt) > 0) {
-                    best = p;
-                    bt = a.ftLastWriteTime;
-                }
-            } while (FindNextFileW(h, &fd));
-            FindClose(h);
-        }
-    }
-    if (best.empty()) {
+    return n.size() > 4 && n.compare(n.size() - 4, 4, ".spo") == 0 && n != "snapshot.spo" &&
+           n.find_first_of("/\\") == std::string::npos;
+}
+
+// The save slot to send and the planet in it. A slot (Games\GameN) is a galaxy: every game the
+// player starts on a free disc of the galaxy menu is one more <planet>.spo in the same folder (a
+// new Cell or Creature game next to an old one: Game0 holds both), so the folder does not tell which
+// game is played; the planet does: CurrentGameName, set when a game is started or loaded.
+//   1. the folder the save database points to (where the game writes this game's saves), if it holds
+//      the planet's file; 2. else the newest copy of that file in any Games\GameN.
+// No file of the played planet (not saved yet: a save request the game did not carry out): empty,
+// `missing` set; the caller saves again. Another planet of the slot is never offered instead: the
+// guest then loaded an old game of the host (bug report 2026-10-24: a planet named in Cyrillic was
+// not found, the slot's other planet went out). Only from a menu (no game played, CurrentGameName
+// "SaveGame") the newest slot and a planet in it are sent, as before.
+static std::wstring current_slot(std::string& planet, bool& missing)
+{
+    planet = modes::current_world_name(); // "Name.spo", UTF-8
+    missing = false;
+    if (!is_planet_file(planet)) {
         planet.clear();
-        best = newest_slot();
+        return newest_slot();
     }
+    std::wstring file = widen(planet), db = current_db_dir(false);
+    if (!db.empty() && dir_has(db, file))
+        return db;
+    std::wstring dir = games_dir(), best;
+    FILETIME bt{};
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\Game*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                continue;
+            std::wstring p = dir + L"\\" + fd.cFileName;
+            WIN32_FILE_ATTRIBUTE_DATA a;
+            if (!GetFileAttributesExW((p + L"\\" + file).c_str(), GetFileExInfoStandard, &a))
+                continue;
+            if (best.empty() || CompareFileTime(&a.ftLastWriteTime, &bt) > 0) {
+                best = p;
+                bt = a.ftLastWriteTime;
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    if (best.empty())
+        missing = true;
+    else
+        H->log(M, SK_WARN, "world: %s is not in the save folder %s: sending the newest copy in %s", planet.c_str(),
+               narrow(db).c_str(), narrow(best).c_str());
     return best;
 }
 
@@ -316,6 +345,8 @@ bool save_game(std::string& err)
     return true;
 }
 
+static bool g_planet_missing; // the last share_now failed because the played planet has no file yet
+
 struct PendingShare {
     uint8_t peer;
     uint64_t at;   // share from this tick count (files are written asynchronously after a save)
@@ -324,6 +355,7 @@ struct PendingShare {
     uint64_t next_try = 0;
     bool told = false;
     uint32_t mode = 0; // the game mode the save was made in
+    int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
 };
 static std::vector<PendingShare> g_pending;
 
@@ -336,7 +368,14 @@ bool share_with(uint8_t peer, std::string& err, bool save_first)
         g_pending.push_back({peer, 0, true});
         return true;
     }
-    return share_now(peer, err);
+    if (share_now(peer, err))
+        return true;
+    if (!g_planet_missing)
+        return false;
+    // a new game that was never saved (coop.share, save_before_share=0): save it first; sending
+    // the slot without its file sent an older planet of the host
+    err.clear();
+    return share_with(peer, err, true);
 }
 
 bool save_busy()
@@ -359,7 +398,11 @@ bool save_pending()
 bool share_now(uint8_t peer, std::string& err)
 {
     std::string cur_planet;
-    std::wstring slot = current_slot(cur_planet);
+    std::wstring slot = current_slot(cur_planet, g_planet_missing);
+    if (g_planet_missing) {
+        err = "your game (" + cur_planet.substr(0, cur_planet.size() - 4) + ") is not saved yet: save it (pause menu)";
+        return false;
+    }
     if (slot.empty()) {
         err = "no saved game found (save the game before hosting)";
         return false;
@@ -379,18 +422,21 @@ bool share_now(uint8_t peer, std::string& err)
     }
     o.world_id = crc;
     o.planet = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
-    for (auto& f : o.files) // planet name = <name>.spo in the slot root
-        if (f.rel.size() > 4 && f.rel.compare(f.rel.size() - 4, 4, ".spo") == 0 && f.rel.find('/') == std::string::npos)
-            o.planet = f.rel.substr(0, f.rel.size() - 4);
-    if (cur_planet.size() > 4) // a slot can hold several planets: prefer the one being played
+    if (cur_planet.size() > 4) // a slot holds several planets: the one being played
         o.planet = cur_planet.substr(0, cur_planet.size() - 4);
+    else // from a menu: some planet of the slot
+        for (auto& f : o.files)
+            if (is_planet_file(f.rel)) {
+                o.planet = f.rel.substr(0, f.rel.size() - 4);
+                break;
+            }
     net::WorldOffer off;
     off.world_id = crc;
     off.total_size = total;
     off.file_count = (uint16_t)o.files.size();
     off.planet = o.planet;
-    H->log(M, SK_INFO, "world: sharing %s (%u files, %u bytes, id %08X) with player %u",
-           narrow(slot).c_str(), (unsigned)o.files.size(), total, crc, peer);
+    H->log(M, SK_INFO, "world: sharing %s, planet %s (%u files, %u bytes, id %08X) with player %u",
+           narrow(slot).c_str(), o.planet.c_str(), (unsigned)o.files.size(), total, crc, peer);
     o.header_sent = false;
     // a newer world replaces a transfer to the same player that is still running (a guest that left
     // and joined again gets the same id): both used to send chunks in turn, the guest wrote the old
@@ -668,7 +714,17 @@ void tick(net::Session& s)
             H->log(M, SK_INFO, "world: no saved box %llu ms after the save: sharing anyway",
                    (unsigned long long)(now - g_saved_at));
         std::string err;
-        if (!share_now(g_pending[i].peer, err))
+        if (!share_now(p.peer, err) && g_planet_missing && ++p.saves < 3) {
+            // the save did not write the played planet's file (yet): save again rather than send
+            // another planet of the slot
+            H->log(M, SK_WARN, "world: %s: saving again (try %d)", err.c_str(), p.saves + 1);
+            p.need_save = true;
+            p.next_try = now + 2000;
+            p.latest = 0;
+            i++;
+            continue;
+        }
+        if (!err.empty())
             g_feed("cannot share the world: " + err);
         g_pending.erase(g_pending.begin() + i); // p is invalid from here
     }
@@ -733,10 +789,12 @@ void tick(net::Session& s)
         g_out.pop_front();
 }
 
-static std::string planet_file(const std::vector<std::string>& rels)
+// the planet file to load from a received slot: the one the host plays (a slot holds every planet
+// of the host's galaxy, old games too); an older host that names none: the first planet in it
+static std::string planet_file(const std::vector<std::string>& rels, const std::string& named)
 {
     for (auto& r : rels)
-        if (r.size() > 4 && r.compare(r.size() - 4, 4, ".spo") == 0 && r.find('/') == std::string::npos)
+        if (named.empty() ? is_planet_file(r) : r == named + ".spo")
             return r;
     return {};
 }
@@ -750,7 +808,7 @@ static bool dir_has(const std::wstring& dir, const std::wstring& file)
 // same planet overlap. Reuse, in order: the slot that already holds this host world,
 // a slot of the same planet (backed up first), else the first free GameN.
 // folder the save database points to now (the slot being played), lower case, no trailing '\'
-static std::wstring current_db_dir()
+static std::wstring current_db_dir(bool lower)
 {
     uintptr_t getdb = H->sym("Resource::GetDatabaseByID");
     void* db = getdb ? skg::cdecl_call<void*>(getdb, 0x4729A47u) : nullptr;
@@ -760,8 +818,9 @@ static std::wstring current_db_dir()
         w += (wchar_t)(*c == u'/' ? u'\\' : *c);
     while (!w.empty() && w.back() == L'\\')
         w.pop_back();
-    for (auto& ch : w)
-        ch = towlower(ch);
+    if (lower)
+        for (auto& ch : w)
+            ch = towlower(ch);
     return w;
 }
 
@@ -877,9 +936,9 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
         dir += (char16_t)(c == L'\\' ? L'/' : c);
     if (dir.empty() || dir.back() != u'/')
         dir += u'/';
-    std::u16string name;
-    for (char c : planet_file)
-        name += (char16_t)(unsigned char)c;
+    std::u16string name; // UTF-8 -> UTF-16 (a planet named "Земля" did not load)
+    for (wchar_t c : widen(planet_file))
+        name += (char16_t)c;
     skg::vcall<bool>(db, 0x1C / 4); // Close
     if (!skg::vcall<bool>(db, 0x2C / 4, dir.c_str())) { // SetLocation
         err = "SetLocation failed";
@@ -921,7 +980,8 @@ static void finish(const std::string& host_name)
         }
         rels.push_back(f.rel);
     }
-    std::wstring slot = pick_slot(crc, planet_file(rels));
+    std::string planet = planet_file(rels, g_in.offer.planet);
+    std::wstring slot = pick_slot(crc, planet);
     if (slot.empty()) {
         g_feed("world transfer failed: no free save slot");
         g_in = In{};
@@ -950,21 +1010,16 @@ static void finish(const std::string& host_name)
     }
     std::string slot_name = narrow(slot.substr(slot.find_last_of(L'\\') + 1));
     H->log(M, SK_INFO, "world: received %u bytes into %s", g_in.received, narrow(slot).c_str());
-    std::string planet;
-    for (auto& r : rels)
-        if (r.size() > 4 && r.compare(r.size() - 4, 4, ".spo") == 0 && r.find('/') == std::string::npos)
-            planet = r;
-    // a slot can hold several planets: the host names the one it plays
-    for (auto& r : rels)
-        if (!g_in.offer.planet.empty() && r == g_in.offer.planet + ".spo")
-            planet = r;
-    g_in = In{};
     std::string err;
-    // "snapshot.spo" is the game's temporary file of an unsaved game: loading it crashes
-    if (planet == "snapshot.spo") {
+    if (planet == "snapshot.spo") // the game's temporary file of an unsaved game: loading it crashes
         planet.clear();
-        err = "the host has not saved its game yet";
-    }
+    // never another planet of the slot: that is another game of the host (an old one)
+    if (planet.empty())
+        err = g_in.offer.planet.empty() ? "the host has not saved its game yet"
+                                         : "the planet " + g_in.offer.planet + " is not in it";
+    H->log(M, SK_INFO, "world: the host plays %s: loading %s", g_in.offer.planet.c_str(),
+           planet.empty() ? "nothing" : planet.c_str());
+    g_in = In{};
     // a player in its own editor (everybody evolves its own creature) loads it when it is back:
     // loading a world under an open editor crashed the game
     uint32_t mode = game::mode_id();
