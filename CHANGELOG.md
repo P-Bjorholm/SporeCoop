@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.2.4] - 2026-10-25
+
+More fixes from players' reports (Creature stage, Alt+Shift+Enter). 0.7.2.4 plays together with
+0.7.x (the network protocol did not change); both players need 0.7.2.4 for the fixes on the guest's
+side (the guest's respawn, deaths it sees, the host's species at the nests).
+
 ### Fixed
 - **No more crash on Alt+Shift+Enter** (player crash report, 0x7777BE). It is Spore's own "next
   display adapter" key: on a PC with two or more display adapters (two monitors, or an integrated
