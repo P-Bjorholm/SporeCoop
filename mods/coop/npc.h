@@ -46,6 +46,7 @@ std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)
 std::string herds();                                 // debug: herd objects
 void set_strays(bool on);                            // tests: removal of creatures like ours from saves
+void set_hatch_help(bool on);                        // tests: a waiting hatchling grows up without its family
 bool debug_attack_msg(uint16_t id);                  // tests: the game's attack message on host NPC `id`
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet

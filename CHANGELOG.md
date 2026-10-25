@@ -8,6 +8,14 @@
   and a dedicated GPU) the game rebuilt its graphics device on the other one and crashed, also
   without SporeCoop loaded (a bug of the game). The key now toggles fullscreen like Alt+Enter
   (players hit it with Shift still held). Test: `coop_alt_enter.py` (suite `alt_enter`).
+- **Creature: a guest grows up again after a death** (player report: "after my death I'm in
+  constant state of growing up from egg ... can't move at all"). A respawn puts the creature back
+  into the nest as a hatchling, and the game waits for a family member of the nest to greet it and
+  make it grow up. A guest has no family of its own (its own NPCs are removed, the host's ones it
+  shows run no AI), so the guest stayed a hatchling for good: half the health, the egg shell on its
+  head on both screens, no control. The guest's hatchling now grows up a few seconds after the
+  respawn (the host's only when its family has not come for 40 s). Test: `coop_creature_respawn.py`
+  (suite `creature_respawn`).
 
 ## [0.7.2.3] - 2026-10-25
 

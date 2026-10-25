@@ -50,6 +50,7 @@ add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the pa
 add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+Enter in co-op: no fault at 0x7777BE (device recreation), on the ground
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
+add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, version in the menu, report button, hang / crash reports
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')

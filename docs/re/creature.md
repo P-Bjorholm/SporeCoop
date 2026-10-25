@@ -408,3 +408,53 @@ the ones I killed since he still sees them alive" (fix/creature-desync, `coop_cr
 * ✗ Real input: in the fixture the host's clicks on the restored creature did not make the avatar
   walk or attack (WASD did move it; key 1 hit nothing at 3-5 m); the test posts the game's attack
   message instead (`coop.npc attackmsg`).
+
+## 13. Respawn, the hatchling and its greeting (player report "growing up from egg", 2026-10-25)
+
+Report (the guest "Dexie", GOG 2024, 0.7.2.x): "After my death I'm in constant state of growing up
+from egg and going back into small version and again grow back. Can't move at all." Screenshots: the
+guest's creature with the egg shell on its head on both screens, flower particles, at the nest.
+
+* ✔ The respawn after the death caption's OK is `0xD40FA0` (the caller of `0xC04F30(0)` at 0xD4108A):
+  the same avatar object (the pointer does not change) goes to its herd's nest (`0xC6AE60` herd ->
+  nest position, the herd's home +0x34 without a nest), scale 0.1, flags `+0xB58 |= 0x800`, age 0
+  (`+0xB34`), the same for every pack member (cPosseSimulator list `0xB1F900`), then the cinematic
+  `CRG_Fade_From_Black_Egg`. The hatchling has half the health (Kook test creature 5/10, the guest's
+  Kirgle 8/16) and its behaviour tree (`[creature+0xB4C]+0x1D8`) is `0x9413EDEB`: it waits.
+* ✔ A **family member of the nest** greets it: the BT node `0xD64A30` (table at .data 0x1583EF8,
+  id 0x9413EDEB at 0x1583F00) ticks on that NPC (`[esp+4]`, the tree owner) with the avatar
+  (`GetAvatar`) as the other. States (`[esi]`, jump table 0xD650BC): 0 waits for avatar +0x135 and
+  the avatar's tree 0x9413EDEB, plays 0xF41BB04C on the avatar and 0xB52C67F7 on the NPC; 2 the
+  avatar's scale (vt 0x80(0)); 1 more animations (0x341B7A96 / 0x141B7A5C); 3; 4 abilities and a
+  stimulus 0x10 to the creatures around; 9 when the NPC's animation ends: **avatar vt 0xE8(1)**
+  (`0xC04F30`, `SporeCoop::cCreatureAnimal_GrowTo`) and `cPosseSimulator 0xD53980` -> `0xD52DF0(1)`
+  (the pack grows too); 10 holds while the avatar stays within 5 m of the nest.
+* ✔ `0xC04F30(1)` sets `+0x1688 = 1`; `cCreatureAnimal::Update` runs the grow sequence `0xC04FB0`
+  (state +0x1688: 1 effect 0x3A616FEE/0x715FB4A7 and the target scale, 2 scales up and calls SetAge
+  `0xC22370(1)`, combatant vt 0x2C(1), 3, 4 stops the effect). Then age 1, full health, the avatar's
+  tree changes (0x02DDE8FE on both test creatures) and the player has control again. On the host this
+  took ~13-19 s after the OK (probe: 0xC04F30(1) from 0xD65026 <- 0xD61C39 <- BehaviorTreeTickGeneric).
+* ✔ **A guest has no family**: `npc.cpp update_filter` removes the guest's own NPCs (the host's NPCs
+  are the world), and the host's family members on the guest are proxies, puppets without AI
+  (`h_NPCTickAI`). Nobody greets the guest's hatchling: it stayed age 0, tree 0x9413EDEB, half the
+  health, the egg shell on, W did nothing, for minutes (lane 3, with and without the guest's own
+  creation, by `coop.team die` and by a lethal hit after a pack rescue). ~ The host's puppet of
+  the guest replays the guest's animations, which fits the egg shell the players saw on the guest
+  on the host's screen too (not checked in the test). The host itself always grew up (its own
+  family greets it).
+* ✔ Calling `0xC04F30(avatar, 1)` (`call 0xC04F30 thiscall <avatar> 1`) on the stuck guest grew it
+  up within a second, the tree changed and W moved it again.
+* Co-op (fix/death-loop): `npc.cpp hatch_tick` does what state 9 does (`game::grow_up`: 0xC04F30(1)
+  and 0xD52DF0(1)) when the avatar has been a waiting hatchling for 4 s of simulated time without a
+  cinematic on a guest (NPC sync on, the host present), or 40 s on the host (a greeter that never
+  comes, e.g. a partner's puppet picked from the avatar herd). Log line "the hatchling waited for
+  its family". `coop.avatar` prints `age=` and `hatchling_waiting=`; `coop.npc hatch off` turns it
+  off (tests). Regression: `coop_creature_respawn.py`.
+* ~ The same wait comes at the start of the Creature stage (the first hatch after the Cell stage);
+  not tested on a guest here (the fixture starts adult), the fix covers it the same way.
+* ✗ The jump of the guest's hatchling ~10 s after the OK (5-6 m, a different spot each time, not
+  through `Teleport` 0xC0C040 or `SetPosition` 0xC0DEA0 as far as the probes saw) is not explained;
+  the host's hatchling did not move. Harmless once the hatchling grows.
+* ✔ Seen on the way: a lethal hit right next to the nest after a pack rescue shows the death
+  caption, but `mbDead` (+0xB5E) stays 0 and the health climbs again while the caption waits (the
+  nest heals, the pack regeneration too); the OK respawns it normally.

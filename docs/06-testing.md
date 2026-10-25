@@ -716,3 +716,22 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * `coop.avatar` prints `ground=` (cPlanetModel::GetHeightAt under the avatar) and `above=` (its
   height over the terrain) in the planet stages. A creature moved under the terrain (set_position 3 m
   down) is back on it within a frame: the game clamps it.
+
+## 6.21 Deaths and respawns in the Creature stage (coop_creature_respawn.py, ~5 min cold)
+
+* `coop.team die` kills the own creature through the game's damage path (TakeDamage, no filter);
+  `coop.team hit <dmg>` hits it through the mod's damage filter, so the pack rescue applies (40 %
+  health, once a minute per machine) and a second lethal hit kills. The death caption comes ~6 s
+  after the hit; `uifind.shown(con, 'You were killed')` is the reliable "dead": after a kill next to
+  the nest the health may climb again while the caption waits (mbDead stays 0), so `hp <= 0` is not.
+  `key enter` presses OK; the respawn is a hatchling (`coop.avatar` `age=0`, half the health), the
+  host's grows up 13-19 s later (its family greets it), the guest's 4 s of simulated time after the
+  respawn cinematic (~14 s after the OK; docs/re/creature.md 13).
+* Movement is checked with W held 2 s (`key w down` / `key w up`): 5-8 m when the creature has
+  control, 0 m while it is a waiting hatchling. Right after the join the first W may do nothing
+  (the test tries 3 times).
+* ✗ `coop.npc hurt <player> <npc> <dmg>` (a host NPC "hits" a partner's puppet) dealt no damage in
+  the game here, also 100000 and on the host's own creature: TakeDamage with that NPC as the
+  attacker (55 m away, no fight) took nothing off. It still runs the mod's filter and the rescue,
+  which is what `coop_team.py` checks ("guest survived a lethal hit"); the game's damage of that hit
+  is not tested there.
