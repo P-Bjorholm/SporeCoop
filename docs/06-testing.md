@@ -795,3 +795,11 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   ally card fail together. A test timing (the NPC was still busy or out of the social range),
   not a co-op regression. One run also failed "the pause menu is up: the partner's name tag is not
   drawn" once (not seen again).
+
+## editor_strays fails under a full lab load (2026-10-25)
+<a id="testing-editor-strays-load"></a>
+
+* `coop_editor_strays.py` failed once in a 32-test run on 6 lanes ("host after evolution 2: no
+  puppet left over", two creatures of the guest's species in one herd, puppet=0) and its retry too;
+  alone it passed 3 of 3 right after on the same tree (lanes 2-4). Treat a single failure under load
+  as flaky until it fails alone.
