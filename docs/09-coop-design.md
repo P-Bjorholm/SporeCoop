@@ -181,7 +181,12 @@ analysis - [docs/re/creations.md](re/creations.md)):
   cell - the player's model + a level rebuild (the cell hatches again next to the partner);
 * evolution vote: the host and guests open the editor for **their own** creature; a host world
   that arrives while the guest is in the editor is loaded after the guest leaves the editor; after the editor
-  the edited creature becomes the player's own and is sent to the others.
+  the edited creature (or cell) becomes the player's own and is sent to the others, always with its
+  records (a new creation is sent once it is in the My Creations file: [re/creations.md](re/creations.md) 8);
+* Cell stage: a guest calls its own mate (the mating-call button) and evolves its own cell in its
+  own editor without a vote; the host's mating call goes through the vote (one vote per call), and
+  after the host's editor everybody gets the world and the host's new cell
+  ([re/cell.md](re/cell.md) 10, `coop_editor_desync.py`).
 
 In the own editor the parts of the player's own creature are allowed even when the stage editor's
 part list lacks them (Creature Creator parts): otherwise "done" would stay in the editor

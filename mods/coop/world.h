@@ -41,5 +41,8 @@ bool load_local(const std::string& slot_name, const std::string& planet, std::st
 // the galaxy menu's intro cinematic GGE_Intro plays (docs/re/space.md 7.9; ~10 s starting ~16 s after
 // the menu came up, its input lock drops all clicks on the menu); callable in the frame
 bool menu_intro_playing();
+// a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
+// opened meanwhile came up without its interface (coop.cpp own editor)
+bool cinematic_playing();
 
 } // namespace world

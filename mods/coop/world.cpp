@@ -532,6 +532,12 @@ bool menu_intro_playing()
     return cm && *(uint32_t*)(cm + kCineState) && *(uint32_t*)(cm + kCineId) == kMenuIntroId;
 }
 
+bool cinematic_playing()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && *(uint32_t*)(cm + kCineState);
+}
+
 // the game's quit message: saves and leaves any stage for the galaxy menu (in space the planet first)
 static bool post_quit_to_menu(std::string& err)
 {

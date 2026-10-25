@@ -265,6 +265,27 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
   the part-list error was waived.
 * Leaving the editor after the host has evolved: the guest is in the stage for ~2 s, then goes to
   the galaxy menu and loads the host's world (~5 s); its own body is set 3 s after that.
+* `coop_editor_desync.py` (~6 min, cold) gets into the editors the players' way, from the `cell`
+  fixture with a guest **without own creations** (`twoinst.start(..., guest_creations=False)`):
+  * Cell: `coop.pool mate button` shows the mating-call button (what collecting a part does), a click
+    on it (721, 1018) calls the mate, `coop.pool mate` prints the mate, its distance and its screen
+    point; clicking at it swims there and the editor opens on contact (both at the same level: food
+    added by hand or a co-op respawn as a small cell can leave them at different levels, then nothing
+    happens). Free cell edit: drag the second eye from (866, 540) to (980, 552) with `button` /
+    `move` (a plain `drag` is too fast for the editors), then the species name field asks for a name
+    on the first save (`click 720 1055`, `click 720 810`, `text <name>`), done (1416, 1058), cancel
+    (1383, 1062).
+  * End of the Cell stage: `coop.pool food 1000`, the cinematic (~20 s) ends with the caption
+    "Congratulations! You're on the path to sentience!" (check 1410, 1048); the button under the
+    portrait (1396, 1063, 'History' before) opens the evolution history, its check (1415, 1055) starts
+    the Creature stage. The game is in Creature mode with the legless creature first; the first creature
+    editor comes as a request inside the stage (the vote). Legs: hold the button on the first leg of the
+    palette (275, 300) and move to (1000, 560) in steps; the editor mirrors it (65 of 115 DNA).
+  * The old code failed it (2 of 2): the guest's mate vanished, the guest's game faulted at
+    0xE83EC8 when the host's new cell arrived (and hung). The second vote after the host's mating call
+    is a race (one run of two). It also checks that the guest's own creature editor shows its
+    interface (`coop.ui tree 4` > 15 windows; a stuck one had 2-15), since a quick "I'm ready" right
+    after the Creature world arrived left the guest in an editor without parts or buttons.
 
 ## 6.9 Captions that wait for the player
 

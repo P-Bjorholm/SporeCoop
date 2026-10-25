@@ -19,6 +19,16 @@
   was not found, so another planet of that folder went out. Planet names in any letters now work on
   both sides, the host always names the planet it plays (saving again if its file is not written
   yet), and the guest never loads another planet instead.
+- **Editors in the Cell and the Creature stage** (player report): a guest can call a mate in the Cell
+  stage and evolve its own cell (its mate was removed by the pool sync at once); after the host's
+  editor the guest no longer crashes and sees the host's new cell or creature right away (a new
+  creation was sent once without its records: the guest's game faulted building the host's cell, or
+  showed its own body for the host until the next send); the host's mating call starts one vote,
+  not a second one that ran on in the editor; a rejoin applies the creations again (writing their
+  files failed while the game had them open); after the own cell editor the new cell stays the own
+  one; the guest's own creature editor after the vote opens once its world has loaded (opened right
+  after the start-of-Creature world arrived, it came up without parts or buttons and the guest was
+  stuck in it). Test: `coop_editor_desync.py` (suite `editor_desync`).
 
 ## [0.7.2.1] - 2026-10-24
 

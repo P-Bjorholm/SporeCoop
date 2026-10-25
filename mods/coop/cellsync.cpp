@@ -39,6 +39,8 @@ static bool in_cell() { return g_ok && game::mode_id() == modes::kCell && modes:
 static uint8_t* G() { return modes::cell_game(); }
 static uint32_t avatar_idx() { return G() ? F<uint32_t>(G(), 0x411C) : 0; }
 static uint8_t* avatar() { return G() ? modes::cell_at(avatar_idx()) : nullptr; }
+// the mate the player's mating call brought (0 = none); the editor opens when the avatar reaches it
+static uint32_t mate_idx() { return G() ? F<uint32_t>(G(), 0x51D4) : 0; }
 static void* fg_query() { return G() ? F<void*>(G(), 0x40FC) : nullptr; }
 // cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer)
 static uint8_t* S()
@@ -1057,10 +1059,13 @@ static void guest_state(net::Reader& r)
         } else
             ++it;
     }
-    // stray local gameplay cells (spawned before the sync started, loot, ...) do not exist on the host
+    // stray local gameplay cells (spawned before the sync started, loot, ...) do not exist on the host.
+    // Not the guest's own mate (G+0x51D4, spawned by its mating call 0xE760F0): it was removed here
+    // within a second, so a guest could never reach it and open its own editor.
     std::vector<uint32_t> stray;
+    uint32_t mate = mate_idx();
     for_each_cell([&](uint8_t* c, uint32_t idx) {
-        if (!g_host_of.count(idx) && !modes::cell_is_puppet(c))
+        if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && idx != mate)
             stray.push_back(idx);
     });
     for (uint32_t idx : stray) {
@@ -1763,6 +1768,22 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "food") { // the game's AddFoodPoints (hooked: shared)
         h_AddFood(atoi(a[1].c_str()), false);
         return "food added";
+    }
+    if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
+        uint8_t* s = S();
+        if (s && a.size() >= 2 && a[1] == "button")
+            F<uint8_t>(s, 0x69) = 1; // as if a part had been collected (0xE5D7B0 sets it)
+        uint8_t* m = modes::cell_at(mate_idx());
+        float sc[2] = {-1, -1};
+        if (m) {
+            net::Vec3 p = pos_of(m);
+            float w[3] = {p.x, p.y, p.z};
+            H->world_to_screen(w, sc);
+        }
+        char b[160];
+        snprintf(b, sizeof b, "mate_button=%d mate=%08X alive=%d dist=%.1f at %d %d", s ? F<uint8_t>(s, 0x69) : -1,
+                 mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f, (int)sc[0], (int)sc[1]);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "hp") {
         F<int>(av, kHp) = atoi(a[1].c_str());
