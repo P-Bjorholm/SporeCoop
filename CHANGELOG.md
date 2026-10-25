@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.2.3] - 2026-10-25
+
+Fixes from players' crash reports and screenshots (Cell and Creature stage). 0.7.2.3 plays
+together with 0.7.x (the network protocol did not change); both players need 0.7.2.3 for the
+species transfer (creatures of species only the host has).
+
 ### Fixed
 - **Cell -> Creature: the guest's game no longer faults when the session ends.** A guest that had
   played the Cell stage together kept the host's cells it showed ("mirrors") after the stage was
