@@ -66,9 +66,13 @@ struct Applied {
     Key orig; // the owner's own key
     void* db = nullptr;
     std::string name;
+    bool unusable = false; // no records and an unknown key: not used here
 };
 static std::map<std::pair<uint8_t, uint8_t>, Applied> g_applied; // (owner, kind)
 static unsigned g_bundles_in, g_bundles_out, g_registered, g_swaps;
+static unsigned g_waits_on_disk; // own creations not sent yet: saved by the editor, not in the file yet
+static unsigned g_unusable;      // received creations without records whose key this game does not know
+static unsigned g_world_swaps;   // a newer version of the host's world creation replaced the older one
 static std::string g_last_error;
 
 // ---- helpers ----
@@ -339,6 +343,49 @@ static void unregister_package(void* db)
 }
 
 // a bundle arrived (or is our own): store it here under a collision-free instance and register it
+// Packages we registered, by file: a bundle applied again (the same version after a rejoin) uses
+// its registered package. Writing the file again failed while the game had it open, and the
+// creation was then not applied at all (the partner's puppet fell back to the own avatar's body).
+static std::map<std::wstring, void*> g_pkgs;
+// the host's creations registered under their original key (the world's species), by that key
+struct WorldPkg {
+    uint32_t id = 0;
+    void* db = nullptr;
+};
+static std::map<std::pair<uint8_t, uint32_t>, WorldPkg> g_world_pkgs; // (kind, original instance)
+
+static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority)
+{
+    auto it = g_pkgs.find(path);
+    if (it != g_pkgs.end())
+        return it->second;
+    std::vector<uint8_t> file = dbpf::write(recs);
+    if (!write_file(path, file)) { // in use (a package we stopped using is still open): another name
+        std::wstring base = path.substr(0, path.size() - 8); // without ".package"
+        bool ok = false;
+        for (int n = 2; n < 50 && !ok; n++) {
+            path = base + L"_" + std::to_wstring(n) + L".package";
+            ok = !g_pkgs.count(path) && write_file(path, file);
+        }
+        if (!ok)
+            return nullptr;
+    }
+    void* db = register_package(path, priority);
+    if (db)
+        g_pkgs[path] = db;
+    return db;
+}
+
+static void drop_package(void* db)
+{
+    if (!db)
+        return;
+    unregister_package(db);
+    for (auto it = g_pkgs.begin(); it != g_pkgs.end();)
+        it = it->second == db ? g_pkgs.erase(it) : std::next(it);
+}
+
+// a bundle arrived (or is our own): store it here under a collision-free instance and register it
 static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
 {
     Bundle b;
@@ -347,7 +394,7 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         return;
     }
     auto& ap = g_applied[{owner, (uint8_t)k}];
-    if (ap.id == id && ap.key.instance)
+    if (ap.id == id && (ap.key.instance || ap.unusable))
         return;
     std::string name;
     for (auto& r : b.recs)
@@ -358,6 +405,7 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     Key use = b.key;
     void* old = ap.db;
     void* db = nullptr;
+    bool unusable = false;
     if (!b.recs.empty() && find_paths()) {
         // the same id everywhere: owner + content hash (a new version after an editor = a new key)
         uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
@@ -367,34 +415,49 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
             if (r.key.instance == b.key.instance)
                 r.key.instance = inst;
         // the host's own creation is also its world's species: register it under the original
-        // key too, above everybody's own My Creations (a guest may own another creation there)
+        // key too, above everybody's own My Creations (a guest may own another creation there).
+        // A newer version under the same key replaces the older package (both at the same
+        // priority, the older one could keep answering for the key).
         if (owner == 0 && C.sess && C.sess->role() == net::Role::Client) {
-            std::vector<dbpf::Record> world = b.recs;
-            std::wstring wp = g_dir + L"\\world_" + std::to_wstring(k) + L"_" + std::to_wstring(id) + L".package";
-            if (write_file(wp, dbpf::write(world)))
-                register_package(wp, kPrioWorld);
+            WorldPkg& wp = g_world_pkgs[{(uint8_t)k, b.key.instance}];
+            if (wp.id != id) {
+                std::wstring path = g_dir + L"\\world_" + std::to_wstring(k) + L"_" + std::to_wstring(id) + L".package";
+                if (void* wdb = package_for(path, b.recs, kPrioWorld)) {
+                    if (wp.db && wp.db != wdb) {
+                        drop_package(wp.db);
+                        g_world_swaps++;
+                    }
+                    wp = {id, wdb};
+                }
+            }
         }
         std::wstring p = g_dir + L"\\p" + std::to_wstring(owner) + L"_" + std::to_wstring(k) + L"_" +
                          std::to_wstring(id) + L".package";
-        if (!write_file(p, dbpf::write(recs))) {
+        db = package_for(p, recs, kPrioPlayer);
+        if (!db) {
             g_last_error = "cannot write the package";
             return;
         }
-        db = register_package(p, kPrioPlayer);
-        if (!db)
-            return;
         use.instance = inst;
+    } else if (b.key.instance && !key_exists(b.key)) {
+        // no records and this game does not know the key (an own creation sent before it was on
+        // disk, or by an older version): nothing to build from; puppets keep a body of their own
+        use = {};
+        unusable = true;
+        g_unusable++;
     }
-    if (old)
-        unregister_package(old);
+    if (old && old != db)
+        drop_package(old);
     ap.id = id;
     ap.key = use;
     ap.orig = b.key;
     ap.db = db;
     ap.name = name;
+    ap.unusable = unusable;
     g_bundles_in++;
-    H->log(M, SK_INFO, "creations: player %u %s = %08X/%08X/%08X '%s' (%u records)", owner, kInfo[k].name,
-           use.instance, use.type, use.group, name.c_str(), (unsigned)b.recs.size());
+    H->log(M, SK_INFO, "creations: player %u %s = %08X/%08X/%08X '%s' (%u records)%s", owner, kInfo[k].name,
+           use.instance, use.type, use.group, name.c_str(), (unsigned)b.recs.size(),
+           unusable ? ": unknown here, not used" : "");
     if (C.appearance_changed)
         C.appearance_changed(owner);
 }
@@ -424,6 +487,16 @@ static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::v
     }
 }
 
+// a creation of this player's own My Creations (the game finds it in the EditorSaves database),
+// not a premade every machine has
+static bool in_my_creations(const Key& k)
+{
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    void* es = a_GetDb ? cdecl_call<void*>(a_GetDb, kEditorSavesArea) : nullptr;
+    uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+    return rm && es && vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) == es;
+}
+
 static void share_own(double now)
 {
     if (!C.sess || !C.sess->connected())
@@ -437,6 +510,19 @@ static void share_own(double now)
         Bundle b;
         if (!make_bundle((Kind)k, o.key, b))
             continue;
+        // A creation the editor has just saved is in the game's EditorSaves database before our
+        // copy of the file has it (read every 10 s). Sent without its records it was a key nobody
+        // else knows: the guest's game faulted building the host's new cell from it
+        // (CreateCellObject, 0xE83EC8) and showed the old creature until the next bundle.
+        if (b.recs.empty() && in_my_creations(o.key)) {
+            g_opts_read = -100;
+            refresh_options(now);
+            b = Bundle{};
+            if (!make_bundle((Kind)k, o.key, b) || b.recs.empty()) {
+                g_waits_on_disk++;
+                continue; // not on disk yet: next round
+            }
+        }
         std::vector<uint8_t> data = pack(b);
         uint32_t id = fnv(data.data(), data.size());
         if (g_sent_id[k] == id)
@@ -558,26 +644,31 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 // back from an editor: the edited creature (a new creation in My Creations) is the own one now
-// (the avatar appears a moment after the mode changes: wait for it)
+// (the avatar appears a moment after the mode changes: wait for it). The same for a cell: until
+// 2026-10-24 only creatures were taken over, and a guest with other cells in My Creations got its
+// newest older cell back (and a level rebuild) right after its own cell editor.
 static uint32_t g_prev_mode;
 static double g_adopt_until;
+static Kind g_adopt_kind;
 static bool adopt_after_editor(double now)
 {
     uint32_t m = game::mode_id();
-    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && m == modes::kCreature)
+    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell)) {
         g_adopt_until = now + 30;
+        g_adopt_kind = m == modes::kCell ? kCell : kCreature;
+    }
     g_prev_mode = m;
     if (now > g_adopt_until)
         return false;
-    Key a = avatar_species_key();
+    Key a = g_adopt_kind == kCell ? cell_key() : avatar_species_key();
     if (!a.instance)
         return true; // not yet: do not apply the old one meanwhile
     g_adopt_until = 0;
-    if (!(a == mine(kCreature).key)) {
+    if (!(a == mine(g_adopt_kind).key)) {
         g_opts_read = -100;
         refresh_options(now);
-        choose(kCreature, a);
-        H->log(M, SK_INFO, "creations: back from the editor, own creature %08X", a.instance);
+        choose(g_adopt_kind, a);
+        H->log(M, SK_INFO, "creations: back from the editor, own %s %08X", kInfo[g_adopt_kind].name, a.instance);
     }
     return false;
 }
@@ -707,9 +798,11 @@ void cycle(Kind k, int dir)
 std::string status()
 {
     std::string s;
-    char b[200];
-    snprintf(b, sizeof b, "creations: in=%u out=%u registered=%u avatar_swaps=%u%s%s\n", g_bundles_in, g_bundles_out,
-             g_registered, g_swaps, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+    char b[300];
+    snprintf(b, sizeof b,
+             "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u%s%s\n",
+             g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
+             g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

@@ -535,6 +535,7 @@ double g_submit_held_at = 0;
 double g_editor_submitted_at = -100; // the last editor request that reached the game
 bool g_submit_queued = false;        // released, the outside-frame task has not submitted it yet
 unsigned g_submits_held; // tests: editor requests that waited for a save
+unsigned g_submits_repeated; // tests: editor requests dropped as repeats of one that is opening
 
 // a save for a world share is under way or due (a share that waits for its save: the editor lets
 // it save first; a share that cannot save now holds the editor at most 15 s, submit_tick)
@@ -638,6 +639,16 @@ int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data)
 bool SK_CDECL h_Submit(void* req)
 {
     uint32_t mode = game::mode_id();
+    // The cell stage asks for its editor again while the mate is still next to the avatar
+    // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
+    // the vote had ended, before the held one reached the game, and started a second vote that
+    // ran on while the host was in the editor (its result was dropped). One editor per vote. A
+    // guest's own request reaches the game at once; its repeat only told everybody twice.
+    if (!g_vote_bypass && req &&
+        (g_submit_later || g_submit_queued || H->time_seconds() - g_editor_submitted_at < 5.0)) {
+        g_submits_repeated++;
+        return false;
+    }
     if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
         if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active)
@@ -2522,9 +2533,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
-                           "quit held for a save %u",
+                           "quit held for a save %u, repeated requests dropped %u",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
-                           g_part_list_waivers, g_submits_held, g_quits_delayed);
+                           g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated);
                        return 0;
                    },
                    nullptr, MT);
