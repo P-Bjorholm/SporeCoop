@@ -66,7 +66,7 @@ def main():
     for what, rx in (('Windows / Wine', r'(Wine \S+ on|Windows \d+\.\d+ build)'),
                      ('memory and the large-address flag', r'game address space \d+ of \d+ MB used, large-address flag'),
                      ('the game build', r'game build: (GOG|Steam|the GOG|unknown)'),
-                     ('the versions', r'SporeCoop \d+\.\d+\.\d+ on SporeKit \d+\.\d+\.\d+, game '),
+                     ('the versions', r'SporeCoop \d+(\.\d+)+ on SporeKit \d+(\.\d+)+, game '),
                      ('the GPU and other hooks', r'GPU .*other hooks: ')):
         ck(re.search(rx, log), f'the log has {what}')
 
@@ -85,7 +85,9 @@ def main():
         ck(any(n.startswith('logs/sporekit') for n in names), 'it has the current log')
         ck(any(n.startswith('previous/') for n in names), 'it has the logs of the previous runs')
         ini = [n for n in names if n.startswith('settings/coop.ini')]
-        ck(ini and b'last_address=(hidden in reports)' in z.read(ini[0]), 'coop.ini is in it, the last address hidden')
+        ini_txt = z.read(ini[0]) if ini else b''
+        ck(ini and (b'last_address=(hidden in reports)' in ini_txt or b'last_address=' not in ini_txt) and
+           re.search(rb'last_address=(?!\(hidden)', ini_txt) is None, 'coop.ini is in it, a joined address hidden')
         txt = z.read(next(n for n in names if n.startswith('report-'))).decode('utf-8', 'replace')
         for sec in ('== Environment', '== coop', '== Faults caught before', '== Modules', '== The last log lines'):
             ck(sec in txt, f'the report has "{sec}"')

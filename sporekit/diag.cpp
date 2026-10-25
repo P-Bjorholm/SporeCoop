@@ -292,24 +292,28 @@ static void write_text(const std::wstring& path, const std::string& s)
     CloseHandle(f);
 }
 
-static void write_minidump(const std::wstring& path, EXCEPTION_POINTERS* ep)
+// tid: the thread that faulted (the crash report is written by a thread of its own)
+static bool write_minidump(const std::wstring& path, EXCEPTION_POINTERS* ep, DWORD tid)
 {
     typedef BOOL(WINAPI * Dump_t)(HANDLE, DWORD, HANDLE, int, void*, void*, void*);
     HMODULE dh = LoadLibraryW(L"dbghelp.dll");
     auto dump = dh ? (Dump_t)(void*)GetProcAddress(dh, "MiniDumpWriteDump") : nullptr;
     if (!dump)
-        return;
+        return false;
     HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE)
-        return;
+        return false;
     struct {
         DWORD tid;
         EXCEPTION_POINTERS* ep;
         BOOL client;
-    } info{GetCurrentThreadId(), ep, FALSE};
+    } info{tid, ep, FALSE};
     // MiniDumpWithIndirectlyReferencedMemory | MiniDumpScanMemory: small, with the stacks' targets
-    dump(GetCurrentProcess(), GetCurrentProcessId(), f, 0x40 | 0x10, ep ? &info : nullptr, nullptr, nullptr);
+    BOOL ok = dump(GetCurrentProcess(), GetCurrentProcessId(), f, 0x40 | 0x10, ep ? &info : nullptr, nullptr, nullptr);
     CloseHandle(f);
+    if (!ok)
+        DeleteFileW(path.c_str());
+    return ok != FALSE;
 }
 
 static std::string report_base(bool crash)
@@ -318,14 +322,15 @@ static std::string report_base(bool crash)
            (instance_id() > 1 ? "-i" + std::to_string(instance_id()) : "");
 }
 
-static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep);
+static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep,
+                                        bool dump = true);
 
 std::string diag_write_report(const char* reason, EXCEPTION_POINTERS* ep)
 {
     return diag_write_report_as(report_base(ep != nullptr), reason, ep);
 }
 
-static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep)
+static std::string diag_write_report_as(const std::string& base, const char* reason, EXCEPTION_POINTERS* ep, bool dump)
 {
     std::string kind = ep ? "crash" : "report";
     CreateDirectoryW(logs_dir().c_str(), nullptr);
@@ -395,8 +400,8 @@ static std::string diag_write_report_as(const std::string& base, const char* rea
     for (auto& l : log_tail(300))
         s += l + "\n";
     write_text(txt, s);
-    if (ep)
-        write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep);
+    if (ep && dump)
+        write_minidump(logs_dir() + L"\\" + widen(base) + L".dmp", ep, GetCurrentThreadId());
     return narrow(txt);
 }
 
@@ -592,14 +597,25 @@ static constexpr DWORD kReportWaitMs = 15000;
 struct CrashJob {
     std::string base;
     EXCEPTION_POINTERS* ep;
+    DWORD tid; // the crashed thread
 };
+// the report, the archive and the mark first; the minidump last (the riskiest step: it suspends the
+// other threads and walks the crashed one), then the archive again with it
 static DWORD WINAPI crash_report_thread(void* p)
 {
     auto* j = (CrashJob*)p;
-    std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep);
+    std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep, false);
     logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str());
     std::string zip = diag_write_bundle_with("the game crashed", path); // one file to send
     mark_problem(zip, "crashed");
+    if (write_minidump(logs_dir() + L"\\" + widen(j->base) + L".dmp", j->ep, j->tid)) {
+        std::string zip2 = diag_write_bundle_with("the game crashed", path);
+        if (zip2 != path && zip2 != zip) {
+            mark_problem(zip2, "crashed");
+            DeleteFileW(widen(zip).c_str());
+        }
+    } else
+        logf(&g_kit_mod, SK_ERROR, "crash report: no minidump (MiniDumpWriteDump failed)");
     return 0;
 }
 
@@ -614,6 +630,7 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
         static CrashJob job;
         job.base = report_base(true);
         job.ep = ep;
+        job.tid = GetCurrentThreadId();
         char b[512];
         snprintf(b, sizeof b,
                  "SporeCoop crash %s (short: the full report is being written over this file)\n"
