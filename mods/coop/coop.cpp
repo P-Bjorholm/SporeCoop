@@ -269,7 +269,7 @@ void remove_strays(double now)
         return;
     for (auto& s : g_strays) {
         // the same creature (pointer still listed, same herd), the same world, not ours again
-        if (s.world == g_world && now - s.since < 600 && game::creature_listed(s.c) && game::herd_of(s.c) == s.herd &&
+        if (s.world == g_world && now - s.since < 3600 && game::creature_listed(s.c) && game::herd_of(s.c) == s.herd &&
             game::species_instance(s.c) == s.species && !game::is_puppet(s.c) && s.c != game::avatar()) {
             LOG("a puppet left over from before (%p, herd %p) removed", s.c, s.herd);
             game::destroy_creature(s.c);
