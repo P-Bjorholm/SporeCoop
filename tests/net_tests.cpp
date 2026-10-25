@@ -372,6 +372,43 @@ static void test_interp()
     CHECK(std::fabs(o.pos.x - 15.0f) < 0.01f);
 }
 
+// a player coming back into the world (from the editor, a load): the snapshots before it have no
+// position (0,0,0, PF_IN_WORLD clear) or another mode. Blending from them put the puppet (and the
+// home of the herd made for it) inside the planet (crash 0xB88BEA, docs/re/creature.md 10)
+static void test_interp_gap()
+{
+    printf("snapshot interpolation across a gap\n");
+    for (int kind = 0; kind < 3; kind++) {
+        SnapshotBuffer b;
+        b.delay = 0.1;
+        for (int i = 0; i <= 10; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 50;
+            s.mode = 0x1654C01;
+            s.world = 7;
+            bool in = i >= 5;
+            if (in) {
+                s.flags = PF_IN_WORLD;
+                s.pos = {300.f, 300.f, 300.f};
+            } else if (kind == 1) { // another mode (the editor) with some position of its own
+                s.mode = 0xDBDBA1;
+                s.flags = PF_IN_WORLD;
+                s.pos = {1.f, 2.f, 3.f};
+            } else if (kind == 2) { // another world
+                s.world = 8;
+                s.flags = PF_IN_WORLD;
+                s.pos = {-300.f, 0.f, 0.f};
+            }
+            b.push(s, 5.0 + i * 0.05);
+        }
+        PlayerState o;
+        // render time between snapshot 4 (out of the world) and 5 (in it)
+        CHECK(b.sample(5.0 + 0.5 - 0.27 + 0.1, o));
+        CHECK(o.flags & PF_IN_WORLD);
+        CHECK(std::fabs(o.pos.x - 300.f) < 0.01f && std::fabs(o.pos.z - 300.f) < 0.01f);
+    }
+}
+
 static void test_discovery()
 {
     Session host;
@@ -622,6 +659,7 @@ int main()
     test_rejoin_same_endpoint();
     test_big_snapshot();
     test_interp();
+    test_interp_gap();
     test_discovery();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

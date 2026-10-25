@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "net/protocol.h"
@@ -126,5 +127,8 @@ void puppet_register(void* c);
 void puppet_unregister(void* c);
 bool is_puppet(void* c);
 const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO puppets in space
+
+// diagnostics (coop.npc herds): every herd, and the creatures of herds without a nest
+std::string herds_dump();
 
 } // namespace game

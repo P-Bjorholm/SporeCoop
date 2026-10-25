@@ -1970,6 +1970,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "herds")) {
+        SAY("%s", game::herds_dump().c_str());
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "hurt")) {
         bool ok = npc::debug_hurt((uint8_t)atoi(argv[2]), (uint16_t)atoi(argv[3]), (float)atof(argv[4]));
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
@@ -2531,7 +2535,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
