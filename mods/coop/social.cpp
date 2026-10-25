@@ -538,11 +538,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         for (int i = 0; i < n && r.ok() && i < 512; i++) {
             SpeciesRec s;
             s.key[0] = r.u32(); s.key[1] = r.u32(); s.key[2] = r.u32();
-            // the host's own creations have keys of their own here (creations::local_species)
-            creations::Key lk = creations::local_species({s.key[0], s.key[1], s.key[2]});
-            s.key[0] = lk.instance; s.key[1] = lk.type; s.key[2] = lk.group;
             s.relation = (int32_t)r.u32(); s.x = r.u32(); s.impressed = r.u32(); s.killed = r.u32();
             t.push_back(s);
+            // a creation of the host's own: its NPCs have a key of their own here, its nests (from the
+            // save) the host's (creations::local_species): the same record under both
+            creations::Key lk = creations::local_species({s.key[0], s.key[1], s.key[2]});
+            if (lk.instance != s.key[0]) {
+                s.key[0] = lk.instance;
+                t.push_back(s);
+            }
         }
         if (!r.ok())
             return;

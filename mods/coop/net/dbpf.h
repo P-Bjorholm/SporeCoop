@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -53,13 +52,11 @@ bool decode(const Entry& e, const uint8_t* raw, std::vector<uint8_t>& out); // r
 bool refpack_decode(const uint8_t* src, size_t n, std::vector<uint8_t>& out);
 std::vector<uint8_t> write(const std::vector<Record>& records);
 
-// Keys written big-endian as (group, type, instance) inside the records of a DBPF 3.0 package: a
-// planet save names its species so (docs/re/creations.md 1.2, 9). find_be_keys lists the instances
-// of the keys with this type and group; remap_be_keys replaces instances by `map`: a changed record
-// is appended uncompressed at the end of the file and its index entry points there (everything else
-// stays as it was). Returns the number of keys replaced (0: the file is unchanged).
-void find_be_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances);
-size_t remap_be_keys(std::vector<uint8_t>& file, uint32_t type, uint32_t group, const std::map<uint32_t, uint32_t>& map);
+// Keys of one type and group inside the records of a DBPF 3.0 package, big-endian (group, type,
+// instance) or little-endian (type, instance, group): a planet save names its species both ways
+// (herds and creatures big-endian, the pack list little-endian; docs/re/creature.md 13). Appends the
+// instances not in the list yet.
+void find_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances);
 
 // pollen_metadata (0x030BDEE3): author and creation name (UTF-8), false if not understood
 bool metadata_names(const std::vector<uint8_t>& meta, std::string& author, std::string& name);

@@ -258,10 +258,17 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
+    void* species_nest = species;
     if (flags & net::NF_FAMILY)
         if (void* h = game::avatar_herd())
             return h;
-    uint64_t hk = herd_key(k);
+    // the nest of the species in this world (from the save): by the host's key. A creation of the
+    // host's own has a key of its own here (creations::local_species), its nests the host's key
+    creations::Key hkey = creations::host_species({k.instance, k.type, k.group});
+    if (hkey.instance != k.instance)
+        if (void* sp = game::species_by_key({hkey.instance, hkey.type, hkey.group}))
+            species_nest = sp;
+    uint64_t hk = herd_key({hkey.instance, hkey.type, hkey.group});
     auto lh = g_local_herds.find(hk);
     if (lh != g_local_herds.end()) {
         if (game::object_alive(lh->second)) {
@@ -275,7 +282,7 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
     struct Find {
         void* species;
         void* found;
-    } f{species, nullptr};
+    } f{species_nest, nullptr};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* f = (Find*)u;

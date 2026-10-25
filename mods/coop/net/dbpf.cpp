@@ -226,35 +226,48 @@ static bool locate(const std::vector<uint8_t>& f, std::vector<Located>& out)
     return true;
 }
 
-static const uint8_t* find_prefix(const std::vector<uint8_t>& d, size_t from, const uint8_t pre[8])
+// a key of `type` and `group` at d[i]: big-endian (group, type, instance) or little-endian (type,
+// instance, group); its instance's 4 bytes are at d[i + inst_at]
+struct KeyAt {
+    size_t pos;
+    int inst_at; // 8 (big-endian) or 4 (little-endian)
+};
+static void key_hits(const std::vector<uint8_t>& d, uint32_t type, uint32_t group, std::vector<KeyAt>& out)
 {
-    for (size_t i = from; i + 12 <= d.size(); i++)
-        if (d[i] == pre[0] && memcmp(d.data() + i, pre, 8) == 0)
-            return d.data() + i;
-    return nullptr;
+    uint8_t be[8], lt[4], lg[4];
+    for (int b = 0; b < 4; b++) {
+        be[b] = (uint8_t)(group >> (24 - 8 * b));
+        be[4 + b] = (uint8_t)(type >> (24 - 8 * b));
+        lt[b] = (uint8_t)(type >> (8 * b));
+        lg[b] = (uint8_t)(group >> (8 * b));
+    }
+    for (size_t i = 0; i + 12 <= d.size(); i++) {
+        if (d[i] == be[0] && memcmp(d.data() + i, be, 8) == 0) {
+            out.push_back({i, 8});
+            i += 11;
+        } else if (d[i] == lt[0] && memcmp(d.data() + i, lt, 4) == 0 && memcmp(d.data() + i + 8, lg, 4) == 0) {
+            out.push_back({i, 4});
+            i += 11;
+        }
+    }
 }
 
-static void be_prefix(uint32_t type, uint32_t group, uint8_t pre[8])
-{
-    uint32_t v[2] = {group, type};
-    for (int j = 0; j < 2; j++)
-        for (int b = 0; b < 4; b++)
-            pre[j * 4 + b] = (uint8_t)(v[j] >> (24 - 8 * b));
-}
+static uint32_t inst_of(const uint8_t* p, int inst_at) { return inst_at == 8 ? be32(p + 8) : le32(p + 4); }
 
-void find_be_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances)
+void find_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances)
 {
     std::vector<Located> recs;
     if (!locate(file, recs))
         return;
-    uint8_t pre[8];
-    be_prefix(type, group, pre);
     std::vector<uint8_t> d;
+    std::vector<KeyAt> hits;
     for (auto& r : recs) {
         if (!decode(r.e, file.data() + r.e.offset, d))
             continue;
-        for (const uint8_t* q = find_prefix(d, 0, pre); q; q = find_prefix(d, (size_t)(q - d.data()) + 12, pre)) {
-            uint32_t inst = be32(q + 8);
+        hits.clear();
+        key_hits(d, type, group, hits);
+        for (auto& h : hits) {
+            uint32_t inst = inst_of(d.data() + h.pos, h.inst_at);
             bool have = false;
             for (uint32_t x : instances)
                 have |= x == inst;
@@ -262,42 +275,6 @@ void find_be_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t grou
                 instances.push_back(inst);
         }
     }
-}
-
-size_t remap_be_keys(std::vector<uint8_t>& file, uint32_t type, uint32_t group, const std::map<uint32_t, uint32_t>& map)
-{
-    std::vector<Located> recs;
-    if (map.empty() || !locate(file, recs))
-        return 0;
-    uint8_t pre[8];
-    be_prefix(type, group, pre);
-    size_t total = 0;
-    std::vector<uint8_t> d;
-    for (auto& r : recs) {
-        if (!decode(r.e, file.data() + r.e.offset, d))
-            continue;
-        size_t n = 0;
-        for (const uint8_t* q = find_prefix(d, 0, pre); q; q = find_prefix(d, (size_t)(q - d.data()) + 12, pre)) {
-            auto it = map.find(be32(q + 8));
-            if (it == map.end())
-                continue;
-            uint8_t* w = d.data() + (q - d.data()) + 8;
-            for (int b = 0; b < 4; b++)
-                w[b] = (uint8_t)(it->second >> (24 - 8 * b));
-            n++;
-        }
-        if (!n || file.size() + d.size() > 0x7FFFFFFFu)
-            continue;
-        uint32_t off = (uint32_t)file.size();
-        file.insert(file.end(), d.begin(), d.end());
-        put32(file, r.at, off);
-        put32(file, r.at + 4, (uint32_t)d.size() | 0x80000000u);
-        put32(file, r.at + 8, (uint32_t)d.size());
-        file[r.at + 12] = 0; // not compressed
-        file[r.at + 13] = 0;
-        total += n;
-    }
-    return total;
 }
 
 static std::string utf16le_to_utf8(const uint8_t* p, size_t chars)

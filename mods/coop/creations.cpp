@@ -31,7 +31,7 @@ static const KindInfo kInfo[kKinds] = {
     {"cell", 0x3D97A8E4, 0x40616200},     // cll
     {"ufo", 0x476A98C7, 0x40656200},      // ufo
 };
-constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3;
+constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3, kCreatureData = 0x0F43029A;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
 // MSG_CREATION kinds after the player creations (older versions drop kind >= kKinds): a species of
@@ -87,7 +87,7 @@ static unsigned g_species_asked, g_species_got, g_species_sent, g_species_missin
 // the host's own creations among its world's species (kOwnSpecies)
 static std::map<uint8_t, std::set<uint32_t>> g_own_sent; // host: guest -> crt instances checked / sent
 static std::map<uint32_t, uint32_t> g_remap, g_unmap;   // guest: host instance -> ours, and back
-static unsigned g_own_out, g_own_in, g_world_keys_remapped;
+static unsigned g_own_out, g_own_in;
 
 // ---- helpers ----
 static uint32_t fnv(const void* p, size_t n, uint32_t h = 0x811C9DC5)
@@ -600,11 +600,19 @@ void host_species_out(uint8_t peer, const Key& k)
         g_species_missing++;
         return;
     }
+    // and its creaturedata (the game's cache of the species' abilities and stats, in Pollination):
+    // a guest that has none computes it on first use, and a key first used while a world loaded
+    // left the pack member of it without a species (0xD2C361: coop_creature_desync.py 2026-10-25)
+    std::vector<dbpf::Record> cd;
+    if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+        for (auto& r : cd)
+            if (r.key.type == kCreatureData)
+                b.recs.push_back(std::move(r));
     std::vector<uint8_t> data = pack(b);
     send_bundle(peer, 0, (Kind)kOwnSpecies, k.instance, data);
     g_own_out++;
-    H->log(M, SK_INFO, "creations: own creation %08X of this world (%u records) to player %u", k.instance,
-           (unsigned)b.recs.size(), peer);
+    H->log(M, SK_INFO, "creations: own creation %08X of this world (%u records%s) to player %u", k.instance,
+           (unsigned)b.recs.size(), cd.empty() ? ", no creaturedata" : "", peer);
 }
 
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files)
@@ -613,55 +621,66 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
         return;
     std::vector<uint32_t> keys;
     for (auto* f : files)
-        dbpf::find_be_keys(*f, kInfo[kCreature].type, kInfo[kCreature].group, keys);
+        dbpf::find_keys(*f, kInfo[kCreature].type, kInfo[kCreature].group, keys);
     for (uint32_t inst : keys)
         host_species_out(peer, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
 }
 
 // guest: a creation of the host's own My Creations that its world uses: registered under a key of
 // our own (from its content: the same creation gets the same key in every session, which keeps the
-// game's caches by key right), never under the host's key (our creation of that key would answer:
-// the game's creaturedata and baked models are cached by key, ✔ 2026-10-25)
+// game's caches by key right), not only under the host's key (our creation of that key would
+// answer: the game's creaturedata and baked models are cached by key, ✔ 2026-10-25). The world's
+// save keeps the host's key: a save rewritten to ours lost those herds and creatures at the load
+// and the pack panel faulted on a pack member of them (docs/re/creature.md 13)
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
         return;
     uint32_t h = 0x811C9DC5;
-    for (auto& r : b.recs)
-        if (r.key.instance == b.key.instance)
+    for (auto& r : b.recs) // the creation itself (not the host's creaturedata cache)
+        if (r.key.instance == b.key.instance && r.key.type != kCreatureData)
             h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
     uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
     auto it = g_remap.find(b.key.instance);
     if (it != g_remap.end() && it->second == ours)
         return;
     std::vector<dbpf::Record> recs = b.recs;
-    for (auto& r : recs)
-        if (r.key.instance == b.key.instance)
-            r.key.instance = ours;
+    for (auto& r : recs) {
+        if (r.key.instance != b.key.instance)
+            continue;
+        r.key.instance = ours;
+        // the metadata names its own key (big-endian type, group, instance at +0x0C): ours too
+        uint8_t* d = r.data.data();
+        if (r.key.type == kMeta && r.data.size() >= 0x18 &&
+            ((uint32_t)d[0x14] << 24 | d[0x15] << 16 | d[0x16] << 8 | d[0x17]) == b.key.instance)
+            for (int i = 0; i < 4; i++)
+                d[0x14 + i] = (uint8_t)(ours >> (24 - 8 * i));
+    }
     std::wstring path = g_dir + L"\\own_species_" + std::to_wstring(ours) + L".package";
     if (!package_for(path, recs, kPrioWorld)) {
         g_last_error = "cannot write a species package";
         return;
     }
+    // a guest that has nothing under the host's key gets the host's records there too (as for an
+    // unknown species, apply_species): whatever still names the species by that key finds it
+    if (!key_exists(b.key) && !g_species_db.count(b.key.instance)) {
+        std::wstring kp = g_dir + L"\\species_" + std::to_wstring(b.key.instance) + L".package";
+        if (void* db = package_for(kp, b.recs, kPrioWorld))
+            g_species_db[b.key.instance] = db;
+    }
     g_remap[b.key.instance] = ours;
     g_unmap[ours] = b.key.instance;
     g_own_in++;
+    // the species profile now (the game keeps profiles for the whole process): the first proxy of
+    // it does not wait for its creaturedata
+    void* prof = game::species_by_key({ours, b.key.type, b.key.group});
     std::string name, author;
     for (auto& r : b.recs)
         if (r.key.type == kMeta)
             dbpf::metadata_names(r.data, author, name);
-    H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here", b.key.instance,
-           name.c_str(), ours);
-}
-
-size_t remap_world_file(std::vector<uint8_t>& data)
-{
-    if (g_remap.empty())
-        return 0;
-    size_t n = dbpf::remap_be_keys(data, kInfo[kCreature].type, kInfo[kCreature].group, g_remap);
-    g_world_keys_remapped += (unsigned)n;
-    return n;
+    H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here%s", b.key.instance,
+           name.c_str(), ours, prof ? "" : " (no species profile yet)");
 }
 
 Key local_species(const Key& k)
@@ -973,7 +992,7 @@ void on_session_end()
 {
     g_asked.clear(); // (registered species packages stay: the same world may come back)
     g_own_sent.clear();
-    g_remap.clear(); // (their packages stay registered: the saved copy of the host's world uses our keys)
+    g_remap.clear(); // (their packages stay registered: the same world may come back)
     g_unmap.clear();
     g_store.clear();
     g_rx.clear();
@@ -1038,10 +1057,9 @@ std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u world_keys_remapped=%u%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in,
-             g_world_keys_remapped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

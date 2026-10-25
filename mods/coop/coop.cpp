@@ -2565,13 +2565,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     world::init(H, M, feed);
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_save_blocker(save_blocker);
-    // species of the host's own creations: sent ahead of its world, our keys in the received save
+    // species of the host's own creations: sent ahead of its world (creations.h)
     world::set_share_hook([](uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files) {
         creations::world_species_out(peer, files);
-    });
-    world::set_receive_hook([](const std::string& rel, std::vector<uint8_t>& data) {
-        if (size_t n = creations::remap_world_file(data))
-            H->log(M, SK_INFO, "creations: %s: %u keys of the host's own creations are ours", rel.c_str(), (unsigned)n);
     });
     shared::init(H, M);
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);

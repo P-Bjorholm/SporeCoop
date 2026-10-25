@@ -436,19 +436,37 @@ allies! You can heal at their nest or add them to your pack!" (fix/nest-species,
   `creaturedata` (`LoadCreatureData` via 0x4D4F70). Not used by the fix.
 * ✔ A planet save names its species big-endian `{group 40626200, type 2B978C46, instance}` in the
   records of herds (01BE418E), creatures (018EB45E), the cPlayer (02C21781), 03572E72 and the
-  self-keyed 01897C18 (Scalinus: 60 species), most records RefPack-compressed. No little-endian
-  copies of the keys.
+  self-keyed 01897C18 (Scalinus: 60 species, the planet's list), most records RefPack-compressed;
+  the pack list in 01897C18 names its members' species little-endian `{type, instance, group}`
+  (`00000110`, then one key per member: the avatar's species and a recruited Judge).
+* ✗ **Rewriting the received save to the guest's own key does not work.** With every key of a host
+  creation replaced (big- and little-endian, the changed records appended uncompressed, nothing else
+  different: a byte diff showed exactly those keys) the guest's load **dropped the herd and the
+  creature of that species** (none of them after the load, while the same save with the host's key
+  kept both: `coop.npc creatures`, exp. 2026-10-25), also with the species profile made beforehand,
+  the creation's `creaturedata` in the package and its metadata naming the new key. A pack member of
+  it then left an empty creature (+0xB20 and +0xB28 zero) in the pack vector (`cGameNounManager
+  +0x5C`), and the pack panel faulted building its item (0xD2C361 in 0xD2C2E0, `creature+0xB20
+  ->+0x50C`, then thousands of faults at 0x93B630; `coop_creature_desync.py`). The planet's
+  `stars.db` rewritten the same way made the load fault at once in `cStarRecord::GetPlanetRecord`
+  (0xBBABE2, null star record; `coop_editor_desync.py`). Why the game drops a species only a
+  registered package knows (an unknown key is replaced by a planet species instead, section 12) was
+  not found.
 * Co-op (creations.cpp, MSG_CREATION kind 5): the host finds the species keys in the files it
-  shares (`dbpf::find_be_keys`) and sends, before the offer, the records (bem + metadata, from the
-  file the game reads them from) of every one its EditorSaves database answers for; the same before
-  an NPC spawn of one (`creations::host_species_out`). The guest registers each under
-  `0x7D000000 | fnv(content) & 0xFFFFFF` (the same creation gets the same key every session, which
-  keeps the caches right), writes that key into the received save files before they are written
-  (`dbpf::remap_be_keys`: a changed record goes uncompressed to the end of the file, its index entry
-  points there) and maps it in NPC spawns, the host's species table and the goal reward it reports
-  (`creations::local_species` / `host_species`). The planet, its nests, the proxies, the cards and
-  the table then agree on the host's creation. Premades and Sporepedia downloads keep their keys.
-* ? Not checked: a real nest (herd with an archetype) of a host creation (the fixture planet has
-  Maxis species only; the test's herd comes from `coop.npc spawn` and a save), the Tribe and later
-  stages with such species (the save rewrite covers every stage), a downloaded Sporepedia creation
-  under a colliding key (ids from the server: not expected to collide).
+  shares (`dbpf::find_keys`) and sends, before the offer, the records (bem, metadata and its
+  creaturedata, from the files the game reads them from) of every one its EditorSaves database
+  answers for; the same before an NPC spawn of one (`creations::host_species_out`). The guest
+  registers each under `0x7D000000 | fnv(bem + metadata) & 0xFFFFFF` (the same creation gets the
+  same key every session, which keeps the caches right), and under the host's key too when it has
+  nothing there. Its NPC proxies of the species use that key (`creations::local_species` on
+  MSG_NPC_SPAWN), go into the herd of the host's key (the save's nest: its archetype tuning), and the
+  host's species table is written under both keys; a goal reward goes back under the host's key.
+  The save keeps the host's key: the guest's own NPCs of it (built as the guest's creature) are
+  removed by the update filter as always, so what the guest sees are the host's creatures, and their
+  cards and relation are the host's. Premades and Sporepedia downloads keep their keys.
+* ? Still the guest's: a card made from the nest itself (the "The Datzu are your allies!" kind: the
+  nest's herd has the species of the host's key, which is the guest's creation there; its relation
+  is the host's record, its name the guest's). Not checked: a real nest (herd with an archetype) of a
+  host creation (the fixture planet has Maxis species only; the test's NPC comes from `coop.npc
+  spawn`), the Tribe and later stages with such species, a downloaded Sporepedia creation under a
+  colliding key (ids from the server: not expected to collide).

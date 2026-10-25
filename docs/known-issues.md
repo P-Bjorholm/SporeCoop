@@ -471,13 +471,12 @@ Fixed entries move to the commit message (and a test).
 
 ## Creature: the host's own creations on the guest, what is still open (2026-10-25)
 
-* Since fix/nest-species a guest uses a key of its own (0x7D......) for every creation of the host's
-  My Creations that the host's world uses (docs/re/creature.md 13). Still so: the guest's copy of
-  the host's world names those species by these keys; loaded alone (not through a session), they
-  are unknown until a session with that host registered them again (a world load with unknown
-  species did not fault, section 11 there). Both players need this version: an older host sends
-  nothing (the guest shows its own creation of the key, as before), an older guest drops kind 5.
-* Not checked: a real nest (with an archetype) of a host creation and its species card on the guest
-  (the fixture planet has Maxis species only: the test's herd is made by `coop.npc spawn` and a
-  save); the "allies" card of the report is the guest's own species (relation 6) and should not
-  appear any more.
+* Since fix/nest-species a guest builds the host's NPCs of the host's own creations from the host's
+  records under a key of its own (0x7D......, docs/re/creature.md 13). The host's world on the guest
+  still names them by the host's key, which is the guest's own creation there: a card the guest's
+  game makes from a nest (not from a creature) shows the guest's creation's name (with the host's
+  relation). Rewriting the save to the guest's key lost those herds at the load and crashed the
+  pack panel (section 13 there). Both players need this version: an older host sends nothing (the
+  guest shows its own creation of the key, as before), an older guest drops kind 5.
+* Not checked: a real nest (with an archetype) of a host creation on the guest (the fixture planet
+  has Maxis species only).

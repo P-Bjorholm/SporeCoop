@@ -12,10 +12,8 @@ key of the host's "TigerHorse" (290229B9); the host has an NPC of it next to the
 
   body      the guest builds the host's NPC from the host's creation (the bem the guest's game finds
             for the proxy's species is the host's), before and after the world went to the guest again
-  save      the received save names the species by the guest's key for it (its herd), not by the key
-            the guest's own creation has
-  relation  the host's species table reaches the guest under that key (the same values), nothing of
-            it lands on the guest's own creation's key
+  relation  the host's species table reaches the guest under the guest's key for the NPCs and under
+            the host's key (the save's herds), with the same values
 
   coop_nest_species.py
 """
@@ -148,21 +146,19 @@ def checks(ck, host, guest, nid, host_bem, tag):
         print(f'  {tag}: the guest\'s proxy has species {e[0]}, its body {got} (the host\'s {host_bem})')
         ck(got == host_bem, f'{tag}: the guest shows the host\'s creation, not its own of that key '
                             f'(species {e[0]}: bem {got}, the host\'s {host_bem})')
-    # relation: the host's record of the species, on the guest under the guest's key for it
+    # relation: the host's record of the species, on the guest under the guest's key for its NPCs and
+    # under the host's key (the save's herds and nests of it)
     local = e[0] if e else None
+    hk = f'{HOST_ONLY:08X}'
 
     def same():
         ht, gt = table(host), table(guest)
-        h = ht.get(f'{HOST_ONLY:08X}')
-        return (h, gt) if h and local and gt.get(local) == h else None
+        h = ht.get(hk)
+        return (h, gt) if h and local and gt.get(local) == h and gt.get(hk) == h else None
     r = wait(same, 15)
     ht, gt = table(host), table(guest)
-    print(f'  {tag}: host table {ht.get(f"{HOST_ONLY:08X}")}, guest {local}: {gt.get(local)}, '
-          f'guest {HOST_ONLY:08X}: {gt.get(f"{HOST_ONLY:08X}")}')
-    ck(r, f'{tag}: the host\'s record of its creature is the guest\'s record of the species it shows')
-    if local and local != f'{HOST_ONLY:08X}':
-        own = gt.get(f'{HOST_ONLY:08X}')
-        ck(not own or not any(own), f'{tag}: nothing of the host\'s record on the guest\'s own creation ({own})')
+    print(f'  {tag}: host table {ht.get(hk)}, guest {local}: {gt.get(local)}, guest {hk}: {gt.get(hk)}')
+    ck(r, f'{tag}: the host\'s record of its creature is the guest\'s record of the species it shows and of its herds')
 
 
 def main():
@@ -192,7 +188,7 @@ def main():
     shot(guest, 'nest_species_guest.png')
     shot(host, 'nest_species_host.png')
 
-    # the world (with the host's creature's herd in it) goes to the guest again: the save names the species
+    # the world (with the herd of the host's creature in it) goes to the guest again
     out = host.call('coop.save')['out']
     t0 = time.time()
     while time.time() - t0 < 12:  # the "game saved" box stops the host's frames
@@ -209,17 +205,11 @@ def main():
     ok = loaded and wait_in(host, guest)
     ck(ok, 'the guest loaded the host\'s world again')
     time.sleep(6)
-    st = guest.call('coop.creations')['out']
-    m = re.search(r'world_keys_remapped=(\d+)', st)
-    mapped = re.search(rf'host species {HOST_ONLY:08X} = ([0-9A-F]{{8}}) here', st)
-    print('  ' + (st.splitlines()[0] if st else ''))
-    ck(m and int(m.group(1)) > 0 and mapped, 'the received save names the host\'s own creation by the guest\'s key')
-    herds = guest.call('coop.npc archless')['out']
-    keys = re.findall(r'key=([0-9A-F]{8})', herds)
-    print(f'  the guest\'s herds without an archetype: {keys}')
-    if mapped:
-        ck(mapped.group(1) in keys and f'{HOST_ONLY:08X}' not in keys,
-           f'the herd of the host\'s creature from the save is of the guest\'s key {mapped.group(1)} ({keys})')
+    # the save's herd of the species keeps the host's key on the guest (the guest's game learns it
+    # from its local creature; a proxy goes into such a herd when it is a nest: proxy_herd)
+    lst = guest.call('coop.npc list')['out']
+    nests = dict(re.findall(r'nest ([0-9A-F]{8})/40626200 herd=(\S+)', lst))
+    print(f'  the guest\'s herds learned from its world: {sorted(nests)}')
     checks(ck, host, guest, nid, host_bem, 'after the world went again')
     shot(guest, 'nest_species_guest_after.png')
 
