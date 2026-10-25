@@ -6,8 +6,8 @@
 - **No more crash on Alt+Shift+Enter** (player crash report, 0x7777BE). It is Spore's own "next
   display adapter" key: on a PC with two or more display adapters (two monitors, or an integrated
   and a dedicated GPU) the game rebuilt its graphics device on the other one and crashed, also
-  without any mod. The key now toggles fullscreen like Alt+Enter (players hit it with Shift still
-  held). Test: `coop_alt_enter.py` (suite `alt_enter`).
+  without SporeCoop loaded (a bug of the game). The key now toggles fullscreen like Alt+Enter
+  (players hit it with Shift still held). Test: `coop_alt_enter.py` (suite `alt_enter`).
 
 ## [0.7.2.3] - 2026-10-25
 
