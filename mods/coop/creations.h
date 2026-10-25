@@ -46,6 +46,13 @@ Key player_key(uint8_t player, Kind k);
 // cSpeciesProfile* of a player's creature, nullptr if none
 void* player_species(uint8_t player);
 
+// Species of the host's world that a guest's game does not have (creatures of the host's own My
+// Creations or of its Sporepedia downloads live on its planet): the guest asks, the host sends the
+// creation's records, the guest registers them under the same key. Without them the guest could
+// not build these NPCs at all (an ally in the host's pack was invisible, player report 2026-10-25).
+void want_species(const Key& k); // guest: this NPC species is unknown here
+bool species_pending(const Key& k); // guest: asked, no answer yet
+
 // My Creations of this kind, newest first
 std::vector<Option> options(Kind k);
 Option mine(Kind k);

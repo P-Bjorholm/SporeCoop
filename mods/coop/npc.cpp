@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "creations.h"
 #include "driver.h"
 #include "game.h"
 #include "sporekit_game.hpp"
@@ -373,6 +374,10 @@ static void guest_tick(double now)
                     fail = 3;
             }
             if (fail) {
+                // a species of the host's world this game lacks (the host's own creations and its
+                // Sporepedia downloads populate its planet): the host sends it, the next try works
+                if (fail == 1)
+                    creations::want_species({px.key.instance, px.key.type, px.key.group});
                 if (px.fail != fail)
                     H->log(M, SK_WARN, "npc %u: proxy spawn failed (%s) key=%08X/%08X/%08X", id,
                            fail == 1 ? "unknown species" : fail == 2 ? "no herd" : "Create failed", px.key.instance,

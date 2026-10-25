@@ -33,6 +33,9 @@ static const KindInfo kInfo[kKinds] = {
 constexpr uint32_t kBem = 0x1A99B06B, kMeta = 0x030BDEE3;
 constexpr uint32_t kEditorSavesArea = 0x11AC199;
 constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the list is searched highest first
+// MSG_CREATION kinds after the player creations (older versions drop kind >= kKinds): a species of
+// the host's world for a guest that lacks it (owner 0, id = the crt instance), and a guest's request
+constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4;
 
 static uintptr_t a_GetDb, a_OpNew, a_DbCtor, a_RmPtr, a_SetSpecies, a_GetEmpire, a_CellPreload;
 
@@ -74,6 +77,10 @@ static unsigned g_waits_on_disk; // own creations not sent yet: saved by the edi
 static unsigned g_unusable;      // received creations without records whose key this game does not know
 static unsigned g_world_swaps;   // a newer version of the host's world creation replaced the older one
 static std::string g_last_error;
+// world species (want_species): guest asks / registers, host answers
+static std::map<uint32_t, double> g_asked;        // guest: crt instance -> when asked
+static std::map<uint32_t, void*> g_species_db;    // guest: registered packages of world species
+static unsigned g_species_asked, g_species_got, g_species_sent, g_species_missing;
 
 // ---- helpers ----
 static uint32_t fnv(const void* p, size_t n, uint32_t h = 0x811C9DC5)
@@ -463,6 +470,111 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
 
 // ---- sending ----
 constexpr size_t kChunk = 900;
+static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data);
+
+// The records of a creation from the package file the game reads it from (any registered package:
+// My Creations (DBPF), the Sporepedia cache Pollination.package (DBBF), one of ours). Read piece by
+// piece: Pollination grows to hundreds of MB and the game has little address space left.
+static bool records_from_game(const Key& k, std::vector<dbpf::Record>& out)
+{
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+    void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr; // FindRecord
+    if (!db)
+        return false;
+    const wchar_t* loc = vcall<const wchar_t*>(db, 0x28 / 4); // GetLocation (as for EditorSaves)
+    if (!loc || IsBadReadPtr(loc, 8) || !(loc[1] == L':' || loc[0] == L'\\'))
+        return false;
+    HANDLE f = CreateFileW(loc, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return false;
+    auto read_at = [&](uint64_t off, uint32_t n, std::vector<uint8_t>& buf) {
+        buf.resize(n);
+        LARGE_INTEGER li;
+        li.QuadPart = (LONGLONG)off;
+        DWORD rd = 0;
+        return SetFilePointerEx(f, li, nullptr, FILE_BEGIN) && (n == 0 || (ReadFile(f, buf.data(), n, &rd, nullptr) && rd == n));
+    };
+    std::vector<uint8_t> hdr, idx, raw;
+    dbpf::IndexInfo info;
+    std::vector<dbpf::Entry> all;
+    bool ok = read_at(0, 96, hdr) && dbpf::index_info(hdr.data(), hdr.size(), info) && info.size < (64u << 20) &&
+              read_at(info.offset, info.size, idx) && dbpf::parse_index(idx.data(), idx.size(), info, all);
+    for (auto& e : all) {
+        if (!ok || e.key.instance != k.instance || e.key.group != k.group ||
+            (e.key.type != kBem && e.key.type != kMeta && e.key.type != k.type) || e.size > (4u << 20))
+            continue;
+        dbpf::Record r;
+        r.key = e.key;
+        if (read_at(e.offset, e.size, raw) && dbpf::decode(e, raw.data(), r.data))
+            out.push_back(std::move(r));
+    }
+    CloseHandle(f);
+    bool model = false;
+    for (auto& r : out)
+        model |= r.key.type != kMeta;
+    return model;
+}
+
+// host: a guest asks for a species of our world
+static void serve_species(uint8_t guest, uint32_t instance)
+{
+    Bundle b;
+    b.key = {instance, kInfo[kCreature].type, kInfo[kCreature].group};
+    if (!records_from_game(b.key, b.recs)) {
+        g_species_missing++;
+        H->log(M, SK_WARN, "creations: player %u asks for species %08X: not found here", guest, instance);
+        return;
+    }
+    std::vector<uint8_t> data = pack(b);
+    send_bundle(guest, 0, (Kind)kWorldSpecies, instance, data);
+    g_species_sent++;
+    H->log(M, SK_INFO, "creations: species %08X (%u records, %u bytes) to player %u", instance, (unsigned)b.recs.size(),
+           (unsigned)data.size(), guest);
+}
+
+// guest: the records of a species of the host's world, registered under its own key (the world
+// names it so). Above My Creations: asked only for keys this game did not know.
+static void apply_species(const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (!unpack(data, b) || b.recs.empty() || !find_paths() || g_species_db.count(b.key.instance))
+        return;
+    std::wstring path = g_dir + L"\\species_" + std::to_wstring(b.key.instance) + L".package";
+    void* db = package_for(path, b.recs, kPrioWorld);
+    if (!db) {
+        g_last_error = "cannot write a species package";
+        return;
+    }
+    g_species_db[b.key.instance] = db;
+    g_species_got++;
+    H->log(M, SK_INFO, "creations: species %08X of the host's world registered (%u records)", b.key.instance,
+           (unsigned)b.recs.size());
+}
+
+void want_species(const Key& k)
+{
+    if (!C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
+        k.type != kInfo[kCreature].type || k.group != kInfo[kCreature].group || g_species_db.count(k.instance))
+        return;
+    double now = H->time_seconds();
+    auto it = g_asked.find(k.instance);
+    if (it != g_asked.end() && now - it->second < 30.0)
+        return; // asked recently (an older host does not answer: ask again now and then)
+    g_asked[k.instance] = now;
+    net::Writer w;
+    w.u8(C.sess->my_id());
+    w.u8(kAskSpecies);
+    w.u32(k.instance);
+    w.u32(0);
+    w.u32(0);
+    w.u16(0);
+    C.sess->send_reliable_to(0, net::MSG_CREATION, w);
+    g_species_asked++;
+    H->log(M, SK_INFO, "creations: species %08X of the host's world is unknown here: asked the host", k.instance);
+}
+
+bool species_pending(const Key& k) { return g_asked.count(k.instance) && !g_species_db.count(k.instance); }
 
 static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
 {
@@ -692,7 +804,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     uint8_t owner = r.u8(), kind = r.u8();
     uint32_t id = r.u32(), total = r.u32(), off = r.u32();
     uint16_t n = r.u16();
-    if (!r.ok() || kind >= kKinds || total > (8u << 20) || (uint64_t)off + n > total)
+    if (r.ok() && kind == kAskSpecies) {
+        if (is_host() && owner == from)
+            serve_species(from, id);
+        return;
+    }
+    if (kind == kWorldSpecies && (is_host() || from != 0))
+        return;
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies) || total > (8u << 20) || (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
         return;
@@ -717,6 +836,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     std::vector<uint8_t> data = std::move(rx.data);
     g_rx.erase({owner, kind});
+    if (kind == kWorldSpecies) {
+        apply_species(data);
+        return;
+    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -737,6 +860,7 @@ void on_player_join(uint8_t id)
 
 void on_session_end()
 {
+    g_asked.clear(); // (registered species packages stay: the same world may come back)
     g_store.clear();
     g_rx.clear();
     for (auto& s : g_sent_id)
@@ -799,8 +923,10 @@ std::string status()
     std::string s;
     char b[300];
     snprintf(b, sizeof b,
-             "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u%s%s\n",
+             "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
+             "species asked=%u got=%u sent=%u missing=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
+             g_species_asked, g_species_got, g_species_sent, g_species_missing,
              g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
