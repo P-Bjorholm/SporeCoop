@@ -12,6 +12,14 @@
   Sporepedia downloads too; a guest without them could not build those creatures, also not an
   ally in the host's pack. The guest now gets them from the host. Both players need this version
   for it (an older host does not answer, an older guest does not ask).
+- **Creature: no more crash of the host after an evolution, and no copies of the partner's
+  creature left in the world** (player report, host crash at 0xB88BEA). After the editor the
+  partner's old creature stayed on the planet as a wild creature next to the new one, and the
+  herd made for the partner's creature could get its home deep inside the planet: when that
+  creature looked for land around its home the game read past its map and crashed. The old
+  creature is now removed when the players are back, a partner who comes back into the world
+  appears where it is (not between its last position and the planet's centre), and the herd of
+  a partner's creature stays under it. Test: `coop_editor_strays.py` (suite `editor_strays`).
 
 ## [0.7.2.2] - 2026-10-25
 

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "net/protocol.h"
@@ -75,6 +76,7 @@ void* species_by_key(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* herd_of(void* c);
 void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it
+void herd_home(void* herd, const net::Vec3& pos); // a nestless herd's home follows its puppet
 constexpr uint32_t kHerdNoun = 0x01BE418E;      // cHerd (runtime: nest herds of the creature stage)
 inline void* herd_species(void* herd) { return *(void**)((uint8_t*)herd + 0xA4); } // cSpeciesProfile*
 inline void* herd_nest(void* herd) { return *(void**)((uint8_t*)herd + 0x160); }    // cNest* (mpNest)
@@ -90,7 +92,7 @@ void hit(void* c, float damage, int type, void* attacker_creature);          // 
 void set_health(void* c, float hp);
 // impressed by a social game (+0xB58 bit 0x80, set by the social success 0xD9BC40; docs/re/creature.md 8)
 inline bool impressed(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x80) != 0; }
-// a member of the player's pack (+0xB58 bit 0x100, set by AddPosseMember 0xB23430; docs/re/creature.md 10)
+// a member of the player's pack (+0xB58 bit 0x100, set by AddPosseMember 0xB23430; docs/re/creature.md 11)
 inline bool pack_member(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x100) != 0; }
 inline void set_impressed(void* c, bool on)
 {
@@ -128,5 +130,10 @@ void puppet_register(void* c);
 void puppet_unregister(void* c);
 bool is_puppet(void* c);
 const std::vector<void*>& puppets(); // puppets and NPC proxies (creatures), UFO puppets in space
+
+// `c` is still a live cCreatureAnimal of the world (compares pointers only: safe on a freed one)
+bool creature_listed(void* c);
+// diagnostics (coop.npc herds): every herd, and the creatures of herds without a nest
+std::string herds_dump();
 
 } // namespace game

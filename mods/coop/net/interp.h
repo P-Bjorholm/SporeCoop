@@ -82,8 +82,15 @@ public:
             const auto& a = snaps_[i - 1];
             const auto& b = snaps_[i];
             if (t <= b.t) {
-                float f = (float)((t - a.t) / (b.t - a.t));
                 out = b.s;
+                // no blend across a gap: a snapshot of another mode / world, or one without the
+                // player in the world (pos 0,0,0 then) is no point on the path. Blending from it
+                // put a puppet that appeared after the editor, a load or a respawn somewhere
+                // between the planet's centre and the surface, and the herd made for it kept that
+                // home (crash 0xB88BEA in the herd's land search, docs/re/creature.md 10)
+                if (a.s.mode != b.s.mode || a.s.world != b.s.world || ((a.s.flags ^ b.s.flags) & PF_IN_WORLD))
+                    return true;
+                float f = (float)((t - a.t) / (b.t - a.t));
                 out.pos = lerp(a.s.pos, b.s.pos, f);
                 out.rot = nlerp(a.s.rot, b.s.rot, f);
                 return true;

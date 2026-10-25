@@ -202,6 +202,14 @@ planet loaded without its height map (docs/re/space.md 8.2) fails the height che
 and its NPCs at 6-9 m. `coop_multi.py` (chaos) samples one moment per minute, so a fight or a
 rejoin can push a single round over its 3 m limit; read its per-round `n p90` lines.
 
+`coop.npc herds` (creature stage) prints the planet radius (the avatar's |pos|), every herd made by
+the mod (`ours=1`) and every game herd whose home is below 0.8 x that radius, with nest, enabled,
+target, members, home and its |home|, territory radius and whether the herd's land point is
+computed (`land_cached`); then the members of nestless herds (`puppet=0` in a herd of ours is a
+puppet the mod lost). `coop_editor_strays.py` (two evolutions, ~6 min) reads it: homes of our herds
+on the surface, no puppet left over (docs/re/creature.md 10). `coop.status` "strays: pending
+removed" counts the left-over puppets removed after an editor.
+
 ## 6.6 Known Wine quirks
 
 * **Flatpak document portal.** Every Bottles launch bind-mounts `/run/user/<uid>/doc/by-app/com.usebottles.bottles`

@@ -44,6 +44,7 @@ add('creations', P + 'coop_creations.py', minutes=4)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input
 add('creature_desync', P + 'coop_creature_desync.py', minutes=8)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
+add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, version in the menu, report button, hang / crash reports

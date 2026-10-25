@@ -65,6 +65,7 @@ struct Remote {
     void* puppet = nullptr;
     drive::State drv;
     const modes::Adapter* puppet_adapter = nullptr; // adapter that created `puppet`
+    uint32_t puppet_world = 0; // the place `puppet` was made in
     bool echo = false; // local loopback test remote
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
@@ -226,20 +227,58 @@ void despawn(Remote& r)
     r.puppet_adapter = nullptr;
 }
 
-void forget_puppets() // world changed: puppets were destroyed with it
+uint32_t g_mode = 0, g_world = 0;
+bool g_save_on_share = true; // host saves before sending the world, so guests get the current state
+const modes::Adapter* g_adapter = nullptr;
+void* g_local = nullptr; // entity the local player controls (adapter specific)
+
+// Creature puppets the game did not destroy when we forgot them: the creature stage world stays
+// through the editor (the local avatar is gone meanwhile), so the old puppet stood on as an
+// unregistered creature, an NPC with its own AI in the nestless herd made for it. Its behaviour
+// tree then searched land around that herd's home, which could lie deep inside the planet, and
+// read past the planet's cube map (host crash 0xB88BEA, 2026-10-25; docs/re/creature.md 10).
+// Such puppets are removed once the player is back in the same world.
+struct Stray {
+    void* c;
+    void* herd;
+    uint32_t species;
+    uint32_t world;
+    double since;
+};
+std::vector<Stray> g_strays;
+uint32_t g_strays_removed = 0;
+
+void forget_puppets() // world changed or the local player left it (editor, load)
 {
+    const modes::Adapter* creature = modes::for_mode(modes::kCreature);
     for (auto& [id, r] : g_remotes) {
-        if (r.puppet)
+        if (r.puppet) {
             game::puppet_unregister(r.puppet);
+            if (r.puppet_adapter == creature && game::creature_listed(r.puppet))
+                g_strays.push_back({r.puppet, game::herd_of(r.puppet), game::species_instance(r.puppet), r.puppet_world,
+                                    H->time_seconds()});
+        }
         r.puppet = nullptr;
         r.puppet_adapter = nullptr;
     }
 }
 
-uint32_t g_mode = 0, g_world = 0;
-bool g_save_on_share = true; // host saves before sending the world, so guests get the current state
-const modes::Adapter* g_adapter = nullptr;
-void* g_local = nullptr; // entity the local player controls (adapter specific)
+void remove_strays(double now)
+{
+    if (g_strays.empty() || g_mode != modes::kCreature || !g_local)
+        return;
+    for (auto& s : g_strays) {
+        // the same creature (pointer still listed, same herd), the same world, not ours again
+        if (s.world == g_world && now - s.since < 3600 && game::creature_listed(s.c) && game::herd_of(s.c) == s.herd &&
+            game::species_instance(s.c) == s.species && !game::is_puppet(s.c) && s.c != game::avatar()) {
+            LOG("a puppet left over from before (%p, herd %p) removed", s.c, s.herd);
+            game::destroy_creature(s.c);
+            g_strays_removed++;
+        }
+    }
+    g_strays.clear();
+}
+
 
 net::PlayerState local_state()
 {
@@ -283,6 +322,7 @@ void drive_puppet(Remote& r, double now)
             return;
         }
         r.puppet_adapter = g_adapter;
+        r.puppet_world = g_world;
         r.drv = drive::State{};
         feed(r.name + " appeared in the world");
     }
@@ -1089,6 +1129,7 @@ void on_frame(void*, int, void*)
         g_last_avatar = g_local;
     }
 
+    remove_strays(now);
     follow_phase(now);
     host_away_tick(now);
     tribe::tick(now);
@@ -1818,6 +1859,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden);
     double now = H->time_seconds();
     for (auto& [id, r] : g_remotes) {
@@ -1968,6 +2010,10 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1 && !strcmp(argv[1], "list")) {
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "herds")) {
+        SAY("%s", game::herds_dump().c_str());
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "hurt")) {
@@ -2541,7 +2587,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>|spawn <hex>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
