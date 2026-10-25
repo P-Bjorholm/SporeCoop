@@ -889,8 +889,33 @@ static bool g_fault_told;
 
 static bool host_has_diag() { return H->size >= offsetof(SkHost, logs_dir) + sizeof(void*) && H->diag_report; }
 
+// the previous game crashed / hung (SporeKit wrote its archive then): tell where the file to send is
+static void last_problem_tick(double now)
+{
+    static double first = -1;
+    static bool done;
+    if (done)
+        return;
+    if (first < 0)
+        first = now;
+    if (now - first < 8) // the menu is up by then
+        return;
+    done = true;
+    if (H->size < offsetof(SkHost, last_problem) + sizeof(void*) || !H->last_problem)
+        return;
+    std::string p = H->last_problem();
+    if (p.empty())
+        return;
+    std::string what = p.substr(0, p.find('\n')), zip = p.substr(p.find('\n') + 1);
+    zip = zip.substr(zip.find_last_of("\\/") + 1);
+    feed("SporeCoop: the last game " + what + ". A report to send is ready: mods\\logs\\" + zip +
+         " (F9, \"Report a problem\" opens the folder)");
+    chat_log("* the last game " + what + ": mods\\logs\\" + zip);
+}
+
 static void diag_tick(double now)
 {
+    last_problem_tick(now);
     if (now - g_diag_t < 2.0)
         return;
     g_diag_t = now;

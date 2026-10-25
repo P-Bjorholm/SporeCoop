@@ -124,6 +124,7 @@ static int h_diag_report(const char* reason, char* out, int cap)
     return (int)p.size();
 }
 static void h_diag_context(SkMod* mod, const char* (*fn)(void*), void* user) { diag_context(mod, fn, user); }
+static const char* h_last_problem() { return diag_last_problem(); }
 static const char* h_logs_dir()
 {
     static std::string d = diag_logs_dir();
@@ -160,6 +161,7 @@ SkHost g_host = {
     h_diag_report,
     h_diag_context,
     h_logs_dir,
+    h_last_problem,
 };
 
 } // namespace sk
@@ -266,6 +268,7 @@ extern "C" __declspec(dllexport) int __cdecl sporekit_boot(HMODULE loader)
     SKLOG(SK_INFO, "SporeKit %s booting (instance %d, pid %lu)", SK_VERSION, g_instance,
           GetCurrentProcessId());
 
+    diag_read_last_problem(); // the previous run crashed / hung: its archive, told to the player
     watchdog_start();
     exceptions_install();
     watchdog_mark("hooks_init");

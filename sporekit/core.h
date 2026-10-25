@@ -180,6 +180,9 @@ bool zip_write(const std::wstring& path, const std::vector<ZipEntry>& entries); 
 bool read_file_tail(const std::wstring& path, size_t cap, std::vector<uint8_t>& out);
 // diag.cpp
 std::string diag_write_bundle(const char* reason); // report + logs + crash files + settings as one .zip
+std::string diag_write_bundle_with(const char* reason, const std::string& existing_report);
+void diag_read_last_problem();  // at boot: the previous run's problem (logs\last-problem.txt)
+const char* diag_last_problem(); // "<what>\n<zip path>" or ""
 const char* build_name();     // "GOG 2024", "Steam (the GOG 2024 code)", ...
 std::string diag_env();       // the environment, several lines
 std::string foreign_hooks();  // overlays / wrappers / ModAPI loaded in the game

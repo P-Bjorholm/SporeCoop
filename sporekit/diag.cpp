@@ -441,9 +441,36 @@ static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
     return std::vector<uint8_t>(out.begin(), out.end());
 }
 
-std::string diag_write_bundle(const char* reason)
+// the archive of a problem the game had (a crash, a hang, a fault before the game ended): named in
+// logs\last-problem.txt so the next start tells the player where it is
+static void mark_problem(const std::string& zip, const char* what)
 {
-    std::string report = diag_write_report(reason, nullptr);
+    write_text(logs_dir() + L"\\last-problem.txt", std::string(what) + "\n" + zip + "\n");
+}
+
+static std::string g_last_problem; // read at boot: "<what>\n<zip path>" of the previous run, or ""
+
+void diag_read_last_problem()
+{
+    std::vector<uint8_t> d;
+    std::wstring m = logs_dir() + L"\\last-problem.txt";
+    if (!read_file_tail(m, 4096, d) || d.empty())
+        return;
+    g_last_problem.assign(d.begin(), d.end());
+    while (!g_last_problem.empty() && (g_last_problem.back() == '\n' || g_last_problem.back() == '\r'))
+        g_last_problem.pop_back();
+    DeleteFileW(m.c_str()); // told once
+    logf(&g_kit_mod, SK_WARN, "the previous run had a problem: %s", g_last_problem.c_str());
+}
+
+const char* diag_last_problem() { return g_last_problem.c_str(); }
+
+std::string diag_write_bundle(const char* reason) { return diag_write_bundle_with(reason, ""); }
+
+// existing: a report already written (a crash report): it is the archive's report
+std::string diag_write_bundle_with(const char* reason, const std::string& existing)
+{
+    std::string report = existing.empty() ? diag_write_report(reason, nullptr) : existing;
     std::wstring dir = logs_dir();
     std::vector<ZipEntry> z;
     size_t total = 0;
@@ -485,7 +512,8 @@ std::string diag_write_bundle(const char* reason)
         return v;
     };
     for (auto& f : newest(files_in(dir, L"crash-*.txt"), 3)) {
-        add(dir + L"\\" + f, "crashes/" + narrow(f), kLogCap, true);
+        if (f != rep_name)
+            add(dir + L"\\" + f, "crashes/" + narrow(f), kLogCap, true);
         std::wstring dmp = f.substr(0, f.size() - 4) + L".dmp";
         add(dir + L"\\" + dmp, "crashes/" + narrow(dmp), kBundleMax, true);
     }
@@ -553,6 +581,7 @@ static void exit_report(UINT code, const char* how)
              fault ? ", seconds after a fault: the report shows that fault" : "");
     EXCEPTION_POINTERS ep{&er, &ctx};
     std::string p = diag_write_report(why, fault ? &ep : nullptr);
+    mark_problem(diag_write_bundle_with(why, p), fault ? "closed right after an error" : "closed with an error code");
     logf(&g_kit_mod, SK_ERROR, "%s; crash report: %s", why, p.c_str());
 }
 
@@ -569,6 +598,8 @@ static DWORD WINAPI crash_report_thread(void* p)
     auto* j = (CrashJob*)p;
     std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep);
     logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str());
+    std::string zip = diag_write_bundle_with("the game crashed", path); // one file to send
+    mark_problem(zip, "crashed");
     return 0;
 }
 
@@ -637,6 +668,7 @@ void diag_hang_report(const char* why)
         return;
     std::string p = diag_write_report(why, nullptr);
     logf(&g_kit_mod, SK_ERROR, "hang report: %s", p.c_str());
+    mark_problem(diag_write_bundle_with(why, p), "stopped responding");
 }
 
 static DWORD WINAPI crash_thread(void*)

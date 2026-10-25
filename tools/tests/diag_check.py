@@ -11,6 +11,8 @@
   5. --crash: a call to address 1 kills the game: crash-<time>.txt with the exception, the call
      chain and the log, and a minidump next to it
 
+  --crash also: the crash packs the archive by itself, the next start tells the player
+
   SPORE_LANE=2 python3 tools/tests/diag_check.py [--crash]
 """
 import glob
@@ -146,6 +148,18 @@ def main():
                'it has the call chain, the co-op state and the log')
             print('  ' + '\n  '.join(t.split('== Exception')[1].splitlines()[:4]))
         ck(any(p.endswith('.dmp') and os.path.getsize(p) > 10000 for p in new), 'a minidump is written next to it')
+        # the archive is made by itself, with that crash in it; the next start tells the player
+        zips = sorted(glob.glob(os.path.join(LOGDIR, 'SporeCoop-report-*.zip')), key=os.path.getmtime)
+        crash_name = os.path.basename(txts[0]) if txts else '?'
+        names = zipfile.ZipFile(zips[-1]).namelist() if zips else []
+        ck(crash_name in names, f'the crash made the archive by itself, the crash report in it ({os.path.basename(zips[-1]) if zips else None})')
+        ck(os.path.exists(os.path.join(LOGDIR, 'last-problem.txt')), 'the crash is marked for the next start')
+        c = start_host(ck)
+        time.sleep(10)
+        chat = c.call('coop.status')['out']
+        told = re.search(r'the last game crashed: mods.logs.SporeCoop-report-\S+\.zip', chat)
+        ck(told, 'the next start tells the player where the archive is')
+        ck(not os.path.exists(os.path.join(LOGDIR, 'last-problem.txt')), 'and only once (the mark is gone)')
         lane.sh('kill')
     return ck.result()
 

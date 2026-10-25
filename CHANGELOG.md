@@ -3,10 +3,10 @@
 ## [Unreleased]
 
 ### Finding problems
-- **Crash reports:** when the game crashes, `mods\logs\crash-<date-time>.txt` and a minidump next to
-  it: what crashed, where (module and function), the call chain, the co-op session, the other
-  overlays and mods in the game, and the last log lines. A game that stops drawing for 30 s writes a
-  `report` too.
+- **Crash reports, ready to send:** when the game crashes, freezes for 30 s or closes right after an
+  error, SporeCoop packs `mods\logs\SporeCoop-report-<date-time>.zip` by itself (the crash report:
+  what crashed, where, the call chain, the co-op session, other overlays and mods; a minidump; the
+  logs; the settings), and the next start of the game tells the player its name.
 - **Logs are kept:** the logs of the last 10 runs stay in `mods\logs\previous\` (restarting the game
   after a crash used to overwrite the crash's log).
 - **"Report a problem"** in the co-op window (F9) packs everything into one file to send,

@@ -157,6 +157,11 @@ For bug reports of players, who send a file, not a debugger session:
   `previous/` (the newest 6 kept logs), `settings/` (mods\*.ini, `last_address` hidden). Logs are
   cut to their last 8 MB, the archive stays under 24 MB (GitHub takes 25 MB): the older optional
   files go first and `LEFT_OUT.txt` names them.
+* **The archive by itself:** a crash (after its report, in the same thread, inside the filter's
+  15 s), a hang report and the end of the game after a fault write the archive too (the problem's
+  report as its main report) and `logs\last-problem.txt` ("<what>\n<zip>"). The next boot reads and
+  removes it; `H->last_problem()` returns it once per run and SporeCoop tells the player in the menu
+  ("the last game crashed. A report to send is ready: mods\logs\SporeCoop-report-....zip").
 * **Faults in our code.** A first-chance fault inside `sporekit.dll` or a DLL under `mods\` fires
   `SK_EV_FAULT` (on the main thread at the next frame, arg "address module+offset"): SporeCoop tells
   the player once per run where to find the report.

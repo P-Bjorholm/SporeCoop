@@ -151,6 +151,9 @@ typedef struct SkHost {
      * its next call. fn NULL removes it. Removed automatically when the mod unloads. */
     void (*diag_context)(SkMod* mod, const char* (*fn)(void* user), void* user);
     const char* (*logs_dir)(void); /* Windows path of mods\logs */
+    /* the previous run's problem: "<what>\n<path of its SporeCoop-report .zip>" ("crashed", "stopped
+     * responding", ...), "" when it ended well. Told once: the mark is removed at this boot. */
+    const char* (*last_problem)(void);
 } SkHost;
 
 typedef struct SkModInfo {
