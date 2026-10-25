@@ -163,14 +163,19 @@ def alive(inst):
         return False
 
 
-def restore_creations():
+def restore_creations(guest=True):
     """both players' own creations ("My Creations", EditorSaves.package) are test data too: every
-    lane starts with the same ones (fixtures creations-host / creations-guest)"""
+    lane starts with the same ones (fixtures creations-host / creations-guest). guest=False: the
+    guest starts with none (a player who never used the Creature Creator)"""
     import shutil
     fx = os.path.join(os.path.dirname(os.path.dirname(subprocess.run(
         ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ROOT, capture_output=True,
         text=True).stdout.strip())), 'SporeCoop', 'out', 'fixtures')
+    if not guest:
+        subprocess.run(['rm', '-f', os.path.join(lane.GUEST_DIR, 'EditorSaves.package')])
     for name, d in (('creations-host', lane.HOST_DIR), ('creations-guest', lane.GUEST_DIR)):
+        if name == 'creations-guest' and not guest:
+            continue
         src = os.path.join(fx, name + '.package')
         if os.path.exists(src):
             os.makedirs(d, exist_ok=True)
@@ -230,7 +235,7 @@ def warm_reset(host, guest, fixture, planet):
     return True
 
 
-def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
+def start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the
@@ -243,7 +248,8 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     # warm only within the same save: a test starts from its fixture (stage switches in game work,
     # coop_stage_switch.py, but go through the galaxy menu and take longer)
     if os.environ.get('SPORE_WARM') == '1' and planet and not join_in_intro and st.get('build') == build_id() \
-            and st.get('fixture') == fixture and alive(lane.HOST) and alive(lane.GUEST):
+            and st.get('fixture') == fixture and st.get('guest_creations', True) == guest_creations \
+            and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         try:
             if warm_reset(host, guest, fixture, planet):
@@ -258,7 +264,7 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     time.sleep(2)
     sh('deploy')
     sh('fixture', 'restore', fixture, lane.HOST_PROFILE)
-    restore_creations()
+    restore_creations(guest_creations)
     subprocess.run(['rm', '-rf', lane.GUEST_DIR + '/Games', lane.GUEST_DIR + '/Games-sporecoop-backup'])
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
@@ -321,7 +327,7 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False):
     time.sleep(4)
     print(f'  (both games ready in {time.time() - t_start:.0f} s: '
           + ', '.join(f'{n} {t:.0f}' for n, t in phases) + ')', flush=True)
-    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0)
+    lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations)
     watch(lane.HOST, lane.GUEST)
     check_fixture(host, fixture)
     return host, guest
