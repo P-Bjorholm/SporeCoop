@@ -16,7 +16,9 @@ description: Orchestrator - merge a batch of parallel SporeCoop branches (one pe
 4. Real conflicts in code: keep both behaviours, read the two fixes together (shared keys, hooks
    on the same symbol, counters printed by the same status line). Tell the later agent if its work
    needs the earlier one (`git merge <earlier>` into its branch).
-5. After each merge: `make -j8`, `make test` (unit tests, re_lint, docs_lint).
+5. After each merge: `tools/tickets.py index` (the union merge keeps both table rows), `make -j8`,
+   `make test` (unit tests, re_lint, docs_lint, tickets check). The branch's ticket says fixed
+   with its commits and tests; add the merge commit to it.
 6. After the batch: `tools/lab.py run smoke,<the batch's new tests> --lanes 6`; a single failure
    under load: run that test alone 2-3 times before calling it a regression. Fold the
    `out/findings.md` lines into the docs.

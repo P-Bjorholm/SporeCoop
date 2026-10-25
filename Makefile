@@ -73,6 +73,7 @@ test:
 	$(B)/host/net_tests
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
+	python3 tools/tickets.py check
 
 clean:
 	rm -rf $(B)

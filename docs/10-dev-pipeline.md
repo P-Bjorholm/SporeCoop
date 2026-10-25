@@ -137,7 +137,7 @@ The steps an agent follows are in the skill `.claude/skills/fix-player-report` (
 merge steps: `.claude/skills/merge-batch`), so a brief only says what is specific:
 
 ```
-Fix player report: <one line> (source: issue #N | report zip path | screenshot text below)
+Fix player report BUG-NNNN: <one line> (source: issue #N | report zip path | screenshot text below)
 Branch fix/<name>, worktree ../SporeCoop-wt/fix/<name>, lane <N> only.
 Follow .claude/skills/fix-player-report and return its report format.
 Context: <known-issues anchor, docs/re anchor, crash_triage output>

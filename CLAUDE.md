@@ -26,7 +26,14 @@ anything new, write it down in the same change.**
     game system works, recipes ("to spawn an epic: …"), with ✔ / ~ / ? marks. One file per game
     area; append a section rather than starting a new file.
   * `docs/05-re-notes.md`: method and tools of the reverse engineering.
-  * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them).
+  * `docs/tickets/`: **one ticket per player report, crash or bug found** (`BUG-NNNN-<slug>.md`:
+    report, root cause, fix, branch, commits, version, test, history). Before analysing a report,
+    `tools/tickets.py find <address | symptom | test>` shows whether it was seen before and how it
+    ended. A new report gets a ticket first (`tools/tickets.py new`); the fix commits name it
+    (`BUG-0012` in the message); the ticket is updated when the fix is merged and released
+    (`tools/tickets.py release <version>`). Open security problems: `--private` (out/tickets/).
+  * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them), each with its
+    ticket id.
   * `docs/06-testing.md`: test tools, fixtures, how long things take, test pitfalls.
 * Code never uses a raw game address: ask SporeKit by name (`H->sym("…")`) and add the name to the
   `.sym` file.
@@ -111,7 +118,8 @@ anything new, write it down in the same change.**
   merge button: it writes the account's e-mail into the merge commit. Commits use the GitHub
   no-reply address.
 * Releases: add the version's section to `CHANGELOG.md`, bump `COOP_VERSION` (mods/coop/coop.cpp),
-  push a tag `vX.Y.Z`: GitHub Actions builds the zip and publishes the release.
+  run `tools/tickets.py release X.Y.Z` (fixed tickets get the version), push a tag `vX.Y.Z`: GitHub
+  Actions builds the zip and publishes the release.
 * Shared append-only files (`CHANGELOG.md`, `docs/known-issues.md`, `docs/06-testing.md`,
   `docs/re/*.md`) merge with git's `union` driver (`.gitattributes`): parallel additions do not
   conflict. After such a merge check the file for duplicated or interleaved text.
