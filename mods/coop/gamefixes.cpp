@@ -114,6 +114,27 @@ static void __fastcall planet_clear_guard(void* sim, void*)
         H->log(M, SK_WARN, "game fixes: the end of the respawn caption without a planet (cleanup skipped)");
 }
 
+// Alt+Shift+Enter is the game's "next display adapter" key (AppShortcuts_OnKeyDown 0x814180 ->
+// cAppSystem vt 0x68, flag +0x172). With two or more adapters (two monitors, or an integrated and
+// a dedicated GPU) cAppSystem::Update then recreates the D3D9 device on the next one
+// (Renderer_SetVideoMode 0x75E9A0), and Spore's own code for that is broken: ReleaseShaders
+// (0x70E550) visits StandardShaders that its list holds twice and faults at 0x7777BE reading
+// 0xFFFE0310 (a players' crash report, 2026-10-25; reproduced with SporeKit alone, no mod), and
+// with that fixed the next frame calls Lock on a vertex buffer of the old device (a call through 0
+// at 0x11F36A1). docs/re/graphics.md. A player gets there with Shift still held on Alt+Enter (Alt+
+// Shift is also Windows' keyboard layout switch): the key toggles fullscreen like Alt+Enter instead
+// (cAppSystem vt 0x64, flag +0x171).
+using AppFlagFn = void(__thiscall*)(void*);
+static AppFlagFn g_next_adapter_orig, g_toggle_fullscreen;
+static std::atomic<unsigned> g_adapter_keys{0};
+
+static void __fastcall next_adapter_guard(void* app, void*)
+{
+    if (++g_adapter_keys <= 4)
+        H->log(M, SK_WARN, "game fixes: Alt+Shift+Enter (next display adapter) crashes Spore: toggling fullscreen instead");
+    g_toggle_fullscreen(app);
+}
+
 static bool patch_slot(uintptr_t* slot, uintptr_t value)
 {
     DWORD old;
@@ -144,6 +165,10 @@ void init(const SkHost* host, SkMod* mod)
     uintptr_t pc = H->sym("SporeCoop::cSimPlanetHighLOD_EndRespawnCaption");
     bool planet = pc && H->hook_create(M, (void*)pc, (void*)&planet_clear_guard, (void**)&g_planet_clear_orig) == 0;
     H->log(M, SK_INFO, "game fixes: respawn caption guard %s", planet ? "on" : "off");
+    uintptr_t na = H->sym("SporeCoop::AppSystem_NextAdapter"), tf = H->sym("SporeCoop::AppSystem_ToggleFullscreen");
+    g_toggle_fullscreen = (AppFlagFn)tf;
+    bool keys = na && tf && H->hook_create(M, (void*)na, (void*)&next_adapter_guard, (void**)&g_next_adapter_orig) == 0;
+    H->log(M, SK_INFO, "game fixes: Alt+Shift+Enter guard %s", keys ? "on" : "off");
 }
 
 void shutdown()
@@ -157,7 +182,8 @@ std::string status()
     return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
            ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
-           std::to_string(g_planet_clear_skipped.load()) + "\n";
+           std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
+           std::to_string(g_adapter_keys.load()) + "\n";
 }
 
 } // namespace gamefixes
