@@ -128,7 +128,9 @@ the last loot drops with age and position), `coop.pool eat <key>` (the game's Ea
 Karke fixture's cell is a herbivore, its mouth does not take meat), `coop.pool swimto <key> [tp]`;
 counters `npc_deaths`, `loot_calls`, `loot_cells`, `kills_in`, `eats_late` (host), `mirror_kills`,
 `kills_sent`, `death_replays`, `loot_skipped` (guest). Loot cells are not kept alive: teleporting the
-players away removes them (eat right after a kill).
+players away removes them (eat right after a kill). `play_cell.py` run warm right after other cell tests can fail its "partner
+cell is not replaced" check: `puppet_new` / revive counters are per game run, not reset by a warm
+reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins, 0 when cold).
 
 ## 6.4 Test levels
 
