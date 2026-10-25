@@ -766,3 +766,13 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   (every herd with archetype and distance), `coop.npc partners on|off`.
 * `call` with a `thiscall` that writes through a pointer argument: pass a real buffer; a null (or
   a short `s:` string) made `cTimeOfDay` presets fault and the game stopped drawing for good.
+
+## 6.23 coop_creature_social.py is flaky in its ally phase (2026-10-25)
+
+* Not in suite.py. Runs on 0.7.2.2, 0.7.2.3 and main (2026-10-25, lanes 2-4): 3 OK, 3 FAIL, on
+  every version. The failing runs end the ally phase with the Kooks at (4, 2 impressed, 0): one of
+  the three social games was refused by the game (`refused=2` in `coop.social`), so the third
+  impression never came and "allies on both", "the ally reward was paid once" and the guest's
+  ally card fail together. A test timing (the NPC was still busy or out of the social range),
+  not a co-op regression. One run also failed "the pause menu is up: the partner's name tag is not
+  drawn" once (not seen again).
