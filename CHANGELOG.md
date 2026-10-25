@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.2.1] - 2026-10-24
+
+Finding problems: crash reports ready to send, kept logs, the version in the game. 0.7.2.1 plays
+together with 0.7.0-0.7.2 (the network protocol did not change).
+
 ### Finding problems
 - **Crash reports, ready to send:** when the game crashes, freezes for 30 s or closes right after an
   error, SporeCoop packs `mods\logs\SporeCoop-report-<date-time>.zip` by itself (the crash report:

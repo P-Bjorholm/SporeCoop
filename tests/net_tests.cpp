@@ -592,6 +592,8 @@ static void test_updater()
     CHECK(!upd::parse_pack(upd::write_pack(evil), q, err));
     CHECK(upd::compare_versions("0.5.1", "0.5.0") == 1 && upd::compare_versions("v0.5.0", "0.5.0") == 0 &&
           upd::compare_versions("0.10.0", "0.9.9") == 1 && upd::compare_versions("1.0", "1.0.1") == -1);
+    CHECK(upd::compare_versions("0.7.2.1", "0.7.2") == 1 && upd::compare_versions("0.7.3", "0.7.2.1") == 1 &&
+          upd::compare_versions("v0.7.2.1", "0.7.2.1") == 0);
     const char* json = R"({"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.5.1","tag_name":"v0.5.1",
       "assets":[{"name":"SporeCoop-0.5.1.zip","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.zip"},
       {"name":"SporeCoop-0.5.1.pack","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.pack"},

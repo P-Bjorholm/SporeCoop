@@ -65,7 +65,7 @@ struct Api {
     std::function<void(bool)> lan_scan; // start/stop looking for games on the network
     std::function<std::vector<std::string>()> local_addresses;
     std::function<uint32_t()> mode; // game mode id
-    std::function<std::string()> version_line; // "SporeCoop 0.7.3  -  GOG 2024" (window footer)
+    std::function<std::string()> version_line; // "SporeCoop 0.7.2.1  -  GOG 2024" (window footer)
     std::function<std::string()> report;       // writes a problem report, returns its path ("" = cannot)
     uint16_t default_port = 0;
 };
