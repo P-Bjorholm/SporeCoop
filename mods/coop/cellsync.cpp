@@ -673,7 +673,7 @@ static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
 // mirror's particles are only moved, never turned, by guest_tick: their cloud kept whatever
 // orientation the guest's collisions and the shape matching gave it, so the rotation the guest wrote
 // was replaced before every drawing and collision step and the host's NPC spun on the guest (and its
-// mouth and body faced elsewhere than on the host, docs/known-issues.md). For a mirror the
+// mouth and body faced elsewhere than on the host). For a mirror the
 // particle cloud is turned about its centre onto the host's facing right after the fit, and the
 // host's matrix is written: what is drawn and what bites or is bitten here faces as on the host.
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Cell: the host's creatures no longer spin on the guest's screen, and the guest can kill them.**
+  A creature now faces the same way for both players (it kept turning on the guest, between the
+  host and the guest), so its mouth and spikes are where they are for the host. The guest's
+  killing bite and bites with a mouth that eats chunks now reach the host (before, the guest could
+  wound a creature but never finish it). Test: `coop_cell_spin.py` (suite `cell_spin`).
+
 ## [0.7.2.1] - 2026-10-24
 
 Finding problems: crash reports ready to send, kept logs, the version in the game. 0.7.2.1 plays

@@ -371,6 +371,73 @@ What DamageCell does around a bite besides the hp, and how the co-op path replay
 * The jump tables of 0xE57710 and 0xE57930 (bytes at 0xE577AC / 0xE579C8, index ai.type − 0x1003)
   are `00 00 00 01 00 00 00 02 00 00 00 00`: only ai.type 0x1006 reaches the call.
 
+## 10. Soft-body facing of mirrors; bites that do not go through DamageCell (2026-10-24, GOG 2024)
+
+Player report (0.7.x): "enemies spun uncontrollably for the guest, switching between facing the host
+and the guest, so they were almost impossible to kill even with both attacking".
+`tools/tests/coop_cell_spin.py` (both players swim at a creature, its rotation `+0x5C` sampled on
+both machines with `coop.sync`; then each player bites one to death through the game's Bite).
+Addresses of the GOG 2024 build (`dc04aee5`); the cell code around 0xE7xxxx is at the same address
+as in GOG 2016; 0xE5A430 is likely 0xE5A450 there (its neighbours moved by -0x20, not checked).
+
+**Facing comes from the particles** ✔ (disassembly + runtime). `SoftBodyStep` **0xE5A430**, cdecl
+`void(cell*, resData*, float dt)`, runs in UpdateCells after the AI dispatcher and the animation
+step (call at 0xE7CA72), for every foreground cell with GFX and more than one particle:
+
+* `FUN_00E85D70` fits the cell's rest shape (0x16AD6C0 + `+0x24C`·0x300, at most 64 Vec3) to the
+  current particle positions (`parts + 4 + 12k`) and returns a rotation (polar decomposition
+  0xE85170 of the covariance) and the goal positions `goal = rest·scale · M + centre` (row
+  vectors: the image of the x axis is row 0 of M, so the heading is `atan2(M[1], M[0])`);
+* writes M to `+0x5C` (flag 2, counter++) and to `+0x24` (the shape matrix, a blend of M and the
+  linear fit with weight 0 = M), the angular speed (0xE5A2A0) to `+0x1D0`, and the goal offsets
+  `goal - pos` per particle to **`parts + 0x11944 + 12k`** (a 5th particle array after positions
+  +4, velocities +0x4654 and two more);
+* with one particle it only copies a constant 3x3 to `+0x24`; `+0x5C` is then whatever was written.
+
+Part geometry for collisions (0xE6AD80, both cells) places every part at `+0x4C + scale·(part · M)`
+with M = `+0x5C` (only when flag 2 is set), so the facing decides which parts touch: a mouth, a
+spike, the body.
+
+A guest moves a mirror's particles (translation, velocities zeroed: `modes::cell_move`) and wrote
+the host's rotation to `+0x5C` once a frame, outside the cell step. The next SoftBodyStep replaced it
+with the fit of a particle cloud that nobody turned: it kept the orientation it had at its spawn plus
+whatever the guest's collisions and the shape matching did to it. Measured before the fix (two
+players chasing a creature for 25 s, 10 samples/s): facing difference host vs guest median 63-79°,
+p90 144-154°, the guest's copy turned 4900-5400° while the host's turned 560-1200°; `coop.sync`
+sometimes caught the host's value (read right after the write) and the next sample 150° off.
+Fix (cellsync.cpp `h_Soft`): after the original, for a mirror, turn the particle positions about
+their mean, their velocities and goal offsets by `heading(host) - heading(fit)` and write the host's
+matrix to `+0x5C` and `+0x24`: the next fit returns the host's facing, so drawing and the collision
+step both use it. After: p90 2-10°, turned within 2% of the host. Rotating the particles this way
+(a rigid turn about the centre, every frame) did not blow the body up (cf. §6 for the puppets).
+
+**Bites that bypass DamageCell** ✔ (disassembly; the Bite path also at runtime):
+
+| addr | what |
+|---|---|
+| 0xE7E7F0 | interaction executor, cdecl `void(interaction*, float dt)` (`add esp,8` at 0xE7F208). Interaction: `+0` cell A idx, `+4` cell B idx, `+8` kind, `+0xC/+0x10` part indices, `+0x14` depth, `+0x18` contact point, `+0x24` normal. HandleCollisionPair asks 0xE73DD0 both ways; 0xE59CC0 keeps the highest kind (ties: deeper). Kinds seen for a player's cell vs a creature in 20 s chases: 1 (push, ~hundreds), 3, 8 (weapon contact, ~1/s at most) |
+| 0xE6A3F0 | the kind of one part pair (attacker part type, victim cellType `+0xB4`, victim part type, GetScaleDifference(attacker, victim), victim res flags `+0xB0`). Part type 7 (a weapon) on a creature of the same level: kind 8 unless the victim's part is a weapon too (0xE) |
+| 0xE7B540 | timed callback of an interaction event: kind 10 → **Bite 0xE7B0A0** |
+| **0xE7B0A0** Bite | cdecl `bool(u32 attacker, u32 victim, void* ev+0x48, u32* dir ev+0x54, int ev+0x38, float dt)`. `+0x178 = 1` on both; GetScaleDifferenceWithPlayer(victim) < 3: **DamageCell(type 4) only when the damage is below the victim's hp, else BreakOrSwallow(victim, attacker)**; bigger victims: DamageCell and a push 0xE76AF0 |
+| **0xE7DD90 / 0xE7DBD0** EatChunkA/B | events 0x13 / 0x14 (dispatcher 0xE7E130), cdecl `void(u32 eater, u32 victim, u32 ev+0x30, u32 ev+0x3C, float dt)`: OnEat for the eater, victim hp -= GetDamageAmount directly (no DamageCell), attacker rest 0xE576F0, KillIfDead(type 6), pushes |
+
+So in co-op the guest's bites on a mirror went to the host only when they were non-lethal DamageCell
+calls: the lethal bite (BreakOrSwallow) broke the mirror on the guest only (and `h_Destroy` kept it,
+untouched), and chunk bites lowered the mirror's hp until the next state. With 6 hp and 3 per bite
+(a creature of the players' level) the guest could take a creature to 3 hp and never kill it
+(`coop_cell_spin.py --without-fix`: hp on the host `[6, 3, 3, 3, 3, 3]`). Fix: the guest's
+`h_Break` and `h_ChunkA/B` send `MSG_CELL_HIT` (type 4 with at least the mirror's hp / type 6) and
+keep the mirror (a chunk bite still shows: food, health ring, push; the mirror keeps 1 hp at least).
+The host's handler has no distance or facing test: it applies the hp, the species alert and the
+victim's reaction, and KillCell when hp reaches 0 (`hits_in`, `hits_aggro`).
+A mirror that bites a chunk off the guest now also sends `MSG_CELL_BITTEN` (the NPC's rest).
+
+Not changed: a creature the host killed stays a full mirror on the guest with hp 0 until the host
+removes it (the state's dying/dead flags only stop new mirrors); how often a player's weapon gets to
+a creature in the bots' chase (`cell_contacts:` `creature_pairs`, `bite_events`): host 1-3 bites per
+20 s, guest 0-3, with or without the fix; the Karke fixture cell has no weapon (§8), premade cell
+`BAF1AD40` (`coop.creations choose cell BAF1AD40`) has one.
+
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC
   with `+0x16C=1` stays passive and nothing resets it.
