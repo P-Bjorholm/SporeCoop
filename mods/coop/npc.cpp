@@ -384,7 +384,7 @@ static void guest_tick(double now)
     std::sort(g_kill.begin(), g_kill.end());
     g_kill.erase(std::unique(g_kill.begin(), g_kill.end()), g_kill.end());
     for (void* c : g_kill)
-        if (c != av && !game::is_puppet(c) && !game::is_destroyed(c)) {
+        if (c != av && !game::is_puppet(c) && !game::is_destroyed(c) && !game::destroy_pending(c)) {
             game::destroy_creature(c);
             g_removed_local++;
         }
@@ -513,7 +513,8 @@ static void remove_saved_strays(double now)
         [](void* o, uint32_t noun, void* u) {
             auto* a = (Acc*)u;
             if (noun != 0x18EB45Eu || o == a->av || !game::object_alive(o) || IsBadReadPtr(o, 0x1680) ||
-                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o))
+                *(void**)((uint8_t*)o + 0xE84) || !game::species_profile(o) || game::is_puppet(o) || is_proxy(o) ||
+                game::destroy_pending(o))
                 return true;
             if (own_kind_herd(game::herd_of(o)))
                 a->v.push_back(o);

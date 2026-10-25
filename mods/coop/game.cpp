@@ -411,6 +411,22 @@ static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
 
+// the creature world the pointers belong to: the noun manager's avatar (it stays through the
+// editors, a load or a stage change replaces it)
+static void* world_token()
+{
+    void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
+    return nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+}
+
+bool destroy_pending(void* c)
+{
+    for (auto& d : g_destroy_later)
+        if (d.first == c)
+            return true;
+    return false;
+}
+
 static bool cinematic_running()
 {
     void* cm = a_CinematicGet ? cdecl_call<void*>(a_CinematicGet) : nullptr;
@@ -423,10 +439,9 @@ void destroy_creature(void* c)
         return;
     puppet_unregister(c); // also used for UFOs and other cGameData puppets
     if (g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running()) {
-        for (auto& d : g_destroy_later)
-            if (d.first == c)
-                return;
-        g_destroy_later.push_back({c, avatar()});
+        if (destroy_pending(c))
+            return;
+        g_destroy_later.push_back({c, world_token()});
         g_destroys_deferred++;
         return;
     }
@@ -441,11 +456,11 @@ void destroy_deferred_tick()
         return;
     auto later = std::move(g_destroy_later);
     g_destroy_later.clear();
-    void* av = avatar();
+    void* world = world_token();
     void* nm = cdecl_call<void*>(a_NounGet);
-    for (auto& [c, queued_av] : later) {
+    for (auto& [c, queued_in] : later) {
         // another world since (a load, the stage left): the pointer may be another object now
-        if (queued_av != av || !creature_listed(c) || !nm)
+        if (queued_in != world || !creature_listed(c) || !nm)
             continue;
         thiscall<void>(a_DestroyInstance, nm, c);
         g_destroys_late++;

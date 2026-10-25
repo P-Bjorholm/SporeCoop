@@ -49,6 +49,7 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
 void destroy_creature(void* c);
 void destroy_deferred_tick(); // once per frame
 void set_destroy_defer(bool on); // tests (off: at once)
+bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
 // cSpatialObject::SetPosition (vtable 0x38): moves without touching locomotion/animation
