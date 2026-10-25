@@ -42,7 +42,14 @@ static void creature_fill(void* av, net::PlayerState& st)
 static void* creature_spawn(const net::PlayerState& s, void* av)
 {
     void* own = g_species_for_player ? g_species_for_player(s.id) : nullptr;
-    void* herd = own ? game::create_herd(s.pos, own) : nullptr;
+    // one herd per species, reused (also one a save brought back): a new herd per spawn stayed in
+    // the world after the puppet was gone
+    void* herd = own ? game::own_herd_for(own) : nullptr;
+    if (herd) {
+        game::herd_home(herd, s.pos); // (a reused herd's home may be anywhere)
+        game::herd_quiet(herd);
+    } else if (own)
+        herd = game::create_herd(s.pos, own);
     void* p = own && herd ? game::spawn_creature(s.pos, own, herd)
                           : game::spawn_creature(s.pos, game::species_profile(av), game::avatar_herd());
     if (!p)

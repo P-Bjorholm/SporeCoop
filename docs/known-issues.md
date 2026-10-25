@@ -16,19 +16,21 @@ Fixed entries move to the commit message (and a test).
   skips `SimCamera_LookAt` and `SimCamera_Update` while the camera object is null (`coop.status`:
   "tribe camera skipped N"); the stage setup goes on without pointing that camera.
 
-## Creature: herds of puppets pile up and puppets go into the host's saves
+## Creature: puppets still go into saves (removed after a load)
 
-* Every puppet spawn on a player's machine makes a herd of its own (`game::create_herd`): about two
-  per evolution on the host (`coop.npc herds`: `ours=` and the empty `herd ... members=0` lines),
-  never destroyed, and saved with the planet. The game enabled some of them again after the editor
-  (`en=1`, target 0: no members are spawned). Their homes are on the surface since
-  fix/creature-ai-crash (docs/re/creature.md 10), so they no longer lead to the crash 0xB88BEA.
-* A save of the host while a partner plays holds the partner's puppet and its herd (seen: the guest
-  got the host's left-over puppet with its herd home 264 m from the centre in the world it was
-  sent). After a load such puppets are NPCs we cannot tell from the game's, without the archetype
-  tuning +0xE84 (players: "these guys appeared after I loaded the save and crashed my game after I
-  killed them", the 0xD48634 crash). Not fixed here: one herd per partner, reused, and leaving
-  puppets out of saves (or removing them after a load) would cover both.
+* Mostly fixed since 2026-10-25 (docs/re/creature.md 12): a puppet reuses the herd of its species
+  (no new herd per spawn), and every creature without tuning in a herd like ours that is not ours
+  is removed once a second in the creature stage (`strays_removed=` in `coop.npc`), so a puppet a
+  save brought back (the 0xD48634 crash: "these guys appeared after I loaded the save and crashed
+  my game after I killed them") is gone right after the load, also from saves made before.
+* Still open: our puppets and their herds are written into every save (no "do not save" flag
+  found on a game object; the save is the generic `COMSerializer::SaveClassObjects` 0x69FB90). The
+  empty herds of ours stay in the world and in saves (target 0: they spawn nothing); a herd a save
+  brought back is of another species after a restart, so the first puppet spawn after such a load
+  still makes one new herd. Older saves keep the herds they have.
+* ? A guest without an own creature has its puppet in the host's avatar herd (host species, with
+  tuning): a save probably keeps it as an extra member of the host's family, which the removal
+  does not touch (not checked).
 
 ## Creature: one NPC 4 m off on every guest for 30+ s (seen once)
 

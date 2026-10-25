@@ -268,8 +268,10 @@ void remove_strays(double now)
     if (g_strays.empty() || g_mode != modes::kCreature || !g_local)
         return;
     for (auto& s : g_strays) {
-        // the same creature (pointer still listed, same herd), the same world, not ours again
-        if (s.world == g_world && now - s.since < 3600 && game::creature_listed(s.c) && game::herd_of(s.c) == s.herd &&
+        // the same creature (pointer still listed, same herd), the same world, not ours again, not
+        // destroyed already (npc.cpp remove_saved_strays meets it too: untuned, in a herd like ours)
+        if (s.world == g_world && now - s.since < 3600 && game::creature_listed(s.c) && !game::is_destroyed(s.c) &&
+            game::herd_of(s.c) == s.herd &&
             game::species_instance(s.c) == s.species && !game::is_puppet(s.c) && s.c != game::avatar()) {
             LOG("a puppet left over from before (%p, herd %p) removed", s.c, s.herd);
             game::destroy_creature(s.c);
@@ -487,16 +489,21 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
 }
 
 // The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
-// the adult creature of another species an event is about (0xD48634). Our puppets and NPC proxies
-// have no +0xE84 object: the guest faulted there while it fought proxies (play_creature.py,
-// 2026-10-23). During the handler they get a blank one whose +0x32C is -1 ("none").
+// the creature an event is about (msg+4: the attacked creature of 0xD335362C, the impressed one of
+// 0x60B4123) when it is an adult of another species, without a null check (0xD48634). Our puppets
+// and NPC proxies have no +0xE84 object: the guest faulted there while it fought proxies
+// (play_creature.py, 2026-10-23). The host of a player's report faulted there 3 times on a
+// creature that was none of ours (a puppet brought back by a save, npc.cpp remove_saved_strays), so the
+// creature of the message itself is checked too, whatever it is. During the handler these get a
+// blank object whose +0x32C is -1 ("none"); a creature with tuning is never touched.
 typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
 StageMsg_t o_StageMsg;
 alignas(16) uint8_t g_blank_e84[0x1000];
 unsigned g_stage_msg_guards; // handler calls that needed the blank object (tests)
+unsigned g_stage_msg_other;  // ... for a creature of the message that was none of ours (tests)
 bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 {
-    void* patched[256];
+    void* patched[257];
     int n = 0;
     if (g_mode == modes::kCreature)
         for (void* c : game::puppets()) {
@@ -506,6 +513,17 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
                 patched[n++] = c;
             }
         }
+    // the two messages whose msg+4 is the creature read at 0xD48634 (cast with noun 0x18EB45E, 0xAC8010)
+    if ((id == 0xD335362Cu || id == 0x60B4123u) && msg && !IsBadReadPtr(msg, 8)) {
+        void* c = ((void**)msg)[1];
+        void** e84 = c ? (void**)((uint8_t*)c + 0xE84) : nullptr;
+        if (c && !IsBadReadPtr(c, 0xE88) && !IsBadReadPtr(*(void**)c, 0x24) && game::noun_id(c) == 0x18EB45Eu &&
+            *e84 == nullptr) {
+            *e84 = g_blank_e84;
+            patched[n++] = c;
+            g_stage_msg_other++;
+        }
+    }
     if (n)
         g_stage_msg_guards++;
     bool r = o_StageMsg(self, id, msg);
@@ -2016,6 +2034,24 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", game::herds_dump().c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "strays")) { // tests
+        npc::set_strays(strcmp(argv[2], "off") != 0);
+        SAY("stray removal %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "attackmsg")) { // tests: host avatar "attacks" host NPC #id
+        bool ok = npc::debug_attack_msg((uint16_t)atoi(argv[2]));
+        SAY(ok ? "attack message sent" : "no such npc");
+        return ok ? 0 : 1;
+    }
+    if (argc > 1 && !strcmp(argv[1], "archless")) { // tests: herds like ours (no archetype)
+        SAY("%s", npc::herds().c_str());
+        return 0;
+    }
+    if (argc > 1 && (!strcmp(argv[1], "untuned") || !strcmp(argv[1], "creatures"))) { // tests
+        SAY("%s", npc::creatures(argv[1][0] == 'u', argc > 2 ? strtoul(argv[2], nullptr, 16) : 0).c_str());
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "hurt")) {
         bool ok = npc::debug_hurt((uint8_t)atoi(argv[2]), (uint16_t)atoi(argv[3]), (float)atof(argv[4]));
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
@@ -2191,9 +2227,10 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
                 int ok = H->world_to_screen(w, sc);
                 uint8_t* cr = (uint8_t*)r.puppet;
-                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u", ok, (int)sc[0], (int)sc[1],
+                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u msg_other=%u", ok, (int)sc[0], (int)sc[1],
                     g_mode == modes::kCreature ? *(uint32_t*)(cr + 0xB58) : 0u,
-                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards);
+                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards,
+                    g_stage_msg_other);
                 return 0;
             }
         SAY("no partner");

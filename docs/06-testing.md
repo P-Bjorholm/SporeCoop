@@ -210,6 +210,19 @@ puppet the mod lost). `coop_editor_strays.py` (two evolutions, ~6 min) reads it:
 on the surface, no puppet left over (docs/re/creature.md 10). `coop.status` "strays: pending
 removed" counts the left-over puppets removed after an editor.
 
+`coop.npc untuned` lists the living creatures without archetype tuning (+0xE84) with species, herd,
+the herd's archetype and nest, `ours` for puppets and proxies (`creatures [species]`: all of them);
+`coop.npc archless` the herds without an archetype (ours); `coop.npc attackmsg <id>` (host) posts
+the game's attack message for the host avatar and host NPC `id` (it reaches
+CreatureStageEventHandler); `coop.npc strays off|on` switches the removal of saved strays
+(docs/re/creature.md 12). `coop_creature_e84.py` (~4 min, cold): saves with the guest's puppet,
+**restarts both games** (only then the puppet comes back from the save: a load in the same process
+does not bring it back), loads that save, attacks the restored creature (the old code crashed at
+0xD48634, 3 of 3 runs), switches the removal on, lets the guest join and rejoin. The games are
+killed and started again inside the test, so `twoinst._monitors` are stopped and `twoinst.watch`
+restarted around it. Screenshots and other files from a Bottles game cannot be written to /tmp
+(the sandbox does not see it): use `twoinst.shot` (out/laneN/shots).
+
 ## 6.6 Known Wine quirks
 
 * **Flatpak document portal.** Every Bottles launch bind-mounts `/run/user/<uid>/doc/by-app/com.usebottles.bottles`
