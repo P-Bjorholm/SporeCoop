@@ -526,6 +526,28 @@ mate himself"). The purge now spares `G+0x51D4`. A guest's own cell editor opens
 (9.3: evolving inside a stage does not move the others) and its new cell goes to the others as its
 own creation.
 
+## 13. After the Cell stage: cCellGame stays, its pool does not (2026-10-25, GOG 2024)
+
+`*cCellGame::_ptr` (0x016B3C04 on dc04aee5) is **not cleared** when the Cell stage is left (the
+Creature stage after the evolution, ✔ runtime and in a player's minidump). The object stays
+readable, `+0x1C+0x14` still says 0x398 and `+0x1C+0x10` the old high-water mark, but the pool data
+`+0x1C` is gone: the player's dump had `0x0000BAAD` there, lane 5 faulted reading `0x0000F42D`. So
+`cell_game() != nullptr` does **not** mean "in the Cell stage": every reader must also check
+`game::mode_id() == kCell` (cellsync's `in_cell()`). What the mod did with that (player report
+2026-10-25, crash 2, `coop_cell_leave.py`):
+
+* cellsync kept the guest's mirrors (pool indices) after the stage and destroyed them on session
+  end: `modes::cell_at` <- `cell_destroy` <- `cellsync::destroy_local` <- `on_session_end` (the
+  disconnected callback, also the host's BYE) faulted. Now the mirrors, `g_host_of`, the touched and
+  loot lists and the puppets' indices (`modes::cell_forget`) are forgotten in the first tick outside
+  the stage (the cell editor too: RebuildLevel rebuilds the pool after it anyway, the sync recreates
+  the mirrors), and on_session_end destroys mirrors only inside the stage.
+* `coop.pool`, `coop.cell` and `cellsync::S()` (read by `coop.status`) read the pool or
+  `G+0x5190` without a mode check; they now answer only in the Cell stage.
+* A guest's own `coop.leave` does not run cellsync's on_session_end (only the disconnected
+  callback does), so its mirrors stay passive cells in its pool until it leaves the stage or rejoins
+  (not changed: a rejoin reuses them).
+
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC
   with `+0x16C=1` stays passive and nothing resets it.

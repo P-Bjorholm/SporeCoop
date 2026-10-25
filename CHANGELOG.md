@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Cell -> Creature: the guest's game no longer faults when the session ends.** A guest that had
+  played the Cell stage together kept the host's cells it showed ("mirrors") after the stage was
+  left; when the session then ended (the host left or its game crashed), it removed them from a
+  cell pool the game had already torn down. The mirrors and the partners' cells are now forgotten
+  once the Cell stage is left, and the cell console commands answer only in the Cell stage. Test:
+  `coop_cell_leave.py` (suite `cell_leave`).
+
 ## [0.7.2.2] - 2026-10-25
 
 Fixes from a player report (two brothers playing the Cell and the Creature stage). 0.7.2.2 plays

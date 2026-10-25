@@ -286,6 +286,12 @@ rejoin can push a single round over its 3 m limit; read its per-round `n p90` li
     is a race (one run of two). It also checks that the guest's own creature editor shows its
     interface (`coop.ui tree 4` > 15 windows; a stuck one had 2-15), since a quick "I'm ready" right
     after the Creature world arrived left the guest in an editor without parts or buttons.
+* `coop_cell_leave.py` (suite `cell_leave`, ~4 min cold) takes the same end-of-Cell path with the
+  guest mirroring the host's pool (~380 mirrors), then the host closes the session (`coop.leave`
+  on the host sends BYE: the guest runs the same disconnected callback as on a timeout; killing one
+  game would kill both games of the lane's bottle). The old code kept ~80 mirrors in the Creature
+  stage and faulted once at session end in `modes::cell_at` (coop.dll, caught by the SporeKit
+  handler under Wine: `exc` shows `total faults: 1`, the game runs on; on Windows it was a crash).
 
 ## 6.9 Captions that wait for the player
 

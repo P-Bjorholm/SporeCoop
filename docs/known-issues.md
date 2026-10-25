@@ -109,6 +109,13 @@ Fixed entries move to the commit message (and a test).
   seconds later worked. The two failures came while the shared headless display was being
   restarted, the five runs after it passed, so the cause is not settled.
 
+## Cell: a guest's own coop.leave keeps its mirrors as passive cells
+
+* `do_leave` (the guest's own leave) does not run `cellsync::on_session_end` (only the
+  disconnected callback does): the host's cells stay in the guest's pool, AI-locked, until the guest
+  leaves the stage (then they are forgotten, docs/re/cell.md 13) or rejoins (the sync reuses them).
+  A guest that plays on alone in the same pool sees frozen cells. Not a crash; not changed.
+
 ## Creature: the mating call did not lead to the editor in the bot
 
 * Backspace (Mating Call) at the nest with DNA shows "Mate: Locate your Mate!" and a thought bubble,
