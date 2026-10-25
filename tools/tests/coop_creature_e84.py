@@ -119,7 +119,7 @@ def main():
     host.call(lane.HOST_CMD)
     time.sleep(3)
     ptr = lines[0].split()[1] if lines else None
-    nid = None
+    nid, survived = None, False
     for l in host.call('coop.npc list')['out'].splitlines():
         m = re.match(r'\s*#(\d+) ([0-9A-F]+) ', l)
         if m and ptr and m.group(2) == ptr:
@@ -132,9 +132,10 @@ def main():
             out = host.call(f'coop.npc attackmsg {nid}')['out']
         except OSError as e:  # the game died inside the call
             out = f'no answer: {e}'
-        time.sleep(2)
-        ck(twoinst.alive(lane.HOST), f'the host survives an attack on it ({out.strip()})')
-    if not twoinst.alive(lane.HOST):
+        time.sleep(3)
+        survived = not out.startswith('no answer') and twoinst.alive(lane.HOST)
+        ck(survived, f'the host survives an attack on it ({out.strip()})')
+    if not nid or not survived:
         print('  (the host crashed: see the crash report in its game log)', flush=True)
         return ck.result()
 
