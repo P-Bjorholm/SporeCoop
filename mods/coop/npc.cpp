@@ -4,6 +4,7 @@
 #include "teamplay.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -72,6 +73,7 @@ static std::vector<void*> g_kill;          // local NPCs to remove (guest)
 static uint32_t g_proxy_lost = 0;
 static double g_last_states_rx = -100; // guest: the last NPC state batch from the host
 static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
+static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + animation)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
@@ -102,12 +104,63 @@ static bool update_filter(void* c)
     return false;
 }
 
+// The creature AI knows one player: NPCTickAI and its behaviour tree notice, chase, attack and
+// flee only the avatar (cGameNounManager +0x54). Aggressive NPCs walked past a partner's puppet and
+// went for the host (player report 2026-10-25: "aggressive enemies didn't target my friend",
+// docs/re/creature.md 13). On the host an NPC nearer to a partner than to the host's avatar ticks
+// with that partner's puppet as the player; its attacks on the puppet go to the partner through the
+// damage filter (MSG_DAMAGE), like any NPC hit on a puppet.
+static bool g_partner_targets = true;
+static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it
+static std::unordered_map<void*, void*> g_ai_target; // host: NPC -> the puppet it treats as the player
+static uint32_t g_ai_partner_picks = 0;
+void set_partner_targets(bool on) { g_partner_targets = on; }
+
+static void* ai_target(void* c)
+{
+    if (!g_enabled || !g_partner_targets || !is_host() || !game::in_creature_stage())
+        return nullptr;
+    void* av = game::avatar();
+    auto prev = g_ai_target.find(c);
+    void* was = prev != g_ai_target.end() ? prev->second : nullptr;
+    void* pick = nullptr;
+    // the pack and the avatar's family follow and defend the host's avatar
+    if (av && !game::is_dead(c) && !game::pack_member(c) && game::herd_of(c) != game::avatar_herd()) {
+        net::Vec3 np = game::position(c);
+        // an NPC far from every partner keeps the avatar (its notice and chase ranges are tens of m)
+        float best = std::min(net::dist(np, game::position(av)), kPartnerAiRange);
+        for (auto& p : C.sess->players()) {
+            if (p.id == 0)
+                continue;
+            void* pup = C.puppet_of ? C.puppet_of(p.id) : nullptr;
+            net::Vec3 gp;
+            if (!pup || !game::is_puppet(pup) || !game::object_alive(pup) || !C.player_pos(p.id, gp) ||
+                (C.player_dead && C.player_dead(p.id)))
+                continue;
+            // 3 m either way: an NPC between the two players does not switch every frame
+            float d = net::dist(np, game::position(pup)) + (pup == was ? -3.f : 3.f);
+            if (d < best) {
+                best = d;
+                pick = pup;
+            }
+        }
+    }
+    if (pick) {
+        if (pick != was)
+            g_ai_partner_picks++;
+        g_ai_target[c] = pick;
+    } else if (prev != g_ai_target.end())
+        g_ai_target.erase(prev);
+    return pick;
+}
+
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
     M = mod;
     C = ctx;
     game::set_update_filter(update_filter);
+    game::set_ai_target_picker(ai_target);
 }
 
 static net::NpcState host_state(uint16_t id, void* c)
@@ -194,6 +247,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 if (ks.erase(id))
                     send_despawn(g, id);
             g_host_by_id.erase(id);
+            g_ai_target.erase(it->first);
             it = g_host_npcs.erase(it);
         } else
             ++it;
@@ -407,6 +461,11 @@ static void guest_tick(double now)
             // (1e6 threw the corpse ~150 m up, it hung 15-80 m away from the host's corpse for
             // the rest of its life: play_creature.py 2026-10-23)
             game::apply_damage(px.c, std::max(game::health(px.c), 0.f) + 0.5f, 0, nullptr);
+            // the death itself is the behaviour tree's (0xD85B80): a proxy has no AI and stood on
+            // with 0 health, alive for the game (not edible, "still alive" for the guest; player
+            // report 2026-10-25, docs/re/creature.md 13)
+            game::play_death(px.c);
+            g_deaths_played++;
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
@@ -512,6 +571,7 @@ void on_world_change()
     g_kill.clear();
     g_host_npcs.clear();
     g_host_by_id.clear();
+    g_ai_target.clear();
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
 }
@@ -529,6 +589,7 @@ void on_session_end()
     g_host_by_id.clear();
     g_known.clear();
     g_kill.clear();
+    g_ai_target.clear();
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -698,18 +759,23 @@ std::string status()
         size_t known = 0;
         for (auto& [g, ks] : g_known)
             known += ks.size();
-        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u\n",
+        size_t on_partner = 0;
+        for (auto& [c, pup] : g_ai_target)
+            on_partner += g_seen_now.count(c) != 0;
+        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
+                 "partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
-                 g_kills_credited, g_strays_removed);
+                 g_kills_credited, g_strays_removed, (int)g_partner_targets, (unsigned)on_partner, g_ai_partner_picks,
+                 game::ai_swaps());
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
-                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u\n",
+                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u deaths_played=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
-                 g_strays_removed);
+                 g_strays_removed, g_deaths_played);
     }
     return b;
 }
@@ -734,9 +800,9 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s\n", hn.id, c,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s\n", hn.id, c,
                      game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
-                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "");
+                     p.x, p.y, p.z, game::pack_member(c) ? " pack" : "", g_ai_target.count(c) ? " on_partner" : "");
             out += b;
         }
     } else {
@@ -787,11 +853,12 @@ std::string creatures(bool untuned_only, uint32_t species)
             void* h = game::herd_of(o);
             bool ours = game::is_puppet(o) || g_proxy_of.count(o);
             bool hr = h && !IsBadReadPtr(h, 0x21C);
-            char b[240];
-            snprintf(b, sizeof b, "  creature %p species=%08X prof=%p e84=%p herd=%p arch=%08X nest=%p flags=%08X%s%s%s%s\n", o,
+            char b[320];
+            net::Vec3 p = game::position(o);
+            snprintf(b, sizeof b, "  creature %p species=%08X prof=%p e84=%p herd=%p arch=%08X nest=%p flags=%08X%s%s%s%s pos=(%.1f %.1f %.1f)\n", o,
                      game::species_key(o).instance, game::species_profile(o), e84, h, hr ? *(uint32_t*)((uint8_t*)h + 0x88) : 0u,
                      hr ? game::herd_nest(h) : nullptr, *(uint32_t*)((uint8_t*)o + 0xB58), ours ? " ours" : "",
-                     o == a->av ? " avatar" : "", game::is_dead(o) ? " DEAD" : "", e84 ? "" : " untuned");
+                     o == a->av ? " avatar" : "", game::is_dead(o) ? " DEAD" : "", e84 ? "" : " untuned", p.x, p.y, p.z);
             a->out += b;
             a->n++;
             a->untuned += !e84;
@@ -807,18 +874,34 @@ std::string creatures(bool untuned_only, uint32_t species)
 
 // debug: the herds (noun 0x01BE418E) without an archetype (ours: CreateHerd(.., 0, 0, 0, 0)) with
 // species profile, target size, enabled flag, nest; the game's own herds are only counted
-std::string herds()
+std::string herds(bool all)
 {
     struct Acc {
         std::string out;
         unsigned all = 0, plain = 0;
+        bool every;
+        net::Vec3 at;
     } a;
+    a.every = all;
+    void* av = game::avatar();
+    a.at = av ? game::position(av) : net::Vec3{};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x21C))
                 return true;
             auto* a = (Acc*)u;
             a->all++;
+            if (a->every) { // every herd: archetype, species key, home and its distance from the avatar
+                auto* home = (float*)((uint8_t*)o + 0x34);
+                void* sp = game::herd_species(o);
+                uint32_t inst = sp && !IsBadReadPtr(sp, 0x10) ? *(uint32_t*)((uint8_t*)sp + 0xC) : 0;
+                char b[200];
+                snprintf(b, sizeof b, "  herd %p arch=%08X species=%p/%08X nest=%p dist=%.0f\n", o,
+                         *(uint32_t*)((uint8_t*)o + 0x88), sp, inst, game::herd_nest(o),
+                         net::dist(net::Vec3{home[0], home[1], home[2]}, a->at));
+                a->out += b;
+                return true;
+            }
             if (*(uint32_t*)((uint8_t*)o + 0x88))
                 return true;
             a->plain++;
@@ -903,6 +986,58 @@ void* debug_spawn(uint32_t instance)
     p.x += 4.f;
     void* herd = game::create_herd(p, sp);
     return herd ? game::spawn_creature(p, sp, herd) : nullptr;
+}
+
+// host (tests): an epic creature (archetype 0xFC811218, isEpic: always hostile to the player,
+// docs/re/tribe.md E) `dist` m from player `player`'s creature (0: the host's avatar), of the species
+// of the nearest NPC (everybody has its model)
+void* debug_spawn_epic(uint8_t player, float dist, uint32_t arch, uint32_t species)
+{
+    void* av = game::avatar();
+    void* who = player ? (C.puppet_of ? C.puppet_of(player) : nullptr) : av;
+    if (!is_host() || !av || !who)
+        return nullptr;
+    net::Vec3 at = game::position(who);
+    void* prof = nullptr;
+    float bd = 1e9f;
+    for (auto& [c, hn] : g_host_npcs) {
+        if (!g_seen_now.count(c) || game::is_dead(c) || game::herd_of(c) == game::avatar_herd() || !game::species_profile(c))
+            continue;
+        float d = net::dist(game::position(c), at);
+        if (d < bd) {
+            bd = d;
+            prof = game::species_profile(c);
+        }
+    }
+    if (species) // a given species (crt instance), e.g. the one of an epic of the planet
+        prof = game::species_by_key({species, 0x2B978C46u, 0x40626200u});
+    if (!prof)
+        return nullptr;
+    float r = std::sqrt(at.x * at.x + at.y * at.y + at.z * at.z);
+    net::Vec3 up = r > 1 ? net::Vec3{at.x / r, at.y / r, at.z / r} : net::Vec3{0, 0, 1};
+    net::Vec3 side = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
+    float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
+    net::Vec3 p{at.x + side.x / sl * dist + up.x, at.y + side.y / sl * dist + up.y, at.z + side.z / sl * dist + up.z};
+    static uintptr_t herd_fn = H->sym("Simulator::cGameNounManager::CreateHerd"),
+                     create = H->sym("Simulator::cCreatureAnimal::Create");
+    void* nm = game::noun_manager();
+    float pp[3] = {p.x, p.y, p.z};
+    void* herd = nm && herd_fn && create ? skg::thiscall<void*>(herd_fn, nm, pp, prof, 0, false, 0, false) : nullptr;
+    if (!herd)
+        return nullptr;
+    *(uint32_t*)((uint8_t*)herd + 0x88) = arch;  // e.g. 0x95511253 / 0xFC811218: isEpic = 1
+    *(uint32_t*)((uint8_t*)herd + 0xF0) = 0;     // generation
+    // as an epic herd of the planet has them (runtime 2026-10-25): archetype group 2, territory 50 m,
+    // personality 9 (without these the spawned epic wandered and never attacked anybody)
+    *(uint32_t*)((uint8_t*)herd + 0x8C) = 2;
+    *(float*)((uint8_t*)herd + 0x108) = 50.f;
+    *(uint32_t*)((uint8_t*)herd + 0x15C) = 9;
+    void* c = skg::cdecl_call<void*>(create, pp, prof, 1, herd, false, false);
+    *(int32_t*)((uint8_t*)herd + 0xF4) = 0; // no more members
+    static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
+    if (enable && c)
+        skg::thiscall<void>(enable, herd, true); // CreateHerd leaves it disabled in the creature stage
+    return c;
 }
 
 bool debug_host_hit(uint16_t id, float damage)

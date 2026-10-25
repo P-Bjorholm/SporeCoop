@@ -2034,6 +2034,54 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", game::herds_dump().c_str());
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "gopos")) { // tests: the avatar to a point (x y z)
+        void* av = game::avatar();
+        if (!av) {
+            SAY("no avatar");
+            return 1;
+        }
+        game::teleport(av, {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])}, game::orientation(av));
+        SAY("avatar moved");
+        return 0;
+    }
+    if (argc > 2 && (!strcmp(argv[1], "goherd") || !strcmp(argv[1], "gonpc"))) { // tests: the avatar d m
+                                                                                  // from a herd's home / host NPC
+        void* h = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+        void* av = game::avatar();
+        void* npc = argv[1][2] == 'n' ? npc::host_npc((uint16_t)atoi(argv[2])) : nullptr; // gonpc <id>
+        if (!av || (!npc && (!h || IsBadReadPtr(h, 0x40) || game::noun_id(h) != game::kHerdNoun))) {
+            SAY("no avatar or not a herd / host npc");
+            return 1;
+        }
+        net::Vec3 p;
+        if (npc)
+            p = game::position(npc);
+        else {
+            auto* home = (float*)((uint8_t*)h + 0x34);
+            p = {home[0], home[1], home[2]};
+        }
+        float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), d = argc > 3 ? (float)atof(argv[3]) : 12.f;
+        net::Vec3 up = r > 1 ? net::Vec3{p.x / r, p.y / r, p.z / r} : net::Vec3{0, 0, 1};
+        // d metres to the side (any direction perpendicular to up) and a little above the ground
+        net::Vec3 side = std::fabs(up.x) < 0.9f ? net::Vec3{0, -up.z, up.y} : net::Vec3{-up.z, 0, up.x};
+        float sl = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
+        net::Vec3 q{p.x + side.x / sl * d + up.x * 2, p.y + side.y / sl * d + up.y * 2, p.z + side.z / sl * d + up.z * 2};
+        game::teleport(av, q, game::orientation(av));
+        SAY("avatar at (%.1f %.1f %.1f)", q.x, q.y, q.z);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "epic")) { // host (tests): epic <player id, 0 = host> [dist] [archetype hex] [species hex]
+        void* c = npc::debug_spawn_epic((uint8_t)atoi(argv[2]), argc > 3 ? (float)atof(argv[3]) : 8.f,
+                                        argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0x95511253u,
+                                        argc > 5 ? (uint32_t)strtoul(argv[5], nullptr, 16) : 0u);
+        SAY(c ? "epic %p" : "no epic (not the host, no such player or no NPC species near)", c);
+        return c ? 0 : 1;
+    }
+    if (argc > 2 && !strcmp(argv[1], "partners")) { // tests: NPCs target partners' puppets on/off
+        npc::set_partner_targets(strcmp(argv[2], "off") != 0);
+        SAY("npcs target partners %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "strays")) { // tests
         npc::set_strays(strcmp(argv[2], "off") != 0);
         SAY("stray removal %s", strcmp(argv[2], "off") ? "on" : "off");
@@ -2045,7 +2093,7 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         return ok ? 0 : 1;
     }
     if (argc > 1 && !strcmp(argv[1], "archless")) { // tests: herds like ours (no archetype)
-        SAY("%s", npc::herds().c_str());
+        SAY("%s", npc::herds(argc > 2 && !strcmp(argv[2], "all")).c_str());
         return 0;
     }
     if (argc > 1 && (!strcmp(argv[1], "untuned") || !strcmp(argv[1], "creatures"))) { // tests
@@ -2580,11 +2628,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         pos = st.pos;
         return true;
     };
+    ctx.player_dead = [](uint8_t id) {
+        auto it = g_remotes.find(id);
+        return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
+    };
     ctx.feed = feed;
     ctx.host_away = [] { return g_host_away; };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
+    npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
     social::Ctx sc;
     sc.sess = &g_sess;
     sc.feed = feed;

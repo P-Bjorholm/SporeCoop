@@ -21,6 +21,8 @@ struct Ctx {
     std::function<void*(uint8_t id)> puppet_of;
     // last known world position of player `id`; false if not in the world
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
+    // the latest state of player `id` says it is dead (death caption, respawn)
+    std::function<bool(uint8_t id)> player_dead;
     std::function<void(const std::string&)> feed;
     // guest: the host left the stage (main menu): the guest's own game simulates its NPCs meanwhile
     std::function<bool()> host_away;
@@ -38,14 +40,17 @@ bool is_proxy(void* creature);
 bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id
 bool debug_recruit(uint16_t id);
 void* debug_spawn(uint32_t instance);           // host: an NPC of that crt species next to the avatar                 // host: NPC #id joins the pack (cPosseSimulator AddMember)
+void* debug_spawn_epic(uint8_t player, float dist, uint32_t archetype, uint32_t species = 0); // host (tests): an epic near a player's creature
 void* proxy(uint16_t id);                       // guest: local creature mirroring host NPC #id
 bool damage_filter(void* creature, float& damage, int type, void* attacker);
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)
-std::string herds();                                 // debug: herd objects
-void set_strays(bool on);                            // tests: removal of creatures like ours from saves
+std::string herds(bool all = false);                                 // debug: herd objects
+void set_strays(bool on);
+// host: aggressive NPCs see a partner's puppet as a target like the host's avatar (on by default)
+void set_partner_targets(bool on);                            // tests: removal of creatures like ours from saves
 bool debug_attack_msg(uint16_t id);                  // tests: the game's attack message on host NPC `id`
 bool debug_hit(uint16_t id, float damage);           // guest: avatar hits proxy `id`
 bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hits player's puppet
