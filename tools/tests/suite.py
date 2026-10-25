@@ -48,6 +48,7 @@ add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, v
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
+add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts a new game (typed planet name) next to an old one: the guest gets the new one
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)

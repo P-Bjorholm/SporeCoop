@@ -50,7 +50,7 @@ extern bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
 const char* mode_name(uint32_t mode);
 uint32_t current_world(); // crc32 of the current save name, 0 if none
 uint32_t current_place(const Adapter* a); // adapter place() or current_world()
-std::string current_world_name();
+std::string current_world_name(); // the planet file being played, UTF-8 ("Name.spo"; "SaveGame" in menus)
 
 // ---- cell stage helpers (pool access, creation with a given model) ----
 uint8_t* cell_game();             // cCellGame*

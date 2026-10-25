@@ -2,7 +2,7 @@
 """Start a new game at any stage from the galaxy menu via the stage chooser (cheat levels -unlock).
 
 Coordinates are for the 1440x1080 windowed test profile. Usage:
-  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y | --slot N] [--npc-cities N]
+  new_stage_game.py <cell|creature|tribe|civ|space> [-i N] [--slot X,Y | --slot N] [--npc-cities N] [--name NAME]
 The planet slot is found in the galaxy menu by itself: every slot ring has a 48x48 UI window
 with id 0x02E5A4A8 (coop.ui tree); --slot N takes the N-th of them, --slot X,Y a screen point.
 Use a profile without saves (an empty Games folder): a slot with a save would load that save.
@@ -22,6 +22,7 @@ STAGE_ICON = {"cell": (720, 392), "creature": (800, 428), "tribe": (848, 496), "
               "space": (798, 646)}
 MODE = {"cell": "Cell", "creature": "Creature", "tribe": "Tribe", "civ": "Civ", "space": "Space"}
 DICE_CARD, DICE_NAME, DICE_STUFF = (930, 486), (1102, 474), (1092, 495)
+PLANET_NAME = (1010, 540)  # the text field of the last wizard step "Name Your Planet"
 NEXT = (1086, 618)
 
 # wizard steps after choosing the stage: ("click", x, y) / ("wait", frames)
@@ -30,7 +31,8 @@ STEPS = {
     "civ": [DICE_CARD, NEXT, NEXT, NEXT, NEXT, DICE_STUFF, NEXT, (1090, 608)],  # card, theme, difficulty, specialty, city stuff, planet
     # diet card, sporepedia creature + confirm, theme, difficulty, planet name
     "tribe": [(852, 536), NEXT, (428, 220), (1400, 1058), NEXT, NEXT, (1090, 608)],
-    "creature": [DICE_CARD, NEXT, DICE_NAME, NEXT, NEXT, (1090, 608)],
+    # like tribe (GOG 2024, 2026-10-24): a diet card opens the Sporepedia, a creature, confirm, theme, difficulty
+    "creature": [(852, 536), NEXT, (428, 220), (1400, 1058), NEXT, NEXT, (1090, 608)],
     "cell": [(900, 537), NEXT, NEXT, (1090, 608)],  # diet card, difficulty, planet name
 }
 
@@ -116,6 +118,7 @@ def main():
     ap.add_argument("--npc-cities", type=int, default=0,
                     help="civ: let N cities of other nations appear right away (the game waits for spice and money)")
     ap.add_argument("--shots", action="store_true", help="screenshot every wizard step to out/shots")
+    ap.add_argument("--name", help="type this planet name (any letters, e.g. Cyrillic) instead of the game's")
     a = ap.parse_args()
     for _ in range(120):  # the game is up (its console answers)
         try:
@@ -151,7 +154,19 @@ def main():
     x, y = STAGE_ICON[a.stage]
     c.cmd(f"click {x} {y}")
     c.cmd("wait.frames 150 60000")
-    for n, (x, y) in enumerate(STEPS[a.stage]):
+    steps = STEPS[a.stage]
+    for n, (x, y) in enumerate(steps):
+        if a.name and n == len(steps) - 1:  # the last step names the planet: type over the game's name
+            c.cmd(f"move {PLANET_NAME[0]} {PLANET_NAME[1]}")
+            c.cmd(f"click {PLANET_NAME[0]} {PLANET_NAME[1]}")
+            c.cmd("wait.frames 20 10000")
+            c.cmd("key end")
+            for _ in range(30):
+                c.cmd("key back")
+            c.cmd(f'text "{a.name}"')
+            c.cmd("wait.frames 20 10000")
+        c.cmd(f"move {x} {y}")
+        c.cmd("wait.frames 10 10000")
         c.cmd(f"click {x} {y}")
         c.cmd("wait.frames 80 60000")
         if a.shots:

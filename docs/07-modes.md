@@ -33,6 +33,27 @@ Every frame the mod detects the game mode (`GetActiveModeID`) and picks an **ada
   game's "saved" box shows up (the save is complete; at least 2.5 s, at most 10 s), confirms the
   box (it pauses the game) and sends the save folder. The guest puts it into a free slot and loads
   the planet the host named. One slot can contain several planets.
+* **Which slot and planet the host sends** (`world.cpp current_slot`). A slot `Games\GameN` is a
+  galaxy, not one game: every game the player starts on a free disc of the galaxy menu is one more
+  `<planet>.spo` in the same folder (a fresh profile: a new Cell game next to an old Creature game,
+  both in Game0; verified 2026-10-24 on GOG 2024; other `GameN` folders are co-op worlds received as
+  a guest, fixtures, warm-reset slots). So the folder says nothing about the game being played; the
+  planet does: `CurrentGameName` (string16 0x0167DF60 GOG 2024), set when a game is started from the
+  wizard as well as when one is loaded ("SaveGame" in the galaxy menu). A new game has no `.spo` until
+  its first save: the save before sharing writes it (Cell: `<planet>.spo`, the PlanetScripts and the
+  galaxy files are rewritten; `lastSave.pld` keeps its old time, so its age says nothing).
+  The host sends: (1) the folder the save database points to (`GetDatabaseByID(0x4729A47)` vt 0x28,
+  where the game writes this game) when it holds `<planet>.spo`, (2) else the newest copy of
+  `<planet>.spo` in any `GameN`, and names `<planet>` in the offer. When no file of the played planet
+  exists (the save did not write it), it saves again (3 tries) and then tells the host; it never
+  names another planet of the slot. Only from the galaxy menu (no game played) the newest slot and a
+  planet in it go out. The guest loads exactly the named planet and nothing when it is missing.
+* Planet names are whatever the player typed in the wizard ("Земля", "Bob's World"): the mod reads
+  `CurrentGameName` as UTF-8, file names travel as UTF-8 and the load converts the name back to
+  UTF-16. Until 0.7.2.1 non-ASCII letters became '_': the host did not find "_____.spo", sent the
+  galaxy with another planet's name in it, and the guest loaded an older game of the host (player
+  report 2026-10-24; the host "had to delete the old save"); the guest also built the load name from
+  UTF-8 bytes, so such a planet never loaded. Test `coop_join_new_game.py`.
 * A world (or `coop.load`) that arrives while a stage runs is loaded through the galaxy menu: the
   game's quit message 0x4715068 saves and leaves the stage, the save is loaded ~3 s after the menu
   is up (`world.cpp load_slot`). Loading straight from a stage crashed from Space (null active
