@@ -10,6 +10,7 @@
 8. [Interface](08-ui.md) - "Co-op" entry in the main menu, connection window, lobby, LAN game discovery (native Spore windows).
 9. [Playing together in all phases](09-coop-design.md) - the "one world, one team" concept, what's done, engine breakdowns in [re/](re/).
 10. [Development pipeline](10-dev-pipeline.md) - test lanes, the lab, warm resets, invariants, chaos bot, bad network, fixtures, git and knowledge rules. Bugs not fixed yet: [known-issues.md](known-issues.md).
+11. [Rivals: own bases in one world](11-rivals.md) - the second session mode (design): every player with its own nest, tribe, nation and empire, a race through every stage, war, peace and alliances between players, influence over NPC factions, the draft and the Chronicle.
 
 Target game versions: GOG "SPORE Collection", `SporebinEP1/SporeApp.exe`:
 the 2016 build, SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`,

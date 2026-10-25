@@ -217,6 +217,9 @@ Next:
 - [ ] easier internet play (no VPN or port forwarding)
 - [ ] tests with the EA app build, and of the Steam build with Steam online (overlay)
 - [ ] four-player tests of the 0.7 Space features, co-op adventures
+- [ ] **Rivals mode**: every player with a base, a species, a tribe, a nation and an empire of its
+  own in the same world, a race through every stage with war, peace and alliances
+  ([design](docs/11-rivals.md))
 
 ## Building from source
 

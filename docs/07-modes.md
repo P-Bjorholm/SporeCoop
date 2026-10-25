@@ -130,6 +130,9 @@ currently working**:
   `coop next`) and blocking guests from advancing on their own.
 * Space has no phase end. In adventures each player's act ends separately, and players
   meet within the same adventure.
+* Rivals mode (designed, [chapter 11](11-rivals.md) 11.5): every player has its own condition;
+  the first to meet it wins the stage and starts a catch-up timer for the others, then everybody
+  moves on together (the host's game also when a guest won).
 
 ## 7.7 Not yet implemented
 

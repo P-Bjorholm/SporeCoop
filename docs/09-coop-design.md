@@ -1,5 +1,9 @@
 # 9. Concept: playing together, not side by side
 
+This chapter is the session mode **Together**. The second mode, **Rivals** (every player with a
+base and a faction of its own, a race through every stage), is designed in
+[chapter 11](11-rivals.md); the host picks the mode per stage in the lobby (11.2).
+
 Before this version every player played in their own copy of the host's world, and only resources
 and visibility were shared. The new goal: **one world, one team**. All players are in the same
 world and affect it, each has their own role and their own property, and the best results come
@@ -225,6 +229,7 @@ time, and players only see each other when their stage and place match (the star
 | Play as a rogue or an epic creature | own creature from My Creations (`SetSpecies`), epic spawning known (docs/re/tribe.md E: `isEpic`, archetypes) | the player's avatar with the epic archetype or size and health, balanced against the partners; NPC reactions to it | medium |
 | Balance: no wiping out other players from Space | rivals mode limits PvP to ships | any planet-level attack on another player (bombs, planet busters) needs rules or a switch before it exists | design note |
 
-Good next candidates: Creature PvP (reuses the rivals mode), play as an epic, and the Space
+PvP in every stage, "dominate the planet" races and separate bases are now designed as the
+Rivals mode ([chapter 11](11-rivals.md)). Other good next candidates: play as an epic, and the Space
 "sabotage" part of visits (rivals at war attacking mirrored colonies). The mixed-stage ideas need a
 research spike first: can one game show a puppet of a player who is in another stage?
