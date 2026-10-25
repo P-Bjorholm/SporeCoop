@@ -16,6 +16,18 @@ Fixed entries move to the commit message (and a test).
   skips `SimCamera_LookAt` and `SimCamera_Update` while the camera object is null (`coop.status`:
   "tribe camera skipped N"); the stage setup goes on without pointing that camera.
 
+## Creature: NPC aggression towards a partner is untested end to end
+
+* Since 2026-10-25 an NPC on the host that is nearer to a partner's creature ticks its AI with that
+  creature as the player (docs/re/creature.md 14.2): it notices the partner (checked: the "noticed"
+  stimulus names the puppet, `coop_creature_kills.py`), and retaliation and epics hurt the partner
+  (they did before too). That an NPC of an aggressive archetype then attacks the partner on sight
+  is not checked: no such species in the `creature` fixture attacked even the host's avatar on
+  sight, and spawned epics (`coop.npc epic`) do not attack the avatar.
+* To check it: a save with an aggressive (red face) nest nearby, the guest next to it and the host
+  60 m away: `damage_in` on the guest should grow. Side effects to watch: avatar-only UI of the
+  host (hints, music) while an NPC hunts the partner.
+
 ## Creature: puppets still go into saves (removed after a load)
 
 * Mostly fixed since 2026-10-25 (docs/re/creature.md 12): a puppet reuses the herd of its species

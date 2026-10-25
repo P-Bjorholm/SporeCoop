@@ -234,11 +234,51 @@ void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
 typedef void(SK_THISCALL* NPCTickAI_t)(void*, float);
 static NPCTickAI_t o_NPCTickAI;
 
+static AiTargetPicker g_ai_picker;
+static void* g_swap_real; // the real avatar while an NPC ticks with a puppet as mpAvatar
+static uint32_t g_ai_swaps;
+void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
+uint32_t ai_swaps() { return g_ai_swaps; }
+
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
     if (is_puppet(self))
         return; // remote players drive their puppets, no local AI
+    void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
+    void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
+    void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+    if (!real || t == real || t == self) {
+        o_NPCTickAI(self, dt);
+        return;
+    }
+    // the NPC's AI sees the partner as the player for this tick (its stimuli name the puppet as
+    // the sender, so a chase or an attack started now goes on against it)
+    g_swap_real = real;
+    field<void*>(nm, kNounAvatarOff) = t;
+    // a puppet of the partner's own creature has no archetype tuning (+0xE84; its herd has no
+    // archetype): code that reads the player's tuning would find none (the class of the 0xD48634
+    // crash, docs/re/creature.md 4). It borrows the avatar's for the tick.
+    void*& tun = field<void*>(t, 0xE84);
+    void* lent = !tun ? field<void*>(real, 0xE84) : nullptr;
+    if (lent)
+        tun = lent;
+    g_ai_swaps++;
     o_NPCTickAI(self, dt);
+    if (lent && tun == lent)
+        tun = nullptr;
+    field<void*>(nm, kNounAvatarOff) = real;
+    g_swap_real = nullptr;
+}
+
+void play_death(void* c)
+{
+    if (!c || is_dead(c))
+        return;
+    vcall<void>(c, 0x8C / 4); // Die
+    // the death node's default animation (by damage type it picks 0x54AC179 / 0x60DB981 /
+    // 0x779E183, after a fall 0x92AA59CE), played like 0xC070D0 plays one: (anim, -1, 1)
+    if (o_PlayAnim)
+        play_animation(c, 0xF14FAA46u, -1, true);
 }
 
 bool init(const SkHost* host, SkMod* mod)
@@ -301,6 +341,8 @@ void* avatar()
     uint32_t m = mode_id();
     if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
         return nullptr;
+    if (g_swap_real) // inside an NPC's AI tick that sees a puppet as the player
+        return g_swap_real;
     void* nm = cdecl_call<void*>(a_NounGet);
     if (!nm)
         return nullptr;

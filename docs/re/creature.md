@@ -458,3 +458,86 @@ guest's creature with the egg shell on its head on both screens, flower particle
 * ✔ Seen on the way: a lethal hit right next to the nest after a pack rescue shows the death
   caption, but `mbDead` (+0xB5E) stays 0 and the health climbs again while the caption waits (the
   nest heals, the pack regeneration too); the OK respawns it normally.
+
+## 14. Deaths of mirrors, whom the creature AI targets (2026-10-25)
+
+Player report (0.7.2.x, host Windows GOG 2024): "enemies still seen as alive even when dead for
+quest" (a screenshot: a creature standing next to the player with its health bar at 0) and
+"aggressive enemies didn't target my friend". Addresses GOG 2024 (dc04aee5); static analysis in
+the private Ghidra project, runtime on lane 4 (fix/creature-kills, `coop_creature_kills.py`).
+
+### 14.1 How a creature dies
+
+* ✔ `cCombatant::TakeDamage` 0xBFCF10 (this = creature +0x5A8): combatant `+0x34` is the state
+  (2 = dead; the tiny getter 0x8E8230 `mov eax,[ecx+0x34]` is what Ghidra calls
+  `PFIndexModifiable::GetFileCount`), `+0x38` the health, `+0x80` a byte "invulnerable" (no
+  damage), `+0x28` the last attacker. A hit that takes the health below 1.5e-5 sets health 0 and
+  state 2 and posts message 0x1622184; nothing else. `cCreatureAnimal::TakeDamage` 0xC075E0 ->
+  0xC1A520 (creature part: adventure armour, then cCombatant) and, on state 2, the kill credit
+  (section 2), ApplyEvent 0 / 5 (the kill count of the species), 0xD3353639 to the strategy.
+* ✔ The creature itself dies later, in its **behaviour tree**: the death node 0xD85B80 (start
+  function of a BT node, no static references) calls the creature's `Die` = vt 0x8C 0xC08210
+  (cCreatureAnimal vtable 0x146A080: Update is slot 0x60, attack slot 0xB8) and picks the death
+  animation: 0xF14FAA46 by default, 0x54AC179 / 0x60DB981 / 0x779E183 for damage types 5 / 0x11 /
+  0x12, 0x92AA59CE after a fall (> 50), 0x5807346 (- 1 for an epic) when it was dead already; the
+  corpse stays 60 s in the creature stage (15 s in the tribe stage). `probe 0xC08210` on the host
+  for an NPC kill: called from 0xD85BA7 <- `BehaviorTreeTickGeneric` 0xBC9666 (inside NPCTickAI).
+* ✔ `Die` 0xC08210 (thiscall, no args): stops the locomotion (vt 0x84(0,0,0), spatial vt 0xDC),
+  clears the velocity (0xC41EC0 with zero), resets targets (+0xE8C.. = -1), sets **mbDead +0xB5E =
+  1**, clears the stimuli (0xBC9F50(-1)), stops effects (`StopEffectFromPools` 0x2C4BF1C). Other
+  writers of +0xB5E: 0xC070D0 (adventure respawn / reset), 0xC0BAF0 (vt slot, sets 1), SetSpecies
+  0xC03920 (clears), 0xC1FA30.
+* ✔ So a creature without AI (our mirrors on the guest, puppets: NPCTickAI is skipped,
+  `game.cpp h_NPCTickAI`) never dies by damage: a lethal hit leaves it standing at state 2 with 0
+  health, alive for the game (`is_dead` false), the "standing at 0 hp" of the report. On the guest
+  the replayed death of a mirror (npc.cpp, NF_DEAD from the host) did exactly that: `coop.npc
+  creatures <species>` showed the mirror without " DEAD", a screenshot showed it standing with "0"
+  over it (lane 4, 2026-10-25). The host's own NPCs and the kill count were right (the hunt card
+  "Hunt 1 Joobel 2/3" on both). Since then npc.cpp calls `Die` and plays 0xF14FAA46 after the
+  lethal hit (`game::play_death`, `deaths_played=` in the guest's `coop.npc`).
+* ✔ The kill count of the hunt card: a guest's kill pays and counts on the host (the lethal hit is
+  applied as the host avatar's, section 2), the guest gets the table (section 8.1); checked with
+  real input (combat stance, a click, key 1: 11 bites for a 7.5 hp Kook).
+
+### 14.2 Whom the creature AI notices
+
+* ✔ `NPCTickAI` 0xC09570 (thiscall(creature, float dt)) returns at once when `*(+0xB4C)` (the AI
+  block) is null. For a living NPC it takes **the avatar only**: `EDI = cGameNounManager +0x54`
+  (`_Get_54` 0xB1FD00), and decides whether the NPC notices it: by sight (distance within a range
+  from 0xD38A30(1 / 2) and 0xC0E650, inside a view cone cos(0xC0C170 / 2)) or by hearing
+  (0xC0D6C0(npc, avatar, scale, dist): `avatar +0xB80` (a noise radius, 6.0; 0 while sneaking)
+  times the tuning `+0x354` plus the bounding radii). Noticed: 0xC068B0 / 0xC07450 / 0xC07480
+  (the NPC's awareness list `+0x1124`) and **`BT_PostStimulus(0x4000000, 0, 5.0, avatar)`** to the
+  NPC's AI (ai + 8). Then, when the avatar sneaks (`avatar +0xBB1`, set by 0xC1B030 with the sneak
+  ability type 0xD / 0x52), stimulus (0, 8) or 0x100 with the avatar as sender; NPC `+0x101C` =
+  1 / 2 / 0. The behaviour tree reacts to these (attack, flee, look) by its archetype.
+* ✔ No other creature is ever noticed this way: a partner's puppet on the host never got the
+  0x4000000 stimulus (`coop_creature_kills.py` reads the NPC's 8 stimulus slots of 0x38 bytes:
+  masks +0 / +4, value +8, sender +0x2C; the union of masks at ai+8 +0x1C0 / +0x1C4). A noticed
+  stimulus decays out of its slot about 4 s after the last post.
+* ✔ Retaliation is not avatar-only: `TakeDamage` posts 0x400 to the victim and 0x200 / 0x80000 to
+  its herd with **the attacker** as sender, so NPCs a guest hit (the hit is applied with the
+  guest's puppet as the attacker) fight back against the puppet, and their hits reach the guest
+  (`damage_in` on the guest; a 065CB956 nest killed the guest in one test). Epic creatures
+  (archetypes 0xFC811218 / 0x95511253, herds without a nest) attack any creature near them, the
+  puppet too (a spawned epic killed another; a planet epic killed the guest with
+  `coop.npc partners off`).
+* ~ Not found in the `creature` fixture (Scalinus): a non-epic species that attacks the avatar on
+  sight. Standing 3 m from members of 11 archetypes cost the host no health (time of day not
+  controlled); the report's "aggressive enemies" are species with an aggressive archetype on the players' planet.
+  The notice step above is the same for them (it is the only place the AI looks for the player).
+* Co-op (npc.cpp `ai_target`, game.cpp `h_NPCTickAI`): on the host an NPC that is nearer (by 3 m,
+  hysteresis) to a partner's puppet than to the host's avatar, and within 80 m of it, ticks with
+  the puppet as mpAvatar (+0x54 swapped around `NPCTickAI`, the puppet borrows the avatar's tuning
+  +0xE84 if it has none, `game::avatar()` returns the real avatar meanwhile). Not for the pack
+  (+0xB58 & 0x100), the avatar's herd, dead NPCs, partners who are dead or out of the world.
+  `coop.npc`: `partner_targets on_partner partner_picks ai_swaps`; `coop.npc partners on|off`,
+  config `npcs_target_partners`. The NPC's hits on the puppet go to the partner (MSG_DAMAGE).
+* ✗ A spawned epic (`coop.npc epic`, CreateHerd + archetype 0x95511253 or 0xFC811218, also with
+  the planet epics' herd fields group +0x8C = 2, territory +0x108 = 50, personality +0x15C = 9 and
+  the herd enabled) wandered and fought other creatures but never attacked the avatar 6-10 m away
+  (the planet's own epic killed it within 4 s). What else the game sets up for its epics is open.
+* ✗ `cTimeOfDay::SetTimeOfDay` 0xBC3070 takes `thiscall(tod, float, void* out)`; the presets
+  0xBC30E0 `thiscall(tod, int 0..3, void*)` (times 199.68 / 285.12 / 679.68 / 760.32 at
+  0x156CFB8). Called from the console with a null or a short string buffer as `out` it faulted at
+  0xBC2DC8 and the game stopped drawing: needs a real output buffer (a quaternion?).

@@ -16,6 +16,16 @@
   head on both screens, no control. The guest's hatchling now grows up a few seconds after the
   respawn (the host's only when its family has not come for 40 s). Test: `coop_creature_respawn.py`
   (suite `creature_respawn`).
+- **Creature: a creature killed by anybody now dies on the guest's screen too** (player report:
+  "enemies still seen as alive even when dead for quest"). The guest's copy of a host creature had
+  no AI of its own, and in Spore the death itself (falling over, becoming a carcass) is done by the
+  creature's AI: a killed creature stood on with an empty health bar, alive for the guest's game.
+  Test: `coop_creature_kills.py` (suite `creature_kills`).
+- **Creature: creatures notice the partner like the host's own creature** (player report:
+  "aggressive enemies didn't target my friend"). The game's creature AI only ever looks at the
+  player's creature; on the host a creature nearer to a partner now treats that partner as the
+  player (notices, chases, attacks; its hits go to the partner). Host option
+  `npcs_target_partners` (on by default).
 
 ## [0.7.2.3] - 2026-10-25
 

@@ -134,6 +134,20 @@ extern uint32_t g_ufos_freed;
 // nearest object of `noun` within max_dist of pos (nullptr if none)
 void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 
+// The NPC AI (NPCTickAI 0xC09570 and the behaviour tree it ticks) notices, hunts, attacks and flees
+// only the creature at cGameNounManager +0x54 (mpAvatar): a partner's puppet was never a target
+// (docs/re/creature.md 14). The picker returns the creature an NPC should treat as the player this
+// tick (a puppet), or null for the avatar; NPCTickAI then runs with mpAvatar swapped to it.
+// During the swap avatar() still returns the real avatar.
+using AiTargetPicker = void* (*)(void* npc);
+void set_ai_target_picker(AiTargetPicker fn);
+uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
+
+// The death of a creature: its behaviour tree's death node (0xD85B80) calls the creature's Die
+// (vt 0x8C, 0xC08210: mbDead +0xB5E, stops locomotion and effects) and plays the death animation.
+// A puppet / proxy has no AI: a lethal hit left it standing with 0 health. Does both (once).
+void play_death(void* c);
+
 // AI suppression for puppets: NPCTickAI is skipped for registered creatures
 void puppet_register(void* c);
 void puppet_unregister(void* c);
