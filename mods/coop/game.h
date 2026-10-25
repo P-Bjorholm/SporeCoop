@@ -91,6 +91,12 @@ void set_damage_filter(DamageFilter fn);
 void apply_damage(void* c, float damage, int type, void* attacker_creature); // bypasses the filter
 void hit(void* c, float damage, int type, void* attacker_creature);          // goes through the filter
 void set_health(void* c, float hp);
+// A hatchling (age +0xB34 == 0) whose behaviour tree waits for a family member of its nest to greet it
+// (tree 0x9413EDEB): after a respawn or a hatch the greeting NPC makes it grow up (docs/re/creature.md 13).
+constexpr uint32_t kHatchlingTree = 0x9413EDEBu;
+bool hatchling_waiting(void* c);
+// what the greeting does at its end: the creature grows up (0xC04F30(1)), the pack too (0xD52DF0(1))
+bool grow_up(void* c);
 // impressed by a social game (+0xB58 bit 0x80, set by the social success 0xD9BC40; docs/re/creature.md 8)
 inline bool impressed(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x80) != 0; }
 // a member of the player's pack (+0xB58 bit 0x100, set by AddPosseMember 0xB23430; docs/re/creature.md 11)

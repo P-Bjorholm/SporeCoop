@@ -1949,6 +1949,8 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
         g_adapter->mode == modes::kSpace ? nullptr : game::species_profile(av), st.species, st.pos.x, st.pos.y, st.pos.z,
         std::sqrt(st.pos.x * st.pos.x + st.pos.y * st.pos.y + st.pos.z * st.pos.z), st.rot.x, st.rot.y,
         st.rot.z, st.rot.w, st.vel.x, st.vel.y, st.vel.z, st.health, st.max_health, st.flags);
+    if (g_adapter->mode == modes::kCreature) // age +0xB34 (0 hatchling, 1 adult), the hatchling waiting for its family
+        SAY(" age=%d hatchling_waiting=%d", *(int*)((uint8_t*)av + 0xB34), (int)game::hatchling_waiting(av));
     return 0;
 }
 
@@ -2037,6 +2039,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "strays")) { // tests
         npc::set_strays(strcmp(argv[2], "off") != 0);
         SAY("stray removal %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "hatch")) { // tests
+        npc::set_hatch_help(strcmp(argv[2], "off") != 0);
+        SAY("hatch help %s", strcmp(argv[2], "off") ? "on" : "off");
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "attackmsg")) { // tests: host avatar "attacks" host NPC #id
@@ -2239,6 +2246,11 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 1 && !strcmp(argv[1], "die") && g_local && g_mode == modes::kCreature) { // tests: a lethal hit
         game::apply_damage(g_local, 1e6f, 0, nullptr); // the game's damage path (death, caption, respawn)
         SAY("lethal hit applied");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "hit") && g_local && g_mode == modes::kCreature) { // tests: a hit through
+        game::hit(g_local, (float)atof(argv[2]), 0, nullptr); // the damage filter (the pack rescue applies)
+        SAY("hit applied, hp %.1f", game::health(g_local));
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "hp") && g_local && g_mode == modes::kCreature) { // tests

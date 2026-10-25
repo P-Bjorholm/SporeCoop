@@ -88,6 +88,27 @@ void apply_damage(void* c, float dmg, int type, void* attacker)
 
 void set_health(void* c, float hp) { field<float>(c, kHpOff) = hp; }
 
+bool hatchling_waiting(void* c)
+{
+    if (!c || !skg::readable(c, 0xB50) || field<int32_t>(c, 0xB34) != 0)
+        return false;
+    uint8_t* bt = field<uint8_t*>(c, 0xB4C); // behaviour tree data
+    return bt && skg::readable(bt + 0x1D8, 4) && field<uint32_t>(bt, 0x1D8) == kHatchlingTree;
+}
+
+bool grow_up(void* c)
+{
+    static uintptr_t grow = H->sym("SporeCoop::cCreatureAnimal_GrowTo");
+    static uintptr_t posse_get = H->sym("SporeCoop::PosseSimulator_Get");
+    static uintptr_t posse_grow = H->sym("SporeCoop::PosseSimulator_GrowMembers");
+    if (!c || !grow)
+        return false;
+    thiscall<void>(grow, c, 1);
+    if (void* posse = posse_get && posse_grow ? cdecl_call<void*>(posse_get) : nullptr)
+        thiscall<void>(posse_grow, posse, 1);
+    return true;
+}
+
 // ---------------- any game object ----------------
 void* noun_manager() { return a_NounGet ? cdecl_call<void*>(a_NounGet) : nullptr; }
 

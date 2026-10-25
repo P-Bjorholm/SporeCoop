@@ -15,6 +15,7 @@
 #include "creations.h"
 #include "driver.h"
 #include "game.h"
+#include "world.h"
 #include "sporekit_game.hpp"
 
 namespace npc {
@@ -459,11 +460,51 @@ static void remove_saved_strays(double now)
     }
 }
 
+// A respawn (0xD40FA0) or a hatch puts the avatar back into the nest as a hatchling whose behaviour
+// tree waits (tree 0x9413EDEB) for a family member of the nest: that NPC's tree walks over, plays the
+// greeting with it and makes it grow up (BT node 0xD64A30, state 9: 0xC04F30(1), 0xD52DF0(1)). A
+// guest has no family of its own (the update filter removes its local NPCs, the host's mirrored NPCs
+// have no AI), so after a death the guest stayed a hatchling for good: half the health, no control,
+// the hatch pose with the egg shell on both screens (player report 2026-10-25, docs/re/creature.md
+// 13). The guest does what the greeting does once its hatchling has waited a moment; the host only
+// when its own family did not come for much longer than it takes (~13 s), e.g. when the greeter
+// picked was a partner's puppet (puppets run no AI either).
+static bool g_hatch_on = true; // tests: hatch help on/off
+static double g_hatch_wait = 0, g_hatch_last = 0;
+static uint32_t g_hatch_helped = 0;
+void set_hatch_help(bool on) { g_hatch_on = on; }
+constexpr double kGuestHatchWait = 4.0, kHostHatchWait = 40.0;
+
+static void hatch_tick(double now, bool simulating)
+{
+    double dt = now - g_hatch_last;
+    g_hatch_last = now;
+    void* av = game::avatar();
+    if (!g_hatch_on || !C.sess || !C.sess->connected() || !game::in_creature_stage() || !av || game::is_dead(av) ||
+        !game::hatchling_waiting(av)) {
+        g_hatch_wait = 0;
+        return;
+    }
+    if (!simulating || world::cinematic_playing() || dt > 1.0) // paused, a cinematic, a caption, a long frame
+        return;
+    g_hatch_wait += dt;
+    bool no_family = is_guest() && g_enabled && !g_host_away; // the guest's own NPCs are removed
+    if (g_hatch_wait < (no_family ? kGuestHatchWait : kHostHatchWait))
+        return;
+    g_hatch_wait = 0;
+    if (game::grow_up(av)) {
+        g_hatch_helped++;
+        H->log(M, SK_INFO, "creature: the hatchling waited for its family %s: it grows up now",
+               no_family ? "(a guest has none of its own)" : "too long");
+    }
+}
+
 void tick(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
     if (game::in_creature_stage())
         remove_saved_strays(now);
+    hatch_tick(now, !creatures.empty());
     // creature stage only: adventure creatures are scripted by the adventure on every machine
     if (!g_enabled || !C.sess || !npc_stage())
         return;
@@ -698,18 +739,19 @@ std::string status()
         size_t known = 0;
         for (auto& [g, ks] : g_known)
             known += ks.size();
-        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u\n",
+        snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
+                 "hatch_helped=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
-                 g_kills_credited, g_strays_removed);
+                 g_kills_credited, g_strays_removed, g_hatch_helped);
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
-                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u\n",
+                 "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
-                 g_strays_removed);
+                 g_strays_removed, g_hatch_helped);
     }
     return b;
 }
