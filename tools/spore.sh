@@ -89,10 +89,11 @@ prepare_profile() {
     local src="$APPDATA_DIR/Spore/Preferences"
     [[ -f "$dst/login.prop" || ! -f "$src/login.prop" ]] || cp "$src/login.prop" "$dst/"
     [[ -f "$dst/Preferences.prop" ]] || cp "$src/Preferences.prop" "$dst/" 2>/dev/null || touch "$dst/Preferences.prop"
-    python3 - "$dst/Preferences.prop" "$size" <<'PY'
+    # SPORE_TUTORIALS=1: tutorials and hints on, like a player's first game (default off)
+    python3 - "$dst/Preferences.prop" "$size" "${SPORE_TUTORIALS:-0}" <<'PY'
 import sys
-p, size = sys.argv[1], sys.argv[2]
-want = {'OptionFullScreen': '0', 'OptionTutorialsEnabled': '0', 'OptionShowHints': '0',
+p, size, tut = sys.argv[1], sys.argv[2], sys.argv[3]
+want = {'OptionFullScreen': '0', 'OptionTutorialsEnabled': tut, 'OptionShowHints': tut,
         'OptionEdgeScroll': '0', 'OptionScreenSize': size,
         # test runs are silent (only the test profile, the player's own settings stay as they are)
         'AudioMuteAll': 'true', 'AudioMasterVolume': '0.000000'}

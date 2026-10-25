@@ -35,6 +35,13 @@ tools/spore.sh fixture save <name> test
 tools/sporectl.py coop.load Game0 Planet   # load a profile save directly from the menu
 ```
 
+`new_stage_game.py --name NAME` types the planet name in the last wizard step (`text` sends WM_CHAR,
+so any letters: "Земля"). In the galaxy menu the discs of saved games are drawn with a dashed cyan
+ring, free ones with a solid yellow ring; the slot windows of `coop.ui tree` do not tell them apart,
+and their order changes after a planet card was opened (`--slot 0` is free in a fresh start with the
+`creature` fixture). The creature wizard of GOG 2024 is the tribe one (a diet card opens the
+Sporepedia: a creature, confirm, theme, difficulty, name). `SPORE_TUTORIALS=1 spore.sh run ...` starts a
+test profile with tutorials and hints on, like a player's first game (default off).
 `new_stage_game.py` wants a test profile without saves (empty `Games` folder) and the 1440x1080
 window: it finds a free planet slot by itself (each slot ring of the galaxy menu has a 48x48 UI
 window with id 0x02E5A4A8 in `coop.ui tree`; `--slot N` picks the N-th, `--slot X,Y` a point),
@@ -124,6 +131,7 @@ lists the NPCs within r m of a player with the game's own prey / threat answers 
 | Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
 | Space trade | a tool gift by a real click on the F9 Space page (Antimatter Bomb: 5 of 12 charges, a new tool for the guest), no room (the guest at 97/99 keeps 2, 3 come back), a spice sale to the guest's home colony from the roster (both games' shared money +10 x price, the spice moves from the host's cargo to the guest's), faults; rivals mode reported as untested without space_rivalry; about 1 min after the 45 s cold start | `coop_space_trade.py` |
+| New game join | the host has an old game (fixture `creature`), starts a new one with a typed planet name ("Земля"; `--stage creature`, `--name`), hosts; the guest joins from its menu and must play the new planet (before the 0.7.2.1 fix: the guest got no game or an old one) | `coop_join_new_game.py` (~5 min, cold start) |
 | Modes | any mode from a fixture: guest joins from the menu, receives and loads the world, both puppets, movement | `coop_mode.py --fixture <cell\|tribe\|civ\|space> --planet GameN/Planet`, `coop_mode.py --adventure` |
 | Bad network | the guest leaves and joins again (even rounds lose the goodbye), timings of handshake, world transfer and reload | `SPORE_NET=awful python3 tools/tests/coop_rejoin_net.py --rounds 4` |
 | Rejoins and loads | the guest leaves and joins again many times, the host world is loaded again through the galaxy menu, both fault logs (`exc`) checked after every round; `--reshare a:b` sends the world again during the load, `--race a:b` rejoins at random moments, `--menu a:b [--clicks]` joins from the galaxy menu, `--local-load a:b --cold` loads a save right after the menu came up in fresh games (the planet-texture fault of docs/re/space.md 8.3: 4 of 17 such loads faulted before the fix); `--stop` ends at the first fault | `python3 tools/tests/coop_rejoin_loop.py --rounds 30 [--reshare 0:2.5]` |

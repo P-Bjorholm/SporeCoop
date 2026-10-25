@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Joining sends the game the host plays now:** a guest that joined a host who had started a new game
+  could be put into an older game of the host (the host had to delete it). Every game of a galaxy is
+  in the same save folder, and a planet named with letters outside English (for example in Cyrillic)
+  was not found, so another planet of that folder went out. Planet names in any letters now work on
+  both sides, the host always names the planet it plays (saving again if its file is not written
+  yet), and the guest never loads another planet instead.
+
 ## [0.7.2.1] - 2026-10-24
 
 Finding problems: crash reports ready to send, kept logs, the version in the game. 0.7.2.1 plays

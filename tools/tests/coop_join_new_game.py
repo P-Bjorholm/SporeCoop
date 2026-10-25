@@ -20,10 +20,10 @@ import subprocess
 import sys
 import time
 
-import lane
-from sporectl import Console
-from twoinst import Checks, HERE, restore_creations, wait_guest_in, wait_up, watch, shot
-from lane import sh
+from twoinst import Checks, HERE, restore_creations, wait_guest_in, wait_up, watch, shot  # (sets the path)
+import lane  # noqa: E402
+from lane import sh  # noqa: E402
+from sporectl import Console  # noqa: E402
 
 
 def world_of(con):
