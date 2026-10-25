@@ -9,6 +9,14 @@
   cell pool the game had already torn down. The mirrors and the partners' cells are now forgotten
   once the Cell stage is left, and the cell console commands answer only in the Cell stage. Test:
   `coop_cell_leave.py` (suite `cell_leave`).
+- **Creature: no more crash of the host after an evolution, and no copies of the partner's
+  creature left in the world** (player report, host crash at 0xB88BEA). After the editor the
+  partner's old creature stayed on the planet as a wild creature next to the new one, and the
+  herd made for the partner's creature could get its home deep inside the planet: when that
+  creature looked for land around its home the game read past its map and crashed. The old
+  creature is now removed when the players are back, a partner who comes back into the world
+  appears where it is (not between its last position and the planet's centre), and the herd of
+  a partner's creature stays under it. Test: `coop_editor_strays.py` (suite `editor_strays`).
 
 ## [0.7.2.2] - 2026-10-25
 
