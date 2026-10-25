@@ -1980,6 +1980,16 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY(ok ? "host hit applied" : "no such npc");
         return ok ? 0 : 1;
     }
+    if (argc > 2 && !strcmp(argv[1], "spawn")) { // host: an NPC of crt species <hex> next to the avatar
+        void* c = npc::debug_spawn((uint32_t)strtoul(argv[2], nullptr, 16));
+        SAY(c ? "spawned %p" : "unknown species or no avatar", c);
+        return c ? 0 : 1;
+    }
+    if (argc > 2 && !strcmp(argv[1], "recruit")) { // host: NPC #id joins the pack (AddMember)
+        bool ok = npc::debug_recruit((uint16_t)atoi(argv[2]));
+        SAY(ok ? "joined the pack" : "no such npc or it cannot join");
+        return ok ? 0 : 1;
+    }
     if (argc > 3 && !strcmp(argv[1], "hit")) {
         bool ok = npc::debug_hit((uint16_t)atoi(argv[2]), (float)atof(argv[3]));
         SAY(ok ? "hit sent through the damage filter" : "no such spawned proxy");
@@ -2531,7 +2541,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.echo", "coop.echo [on|off] [offset] [delay] - loopback puppet test", c_echo, nullptr, MT);
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
-    H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>] - host-authoritative NPC sync", c_npc, nullptr, MT);
+    H->command_add(M, "coop.npc", "coop.npc [on|off|list|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>] - host-authoritative NPC sync", c_npc, nullptr, MT);
     H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
