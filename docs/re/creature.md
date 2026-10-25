@@ -409,7 +409,7 @@ the ones I killed since he still sees them alive" (fix/creature-desync, `coop_cr
   walk or attack (WASD did move it; key 1 hit nothing at 3-5 m); the test posts the game's attack
   message instead (`coop.npc attackmsg`).
 
-## 13. Another creation under the same key: the host's nests on the guest (2026-10-25)
+## 15. Another creation under the same key: the host's nests on the guest (2026-10-25)
 
 From the player report (screenshots of both players at one nest): the host saw blue "Woopsies" and
 "Impress 3 Woopsies to ally 0/3", the guest small creatures of another look and "The Datzu are your

@@ -103,7 +103,7 @@ Test runs don't get in the way of whoever is at the computer:
 * The test profiles' caches by key: a creation key a guest profile ever built (the host's "Judge"
   29020CC4, sent by `coop_creature_desync.py`) left its `creaturedata` in the guest's
   Pollination.package and a baked model in its graphics cache; the guest builds that body for the key
-  whatever its own records hold (docs/re/creature.md 13). A test of "another creation under the same
+  whatever its own records hold (docs/re/creature.md 15). A test of "another creation under the same
   key" takes a key the guest never had (`coop_nest_species.py`: 290229B9).
 
 ## 6.3 Development loop

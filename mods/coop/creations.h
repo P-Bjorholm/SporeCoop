@@ -60,7 +60,7 @@ bool species_pending(const Key& k); // guest: asked, no answer yet
 // guest's own "Datzu" on the guest. The host sends these creations to each guest before its world
 // and before an NPC of one; the guest registers each under a key of its own (0x7D......, from the
 // content) and builds the host's NPCs of it from that key; the host's species table reaches it
-// under both keys (docs/re/creature.md 13).
+// under both keys (docs/re/creature.md 15).
 void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of species k goes to peer
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
 Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here

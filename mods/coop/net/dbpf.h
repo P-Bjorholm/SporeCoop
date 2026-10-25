@@ -54,7 +54,7 @@ std::vector<uint8_t> write(const std::vector<Record>& records);
 
 // Keys of one type and group inside the records of a DBPF 3.0 package, big-endian (group, type,
 // instance) or little-endian (type, instance, group): a planet save names its species both ways
-// (herds and creatures big-endian, the pack list little-endian; docs/re/creature.md 13). Appends the
+// (herds and creatures big-endian, the pack list little-endian; docs/re/creature.md 15). Appends the
 // instances not in the list yet.
 void find_keys(const std::vector<uint8_t>& file, uint32_t type, uint32_t group, std::vector<uint32_t>& instances);
 

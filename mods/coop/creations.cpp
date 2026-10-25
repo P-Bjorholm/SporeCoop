@@ -631,7 +631,7 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
 // game's caches by key right), not only under the host's key (our creation of that key would
 // answer: the game's creaturedata and baked models are cached by key, ✔ 2026-10-25). The world's
 // save keeps the host's key: a save rewritten to ours lost those herds and creatures at the load
-// and the pack panel faulted on a pack member of them (docs/re/creature.md 13)
+// and the pack panel faulted on a pack member of them (docs/re/creature.md 15)
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
