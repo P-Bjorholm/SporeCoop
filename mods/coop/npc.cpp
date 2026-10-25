@@ -8,6 +8,9 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <windows.h>
+
+#include "sporekit_game.hpp"
 
 #include "driver.h"
 #include "game.h"
@@ -15,7 +18,7 @@
 namespace npc {
 
 static const SkHost* H;
-static SkMod* M [[maybe_unused]];
+static SkMod* M;
 static Ctx C;
 static bool g_enabled = true;
 
@@ -73,6 +76,8 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
 bool is_proxy(void* c) { return g_proxy_of.count(c) != 0; }
+static bool g_strays_on = true; // tests: remove_strays on/off
+void set_strays(bool on) { g_strays_on = on; }
 void set_enabled(bool on) { g_enabled = on; }
 bool enabled() { return g_enabled; }
 
@@ -670,6 +675,81 @@ std::string list()
     return out;
 }
 
+// debug: the living creature objects (all, or those of one species, or only those without archetype
+// tuning +0xE84): ours (puppets, proxies) and any other (a creature brought back by a save made while
+// ours existed, docs/re/creature.md 4)
+std::string creatures(bool untuned_only, uint32_t species)
+{
+    struct Acc {
+        std::string out;
+        unsigned n = 0, untuned = 0, ours = 0, idle = 0;
+        void* av;
+        bool untuned_only;
+        uint32_t species;
+    } a{"", 0, 0, 0, 0, game::avatar(), untuned_only, species};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* a = (Acc*)u;
+            if (noun != 0x18EB45Eu || !game::object_alive(o) || IsBadReadPtr(o, 0x1680))
+                return true;
+            void* e84 = *(void**)((uint8_t*)o + 0xE84);
+            if (!game::species_profile(o)) { // a creature object without a species: not in the world (pool)
+                a->idle++;
+                return true;
+            }
+            if ((a->untuned_only && e84) || (a->species && game::species_key(o).instance != a->species))
+                return true;
+            void* h = game::herd_of(o);
+            bool ours = game::is_puppet(o) || g_proxy_of.count(o);
+            bool hr = h && !IsBadReadPtr(h, 0x21C);
+            char b[240];
+            snprintf(b, sizeof b, "  creature %p species=%08X prof=%p e84=%p herd=%p arch=%08X nest=%p flags=%08X%s%s%s%s\n", o,
+                     game::species_key(o).instance, game::species_profile(o), e84, h, hr ? *(uint32_t*)((uint8_t*)h + 0x88) : 0u,
+                     hr ? game::herd_nest(h) : nullptr, *(uint32_t*)((uint8_t*)o + 0xB58), ours ? " ours" : "",
+                     o == a->av ? " avatar" : "", game::is_dead(o) ? " DEAD" : "", e84 ? "" : " untuned");
+            a->out += b;
+            a->n++;
+            a->untuned += !e84;
+            a->ours += ours && !e84;
+            return true;
+        },
+        &a);
+    char b[160];
+    snprintf(b, sizeof b, "creatures %u: untuned %u (ours %u, other %u); %u without a species\n", a.n, a.untuned,
+             a.ours, a.untuned - a.ours, a.idle);
+    return b + a.out;
+}
+
+// debug: the herds (noun 0x01BE418E) without an archetype (ours: CreateHerd(.., 0, 0, 0, 0)) with
+// species profile, target size, enabled flag, nest; the game's own herds are only counted
+std::string herds()
+{
+    struct Acc {
+        std::string out;
+        unsigned all = 0, plain = 0;
+    } a;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x21C))
+                return true;
+            auto* a = (Acc*)u;
+            a->all++;
+            if (*(uint32_t*)((uint8_t*)o + 0x88))
+                return true;
+            a->plain++;
+            char b[200];
+            snprintf(b, sizeof b, "  herd %p species=%p arch=%08X target=%d enabled=%d nest=%p avatar_owned=%d\n", o,
+                     game::herd_species(o), *(uint32_t*)((uint8_t*)o + 0x88), *(int32_t*)((uint8_t*)o + 0xF4),
+                     *(uint8_t*)((uint8_t*)o + 0x218), game::herd_nest(o), *(uint8_t*)((uint8_t*)o + 0x84));
+            a->out += b;
+            return true;
+        },
+        &a);
+    char b[96];
+    snprintf(b, sizeof b, "herds %u, without an archetype %u\n", a.all, a.plain);
+    return b + a.out;
+}
+
 bool debug_hit(uint16_t id, float damage)
 {
     auto it = g_proxies.find(id);
@@ -721,6 +801,25 @@ bool debug_host_hit(uint16_t id, float damage)
     if (it == g_host_by_id.end() || !g_seen_now.count(it->second) || !game::avatar())
         return false;
     game::hit(it->second, damage, 0, game::avatar()); // through the damage filter
+    return true;
+}
+
+// tests: the message an attack of the avatar on host NPC `id` posts (FUN_00C02B40, the creature's
+// attack vt 0xB8: ExecuteAction(0xD335362C, {attacker, target, 0}) to every creature-stage
+// listener, CreatureStageEventHandler among them; docs/re/creature.md 4)
+bool debug_attack_msg(uint16_t id)
+{
+    auto it = g_host_by_id.find(id);
+    void* av = game::avatar();
+    static uintptr_t get = H->sym("App::cCreatureModeStrategy::Get"),
+                     exec = H->sym("App::cCreatureModeStrategy::ExecuteAction");
+    if (it == g_host_by_id.end() || !g_seen_now.count(it->second) || !av || !get || !exec)
+        return false;
+    void* strat = skg::cdecl_call<void*>(get);
+    if (!strat)
+        return false;
+    void* msg[3] = {av, it->second, nullptr};
+    skg::thiscall<void>(exec, strat, 0xD335362Cu, (void*)msg);
     return true;
 }
 

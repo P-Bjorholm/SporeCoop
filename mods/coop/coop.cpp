@@ -454,6 +454,7 @@ typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
 StageMsg_t o_StageMsg;
 alignas(16) uint8_t g_blank_e84[0x1000];
 unsigned g_stage_msg_guards; // handler calls that needed the blank object (tests)
+unsigned g_stage_msg_other;  // ... for a creature of the message that was none of ours (tests)
 bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
 {
     void* patched[256];
@@ -1970,6 +1971,24 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s%s", npc::status().c_str(), npc::list().c_str());
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "strays")) { // tests
+        npc::set_strays(strcmp(argv[2], "off") != 0);
+        SAY("stray removal %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "attackmsg")) { // tests: host avatar "attacks" host NPC #id
+        bool ok = npc::debug_attack_msg((uint16_t)atoi(argv[2]));
+        SAY(ok ? "attack message sent" : "no such npc");
+        return ok ? 0 : 1;
+    }
+    if (argc > 1 && !strcmp(argv[1], "herds")) { // tests
+        SAY("%s", npc::herds().c_str());
+        return 0;
+    }
+    if (argc > 1 && (!strcmp(argv[1], "untuned") || !strcmp(argv[1], "creatures"))) { // tests
+        SAY("%s", npc::creatures(argv[1][0] == 'u', argc > 2 ? strtoul(argv[2], nullptr, 16) : 0).c_str());
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "hurt")) {
         bool ok = npc::debug_hurt((uint8_t)atoi(argv[2]), (uint16_t)atoi(argv[3]), (float)atof(argv[4]));
         SAY(ok ? "puppet hit through the damage filter" : "no such npc/puppet");
@@ -2135,9 +2154,10 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
                 float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
                 int ok = H->world_to_screen(w, sc);
                 uint8_t* cr = (uint8_t*)r.puppet;
-                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u", ok, (int)sc[0], (int)sc[1],
+                SAY("point %d %d %d flags=%08X e84=%p guards=%u msg_guards=%u msg_other=%u", ok, (int)sc[0], (int)sc[1],
                     g_mode == modes::kCreature ? *(uint32_t*)(cr + 0xB58) : 0u,
-                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards);
+                    g_mode == modes::kCreature ? *(void**)(cr + 0xE84) : nullptr, g_select_guards, g_stage_msg_guards,
+                    g_stage_msg_other);
                 return 0;
             }
         SAY("no partner");
