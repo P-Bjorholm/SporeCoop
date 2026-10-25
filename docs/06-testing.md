@@ -781,7 +781,7 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * The world the host sends right after its editor has the guest's creature as a hatchling (no goal,
   no claim): the test saves again after the host's caption (`coop.save`, Enter on the box,
   `coop.share`). `--without-fix` (`coop.npc cinedefer off` on the guest) must fail: 5 faults at
-  0xC6AE60 when the guest claims (3 of 3 runs on lane 6, 2026-10-25).
+  0xC6AE60 when the guest claims (4 of 4 runs on lane 6, 2026-10-25).
 * Starting a cinematic by hand on a guest: `call Simulator::cCinematicManager::PlayCinematic
   thiscall <cm> s:CRG_ClaimNest 1 1 0 0 0` (cm from `call Simulator::cCinematicManager::Get
   cdecl`), ended with `call SporeCoop::cCinematicManager_EndCinematic thiscall <cm>`.

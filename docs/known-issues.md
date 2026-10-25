@@ -8,7 +8,7 @@ Fixed entries move to the commit message (and a test).
 * After an evolution that starts a migration, the host's game plays CRG_SpeciesMigrate; the world
   the host sends then is saved during it, with the host's creature still a hatchling (+0xB34 age 0)
   and the migration at state 1. The guest's game loads that and its creature stays at age 0: its
-  game never sets the goal "Migrate to a new nest" (needs age 1) and never claims a nest (seen 3
+  game never sets the goal "Migrate to a new nest" (needs age 1) and never claims a nest (seen 6
   times on lane 6, 2026-10-25, `coop_migration.py` steps 1-2; a save made after the host's caption
   has age 1 and state 2). Not looked into: whether the hatchling grows later (another editor, a
   load) and what the guest sees (size). docs/re/creature.md 16.
