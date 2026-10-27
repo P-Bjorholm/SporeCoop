@@ -1,17 +1,17 @@
 ---
 id: BUG-0024
 title: tools/fakepeer.py speaks protocol 6, the mod 7
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-25
 source: code review (tools comparison)
 role: 
 versions: 
-fixed_in: 
-branch: dev/lab-gate (WIP, stopped)
+fixed_in: unreleased
+branch: fix/fakepeer-protocol
 commits: 
-tests: 
+tests: fakepeer_check
 signature: 
 docs: docs/06-testing.md
 related:
@@ -24,11 +24,13 @@ Connection::looks_valid drops packets of another protocol version, so fakepeer i
 A hard-coded PROTO = 6.
 
 ## Fix
-Planned: read kProtoVersion from protocol.h; a harness self-test.
+Support protocol 7 and test interoperability against the C++ session. The version remains explicit
+so that a future protocol change requires the wire format to be checked.
 
 ## Verification
-
+`fakepeer_check.py` exercises the handshake, player state, chat, leave and build mismatch.
 
 ## History
 - 2026-10-25: reported (code review (tools comparison)).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-27: fixed on fix/fakepeer-protocol, not released yet.

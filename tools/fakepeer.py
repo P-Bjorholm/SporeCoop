@@ -193,7 +193,7 @@ def main():
             print('leave', p[0])
         elif typ == BYE:
             print('host closed the session')
-            sys.exit(0)
+            sys.exit(0 if st['my_id'] is not None else 1)
 
     t0 = time.time()
     last_state = 0.0

@@ -12,7 +12,7 @@ it builds both as a Windows DLL and **natively on Linux** (unit tests, `fakepeer
 
 ```
 u32  magic   'SPCO'
-u16  proto   protocol version (6)
+u16  proto   protocol version (7)
 u32  conn    connection id: the guest picks a new random one for every join (protocol 6)
 u16  seq     packet number (for ack)
 u16  ack     last received seq

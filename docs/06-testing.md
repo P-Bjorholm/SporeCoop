@@ -163,8 +163,11 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
 `fakepeer.py` defaults to the GOG 2024 build fingerprint (`dc04aee5`); use `--build 922af7c7`
-for a GOG 2016 host. It implements protocol 7 explicitly: when the protocol changes, check the
-message formats before updating it. It returns an error if no welcome arrives before the run ends.
+for a GOG 2016 host using protocol 7. It implements protocol 7 explicitly and cannot connect to a
+protocol 6 host. When the protocol changes, check the message formats before updating the tool.
+It returns an error if no welcome arrives before the run ends. A real host may save and send its
+world on join; fakepeer does not load the world or implement the stage-specific messages. Its
+movement uses a sphere and is not suitable for testing the Cell stage's two-dimensional pool.
 
 ## 6.5 Startup speed
 
