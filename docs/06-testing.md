@@ -162,6 +162,10 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Rejoins and loads | the guest leaves and joins again many times, the host world is loaded again through the galaxy menu, both fault logs (`exc`) checked after every round; `--reshare a:b` sends the world again during the load, `--race a:b` rejoins at random moments, `--menu a:b [--clicks]` joins from the galaxy menu, `--local-load a:b --cold` loads a save right after the menu came up in fresh games (the planet-texture fault of docs/re/space.md 8.3: 4 of 17 such loads faulted before the fix); `--stop` ends at the first fault | `python3 tools/tests/coop_rejoin_loop.py --rounds 30 [--reshare 0:2.5]` |
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
+`fakepeer.py` defaults to the GOG 2024 build fingerprint (`dc04aee5`); use `--build 922af7c7`
+for a GOG 2016 host. It implements protocol 7 explicitly: when the protocol changes, check the
+message formats before updating it. It returns an error if no welcome arrives before the run ends.
+
 ## 6.5 Startup speed
 
 The two-instance test is ready for checks in about 40 s (it used to take about 90):

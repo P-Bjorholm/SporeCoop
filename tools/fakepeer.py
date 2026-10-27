@@ -17,7 +17,9 @@ import sys
 import time
 
 MAGIC = 0x4F435053
-PROTO = 6  # 5: 128-packet acks; 6: connection id in the header, unreliable BYE
+# This implementation supports protocol 7. Do not silently adopt a newer version:
+# its wire format may have changed. The interoperability test detects version drift.
+PROTO = 7
 HEADER = '<IHIHHQQB'  # magic, proto, conn, seq, ack, ackbits (2 x u64), count
 HEADER_SIZE = struct.calcsize(HEADER)
 HELLO, WELCOME, REJECT, JOIN, LEAVE, STATE, CHAT, PING, PONG, BYE = range(1, 11)
@@ -158,12 +160,13 @@ def main():
     ap.add_argument('--radius', type=float, default=8.0)
     ap.add_argument('--period', type=float, default=12.0)
     ap.add_argument('--seconds', type=float, default=60.0)
-    ap.add_argument('--build', default='922af7c7', help='first 8 hex digits of the exe sha256')
+    ap.add_argument('--build', default='dc04aee5', help='first 8 hex digits of the host game build ID')
     ap.add_argument('--say', default='hello from fakepeer')
     a = ap.parse_args()
     h, _, port = a.host.partition(':')
     addr = (socket.gethostbyname(h), int(port or 47810))
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('0.0.0.0', 0))
     sock.setblocking(False)
     c = Conn(sock, addr)
     name = a.name.encode()[:255]
@@ -237,7 +240,10 @@ def main():
             return 1
         c.flush(now)
         time.sleep(0.01)
-    for _ in range(3):  # unreliable, a few copies (protocol 6)
+    if st['my_id'] is None:
+        print('no welcome received')
+        return 1
+    for _ in range(3):  # unreliable, a few copies
         c.send_unreliable(BYE, b'\0')
         c.flush(time.time() + 1)
     print('done')

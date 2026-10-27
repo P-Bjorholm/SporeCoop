@@ -720,8 +720,52 @@ static void test_updater()
     CHECK(upd::sums_lookup(h + "  other.pack\n", "SporeCoop-0.5.1.pack").empty());
 }
 
-int main()
+// A Session host for the fakepeer interoperability test (no game required).
+static int fakepeer_host()
 {
+    if (!net_init()) return 1;
+    Session host;
+    host.build = 0xdc04aee5;
+    host.world = 0x12345678;
+    std::string err;
+    if (!host.host(0, "Host", err)) {
+        fprintf(stderr, "host: %s\n", err.c_str());
+        return 1;
+    }
+    bool joined = false, state = false, chat = false, left = false;
+    host.cb.player_join = [&](const PlayerInfo& p) { joined = p.id == 1 && p.name == "Bot"; };
+    host.cb.player_state = [&](const PlayerState& s) {
+        if (s.id == 1 && (s.flags & PF_IN_WORLD) && s.mode == 0x1654c01 && s.world == host.world &&
+            s.health == 10 && s.max_health == 10)
+            state = true;
+    };
+    host.cb.chat = [&](uint8_t id, const std::string& text) { chat = id == 1 && text == "fakepeer test"; };
+    host.cb.player_leave = [&](uint8_t id, uint8_t reason) { left = id == 1 && reason == 0; };
+    printf("%u\n", host.port());
+    fflush(stdout);
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (std::chrono::steady_clock::now() < deadline && !left) {
+        host.update();
+        PlayerState s;
+        s.pos = {100, 0, 0};
+        s.flags = PF_IN_WORLD;
+        s.mode = 0x1654c01;
+        s.world = host.world;
+        host.send_state(s);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (!joined || !state || !chat || !left) {
+        fprintf(stderr, "fakepeer: joined=%d state=%d chat=%d left=%d\n", joined, state, chat, left);
+        return 1;
+    }
+    return 0;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
+        return fakepeer_host();
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
