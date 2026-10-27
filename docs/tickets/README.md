@@ -34,7 +34,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
 | [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
 | [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | open | bug | Creature | 2026-10-25 |  | NPC net ids can repeat after about 65k allocations in one world |
-| [BUG-0024](BUG-0024-tools-fakepeer-py-speaks-protocol-6-the-mod-7.md) | open | tooling | All | 2026-10-25 |  | tools/fakepeer.py speaks protocol 6, the mod 7 |
+| [BUG-0024](BUG-0024-tools-fakepeer-py-speaks-protocol-6-the-mod-7.md) | fixed | tooling | All | 2026-10-25 | unreleased | tools/fakepeer.py speaks protocol 6, the mod 7 |
 | [BUG-0025](BUG-0025-spore-sh-kill-on-lane-1-could-kill-a-spore-the-o.md) | open | tooling | All | 2026-10-25 |  | spore.sh kill on lane 1 could kill a Spore the owner started |
 | [BUG-0026](BUG-0026-creature-crash-after-dying-and-skipping-the-cuts.md) | not-reproduced | crash | Creature | 2026-10-24 |  | Creature: crash after dying and skipping the cutscene |
 | [BUG-0027](BUG-0027-steam-build-no-co-op-button-steamstub-then-no-pr.md) | fixed | bug | Menu | 2026-10-24 | 0.7.2 | Steam build: no Co-op button (SteamStub, then no Present on Windows) |

@@ -71,6 +71,7 @@ test:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
+	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/tickets.py check

@@ -149,9 +149,9 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 
 | Level | What | How |
 |---|---|---|
-| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation | `make test` |
+| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation, fakepeer interoperability | `make test` (`fakepeer_check.py` adds about 5 s) |
 | In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
-| Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
+| Protocol | host in the game + a fake Python guest (GOG 2024 build) | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle --build dc04aee5` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
 | Cell co-op | shared pool, knockouts and voluntary leave; sampled mirror cells disappear while the guest's avatar remains in the pool | `python3 tools/lab.py run cell_coop --retry 0` |
 | Space trade | a tool gift by a real click on the F9 Space page (Antimatter Bomb: 5 of 12 charges, a new tool for the guest), no room (the guest at 97/99 keeps 2, 3 come back), a spice sale to the guest's home colony from the roster (both games' shared money +10 x price, the spice moves from the host's cargo to the guest's), faults; rivals mode reported as untested without space_rivalry; about 1 min after the 45 s cold start | `coop_space_trade.py` |
@@ -167,6 +167,13 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 to reproduce the old behavior using the same test; the mirror-removal check should fail. The
 test restores the default afterward. Run `cell_meat` and `cell_spin` too when checking warm
 resets after this test, since they start by leaving the previous session.
+`fakepeer.py` defaults to protocol 7 and the GOG 2024 build fingerprint (`dc04aee5`). Use
+`--build 922af7c7` for a GOG 2016 host, and `--protocol 6` for a protocol 6 host. The protocol
+and build must each match the host. When the protocol changes, check the message formats before
+updating the tool.
+It returns an error if no welcome arrives before the run ends. A real host may save and send its
+world on join; fakepeer does not load the world or implement the stage-specific messages. Its
+movement uses a sphere and is not suitable for testing the Cell stage's two-dimensional pool.
 
 ## 6.5 Startup speed
 
