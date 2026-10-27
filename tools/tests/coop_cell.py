@@ -161,6 +161,28 @@ def main():
     ck((g5['hp'] or 0) > 3, f'regen next to the partner (hp 3 -> {g5["hp"]})')
     shot(host, 'cell_host.png')
     shot(guest, 'cell_guest.png')
+
+    # Guest leave removes the host's mirrors from the game pool, not just the mod's list.
+    # The local indices include a generation, so a new cell in the same slot is not the old mirror.
+    indices = []
+    for _ in range(30):
+        out = guest.call('coop.pool mirrors')['out']
+        indices = re.findall(r'^mirror_local (\d+)$', out, re.MULTILINE)
+        if indices:
+            break
+        time.sleep(1)
+    indices = indices[::max(1, len(indices) // 10)][:10]
+    ck(indices, f'guest has live mirror cells before leaving ({len(indices)} sampled)')
+    leave = guest.call('coop.leave')
+    ck(leave['ok'] and guest.call('coop.status')['out'].startswith('offline'), 'guest left the session')
+    survivors = []
+    for idx in indices:
+        cell = guest.call(f'coop.pool cell {idx}')
+        if not cell['ok'] or 'no such cell' not in cell['out']:
+            survivors.append((idx, cell['out'].strip()))
+    ck(indices and not survivors, f'the sampled mirror cells left the game pool (remaining: {survivors})')
+    frames = guest.call('wait.frames 30 10000')
+    ck(frames['ok'], f'the guest continues drawing after leave ({frames["out"].strip()})')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

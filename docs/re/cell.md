@@ -547,6 +547,8 @@ readable, `+0x1C+0x14` still says 0x398 and `+0x1C+0x10` the old high-water mark
 * A guest's own `coop.leave` does not run cellsync's on_session_end (only the disconnected
   callback does), so its mirrors stay passive cells in its pool until it leaves the stage or rejoins
   (not changed: a rejoin reuses them).
+  ~ superseded (2026-10-27): own leave now runs the same cleanup. Four retained creatures observed
+  after leave had `+0x16C=0` and nonzero velocity, so retained mirrors do not always stay passive.
 
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC

@@ -1602,6 +1602,17 @@ std::string debug(const std::vector<std::string>& a)
         }
         return o.empty() ? "none" : o;
     }
+    if (!a.empty() && a[0] == "mirrors") { // live local pool indices, for checking cleanup after leave
+        std::vector<uint32_t> indices;
+        for (auto& [host, mirror] : g_mirrors)
+            if (mirror.local && modes::cell_at(mirror.local))
+                indices.push_back(mirror.local);
+        std::sort(indices.begin(), indices.end());
+        std::string out;
+        for (uint32_t idx : indices)
+            out += "mirror_local " + std::to_string(idx) + "\n";
+        return out.empty() ? "no live mirrors\n" : out;
+    }
     if (a.size() >= 2 && a[0] == "cell") { // a cell by its sync key (host index): local state
         uint32_t key = (uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10);
         uint8_t* c = nullptr;

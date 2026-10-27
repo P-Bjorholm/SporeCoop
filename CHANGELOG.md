@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Cell: leaving co-op** removes the guest's mirrored cells so they do not remain in its pool.
+
 ## [0.7.2.4] - 2026-10-25
 
 More fixes from players' reports (Creature stage, Alt+Shift+Enter). 0.7.2.4 plays together with

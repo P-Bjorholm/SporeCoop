@@ -1763,6 +1763,7 @@ void do_leave()
     g_sess.leave("user");
     npc::on_session_end();
     social::on_session_end();
+    cellsync::on_session_end();
     spacecoop::on_session_end();
     for (auto& [id, r] : g_remotes)
         despawn(r);
