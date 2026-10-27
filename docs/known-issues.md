@@ -15,6 +15,7 @@ anchor so other docs can link to it:
 * Known: ... (observed vs inferred, addresses, links to docs/re anchors)
 * Not checked: ...
 * Next steps: ... (branch, if any)
+* Ticket: BUG-NNNN (tools/tickets.py new)
 ```
 
 ## Session: cleanup differs between leave, disconnection and unload (2026-10-27, code review)
@@ -36,6 +37,12 @@ anchor so other docs can link to it:
 * While a cinematic plays the creatures the mod removes on a guest (its own game's NPCs, proxies,
   puppets) stay where they are until it is over (the fix for the guest crash at 0xC6AE60): they
   stand still, a proxy the host replaced in that time can be seen twice for the cinematic.
+  ~ superseded (2026-10-27): see BUG-0066 (#44).
+* CORRECTION (2026-10-27, claude/clever-fermi-h57l81): such a creature does not simply stand still: `game.cpp`
+  `destroy_creature` unregisters the puppet or proxy before the cinematic deferral, so its
+  NPCTickAI runs again and it can move, and the host may send it to the guests as an NPC (code
+  reading, verified by a second reviewer; not seen in the game yet). BUG-0066.
+* Ticket: BUG-0019.
 
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
 
@@ -49,6 +56,7 @@ anchor so other docs can link to it:
 * 2026-10-23: it came back once more (4-player tribe, `coop_multi.py`). Since then `gamefixes.cpp`
   skips `SimCamera_LookAt` and `SimCamera_Update` while the camera object is null (`coop.status`:
   "tribe camera skipped N"); the stage setup goes on without pointing that camera.
+* Ticket: BUG-0167.
 
 ## Creature: NPC aggression towards a partner is untested end to end
 
@@ -61,6 +69,7 @@ anchor so other docs can link to it:
 * To check it: a save with an aggressive (red face) nest nearby, the guest next to it and the host
   60 m away: `damage_in` on the guest should grow. Side effects to watch: avatar-only UI of the
   host (hints, music) while an NPC hunts the partner.
+* Ticket: BUG-0168.
 
 ## Creature: puppets still go into saves (removed after a load)
 
@@ -77,6 +86,7 @@ anchor so other docs can link to it:
 * ? A guest without an own creature has its puppet in the host's avatar herd (host species, with
   tuning): a save probably keeps it as an extra member of the host's family, which the removal
   does not touch (not checked).
+* Ticket: BUG-0020.
 
 ## Creature: one NPC 4 m off on every guest for 30+ s (seen once)
 
@@ -85,6 +95,7 @@ anchor so other docs can link to it:
   The same offset on every guest points at the host side or at a spot the proxy cannot stand on
   (pushed out by collision after each stuck-teleport of `drive::step`). Not seen again in 5 min of
   watching nor in 4 more sessions. Hunt: `coop.npc list` on host and guests for that id (err, want).
+* Ticket: BUG-0169.
 
 ## Creature chaos: a guest crashed with a corrupted heap (seen once)
 
@@ -94,12 +105,14 @@ anchor so other docs can link to it:
   then an AV in `GeneralAllocator_FreeInternal`+0xAD 3 s later, and froze in `MallocInternal` (watchdog:
   no frames). Looks like heap corruption from earlier; the bot's last actions on Bob were clicks,
   wheel and `coop.targets`. Not seen in 4 other runs of the same test. Replay with the seed above.
+* Ticket: BUG-0170.
 
 ## Tribe: the host froze once while the epic creature was being killed
 
 * `coop_tribe_play.py` on branch feat/net-window, lane 2 (2026-10-22): the host stopped drawing
   during `coop.tribe epic hit` (monitor: FROZE); not reproduced in 14 more runs. The game logs of
   that run were lost (now kept by lab.py). Hunt: `lab.py run tribe_play,chaos_tribe --repeat 10`.
+* Ticket: BUG-0171.
 
 ## Tribe: host fault and freeze when a member is added during the game-over caption
 
@@ -119,6 +132,7 @@ anchor so other docs can link to it:
   whenever the host has members it lacks, so a guest that shows its own game-over caption while
   the host already bounced back could hit the same path (not seen: the guest showed no caption in
   4 tries, once it did while the host had none left alive).
+* Ticket: BUG-0172.
 
 ## Tribe: knocked-out members stand on the guest
 
@@ -127,6 +141,7 @@ anchor so other docs can link to it:
   mirrors (a 0 might start the local death of a mirror), so on the guest they keep their last
   health (e.g. 0.4) and stand. Seen in play_tribe.py (enemy chief `#4 hp=0.0` on the host, `0.4`
   on the guest). The co-op chiefs use the host's health on every machine since 2026-10-23.
+* Ticket: BUG-0173.
 
 ## Cell: a guest far from the host swims in an empty pool
 
@@ -139,8 +154,9 @@ anchor so other docs can link to it:
   each partner (PopulateTiles 0xE7D370 around `G+0x4128` is the host's view only).
 * Reproduce: `SPORE_LANE=N python3 tools/tests/play_cell.py --minutes 10 --seed 9` and watch
   `partner` distances and the guest's `local_gameplay_cells` vs where its cell is.
+* Ticket: BUG-0174.
 
-## coop_sync.py: failures on GOG 2024 (lane 10) and turn lag (fixed 2026-10-24, fix/gog2024-sync)
+## coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync)
 
 * The full lab run 20261023-225702 (feat/space-07, lane 10, 9 lanes busy) failed `coop_sync` twice:
   cell/players facing p90 15.6°, tribe/citizens 2.39 / 2.13 m, civ/vehicles 4.4 / 6.0 m and 33.6°,
@@ -162,6 +178,7 @@ anchor so other docs can link to it:
   (docs/06-testing.md 6.5 "Sync accuracy"). After: 3 of 3 passes on lane 10, 2 of 2 on lane 3.
 * Not fixed: drive.h's nudge is per frame, so a mirror that cannot walk trails more at low frame
   rates; the 2024 guest's paused seconds after a load are not explained (planet still loading?).
+* Ticket: BUG-0175.
 
 ## coop_civ_play: the guest's "I'm ready" click was lost twice
 
@@ -170,6 +187,7 @@ anchor so other docs can link to it:
   guest's visible "I'm ready" button (the lobby had just opened for the vote); a click by hand a few
   seconds later worked. The two failures came while the shared headless display was being
   restarted, the five runs after it passed, so the cause is not settled.
+* Ticket: BUG-0176.
 
 ## Creature: the mating call did not lead to the editor in the bot
 
@@ -179,6 +197,7 @@ anchor so other docs can link to it:
   covered by `coop_vote.py` through `coop.vote editor`. The Cell stage's mating call is driven for
   real since 2026-10-24 (`coop_editor_desync.py`, docs/re/cell.md 12), and the Creature stage's first
   editor through the stage switch, not the creature mating call.
+* Ticket: BUG-0177.
 
 ## Editors: what is still open after the 2026-10-24 report (item 4)
 
@@ -197,6 +216,7 @@ anchor so other docs can link to it:
   causes that can show a stale creature: a creation sent without its records (the guest then shows
   its own body for the host), a rejoin applying the same version again (writing its package failed,
   nothing was applied).
+* Ticket: BUG-0178.
 
 ## Creature (guest): the social game is simplified
 
@@ -207,6 +227,7 @@ anchor so other docs can link to it:
   the ability bar instead of a key is not counted (the mod polls the keys 1-4). The host's own
   game is native. The success message 0x60B4123 (CreatureStageEventHandler) is not posted for a
   guest's win. Reproduce: `tools/tests/coop_creature_social.py`.
+* Ticket: BUG-0179.
 
 ## Creature: while the host is in the main menu the guest's planet fills up slowly
 
@@ -214,6 +235,7 @@ anchor so other docs can link to it:
   their NPCs again, `coop.npc` host_away=1), but the game respawns the removed NPCs only a few at a
   time (`local_alive` 0-1 after 30 s in `coop_exit_menu.py`). Making the mirrors local NPCs
   instead failed (a mirror with AI leaves its herd and is destroyed, docs/re/creature.md 8.3).
+* Ticket: BUG-0180.
 
 ## Space: no test save after the tutorial missions
 
@@ -224,6 +246,7 @@ anchor so other docs can link to it:
   with test commands; it is still inside the tutorial (travel to stars that are not own stars is
   refused there), and has no raids, missions or trade. A save played through the tutorial would
   still be better.
+* Ticket: BUG-0181.
 
 ## Space (GOG 2024): zooming in does not land in the first minute after a load
 
@@ -240,6 +263,7 @@ anchor so other docs can link to it:
   (a ship's height is its zoom, docs/re/space.md 7.10). That made the rescue fail on GOG 2024 (the
   3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
   zooms to the partner's height. The landing delay itself is still not understood.
+* Ticket: BUG-0182.
 
 ## Co-op window: only three games on the network are listed
 
@@ -251,6 +275,7 @@ anchor so other docs can link to it:
   queried only ports 47810-47819, lanes 1-5: lane 9's host on 47826 was never found. It queries 20
   ports now, lanes 1-10.) Players with more than three co-op hosts on their
   network see only three: more rows or a filter (same build first) would help.
+* Ticket: BUG-0183.
 
 ## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
 
@@ -262,8 +287,7 @@ anchor so other docs can link to it:
   `UTFWin::Window::SetFlag`, a game that stopped reacting): that one is gone. If it comes back, keep
   `out/lab/<run>/ui.host.game.log` and look for what the main thread did after "Co-op clicked
   during the menu intro".
-
-## Space: `coop.space jumpto` into another system arrives without planets
+* Ticket: BUG-0184.
 
 ## Space: an unvisited star's planets can still differ between the two games
 
@@ -277,8 +301,9 @@ anchor so other docs can link to it:
   before the generation, or the empire's state read by 0xC309F0). `coop_space_jump.py` prints "same" or
   "DIFFERENT planets" without failing. A sure fix: the host sends the planet records of a newly
   generated star (or the guest asks for them before entering).
+* Ticket: BUG-0185.
 
- of 20-27 m
+## Civilization: single vehicle sync outliers of 20-27 m
 
 * `play_civ.py` sessions: p90 of the vehicle position error 0.9-1.5 m, but the maximum of ~2500
   samples was 22-27 m in three sessions (one sample each). Not traced yet: candidates are a guest
@@ -287,6 +312,7 @@ anchor so other docs can link to it:
   `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 9` (it prints the outliers):
   `v13 22.7 m host (-497, 27, 66) guest (-493, 45, 79)` three samples in a row, an NPC vehicle on
   the far side of the planet; not seen on player vehicles.
+* Ticket: BUG-0186.
 
 ## Civilization: the host's capture caption stops everybody's game
 
@@ -295,12 +321,14 @@ anchor so other docs can link to it:
   cinematic: the world waits for the OK"), but a host who is away stops the game for all.
   Reproduce: capture a city (`play_civ.py`), do not press Enter on the host. Fix idea: close the
   caption on the host after a few seconds when guests are connected (EndCinematic 0xADFF20).
+* Ticket: BUG-0187.
 
 ## Civilization: the NPC AI still spawns vehicles on guests
 
 * The guest's civ AI spawns vehicles for the other nations; the next snapshot kills them
   (`civ(guest)` `removed=` grows by a few per minute). `SpawnVehicle` callers 0xBE7643 / 0xBFBCF7
   use the result without a null check, so blocking needs a hook at the AI decision instead.
+* Ticket: BUG-0188.
 
 ## Civilization: no building placement through the city planner in tests
 
@@ -308,6 +336,7 @@ anchor so other docs can link to it:
   click on a tile opens the building editor (co-op vote). The bots only open and close the planner;
   guest buildings are tested through `coop.civ build` (coop_civ.py). A fixture with designs (or a
   bot that makes one in the editor) is needed.
+* Ticket: BUG-0189.
 
 ## coop_sync.py space: the ships' p90 sits near its 10 m limit
 
@@ -318,6 +347,7 @@ anchor so other docs can link to it:
   saw one 412 m sample in 2 h). The p90 of real play is
   1.2-8.3 m (docs/stability/space.md). Since then the test compares the guest with the host's path between
   its two reads (the guest is read in between); if it still fails, look at the samples, not at the limit.
+* Ticket: BUG-0190.
 
 ## Space contracts: what is not done (space_contracts.cpp, 2026-10-23)
 
@@ -345,6 +375,7 @@ anchor so other docs can link to it:
   terraforming tools to test them with.
 * The reward tool is chosen from the host's cargo (the first one of the list it lacks); a guest who
   has it already gets only the money.
+* Ticket: BUG-0191.
 
 ## Space rivals mode: limits (space_rivalry.cpp, 2026-10-23)
 
@@ -358,6 +389,7 @@ anchor so other docs can link to it:
   back in space; the merge counts its last reported budget.
 * Spice gifts, tool gifts and the jump work between rivals as before (deliberate acts); mission
   rewards are shared between allies only; raid alerts reach everybody.
+* Ticket: BUG-0192.
 
 ## Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23)
 
@@ -368,6 +400,7 @@ anchor so other docs can link to it:
 * `coop_space_death.py` failed once in the forced-jump step: after the OK the ship stayed dead for 47 s
   and the guard "respawn caption without a planet" did not fire (0), so the respawn caption had ended
   some other way; passed in the next run and on the base branch.
+* Ticket: BUG-0193.
 
 ## Space diplomacy: what is not shared or may drift (space_diplomacy.cpp)
 
@@ -389,6 +422,7 @@ anchor so other docs can link to it:
   empire's ships, missions and trade use the same hook but are not played in the test.
 * Rivals mode (feature 10) turns sharing off; it is not tested here (the switch belongs to
   space_rivalry.cpp).
+* Ticket: BUG-0194.
 
 ## Space map: a guest's colonies last only until it rejoins
 
@@ -405,6 +439,7 @@ anchor so other docs can link to it:
 * The map is overlay text (a ring of dots, a name tag), not the game's own star marks; tags are not
   hidden behind the game's own galaxy panels (the star info card), only under the pause menu, the
   co-op window, comm screens and cinematics.
+* Ticket: BUG-0195.
 
 ## Space trade: open ends (space_trade.cpp, 2026-10-23)
 
@@ -413,12 +448,16 @@ anchor so other docs can link to it:
   budgets, an open offer declined when the host ends rivals mode) on a throwaway merge with
   feat/space-rivalry 2515362 (lane 10, GOG 2024, 2026-10-23). Without space_rivalry the test
   prints "rivals mode: UNTESTED".
+  ~ superseded (2026-10-27): space_rivalry.cpp is on main and coop_space_trade.py runs its rivals
+  part (`rivals()`), BUG-0153.
 * **The guest's UI clicks do not arrive on the new space fixture (GOG 2024, lane 10)**: after the
   join the guest's game sits in a HUD-less movie state (`coop.space hp` shows `movie=1`, Enter
   does not end it), the co-op window opens with F9 but a click on "Space >" changes nothing. The
   same state makes coop_space_page / coop_space_death / coop_space_rescue fail on lane 10, also on
   the plain feat/space-map build (not caused by space_trade). coop_space_trade.py therefore lets
   the host do every real click and presses the guest's offer row through `coop.space press`.
+  ~ superseded (2026-10-27): the movie state is fixed (docs/re/space.md 7.9, see "Space (GOG 2024):
+  zooming in" above); the test still presses the guest's row through `coop.space press`, BUG-0153.
 * **A gift or sale on its way when the own session ends comes back** (the sender cannot know
   whether the partner already got it): leaving right after "Give" can duplicate the charges.
   A partner who leaves before answering is handled (the sender gets it back).
@@ -427,9 +466,12 @@ anchor so other docs can link to it:
 * **The F9 Space page has 9 rows for every feature together** (coop_ui.cpp kSpaceRows): the trade
   rows (gift, next tool, other partner, sale, offers) come after the features registered before
   it and can fall off the page when many features show rows at once.
+  ~ superseded (2026-10-27): the page has 12 rows with paging since 0.7.0 (coop_ui.cpp
+  `kSpaceRows`), BUG-0153.
 * Spice values are the game's own (`spacetrading~` 0x34F1A4A x the difficulty multiplier, about
   5 600 to 24 000 per unit on normal), so one sale of 10 is worth 110 000 to 490 000 at 2x: big
   next to the fixture's $100 000. NPC stores pay similar money for the spices they want.
+* Ticket: BUG-0196.
 
 ## Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp)
 
@@ -452,6 +494,9 @@ anchor so other docs can link to it:
   players (untested).
 * Rivals mode (feature 10): a war between the players makes the mirror an enemy (relationship war
   bit, enemies vectors); not tested here (feat/space-rivalry not merged).
+  ~ superseded (2026-10-27): space_rivalry.cpp is on main now; whether this path is tested was not
+  re-checked, BUG-0153.
+* Ticket: BUG-0197.
 
 ## Space: the galactic core finale, open ends (space_finale.cpp)
 
@@ -468,6 +513,7 @@ anchor so other docs can link to it:
   the Grox fights there are squadron.cpp's normal NPC sync.
 * GOG 2024: the addresses are ported and checked statically (docs/re/space.md 16), the test ran on
   GOG 2016 only.
+* Ticket: BUG-0198.
 
 ## Not covered by tests yet
 
@@ -479,6 +525,7 @@ anchor so other docs can link to it:
   by real vehicles are covered). Space: raids and missions (no live mission in
   the fixture), spice trading with NPC stores (selling to a partner colony is covered by coop_space_trade.py), terraforming with the tools, buying in the city planner (the bot
   opens and closes it only).
+* Ticket: BUG-0199.
 
 ## Creature stage: a crash after dying and skipping the cutscene (player report, not reproduced)
 
@@ -491,6 +538,7 @@ anchor so other docs can link to it:
   Regression test: `tools/tests/coop_creature_death.py` (suite `creature_death`).
 * Next: the player's `mods\logs\sporekit.log` (a crash inside the mod is logged with its module and
   address; "exception ... calls:"), the game build (GOG / Steam) and Windows or Linux.
+* Ticket: BUG-0026.
 
 ## Creature: "he is my species from my view", "I don't see his changes" (player report 2026-10-25)
 
@@ -507,6 +555,7 @@ anchor so other docs can link to it:
   guest without own creations then plays the world's species again, which the host shows as its own.
 * Still so: a puppet whose player's creation cannot be used here (no records and an unknown key)
   is built from the local avatar's species, without any notice.
+* Ticket: BUG-0011.
 
 ## Creature: "Game puts me underground after I use Alt + Enter" (player report 2026-10-25, not reproduced)
 
@@ -523,6 +572,7 @@ anchor so other docs can link to it:
   how many, which result), a screenshot, whether saving and loading again (or leaving to the galaxy
   and back) fixes it, and whether it happens with SporeCoop removed. Until then: set fullscreen in
   the game's options before loading a planet instead of using Alt+Enter in game.
+* Ticket: BUG-0013.
 
 ## Creature: the host's own creations on the guest, what is still open (2026-10-25)
 
@@ -535,3 +585,179 @@ anchor so other docs can link to it:
   guest shows its own creation of the key, as before), an older guest drops kind 5.
 * Not checked: a real nest (with an archetype) of a host creation on the guest (the fixture planet
   has Maxis species only).
+* Ticket: BUG-0200.
+
+## All stages: 138 bugs from the code review of main 563f72d (2026-10-27, claude/clever-fermi-h57l81)
+<a id="issue-code-review-2026-10-27"></a>
+
+Two read-only reviews of main at 563f72d (round 1 per area, round 2 per cross-cutting concern
+with independent verification) found these bugs. None was checked in the running game yet.
+Each line is one open ticket: what happens, how to reproduce it, what is known (confidence), the
+suggested fix and the planned test are in the ticket and in its GitHub issue. The tracking issue
+WoodyWizard/SporeCoop#82 orders them by priority. When a fix lands, its line goes (the ticket
+keeps the history).
+
+**All stages (netcode, core, UI, SporeKit, updater, tools, tests, docs)**
+
+* BUG-0029 (#7, crash): guest uses freed memory when the host rejects it or leaves (REJECT / BYE)
+* BUG-0030 (#8, bug): join fails after 10 s when the host's first packet is lost (WELCOME falsely acked)
+* BUG-0033 (#11, bug): leaving, re-hosting and hot reload each clean up a different subset of the co-op state.
+* BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
+* BUG-0035 (#13, bug): a received world can move and overwrite the save slot the guest is playing (auto_load_world=0)
+* BUG-0036 (#14, tooling): a game crash after a test's checks does not fail the test in the lab.
+* BUG-0039 (#17, bug): LAN game list is never pruned, so fake discovery replies grow memory and slow the game.
+* BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
+* BUG-0043 (#21, crash): an evolution or superweapon vote still runs after its stage or session is gone.
+* BUG-0047 (#25, bug): RefPack decoder reads one byte past a 5-byte compressed record.
+* BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
+* BUG-0049 (#27, bug): money or food changed while offline is added to the next host's shared pool.
+* BUG-0050 (#28, freeze): stack dump (stack, hangdump, watchdog) can freeze the game for good.
+* BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
+* BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
+* BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
+* BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
+* BUG-0060 (#38, crash): hot reload of coop.dll can crash while the update check thread or a queued task still runs old code.
+* BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
+* BUG-0065 (#43, freeze): `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good)
+* BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
+* BUG-0069 (#47, bug): netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state)
+* BUG-0073 (#51, tooling): a lab test that FAILs and then passes on retry counts as passed.
+* BUG-0074 (#52, bug): after leaving a session, the game quits to the menu and loads the old host world once the editor closes.
+* BUG-0076 (#54, desync): a new player is shown with the creature or ship of the player who had their id before.
+* BUG-0085 (#63, bug): after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack".
+* BUG-0086 (#64, tooling): re_lint skips the confidence check for overrides entries whose name is also in a generated .sym.
+* BUG-0087 (#65, bug): a received world is written over any old co-op slot and mixed with another host's files.
+* BUG-0089 (#67, bug): a pack listing the same file twice loses the original file on rollback.
+* BUG-0093 (#71, tooling): coop.cell spawn reads outside the cell pool for a slot number that does not exist.
+* BUG-0096 (#74, test): coop.vote editor submits the editor request inside Present, a path the real game never takes.
+* BUG-0097 (#75, tooling): release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section.
+* BUG-0100 (#78, tooling): a test that prints RESULT: SKIP is counted as passed by the lab.
+* BUG-0101 (#79, tooling): spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own.
+* BUG-0102 (#80, tooling): spore.sh fixture restore with profile "-" deletes the player's own saves.
+* BUG-0103 (#81, tooling): more places that can kill the owner's own Spore on lane 1 (BUG-0025)
+* BUG-0104 (#83, bug): the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line.
+* BUG-0105 (#84, bug): a received world is loaded even when writing its files failed (disk full, locked or read-only file)
+* BUG-0106 (#85, bug): shared money can be spent twice in one round trip, and Civ/Space money goes negative.
+* BUG-0107 (#86, crash): the keepalive std::thread can abort the game at exit when Shutdown did not run.
+* BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
+* BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
+* BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
+* BUG-0113 (#92, bug): after a resolution change the co-op window stays at its old position, partly off-screen.
+* BUG-0114 (#93, bug): every game start deletes all *.old files in the game folders, also the player's own backups.
+* BUG-0115 (#94, freeze): a fault inside the exception logger or the log freezes the game for good.
+* BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
+* BUG-0122 (#101, desync): host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet.
+* BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
+* BUG-0127 (#106, bug): a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written.
+* BUG-0128 (#107, desync): the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads.
+* BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
+* BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
+* BUG-0132 (#111, crash): hooks that game worker threads run are removed without stopping those threads.
+* BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
+* BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
+* BUG-0135 (#114, test): coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC.
+* BUG-0137 (#116, bug): crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed.
+* BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
+* BUG-0140 (#119, freeze): a host that leaves a few seconds after a share save can no longer leave any stage (quit message re-posted forever)
+* BUG-0142 (#121, bug): a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled.
+* BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
+* BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
+* BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
+* BUG-0150 (#129, bug): a deferred update file is never applied if its swap fails once (the pending list is deleted anyway)
+* BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
+* BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
+* BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
+* BUG-0154 (#133, desync): ship, vehicle and tribe member ids can repeat after 65 535 allocations, and guests then mix up two objects.
+* BUG-0155 (#134, bug): at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications.
+* BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
+* BUG-0157 (#136, bug): a queued world load can run under an editor that opened after the world arrived.
+* BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
+* BUG-0159 (#138, bug): name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre.
+* BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
+* BUG-0163 (#142, crash): a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button.
+* BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
+* BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
+* BUG-0166 (#145, bug): a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s.
+
+**Cell**
+
+* BUG-0032 (#10, desync): one lost state packet makes the guest delete and recreate up to 14 of the host's cells.
+* BUG-0041 (#19, bug): after a small respawn, the next level-up makes the player's cell up to twice too big.
+* BUG-0051 (#29, desync): the guest's food total can briefly drop below a level line, so it levels down and up again.
+* BUG-0061 (#39, desync): a partner can stay shown as knocked out for good (translucent, frozen "KO" label)
+* BUG-0070 (#48, bug): the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent)
+* BUG-0078 (#56, bug): the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments)
+* BUG-0083 (#61, bug): modes::cell_at accepts one slot past the pool's used range (off by one)
+* BUG-0088 (#66, bug): the guest's local-to-host index map keeps an entry for every mirror it recreates.
+* BUG-0160 (#139, bug): small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int)
+
+**Creature**
+
+* BUG-0044 (#22, desync): a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse.
+* BUG-0055 (#33, bug): after leaving a session, the host's creations still replace a guest's own creation with the same id.
+* BUG-0066 (#44, bug): a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC.
+* BUG-0082 (#60, crash): the guest keeps creature pointers while the host is away and destroys them minutes later.
+* BUG-0091 (#69, crash): a partner's animation or leave in the frame after a world teardown can touch a freed puppet.
+* BUG-0099 (#77, bug): the joint-hunt hit table grows without bound and keys hits by reusable creature addresses.
+* BUG-0110 (#89, bug): a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good.
+* BUG-0118 (#97, crash): the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash)
+* BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
+* BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
+* BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.
+
+**Tribe**
+
+* BUG-0067 (#45, bug): chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load.
+* BUG-0081 (#59, crash): restoring a former chief's size can call into a freed citizen.
+* BUG-0121 (#100, bug): every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save.
+* BUG-0146 (#125, bug): a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30)
+
+**Tribe, Civ**
+
+* BUG-0075 (#53, bug): gifts can go to a player who is not there, and with 3+ players the Give button only reaches one player.
+
+**Civ**
+
+* BUG-0031 (#9, bug): vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them.
+* BUG-0040 (#18, crash): the city-alarm speed boost can write into freed vehicles after a leave or a load.
+* BUG-0059 (#37, crash): vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities.
+* BUG-0064 (#42, bug): a new player inherits the civilization role of the player who had their id before.
+* BUG-0079 (#57, desync): guests can see other players' civilization roles swapped after someone rejoins.
+* BUG-0117 (#96, bug): a second superweapon request changes the weapon and target of the vote already running.
+* BUG-0120 (#99, desync): an NPC city founded while a guest joins or loads never appears on that guest.
+* BUG-0161 (#140, bug): the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol.
+
+**Space**
+
+* BUG-0037 (#15, desync): one lost ship-state packet makes up to 18 of the host's ships explode and respawn on the guest.
+* BUG-0038 (#16, bug): allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire.
+* BUG-0045 (#23, bug): a guest that leaves the session keeps the host's ships, which then attack it with their own AI.
+* BUG-0046 (#24, bug): armada contract starts a second raid when the host comes back, and the old raid decides the wave.
+* BUG-0054 (#32, crash): ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash)
+* BUG-0058 (#36, bug): gifted tool charges and spice that come back while you are not in Space are lost.
+* BUG-0063 (#41, bug): flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled.
+* BUG-0071 (#49, bug): shared diplomacy sends the allies mirror empire, so a guest can be allied with an NPC it never met.
+* BUG-0072 (#50, bug): with 3 or more players the "Jump to" button fails, and the jump message names the wrong player.
+* BUG-0084 (#62, bug): a guest's own escort ships (posse) are destroyed while it is with the host.
+* BUG-0090 (#68, bug): galaxy map name tags react to mouse clicks in other windows.
+* BUG-0092 (#70, crash): star lookup by id reads past the end of the star table.
+* BUG-0095 (#73, bug): after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler.
+* BUG-0098 (#76, bug): ending the "ship disabled" state writes to the player's ship even after Space was left.
+* BUG-0111 (#90, bug): the guest sees an empire's defender ships twice, because any UfoType 6 ship counts as "our puppet".
+* BUG-0123 (#102, bug): planet seeding flags are shared by all threads, so another thread can switch the seeding off.
+* BUG-0126 (#105, bug): coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void)
+* BUG-0136 (#115, bug): a won raid on a partner's colony can count as aborted, so the owner's raid is never completed.
+* BUG-0141 (#120, bug): two players with the same name share one allies mirror, one set of rivals relations and one budget.
+* BUG-0145 (#124, bug): with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship.
+* BUG-0147 (#126, bug): from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %)
+
+**Space, Cell**
+
+* BUG-0131 (#110, bug): a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you.
+
+**Installer**
+
+* BUG-0077 (#55, bug): clicking Install before the GitHub check returns races on the release data.
+* BUG-0080 (#58, bug): install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall.
+* BUG-0094 (#72, bug): offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily.
+* BUG-0139 (#118, bug): closing the window during Install or Uninstall can leave the game half installed.

@@ -30,7 +30,7 @@ A co-op session can end in five ways: the guest times out or is rejected, the pl
 - `Session::leave` never calls `cb.disconnected`: https://github.com/WoodyWizard/SporeCoop/blob/563f72d98cce2acf2c44b859f1dfe32f9588d401/mods/coop/net/session.cpp#L77-L101 (and `host()` / `join()` call `leave("restart")` first: https://github.com/WoodyWizard/SporeCoop/blob/563f72d98cce2acf2c44b859f1dfe32f9588d401/mods/coop/net/session.cpp#L34-L49)
 
 ### How to reproduce
-1. Two instances, Space stage (or Cell): host and guest together, the guest sees the host's ships mirrored.
+1. Two instances, Space stage: host and guest together, the guest sees the host's ships mirrored.
 2. On the guest: `coop.leave`. `coop.fleet list` still shows the mirror ships; they stay in the world and fly with their own AI.
 3. Variant: on a guest, `coop host 47900` while connected. `coop.status` still lists `remote 0 'Host' ...` and, after 5 s, the feed says "cannot share the world: ..." for an id that does not exist.
 4. Variant: `mod.reload coop` in Space or Cell with a partner: the old mirrors stay untracked in the world.
@@ -39,7 +39,7 @@ A co-op session can end in five ways: the guest times out or is rejected, the pl
 Every way a session ends runs the same cleanup. Starting a new session always starts from a clean state.
 
 ## Root cause
-**What happens**
+**What happens on main 563f72d (before BUG-0028)**
 
 | module `on_session_end` | disconnected callback | `do_leave` | `on_unload` | `do_host`/`do_join` while in a session |
 |---|---|---|---|---|
@@ -53,13 +53,18 @@ Every way a session ends runs the same cleanup. Starting a new session always st
 | spacecoop | yes | yes | **no** | no |
 | despawn + clear `g_remotes` | yes | yes | yes | **no** |
 
+CORRECTION (2026-10-27, fix/cell-guest-leave): BUG-0028 adds `cellsync::on_session_end` to
+`do_leave`. Its two-instance manual check removed the guest's retained mirrors; see
+[BUG-0028](BUG-0028-cell-guest-leave-keeps-passive-mirrors.md). The other missing cleanup paths
+in the table remain open.
+
 1. `Session::leave()` only closes the socket. It never fires `cb.disconnected`, so `do_leave` and `on_unload` repeat part of the callback's list by hand, and each repeats a different part.
 2. `Session::host()` and `Session::join()` call `leave("restart")` first. Typing `coop host` / `coop join` (or using the cheat console) while a session is open therefore runs no cleanup at all. The old `g_remotes`, with their puppets and stale snapshot buffers, carry over into the new session. `follow_phase` then evaluates the stale `buf.latest()` of the old ids and calls `world::share_with(old id)` for players who no longer exist. A new player who gets a reused id inherits that `Remote` (`needs_world`, `world_sent`, `joined_phase`).
 3. Each stage module ticks only while `connected()`: `cellsync::tick`, `squadron::tick`, `tribe::active()`, `civ::active()`. So whatever its `on_session_end` would have removed stays as it is after a `do_leave`.
 4. Module state that `on_session_end` does not cover is never reset on any path: `g_vote` (separate issue), `shared`'s `have`/`synced` (separate issue), `g_roles`, `g_host_away`.
 
 Per-stage symptoms have or get their own issues:
-- Cell: the host's cells stay as AI-locked mirrors in the guest's pool after the guest's own Leave. This is in docs/known-issues.md ("a guest's own coop.leave keeps its mirrors") and is being fixed in PR WoodyWizard/SporeCoop#5 (BUG-0028). A guest that leaves while knocked out also keeps `kInvuln = 1` and the knock-out opacity, because `cellsync::tick` returns while not connected.
+- Cell: retained mirrors after the guest's own Leave are fixed by BUG-0028 in PR WoodyWizard/SporeCoop#5. Hot reload and session restart still skip Cell cleanup. A guest that leaves while knocked out also keeps `kInvuln = 1` and the knock-out opacity, because `cellsync::tick` returns while not connected.
 - Space: mirror UFOs stay as live NPC ships after Leave or hot reload, and can be saved (other reviewers open this).
 - Tribe: chiefs and per-member maps stay (other reviewers open this).
 
@@ -67,7 +72,8 @@ Per-stage symptoms have or get their own issues:
 CONFIRMED by reading the full path: the table is taken straight from the five functions above, and every module tick bails out while not connected. The exact visible effect in Tribe and Civ after a `do_leave` is not verified in game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+The Cell mirror cleanup on voluntary Leave is fixed by BUG-0028. The remaining cleanup paths
+are not fixed yet. Suggested in the review:
 
 One `end_session(const char* why)` in coop.cpp that runs every module's `on_session_end`, despawns and clears `g_remotes`, resets the lobby, the vote, `shared::on_session_change()`, `g_roles` and `g_host_away`/`g_solo_dna`. Call it from:
 - `cb.disconnected`
@@ -89,9 +95,10 @@ The test must fail on main and with `coop.fix session_end off`, and pass with th
 ### Related
 - PR WoodyWizard/SporeCoop#5 (BUG-0028, Cell part)
 - BUG-0006 (a stale cell pool at session end)
-- docs/known-issues.md "Cell: a guest's own coop.leave keeps its mirrors as passive cells"
+- [Session cleanup known issue](../known-issues.md#issue-session-cleanup-paths)
 - The issues on the stale vote, `shared` resources and reused player ids are the same pattern.
 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #11.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: BUG-0028 fixes Cell mirrors on voluntary Leave; the remaining paths stay open.

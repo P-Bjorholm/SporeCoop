@@ -12,7 +12,7 @@ fixed_in: unreleased
 branch: fix/cell-guest-leave
 commits: 2366d74, 53960f5
 tests: cell_coop
-signature: 
+signature:
 docs: docs/re/cell.md
 related: BUG-0006
 ---
