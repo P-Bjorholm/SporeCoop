@@ -22,6 +22,7 @@ Code review found that voluntary leave and mod unload do not run all the session
 called by the disconnected callback. Voluntary leave omits the Tribe, creations, Civ and squadron
 handlers; unload omits those handlers as well as Cell and Space cleanup. This is separate from the
 Cell voluntary-leave fix in BUG-0028.
+The broader cleanup problem is also tracked in [GitHub issue #11](https://github.com/WoodyWizard/SporeCoop/issues/11).
 
 ## Root cause
 The cleanup calls are repeated separately in the disconnected, voluntary-leave and unload paths.
