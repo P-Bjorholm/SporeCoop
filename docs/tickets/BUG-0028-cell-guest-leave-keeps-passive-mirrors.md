@@ -1,16 +1,16 @@
 ---
 id: BUG-0028
-title: Cell guest leaving the session keeps passive mirrors
+title: Cell guest leaving the session retains mirror cells
 status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: known issue and code review
 role: guest
-versions: 
+versions: observed 0.7.2.4
 fixed_in: unreleased
 branch: fix/cell-guest-leave
-commits: 
+commits: 2366d74, 53960f5
 tests: cell_coop
 signature: 
 docs: docs/re/cell.md
@@ -18,8 +18,8 @@ related: BUG-0006
 ---
 
 ## Report
-When the guest leaves in the Cell stage, the host's mirrored cells remain in its pool. They
-disappear when the guest leaves the stage or rejoins.
+When the guest leaves in the Cell stage, mirrors of the host's cells can remain in the guest's
+pool. Retained cells need not remain passive.
 
 ## Root cause
 The guest's `do_leave` does not call `cellsync::on_session_end`; the disconnection callback does.
@@ -29,7 +29,17 @@ Run Cell cleanup when a player leaves voluntarily. The cleanup removes mirrors o
 Cell pool is valid, then forgets them.
 
 ## Verification
-`cell_coop` checks the local pool indices before and after the guest leaves.
+Manual test: two Steam Galactic Adventures processes on Windows, SporeCoop 0.7.2.4. With a
+baseline DLL using the same code and diagnostics except for the `cellsync::on_session_end` call
+removed from `do_leave`, 339 of 341 sampled guest mirror generation indices remained after
+`coop.leave`. After hot-reloading the fixed DLL on the guest and rejoining the same baseline host,
+0 of 341 remained after leave; the guest was offline, advanced from frame 4021 to 4081 in two
+seconds, and reported `exc total faults: 0`. Four retained baseline creatures had AI lock 0 and
+nonzero velocity several seconds after leave.
+
+The updated `cell_coop` automation checks sampled local pool indices before and after guest leave;
+that updated automated check has not been run as part of this review. The manual test is not a
+Linux lab run.
 
 ## History
 - 2026-10-27: recorded from the known issue.

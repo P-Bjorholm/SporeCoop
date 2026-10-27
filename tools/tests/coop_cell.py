@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cell co-op ("Symbiosis") on two instances: one tide pool simulated by the host, guest mirrors,
 guest bites applied by the host, shared food progress, knockout: revive by the partner or a small respawn next to it, regen."""
+import os
 import re
 import time
 
@@ -164,23 +165,44 @@ def main():
 
     # Guest leave removes the host's mirrors from the game pool, not just the mod's list.
     # The local indices include a generation, so a new cell in the same slot is not the old mirror.
-    indices = []
-    for _ in range(30):
-        out = guest.call('coop.pool mirrors')['out']
-        indices = re.findall(r'^mirror_local (\d+)$', out, re.MULTILINE)
-        if indices:
-            break
-        time.sleep(1)
-    indices = indices[::max(1, len(indices) // 10)][:10]
-    ck(indices, f'guest has live mirror cells before leaving ({len(indices)} sampled)')
-    leave = guest.call('coop.leave')
-    ck(leave['ok'] and guest.call('coop.status')['out'].startswith('offline'), 'guest left the session')
-    survivors = []
-    for idx in indices:
-        cell = guest.call(f'coop.pool cell {idx}')
-        if not cell['ok'] or 'no such cell' not in cell['out']:
-            survivors.append((idx, cell['out'].strip()))
-    ck(indices and not survivors, f'the sampled mirror cells left the game pool (remaining: {survivors})')
+    leave_fix = os.environ.get('SPORE_CELL_LEAVE_FIX', '1')
+    if leave_fix not in ('0', '1'):
+        raise ValueError('SPORE_CELL_LEAVE_FIX must be 0 or 1')
+    try:
+        switch = guest.call(f'coop.pool leavefix {leave_fix}')
+        ck(switch['ok'] and switch['out'].strip() == ('leave fix on' if leave_fix == '1' else 'leave fix off'),
+           f'voluntary leave fix set to {leave_fix}')
+        own_before = guest.call('coop.pool own')
+        own = re.search(r'^avatar=(\d+) mate=(\d+) mate_alive=([01])$', own_before['out'].strip())
+        ck(own_before['ok'] and own is not None and int(own.group(1)) != 0, 'guest avatar exists before leave')
+        indices = []
+        for _ in range(30):
+            out = guest.call('coop.pool mirrors')['out']
+            indices = re.findall(r'^mirror_local (\d+)$', out, re.MULTILINE)
+            if indices:
+                break
+            time.sleep(1)
+        indices = indices[::max(1, len(indices) // 10)][:10]
+        ck(indices, f'guest has live mirror cells before leaving ({len(indices)} sampled)')
+        leave = guest.call('coop.leave')
+        ck(leave['ok'] and guest.call('coop.status')['out'].startswith('offline'), 'guest left the session')
+        survivors = []
+        for idx in indices:
+            cell = guest.call(f'coop.pool cell {idx}')
+            if not cell['ok'] or 'no such cell' not in cell['out']:
+                survivors.append((idx, cell['out'].strip()))
+        ck(indices and not survivors, f'the sampled mirror cells left the game pool (remaining: {survivors})')
+        own_after = guest.call('coop.pool own')
+        after = re.search(r'^avatar=(\d+) mate=(\d+) mate_alive=([01])$', own_after['out'].strip())
+        ck(own is not None and own_after['ok'] and after is not None and after.group(1) == own.group(1),
+           'the guest avatar remains in the pool after leave')
+        if own and own.group(3) == '1':
+            ck(after is not None and after.group(2) == own.group(2) and after.group(3) == '1',
+               'the guest mate remains in the pool after leave')
+        else:
+            print('  no guest mate in the pool to check at leave')
+    finally:
+        guest.call('coop.pool leavefix 1')  # restore the default for warm runs
     frames = guest.call('wait.frames 30 10000')
     ck(frames['ok'], f'the guest continues drawing after leave ({frames["out"].strip()})')
     ck.faults(host=host, guest=guest)

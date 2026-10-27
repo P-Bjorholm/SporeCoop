@@ -123,6 +123,9 @@ static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_
 // coop.pool mirrorfix 0|1 (tests): 0 = the guest of 0.7.2 (mirrors not turned, chunk and lethal bites not
 // sent to the host), to show what the fixes change in the same session
 static bool g_mirror_fixes = true;
+static bool g_leave_fix = true; // coop.pool leavefix 0|1: reproduce voluntary leave before BUG-0028
+
+bool voluntary_leave_cleanup_enabled() { return g_leave_fix; }
 static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bitten_sent, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent;
 
 // ---------------- both: symbiosis ----------------
@@ -1584,6 +1587,18 @@ std::string debug(const std::vector<std::string>& a)
     uint8_t* av = in_cell() ? avatar() : nullptr; // G() outlives the stage, its pool does not
     if (!av)
         return "not in the cell stage";
+    if (a.size() >= 2 && a[0] == "leavefix") {
+        if (a[1] != "0" && a[1] != "1")
+            return "usage: coop.pool leavefix 0|1";
+        g_leave_fix = a[1] == "1";
+        return g_leave_fix ? "leave fix on" : "leave fix off";
+    }
+    if (!a.empty() && a[0] == "own") {
+        char b[100];
+        snprintf(b, sizeof b, "avatar=%u mate=%u mate_alive=%d", avatar_idx(), mate_idx(),
+                 modes::cell_at(mate_idx()) ? 1 : 0);
+        return b;
+    }
     if (!a.empty() && a[0] == "why") { // which game code destroyed mirrors on this guest
         std::string o;
         char b[64];

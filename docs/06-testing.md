@@ -153,6 +153,7 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
 | Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
+| Cell co-op | shared pool, knockouts and voluntary leave; sampled mirror cells disappear while the guest's avatar remains in the pool | `python3 tools/lab.py run cell_coop --retry 0` |
 | Space trade | a tool gift by a real click on the F9 Space page (Antimatter Bomb: 5 of 12 charges, a new tool for the guest), no room (the guest at 97/99 keeps 2, 3 come back), a spice sale to the guest's home colony from the roster (both games' shared money +10 x price, the spice moves from the host's cargo to the guest's), faults; rivals mode reported as untested without space_rivalry; about 1 min after the 45 s cold start | `coop_space_trade.py` |
 | Creature desync | the players' order of 2026-10-25 from the `creature` fixture, the guest without own creations: the host's pack gets a companion of a species only the host has (`coop.npc spawn 29020CC4` + `coop.npc recruit <id>`), both evolve through the vote (real "I'm ready", a body drag, "done"), both games are killed, the host loads its save, the guest joins again; after the editors and after the reload: the guest builds the companion, mirrors no NPC the host does not have, sees the host's kill, the host shows the guest's edited creature (fails on 0.7.2.2: companion "pending" (unknown species), 22 living copies after the editors) | `coop_creature_desync.py` (~2.5 min, cold start) |
 | Nest species | the guest's My Creations get its Kirgle also under the key of the host's TigerHorse (290229B9; the guest restarted with that package), the host spawns an NPC of it (`coop.npc spawn`), sets its species record (`coop.social record`), saves and sends the world again: the guest builds the NPC from the host's records (`coop.creations bem <key>` on both, before and after the world went again), the host's record reaches the guest under the NPC's key and the host's (fails on 0.7.2.3: the guest's own body) | `coop_nest_species.py` (~4 min, cold start) |
@@ -161,6 +162,11 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Bad network | the guest leaves and joins again (even rounds lose the goodbye), timings of handshake, world transfer and reload | `SPORE_NET=awful python3 tools/tests/coop_rejoin_net.py --rounds 4` |
 | Rejoins and loads | the guest leaves and joins again many times, the host world is loaded again through the galaxy menu, both fault logs (`exc`) checked after every round; `--reshare a:b` sends the world again during the load, `--race a:b` rejoins at random moments, `--menu a:b [--clicks]` joins from the galaxy menu, `--local-load a:b --cold` loads a save right after the menu came up in fresh games (the planet-texture fault of docs/re/space.md 8.3: 4 of 17 such loads faulted before the fix); `--stop` ends at the first fault | `python3 tools/tests/coop_rejoin_loop.py --rounds 30 [--reshare 0:2.5]` |
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
+
+`cell_coop` enables the voluntary-leave fix by default. Run with `SPORE_CELL_LEAVE_FIX=0`
+to reproduce the old behavior using the same test; the mirror-removal check should fail. The
+test restores the default afterward. Run `cell_meat` and `cell_spin` too when checking warm
+resets after this test, since they start by leaving the previous session.
 
 ## 6.5 Startup speed
 

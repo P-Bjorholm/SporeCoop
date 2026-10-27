@@ -547,12 +547,19 @@ readable, `+0x1C+0x14` still says 0x398 and `+0x1C+0x10` the old high-water mark
 * A guest's own `coop.leave` does not run cellsync's on_session_end (only the disconnected
   callback does), so its mirrors stay passive cells in its pool until it leaves the stage or rejoins
   (not changed: a rejoin reuses them).
-  ~ superseded (2026-10-27): own leave now runs the same cleanup. Four retained creatures observed
-  after leave had `+0x16C=0` and nonzero velocity, so retained mirrors do not always stay passive.
+  ~ superseded (2026-10-27): see the correction below.
+
+CORRECTION (2026-10-27, fix/cell-guest-leave): Voluntary leave now calls Cell
+cleanup while the pool is valid. A manual test used two Steam Galactic Adventures processes on
+Windows with SporeCoop 0.7.2.4: four retained baseline creatures had `+0x16C=0` and nonzero
+velocity several seconds after leave. Their indices included generations. Retained mirrors do not
+always stay passive; this observation does not establish who cleared the lock. See [BUG-0028](../tickets/BUG-0028-cell-guest-leave-keeps-passive-mirrors.md)
+for verification and its limits.
 
 ## Open questions
 - Who clears `+0x16C`/`+0x178…` locks (none found statically) - confirm at runtime that a live NPC
-  with `+0x16C=1` stays passive and nothing resets it.
+  with `+0x16C=1` stays passive and nothing resets it. The retained-cell observation in the
+  correction above shows unlocked, moving cells after leave, but does not identify the writer.
 - `DamageCell` arg3 (float*, negated "dir") and arg5 meaning; damage type numbers beyond 3 (periodic
   poison/electric), 4 (bite), 5 (0xE7B280), 6 (eat chunk).
 - Effects of `+0x110` beyond kill credit; meaning of `G+0x5169`, state `G+0x5158`.
