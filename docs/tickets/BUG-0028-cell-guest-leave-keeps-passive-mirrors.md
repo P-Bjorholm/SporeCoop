@@ -1,19 +1,19 @@
 ---
 id: BUG-0028
 title: Cell guest leaving the session keeps passive mirrors
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: known issue and code review
 role: guest
 versions: 
-fixed_in: 
-branch: 
+fixed_in: unreleased
+branch: fix/cell-guest-leave
 commits: 
 tests: cell_coop
 signature: 
-docs: docs/known-issues.md
+docs: docs/re/cell.md
 related: BUG-0006
 ---
 
@@ -33,3 +33,4 @@ Cell pool is valid, then forgets them.
 
 ## History
 - 2026-10-27: recorded from the known issue.
+- 2026-10-27: fixed on fix/cell-guest-leave, not released yet.
