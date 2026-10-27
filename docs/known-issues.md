@@ -20,9 +20,9 @@ anchor so other docs can link to it:
 ## Session: cleanup differs between leave, disconnection and unload (2026-10-27, code review)
 <a id="issue-session-cleanup-paths"></a>
 
-* BUG-0029: voluntary leave and mod unload skip some cleanup handlers called on disconnection.
-  The player-visible effects have not been reproduced. Compare the handlers in `coop.cpp` and
-  check their object lifetimes and stage safety before changing the cleanup paths.
+* [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): voluntary leave
+  and mod unload skip some cleanup handlers called on disconnection. These remaining paths are
+  outside the Cell fix; check their object lifetimes and stage safety before changing them.
 
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 
