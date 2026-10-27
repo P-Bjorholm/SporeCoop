@@ -160,7 +160,7 @@ def main():
     ap.add_argument('--radius', type=float, default=8.0)
     ap.add_argument('--period', type=float, default=12.0)
     ap.add_argument('--seconds', type=float, default=60.0)
-    ap.add_argument('--build', default='922af7c7', help='first 8 hex digits of the host game build ID')
+    ap.add_argument('--build', default='dc04aee5', help='first 8 hex digits of the host game build ID')
     ap.add_argument('--protocol', type=int, choices=(6, 7), default=PROTO, help='host protocol version (default: 7)')
     ap.add_argument('--say', default='hello from fakepeer')
     a = ap.parse_args()

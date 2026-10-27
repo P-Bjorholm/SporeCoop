@@ -18,8 +18,11 @@ u16  seq     packet number (for ack)
 u16  ack     last received seq
 u128 ackbits bitmask of the previous 128 (2 x u64, protocol 5)
 u8   count   number of messages
-[messages: u8 type, u8 channel, u16 len, payload]
+[messages: u8 type, u8 channel, u16 len, u16 rel_id (reliable only), payload]
 ```
+
+Protocol 7 added the Space extensions. A packet with another header protocol is dropped before
+the handshake; `REJ_VERSION` applies to a mismatched protocol inside an otherwise valid `HELLO`.
 
 Reliability uses a "seq/ack/ackbits" scheme: each reliable message remembers which
 packets it was sent in, and is resent until a packet is acknowledged (RTO ≈ 1.5·RTT, min. 100 ms).
@@ -49,8 +52,8 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 
 | Type | Channel | Contents |
 |---|---|---|
-| `HELLO` | R | mod version, exe build-id, nickname |
-| `WELCOME` | R | player id, world id (save hash), host tick, player list |
+| `HELLO` | R | protocol version, exe build-id, nickname |
+| `WELCOME` | R | player id, world id (save hash), player list |
 | `REJECT` | R | reason (version, no free slots, different exe) |
 | `PLAYER_JOIN/LEAVE` | R | id, nickname, appearance |
 | `PLAYER_STATE` | U | id, tick, position (3×f32), orientation, velocity, movement flags, health, species, **mode** and **place** (protocol v2: a puppet is visible only in the same mode and place) |

@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/fakepeer-protocol
-commits: 
+commits: ec57d4b, 5f6f12f, 70fa46d
 tests: fakepeer_check
 signature: 
 docs: docs/06-testing.md
@@ -21,14 +21,16 @@ related:
 Connection::looks_valid drops packets of another protocol version, so fakepeer is silently broken.
 
 ## Root cause
-A hard-coded PROTO = 6.
+A hard-coded PROTO = 6. A run ending without WELCOME still printed `done` and returned success.
 
 ## Fix
 Default to protocol 7, retain protocol 6 through `--protocol 6`, and test interoperability against
-the C++ session. Check the wire format before adding a future protocol version.
+the C++ session. The planned automatic version lookup was replaced with explicit supported
+versions and a test against `kProtoVersion`; check the wire format before adding a future version.
 
 ## Verification
-`fakepeer_check.py` exercises the handshake, player state, chat, leave and build mismatch.
+`fakepeer_check.py` exercises the handshake, player state, chat, leave, build mismatch and a host
+that never replies. Its silent-host check must fail if the no-WELCOME error path is removed.
 
 ## History
 - 2026-10-25: reported (code review (tools comparison)).

@@ -149,7 +149,7 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 
 | Level | What | How |
 |---|---|---|
-| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation | `make test` |
+| Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation, fakepeer interoperability | `make test` (`fakepeer_check.py` adds about 5 s) |
 | In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
 | Protocol | host in the game + a fake Python guest (GOG 2024 build) | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle --build dc04aee5` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
@@ -162,8 +162,8 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Rejoins and loads | the guest leaves and joins again many times, the host world is loaded again through the galaxy menu, both fault logs (`exc`) checked after every round; `--reshare a:b` sends the world again during the load, `--race a:b` rejoins at random moments, `--menu a:b [--clicks]` joins from the galaxy menu, `--local-load a:b --cold` loads a save right after the menu came up in fresh games (the planet-texture fault of docs/re/space.md 8.3: 4 of 17 such loads faulted before the fix); `--stop` ends at the first fault | `python3 tools/tests/coop_rejoin_loop.py --rounds 30 [--reshare 0:2.5]` |
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
-`fakepeer.py` defaults to protocol 7 and the GOG 2016 build fingerprint (`922af7c7`). Use
-`--build dc04aee5` for a GOG 2024 host, and `--protocol 6` for a protocol 6 host. The protocol
+`fakepeer.py` defaults to protocol 7 and the GOG 2024 build fingerprint (`dc04aee5`). Use
+`--build 922af7c7` for a GOG 2016 host, and `--protocol 6` for a protocol 6 host. The protocol
 and build must each match the host. When the protocol changes, check the message formats before
 updating the tool.
 It returns an error if no welcome arrives before the run ends. A real host may save and send its
