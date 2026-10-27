@@ -5,7 +5,7 @@ Joins a host (a game running `coop.host`), then walks around the host's avatar s
 the host sees a remote player's puppet without a second copy of the game.
 
 usage: fakepeer.py [host[:port]] [--name Bot] [--mode circle|follow|static]
-                   [--radius 8] [--period 12] [--seconds 60] [--build HEX]
+                   [--radius 8] [--period 12] [--seconds 60] [--build HEX] [--protocol 6|7]
 Mirrors mods/coop/net (protocol.h, connection.cpp). Run with python3 -I.
 """
 import argparse
@@ -17,8 +17,7 @@ import sys
 import time
 
 MAGIC = 0x4F435053
-# This implementation supports protocol 7. Do not silently adopt a newer version:
-# its wire format may have changed. The interoperability test detects version drift.
+# Default to the current protocol. Check the wire format before adding versions.
 PROTO = 7
 HEADER = '<IHIHHQQB'  # magic, proto, conn, seq, ack, ackbits (2 x u64), count
 HEADER_SIZE = struct.calcsize(HEADER)
@@ -33,8 +32,9 @@ def seq_greater(a, b):
 class Conn:
     """Minimal port of net::Connection (seq/ack/ackbits + reliable ordered)."""
 
-    def __init__(self, sock, addr):
+    def __init__(self, sock, addr, protocol=None):
         self.sock, self.addr = sock, addr
+        self.protocol = PROTO if protocol is None else protocol
         self.conn = int.from_bytes(os.urandom(4), 'little') or 1  # a new id for every join
         self.local_seq = 0
         self.remote_seq = 0
@@ -76,7 +76,7 @@ class Conn:
             ids.append(m[0])
             count += 1
         bits = self.recv_bits if self.have_remote else 0
-        hdr = struct.pack(HEADER, MAGIC, PROTO, self.conn, seq, self.remote_seq, bits & (2**64 - 1), bits >> 64, count)
+        hdr = struct.pack(HEADER, MAGIC, self.protocol, self.conn, seq, self.remote_seq, bits & (2**64 - 1), bits >> 64, count)
         self.sent[seq] = ids
         if len(self.sent) > 256:
             self.sent.pop(next(iter(self.sent)))
@@ -92,7 +92,7 @@ class Conn:
         if len(data) < HEADER_SIZE:
             return
         magic, proto, conn, seq, ack, lo, hi, count = struct.unpack_from(HEADER, data)
-        if magic != MAGIC or proto != PROTO or conn != self.conn:
+        if magic != MAGIC or proto != self.protocol or conn != self.conn:
             return
         ackbits = lo | hi << 64
         self.last_recv = time.time()
@@ -160,7 +160,8 @@ def main():
     ap.add_argument('--radius', type=float, default=8.0)
     ap.add_argument('--period', type=float, default=12.0)
     ap.add_argument('--seconds', type=float, default=60.0)
-    ap.add_argument('--build', default='dc04aee5', help='first 8 hex digits of the host game build ID')
+    ap.add_argument('--build', default='922af7c7', help='first 8 hex digits of the host game build ID')
+    ap.add_argument('--protocol', type=int, choices=(6, 7), default=PROTO, help='host protocol version (default: 7)')
     ap.add_argument('--say', default='hello from fakepeer')
     a = ap.parse_args()
     h, _, port = a.host.partition(':')
@@ -168,9 +169,9 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(('0.0.0.0', 0))
     sock.setblocking(False)
-    c = Conn(sock, addr)
+    c = Conn(sock, addr, a.protocol)
     name = a.name.encode()[:255]
-    c.send_reliable(HELLO, struct.pack('<HIB', PROTO, int(a.build, 16), len(name)) + name)
+    c.send_reliable(HELLO, struct.pack('<HIB', c.protocol, int(a.build, 16), len(name)) + name)
     st = {'my_id': None, 'host': None, 'said': False}
 
     def deliver(typ, p):

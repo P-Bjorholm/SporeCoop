@@ -721,11 +721,11 @@ static void test_updater()
 }
 
 // A Session host for the fakepeer interoperability test (no game required).
-static int fakepeer_host(uint32_t build)
+static int fakepeer_host()
 {
     if (!net_init()) return 1;
     Session host;
-    host.build = build;
+    host.build = 0xdc04aee5;
     host.world = 0x12345678;
     std::string err;
     if (!host.host(0, "Host", err)) {
@@ -765,9 +765,7 @@ static int fakepeer_host(uint32_t build)
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
-        return fakepeer_host(0xdc04aee5);
-    if (argc == 2 && std::string(argv[1]) == "--fakepeer-host-gog2016")
-        return fakepeer_host(0x922af7c7);
+        return fakepeer_host();
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();

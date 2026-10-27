@@ -151,7 +151,7 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 |---|---|---|
 | Unit (Linux) | serialization, reliable delivery under 30% loss, localhost session, rejoin through a relay with the goodbye lost, a world-sized transfer over a netem-like awful link, interpolation | `make test` |
 | In-game loopback | a puppet mirrors your own avatar | `sporectl coop.echo on 6 0.3` |
-| Protocol | host in the game + a fake Python guest | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle` |
+| Protocol | host in the game + a fake Python guest (GOG 2024 build) | `python3 -I tools/fakepeer.py 127.0.0.1:47810 --mode circle --build dc04aee5` |
 | Integration | two game instances on one machine, host/join, world transfer | `python3 tools/tests/coop_two_instances.py` |
 | Space trade | a tool gift by a real click on the F9 Space page (Antimatter Bomb: 5 of 12 charges, a new tool for the guest), no room (the guest at 97/99 keeps 2, 3 come back), a spice sale to the guest's home colony from the roster (both games' shared money +10 x price, the spice moves from the host's cargo to the guest's), faults; rivals mode reported as untested without space_rivalry; about 1 min after the 45 s cold start | `coop_space_trade.py` |
 | Creature desync | the players' order of 2026-10-25 from the `creature` fixture, the guest without own creations: the host's pack gets a companion of a species only the host has (`coop.npc spawn 29020CC4` + `coop.npc recruit <id>`), both evolve through the vote (real "I'm ready", a body drag, "done"), both games are killed, the host loads its save, the guest joins again; after the editors and after the reload: the guest builds the companion, mirrors no NPC the host does not have, sees the host's kill, the host shows the guest's edited creature (fails on 0.7.2.2: companion "pending" (unknown species), 22 living copies after the editors) | `coop_creature_desync.py` (~2.5 min, cold start) |
@@ -162,9 +162,10 @@ reset (seen 2026-10-24: 4-6 after coop_cell.py's knockouts and two warm rejoins,
 | Rejoins and loads | the guest leaves and joins again many times, the host world is loaded again through the galaxy menu, both fault logs (`exc`) checked after every round; `--reshare a:b` sends the world again during the load, `--race a:b` rejoins at random moments, `--menu a:b [--clicks]` joins from the galaxy menu, `--local-load a:b --cold` loads a save right after the menu came up in fresh games (the planet-texture fault of docs/re/space.md 8.3: 4 of 17 such loads faulted before the fix); `--stop` ends at the first fault | `python3 tools/tests/coop_rejoin_loop.py --rounds 30 [--reshare 0:2.5]` |
 | Manual | real game over the network | two PCs / VPN, package from `tools/package.sh` |
 
-`fakepeer.py` defaults to the GOG 2024 build fingerprint (`dc04aee5`); use `--build 922af7c7`
-for a GOG 2016 host using protocol 7. It implements protocol 7 explicitly and cannot connect to a
-protocol 6 host. When the protocol changes, check the message formats before updating the tool.
+`fakepeer.py` defaults to protocol 7 and the GOG 2016 build fingerprint (`922af7c7`). Use
+`--build dc04aee5` for a GOG 2024 host, and `--protocol 6` for a protocol 6 host. The protocol
+and build must each match the host. When the protocol changes, check the message formats before
+updating the tool.
 It returns an error if no welcome arrives before the run ends. A real host may save and send its
 world on join; fakepeer does not load the world or implement the stage-specific messages. Its
 movement uses a sphere and is not suitable for testing the Cell stage's two-dimensional pool.

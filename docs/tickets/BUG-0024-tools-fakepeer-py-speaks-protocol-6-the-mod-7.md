@@ -24,8 +24,8 @@ Connection::looks_valid drops packets of another protocol version, so fakepeer i
 A hard-coded PROTO = 6.
 
 ## Fix
-Support protocol 7 and test interoperability against the C++ session. The version remains explicit
-so that a future protocol change requires the wire format to be checked.
+Default to protocol 7, retain protocol 6 through `--protocol 6`, and test interoperability against
+the C++ session. Check the wire format before adding a future protocol version.
 
 ## Verification
 `fakepeer_check.py` exercises the handshake, player state, chat, leave and build mismatch.
