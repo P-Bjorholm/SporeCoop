@@ -1,19 +1,19 @@
 ---
 id: BUG-0153
 title: known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#132
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: claude/clever-fermi-h57l81
 commits:
-tests:
+tests: make test (docs_lint, tickets.py check)
 signature:
-docs:
+docs: docs/known-issues.md
 related: #132
 ---
 
@@ -60,7 +60,7 @@ Open the file at the lines above. Run `grep -c "BUG-" docs/known-issues.md`.
 Confirmed by reading. A second reviewer verified the damaged entries, the stale "fixed" entry and the missing ticket ids. The three stale statements were re-checked against main for this issue.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed 2026-10-27 (claude/clever-fermi-h57l81): the empty `coop.space jumpto` heading (fixed in 0.7.0) is removed, the lost heading is restored as "Civilization: single vehicle sync outliers of 20-27 m" (docs/stability/civ.md), the coop_sync entry is narrowed to its open leftovers, the stale statements are marked `~ superseded (2026-10-27)` instead of deleted, and every entry carries its ticket id (`* Ticket: BUG-NNNN`, 34 tickets backfilled: BUG-0167 to BUG-0200). The review suggested:
 
 - Remove the empty jumpto heading (or give it a "fixed in 0.7.0" note), restore the Civilization heading with an anchor, and drop or move the coop_sync entry.
 - Update the three statements.
@@ -68,7 +68,7 @@ Not fixed yet. Suggested in the review:
 - Have `tools/docs_lint.py` flag an `## ` heading followed directly by another heading, a body line starting with a lowercase fragment after a blank line at the top of an entry, and an entry without `BUG-NNNN`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`make test` (docs_lint, tickets.py check) passes; `grep -c "^\* Ticket: BUG-" docs/known-issues.md` is 40 entries + the template. Planned in the review:
 
 `make test` (docs_lint) fails on the current file and passes after the cleanup.
 
@@ -78,3 +78,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #132.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on claude/clever-fermi-h57l81 (ticket ids in every entry, merge damage repaired, stale statements marked superseded).

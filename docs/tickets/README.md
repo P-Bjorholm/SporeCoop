@@ -162,7 +162,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | open | bug | All | 2026-10-27 |  | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |
 | [BUG-0151](BUG-0151-while-the-host-is-in-the-menu-an-editor-or-a-loa.md) | open | bug | All | 2026-10-27 |  | while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost |
 | [BUG-0152](BUG-0152-most-3-4-player-gameplay-paths-have-no-test-and.md) | open | test | All | 2026-10-27 |  | most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite |
-| [BUG-0153](BUG-0153-known-issues-md-has-a-merge-damaged-entry-stale.md) | open | bug | All | 2026-10-27 |  | known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids |
+| [BUG-0153](BUG-0153-known-issues-md-has-a-merge-damaged-entry-stale.md) | fixed | bug | All | 2026-10-27 | unreleased | known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids |
 | [BUG-0154](BUG-0154-ship-vehicle-and-tribe-member-ids-can-repeat-aft.md) | open | desync | All | 2026-10-27 |  | ship, vehicle and tribe member ids can repeat after 65 535 allocations, and guests then mix up two objects |
 | [BUG-0155](BUG-0155-at-1280x720-and-1366x768-the-co-op-status-text-i.md) | open | bug | All | 2026-10-27 |  | at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications |
 | [BUG-0156](BUG-0156-test-profiles-redirect-only-appdata-so-tests-on.md) | open | test | All | 2026-10-27 |  | test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations) |
@@ -176,3 +176,37 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | open | bug | All | 2026-10-27 |  | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | open | bug | All | 2026-10-27 |  | INSTALL check line, README latest version and stability-report lane count are out of date |
 | [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | open | bug | All | 2026-10-27 |  | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
+| [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | open | crash | Tribe | 2026-10-23 |  | Guest: fault in the tribe setup with a null simulator object (seen once) |
+| [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
+| [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | open | desync | Creature | 2026-10-23 |  | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
+| [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | open | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
+| [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | open | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
+| [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | open | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
+| [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | open | desync | Tribe | 2026-10-23 |  | Tribe: knocked-out members stand on the guest |
+| [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
+| [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
+| [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | open | test | Civ | 2026-10-23 |  | coop_civ_play: the guest's "I'm ready" click was lost twice |
+| [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
+| [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | open | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
+| [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | open | feature | Creature | 2026-10-23 |  | Creature (guest): the social game is simplified |
+| [BUG-0180](BUG-0180-creature-while-the-host-is-in-the-main-menu-the.md) | open | bug | Creature | 2026-10-27 |  | Creature: while the host is in the main menu the guest's planet fills up slowly |
+| [BUG-0181](BUG-0181-space-no-test-save-after-the-tutorial-missions.md) | open | test | Space | 2026-10-27 |  | Space: no test save after the tutorial missions |
+| [BUG-0182](BUG-0182-space-gog-2024-zooming-in-does-not-land-in-the-f.md) | open | bug | Space | 2026-10-27 |  | Space (GOG 2024): zooming in does not land in the first minute after a load |
+| [BUG-0183](BUG-0183-co-op-window-only-three-games-on-the-network-are.md) | open | bug | Menu | 2026-10-24 |  | Co-op window: only three games on the network are listed |
+| [BUG-0184](BUG-0184-galaxy-menu-a-host-that-stopped-answering-right.md) | open | freeze | Menu | 2026-10-24 |  | Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once) |
+| [BUG-0185](BUG-0185-space-an-unvisited-star-s-planets-can-still-diff.md) | open | desync | Space | 2026-10-23 |  | Space: an unvisited star's planets can still differ between the two games |
+| [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | open | desync | Civ | 2026-10-27 |  | Civilization: single vehicle sync outliers of 20-27 m |
+| [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | open | bug | Civ | 2026-10-27 |  | Civilization: the host's capture caption stops everybody's game |
+| [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | open | desync | Civ | 2026-10-27 |  | Civilization: the NPC AI still spawns vehicles on guests |
+| [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
+| [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | open | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
+| [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |
+| [BUG-0192](BUG-0192-space-rivals-mode-limits-space-rivalry-cpp-2026.md) | open | feature | Space | 2026-10-23 |  | Space rivals mode: limits (space_rivalry.cpp, 2026-10-23) |
+| [BUG-0193](BUG-0193-space-tests-on-the-new-space-fixture-madas-two-f.md) | open | test | Space | 2026-10-23 |  | Space tests on the new `space` fixture (Madas): two flaky runs seen (lane 6, 2026-10-23) |
+| [BUG-0194](BUG-0194-space-diplomacy-what-is-not-shared-or-may-drift.md) | open | feature | Space | 2026-10-27 |  | Space diplomacy: what is not shared or may drift (space_diplomacy.cpp) |
+| [BUG-0195](BUG-0195-space-map-a-guest-s-colonies-last-only-until-it.md) | open | feature | Space | 2026-10-27 |  | Space map: a guest's colonies last only until it rejoins |
+| [BUG-0196](BUG-0196-space-trade-open-ends-space-trade-cpp-2026-10-23.md) | open | feature | Space | 2026-10-23 |  | Space trade: open ends (space_trade.cpp, 2026-10-23) |
+| [BUG-0197](BUG-0197-space-allies-what-the-mirror-of-a-partner-s-colo.md) | open | feature | Space | 2026-10-27 |  | Space allies: what the mirror of a partner's colonies does not do (space_allies.cpp) |
+| [BUG-0198](BUG-0198-space-the-galactic-core-finale-open-ends-space-f.md) | open | feature | Space | 2026-10-27 |  | Space: the galactic core finale, open ends (space_finale.cpp) |
+| [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | open | test | All | 2026-10-23 |  | Not covered by tests yet |
+| [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | open | bug | Creature | 2026-10-25 |  | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
