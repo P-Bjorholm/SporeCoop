@@ -35,6 +35,7 @@ add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
 add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell')  # creatures face as on the host on the guest; guest bites kill
 add('cell_leave', P + 'coop_cell_leave.py', minutes=4)  # Cell -> Creature with mirrors on the guest, then the session ends
+add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game
 add('vote', P + 'coop_vote.py', minutes=5)

@@ -1483,6 +1483,29 @@ void on_remote_anim(const net::AnimEvent& ev)
     g_anims_played++;
 }
 
+// Every way a session ends runs the same cleanup (BUG-0033): the host or the network ending it
+// (cb.disconnected), the player's Leave (do_leave), a new host/join while a session is open
+// (Session::host/join only close the socket) and the mod unload. Before, each path cleaned its own
+// subset of the stage modules: after a Leave the Space mirror ships flew on with their own AI, the
+// tribe and civ tables and the creations of the others stayed, and a new session inherited the old
+// remotes. `coop.sessionfix 0` restores the old per-path lists (tests).
+bool g_session_end_fix = true;
+void end_session_modules(bool cell)
+{
+    npc::on_session_end();
+    social::on_session_end();
+    tribe::on_session_end();
+    if (cell)
+        cellsync::on_session_end();
+    creations::on_session_end();
+    civ::on_session_end();
+    squadron::on_session_end();
+    spacecoop::on_session_end();
+    for (auto& [id, r] : g_remotes)
+        despawn(r);
+    g_remotes.clear();
+}
+
 void setup_callbacks()
 {
     g_sess.build = build_id();
@@ -1493,17 +1516,7 @@ void setup_callbacks()
         chat_log("* disconnected: " + why);
         g_ready.clear();
         g_lobby_rtt.clear();
-        npc::on_session_end();
-        social::on_session_end();
-        tribe::on_session_end();
-        cellsync::on_session_end();
-        creations::on_session_end();
-        civ::on_session_end();
-        squadron::on_session_end();
-        spacecoop::on_session_end();
-        for (auto& [id, r] : g_remotes)
-            despawn(r);
-        g_remotes.clear();
+        end_session_modules(true);
     };
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
@@ -1738,8 +1751,18 @@ void reset_lobby()
     g_chat.clear();
 }
 
+// a host/join while a session is open: Session::host/join close the old one without cleanup
+void end_open_session()
+{
+    if (g_session_end_fix && g_sess.role() != net::Role::None) {
+        g_sess.leave("restart");
+        end_session_modules(true);
+    }
+}
+
 bool do_host(uint16_t port, std::string& err)
 {
+    end_open_session();
     reset_lobby();
     if (!g_sess.host(port, g_name, err))
         return false;
@@ -1751,6 +1774,7 @@ bool do_host(uint16_t port, std::string& err)
 
 bool do_join(const std::string& addr, std::string& err)
 {
+    end_open_session();
     reset_lobby();
     if (!g_sess.join(addr, g_name, err))
         return false;
@@ -1761,14 +1785,18 @@ bool do_join(const std::string& addr, std::string& err)
 void do_leave()
 {
     g_sess.leave("user");
-    npc::on_session_end();
-    social::on_session_end();
-    if (cellsync::voluntary_leave_cleanup_enabled())
-        cellsync::on_session_end();
-    spacecoop::on_session_end();
-    for (auto& [id, r] : g_remotes)
-        despawn(r);
-    g_remotes.clear();
+    if (g_session_end_fix) {
+        end_session_modules(cellsync::voluntary_leave_cleanup_enabled());
+    } else { // before BUG-0033 (tests)
+        npc::on_session_end();
+        social::on_session_end();
+        if (cellsync::voluntary_leave_cleanup_enabled())
+            cellsync::on_session_end();
+        spacecoop::on_session_end();
+        for (auto& [id, r] : g_remotes)
+            despawn(r);
+        g_remotes.clear();
+    }
     reset_lobby();
 }
 
@@ -2610,11 +2638,23 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
-    npc::on_session_end();
-    social::on_session_end();
-    for (auto& [id, r] : g_remotes)
-        despawn(r);
-    g_remotes.clear();
+    if (g_session_end_fix) {
+        end_session_modules(true);
+    } else {
+        npc::on_session_end();
+        social::on_session_end();
+        for (auto& [id, r] : g_remotes)
+            despawn(r);
+        g_remotes.clear();
+    }
+}
+
+int c_sessionfix(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1)
+        g_session_end_fix = atoi(argv[1]) != 0;
+    SAY("session end fix %s\n", g_session_end_fix ? "on" : "off");
+    return 0;
 }
 
 SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
@@ -2697,6 +2737,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
+                   c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.targets",
                    "coop.targets [all|objs] - clickable units on screen: kind id owner x y; all: also every synced "
                    "object: obj key distance x y; objs: also every game object: obj o<noun> distance x y (tests)",
