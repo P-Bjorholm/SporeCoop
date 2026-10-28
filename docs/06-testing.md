@@ -923,3 +923,11 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   known caught fault at 0x11ECE4F on both games after a cold start, and its retry once in the survey
   ("both at Kaver: surveyed (0/2)": the guest's page still listed Kaver while the host was at Rebel);
   two cold runs right after passed (out/lab/20261027-195928). Treat a single survey failure as flaky.
+* Cell sync (fix/w2-cell): `coop_cell_sync.py` (suite `cell_sync`, ~1.5 min cold, two rejoins) and
+  `coop_cell_net.py` (suite `cell_net`, runs over `SPORE_NET="delay=250,loss=0.05"`). Both take
+  `SPORE_CELL_FIX=0`, which sets `coop.pool fix all 0` on both games (the old behaviour: the run
+  that must fail). Pitfalls seen: after `coop.leave` the guest keeps its avatar, so a rejoin looks
+  "in" (`wait_guest_in`) before the guest even started loading the host's world again: wait for
+  `coop.avatar` to fail first. The avatar's `+0x358` is -1 (no level there): the level line is
+  every 50 food points. Over the lossy link the guest's mirror map kept every local index for 20 s
+  with the fix (157 rounds with a lost chunk).

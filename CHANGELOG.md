@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **Cell: steadier sync on a lossy link**: one lost or late state packet made the guest delete and
+  re-create up to 14 of the host's cells (they blinked, lost their facing, a dying creature died
+  again); a guest's own meal over a level line could be taken back for a moment by an older total
+  from the host (a level down and up again). The food and DNA totals reach a guest that was loading
+  or just joined within 2 s. Tests: `coop_cell_net.py` (suite `cell_net`), `coop_cell_sync.py`
+  (suite `cell_sync`), unit tests `tests/cell_tests.cpp` (BUG-0032, BUG-0051, BUG-0088, BUG-0128).
+- **Cell: knockouts end cleanly**: a partner who left or whose "up again" was missed in an editor
+  no longer stays translucent with a frozen "KO" label; a session ending or the stage changing
+  during or right after a knockout no longer leaves the player's cell invulnerable, translucent or
+  moved. After a small respawn, a level-up gives the cell its normal size instead of up to twice
+  that (BUG-0061, BUG-0070, BUG-0041, BUG-0083).
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could
