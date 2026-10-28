@@ -1,19 +1,19 @@
 ---
 id: BUG-0051
 title: the guest's food total can briefly drop below a level line, so it levels down and up again
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#29
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_net.py (suite cell_net), tests/cell_tests.cpp meals()
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #29
 ---
 
@@ -60,12 +60,25 @@ The plant counter `S+0x20` is overwritten directly from the broadcast and has th
 CONFIRMED by reading the full path (both send paths and the guest's difference). The level-down on a negative amount comes from the ✔ note in docs/re/cell.md section 4 and was not run here.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004). The guest numbers its meals (`u32` appended to `MSG_CELL_FOOD` and
+`MSG_CELL_EAT`); the host keeps the last number it applied per guest (also for a refused meal,
+eats_late) and sends each guest `MSG_CELL_FOOD {food, plant, last meal}`. The guest applies
+`host total + meals not yet acknowledged + this frame's pending points - own total`
+(`cell_logic::Meals`). A peer without the field keeps the old difference. Old behaviour:
+`coop.pool fix foodseq 0`.
+
+The review suggested:
 
 On the guest, keep the sum of points sent and not yet confirmed. Have the host include per guest the last meal sequence number it applied in `MSG_CELL_FOOD`. The guest then applies `host_total + unconfirmed - local` and drops a meal from the unconfirmed sum once its number is confirmed. A refused meal (`eats_late`) is confirmed without points, so it is still taken back as today. Older peers without the field keep the current behaviour. Keep the old behaviour behind `coop.fix foodseq off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_cell_net.py` (250 ms delay, 5 % loss): both at 45 (5 under a line), the host eats 2 and the
+guest 10 right after; the guest's total and cell size are sampled every 50 ms for 3 s, 3 tries.
+FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-231147): 2 of 3 tries dipped (55 -> 47, the cell shrank to the
+smaller level's size, then 57). PASS with the fix (out/lab/20261027-231523, out/lab/20261027-232430, out/lab/20261027-230647):
+0 of 3 dipped in each run. Unit test `meals()` (make test), fix on and off.
+
+The planned test was:
 
 `tools/tests/coop_cell_food_race.py` on `twoinst.start`: both players near a level line, the host's eat and the guest's eat across the line within 100 ms, with an artificial delay on the host-to-guest link. Sample the guest's game state `S+0x1C` (food total) and the guest's level from the game (the level table index, or the avatar target size `+0xB4`) every frame for 2 s through a debug command. Assert the guest's level never goes down and its total never drops below the value it had right after its own meal. It fails today (a dip below the line) and passes with the fix.
 
@@ -77,3 +90,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #29.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

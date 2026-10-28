@@ -42,7 +42,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0029](BUG-0029-guest-uses-freed-memory-when-the-host-rejects-it.md) | fixed | crash | All | 2026-10-27 | unreleased | guest uses freed memory when the host rejects it or leaves (REJECT / BYE) |
 | [BUG-0030](BUG-0030-join-fails-after-10-s-when-the-host-s-first-pack.md) | open | bug | All | 2026-10-27 |  | join fails after 10 s when the host's first packet is lost (WELCOME falsely acked) |
 | [BUG-0031](BUG-0031-vehicles-of-a-player-who-left-stay-theirs-nobody.md) | open | bug | Civ | 2026-10-27 |  | vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them |
-| [BUG-0032](BUG-0032-one-lost-state-packet-makes-the-guest-delete-and.md) | open | desync | Cell | 2026-10-27 |  | one lost state packet makes the guest delete and recreate up to 14 of the host's cells |
+| [BUG-0032](BUG-0032-one-lost-state-packet-makes-the-guest-delete-and.md) | fixed | desync | Cell | 2026-10-27 | unreleased | one lost state packet makes the guest delete and recreate up to 14 of the host's cells |
 | [BUG-0033](BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md) | fixed | bug | All | 2026-10-27 | unreleased | leaving, re-hosting and hot reload each clean up a different subset of the co-op state |
 | [BUG-0034](BUG-0034-one-reliable-message-bigger-than-a-packet-stalls.md) | open | desync | All | 2026-10-27 |  | one reliable message bigger than a packet stalls all reliable traffic and floods empty packets |
 | [BUG-0035](BUG-0035-a-received-world-can-move-and-overwrite-the-save.md) | open | bug | All | 2026-10-27 |  | a received world can move and overwrite the save slot the guest is playing (auto_load_world=0) |
@@ -51,7 +51,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0038](BUG-0038-allies-mirror-reuses-the-old-galaxy-s-empire-aft.md) | open | bug | Space | 2026-10-27 |  | allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire |
 | [BUG-0039](BUG-0039-lan-game-list-is-never-pruned-so-fake-discovery.md) | open | bug | All | 2026-10-27 |  | LAN game list is never pruned, so fake discovery replies grow memory and slow the game |
 | [BUG-0040](BUG-0040-the-city-alarm-speed-boost-can-write-into-freed.md) | fixed | crash | Civ | 2026-10-27 | unreleased | the city-alarm speed boost can write into freed vehicles after a leave or a load |
-| [BUG-0041](BUG-0041-after-a-small-respawn-the-next-level-up-makes-th.md) | open | bug | Cell | 2026-10-27 |  | after a small respawn, the next level-up makes the player's cell up to twice too big |
+| [BUG-0041](BUG-0041-after-a-small-respawn-the-next-level-up-makes-th.md) | fixed | bug | Cell | 2026-10-27 | unreleased | after a small respawn, the next level-up makes the player's cell up to twice too big |
 | [BUG-0042](BUG-0042-six-suite-tests-smoke-creature-included-pass-wit.md) | open | test | All | 2026-10-27 |  | six suite tests (smoke creature included) pass with faults and check only mod bookkeeping |
 | [BUG-0043](BUG-0043-an-evolution-or-superweapon-vote-still-runs-afte.md) | fixed | crash | All | 2026-10-27 | unreleased | an evolution or superweapon vote still runs after its stage or session is gone |
 | [BUG-0044](BUG-0044-a-recycled-npc-object-keeps-the-old-net-id-so-gu.md) | open | desync | Creature | 2026-10-27 |  | a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse |
@@ -61,7 +61,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0048](BUG-0048-lab-py-branch-can-test-another-branch-s-worktree.md) | open | tooling | All | 2026-10-27 |  | lab.py --branch can test another branch's worktree (prefix match) |
 | [BUG-0049](BUG-0049-money-or-food-changed-while-offline-is-added-to.md) | open | bug | All | 2026-10-27 |  | money or food changed while offline is added to the next host's shared pool |
 | [BUG-0050](BUG-0050-stack-dump-stack-hangdump-watchdog-can-freeze-th.md) | fixed | freeze | All | 2026-10-27 | unreleased | stack dump (stack, hangdump, watchdog) can freeze the game for good |
-| [BUG-0051](BUG-0051-the-guest-s-food-total-can-briefly-drop-below-a.md) | open | desync | Cell | 2026-10-27 |  | the guest's food total can briefly drop below a level line, so it levels down and up again |
+| [BUG-0051](BUG-0051-the-guest-s-food-total-can-briefly-drop-below-a.md) | fixed | desync | Cell | 2026-10-27 | unreleased | the guest's food total can briefly drop below a level line, so it levels down and up again |
 | [BUG-0052](BUG-0052-a-lab-test-timeout-kills-only-bin-sh-the-test-ke.md) | open | tooling | All | 2026-10-27 |  | a lab test timeout kills only /bin/sh, the test keeps driving the lane |
 | [BUG-0053](BUG-0053-partner-s-puppet-freezes-when-the-sender-s-milli.md) | open | bug | All | 2026-10-27 |  | partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime) |
 | [BUG-0054](BUG-0054-ship-hit-messages-can-pass-a-freed-mirror-or-pup.md) | fixed | crash | Space | 2026-10-27 | unreleased | ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash) |
@@ -71,7 +71,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0058](BUG-0058-gifted-tool-charges-and-spice-that-come-back-whi.md) | open | bug | Space | 2026-10-27 |  | gifted tool charges and spice that come back while you are not in Space are lost |
 | [BUG-0059](BUG-0059-vehicle-and-city-tables-survive-a-load-so-new-ve.md) | fixed | crash | Civ | 2026-10-27 | unreleased | vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities |
 | [BUG-0060](BUG-0060-hot-reload-of-coop-dll-can-crash-while-the-updat.md) | fixed | crash | All | 2026-10-27 | unreleased | hot reload of coop.dll can crash while the update check thread or a queued task still runs old code |
-| [BUG-0061](BUG-0061-a-partner-can-stay-shown-as-knocked-out-for-good.md) | open | desync | Cell | 2026-10-27 |  | a partner can stay shown as knocked out for good (translucent, frozen "KO" label) |
+| [BUG-0061](BUG-0061-a-partner-can-stay-shown-as-knocked-out-for-good.md) | fixed | desync | Cell | 2026-10-27 | unreleased | a partner can stay shown as knocked out for good (translucent, frozen "KO" label) |
 | [BUG-0062](BUG-0062-tickets-py-new-private-in-a-worktree-writes-to-t.md) | open | tooling | All | 2026-10-27 |  | tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost |
 | [BUG-0063](BUG-0063-flying-to-a-partner-who-is-in-the-galaxy-view-co.md) | open | bug | Space | 2026-10-27 |  | flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled |
 | [BUG-0064](BUG-0064-a-new-player-inherits-the-civilization-role-of-t.md) | open | bug | Civ | 2026-10-27 |  | a new player inherits the civilization role of the player who had their id before |
@@ -80,7 +80,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0067](BUG-0067-chiefs-stay-1-3x-big-after-the-session-ends-and.md) | open | bug | Tribe | 2026-10-27 |  | chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load |
 | [BUG-0068](BUG-0068-twoinst-monitor-reads-the-wrong-game-log-in-work.md) | open | test | All | 2026-10-27 |  | twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE |
 | [BUG-0069](BUG-0069-netcode-timeouts-5-s-unstable-15-s-disconnect-do.md) | open | bug | All | 2026-10-27 |  | netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state) |
-| [BUG-0070](BUG-0070-the-knockout-state-is-not-reset-on-disconnect-or.md) | open | bug | Cell | 2026-10-27 |  | the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent) |
+| [BUG-0070](BUG-0070-the-knockout-state-is-not-reset-on-disconnect-or.md) | fixed | bug | Cell | 2026-10-27 | unreleased | the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent) |
 | [BUG-0071](BUG-0071-shared-diplomacy-sends-the-allies-mirror-empire.md) | open | bug | Space | 2026-10-27 |  | shared diplomacy sends the allies mirror empire, so a guest can be allied with an NPC it never met |
 | [BUG-0072](BUG-0072-with-3-or-more-players-the-jump-to-button-fails.md) | open | bug | Space | 2026-10-27 |  | with 3 or more players the "Jump to" button fails, and the jump message names the wrong player |
 | [BUG-0073](BUG-0073-a-lab-test-that-fails-and-then-passes-on-retry-c.md) | open | tooling | All | 2026-10-27 |  | a lab test that FAILs and then passes on retry counts as passed |
@@ -93,12 +93,12 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0080](BUG-0080-install-bat-overwrites-the-player-s-coop-ini-nam.md) | open | bug | Installer | 2026-10-27 |  | install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall |
 | [BUG-0081](BUG-0081-restoring-a-former-chief-s-size-can-call-into-a.md) | fixed | crash | Tribe | 2026-10-27 | unreleased | restoring a former chief's size can call into a freed citizen |
 | [BUG-0082](BUG-0082-the-guest-keeps-creature-pointers-while-the-host.md) | fixed | crash | Creature | 2026-10-27 | unreleased | the guest keeps creature pointers while the host is away and destroys them minutes later |
-| [BUG-0083](BUG-0083-modes-cell-at-accepts-one-slot-past-the-pool-s-u.md) | open | bug | Cell | 2026-10-27 |  | modes::cell_at accepts one slot past the pool's used range (off by one) |
+| [BUG-0083](BUG-0083-modes-cell-at-accepts-one-slot-past-the-pool-s-u.md) | fixed | bug | Cell | 2026-10-27 | unreleased | modes::cell_at accepts one slot past the pool's used range (off by one) |
 | [BUG-0084](BUG-0084-a-guest-s-own-escort-ships-posse-are-destroyed-w.md) | open | bug | Space | 2026-10-27 |  | a guest's own escort ships (posse) are destroyed while it is with the host |
 | [BUG-0085](BUG-0085-after-a-disconnect-the-guest-is-told-player0-hos.md) | open | bug | All | 2026-10-27 |  | after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack" |
 | [BUG-0086](BUG-0086-re-lint-skips-the-confidence-check-for-overrides.md) | open | tooling | All | 2026-10-27 |  | re_lint skips the confidence check for overrides entries whose name is also in a generated .sym |
 | [BUG-0087](BUG-0087-a-received-world-is-written-over-any-old-co-op-s.md) | open | bug | All | 2026-10-27 |  | a received world is written over any old co-op slot and mixed with another host's files |
-| [BUG-0088](BUG-0088-the-guest-s-local-to-host-index-map-keeps-an-ent.md) | open | bug | Cell | 2026-10-27 |  | the guest's local-to-host index map keeps an entry for every mirror it recreates |
+| [BUG-0088](BUG-0088-the-guest-s-local-to-host-index-map-keeps-an-ent.md) | fixed | bug | Cell | 2026-10-27 | unreleased | the guest's local-to-host index map keeps an entry for every mirror it recreates |
 | [BUG-0089](BUG-0089-a-pack-listing-the-same-file-twice-loses-the-ori.md) | open | bug | All | 2026-10-27 |  | a pack listing the same file twice loses the original file on rollback |
 | [BUG-0090](BUG-0090-galaxy-map-name-tags-react-to-mouse-clicks-in-ot.md) | open | bug | Space | 2026-10-27 |  | galaxy map name tags react to mouse clicks in other windows |
 | [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | fixed | crash | Creature | 2026-10-27 | unreleased | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
@@ -138,7 +138,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0125](BUG-0125-a-guest-that-rejoins-while-the-host-is-paused-se.md) | open | bug | Creature | 2026-10-27 |  | a guest that rejoins while the host is paused sees no animals near it |
 | [BUG-0126](BUG-0126-coop-space-empire-contact-leaks-one-x87-register.md) | open | bug | Space | 2026-10-27 |  | coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void) |
 | [BUG-0127](BUG-0127-a-crash-from-running-out-of-memory-can-end-the-g.md) | open | bug | All | 2026-10-27 |  | a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written |
-| [BUG-0128](BUG-0128-the-shared-dna-and-cell-food-totals-reach-a-gues.md) | open | desync | All | 2026-10-27 |  | the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads |
+| [BUG-0128](BUG-0128-the-shared-dna-and-cell-food-totals-reach-a-gues.md) | fixed | desync | All | 2026-10-27 | unreleased | the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads |
 | [BUG-0129](BUG-0129-chat-in-notifications-is-cut-short-for-non-latin.md) | open | bug | All | 2026-10-27 |  | chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere |
 | [BUG-0130](BUG-0130-a-guest-in-another-world-gets-the-host-s-dna-npc.md) | open | bug | All | 2026-10-27 |  | a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved |
 | [BUG-0131](BUG-0131-a-disabled-knocked-out-dead-or-frozen-partner-co.md) | open | bug | Space, Cell | 2026-10-27 |  | a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you |
