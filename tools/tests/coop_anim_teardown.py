@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A partner's animation in the frame after a world teardown never reaches the freed puppet
-(BUG-0091). The host's avatar plays animations all the time (ability keys, real input) while the
+(BUG-0091). The host's avatar plays animations all the time (`coop.overlay animsend`: the message a real
+animation sends; idle keys play none without a target) while the
 guest leaves the world for the galaxy menu (`coop.menu`) and gets the host's world back, several
 times. The host's animation messages that arrive while the guest's world is torn down used to be
 handled at the start of the next frame, before the mod noticed the teardown: play_animation ran on
@@ -14,7 +15,8 @@ import re
 import threading
 import time
 
-from twoinst import Checks, start
+import lane
+from twoinst import Checks, Console, start
 
 
 def made(con):
@@ -34,16 +36,14 @@ def main():
         print(' ', guest.call('coop.framefix 0')['out'].strip())
     stop = threading.Event()
 
-    def animate():  # the host's ability keys: attack / social animations of its avatar
-        keys = ['1', '2', '5', '6']
-        i = 0
+    def animate():  # the host's avatar "plays" a reaction animation: the same MSG_ANIM as a real one
+        con = Console(lane.HOST)  # a connection of its own: the main thread talks to the host too
         while not stop.is_set():
             try:
-                host.call(f'key 0x{ord(keys[i % len(keys)]):02X}')
-            except OSError:
+                con.call('coop.overlay animsend F37DB906')
+            except (OSError, ValueError):
                 pass
-            i += 1
-            time.sleep(0.25)
+            time.sleep(0.1)
     time.sleep(3)
     rx0 = re.search(r'received (\d+)', guest.call('coop.status')['out'])
     th = threading.Thread(target=animate, daemon=True)

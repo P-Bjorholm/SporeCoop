@@ -2268,6 +2268,13 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "animsend")) { // tests: as if the avatar played animation <hex> (BUG-0091)
+        void* av = game::avatar();
+        if (av)
+            on_anim(av, (uint32_t)strtoul(argv[2], nullptr, 16), 0, false, false);
+        SAY(av ? "animation sent" : "no avatar");
+        return av ? 0 : 1;
+    }
     if (argc > 1 && !strcmp(argv[1], "anims")) {
         g_anim_log = !g_anim_log;
         SAY("avatar animation log %s", g_anim_log ? "on" : "off");
