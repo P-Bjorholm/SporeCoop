@@ -575,9 +575,11 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
         g_military_hits++;
     }
     uint8_t prev = g_hit_by;
+    size_t mark = game::swap_open(game::swap_undo_u8, &g_hit_by, prev, "capture attribution"); // BUG-0110
     g_hit_by = p;
     int r = orig(self, dmg, pol, type, dir, att);
     g_hit_by = prev;
+    game::swap_close(mark);
     return r;
 }
 static int SK_THISCALL h_BTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)

@@ -9,8 +9,8 @@ source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#128
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in:
-branch:
-commits:
+branch: fix/w3-creature
+commits: 4096536
 tests:
 signature:
 docs:
@@ -48,22 +48,33 @@ The mask `0x8001` also uses bit 0 ("pressed since the last call"). Windows docum
 CONFIRMED by reading, low severity (the cheat console case). The Alt+Tab case with bit 0 is plausible. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Partly done on fix/w3-creature (4096536), not verified in the game:
 
-Take the keys from the game window's `WM_KEYDOWN` (not repeated: bit 30 of lParam clear), and only when no UTFWin text edit has keyboard focus. Even better, hook the game's ability key handler, so only key presses the game accepts count. Drop bit 0 of `GetAsyncKeyState`.
+* The cheat console: its window was seen once on a lane game (2026-10-28, `coop.ui tree` before and
+  after Ctrl+Shift+C): container control id 0x014A4606 [0 400 800 600], its text edit 0x014A4608
+  held the typed 'c'; the window exists only while the console is open. `menu_check_task`
+  (coop.cpp, outside the frame every 0.2 s) looks it up with the pause menu and the social key poll
+  is blocked while it is shown (`coop.social keys` prints text_up; `coop.social textfix off` = the
+  old poll).
+* Bit 0 of GetAsyncKeyState counts only while the game window was in front since the last poll.
+
+Not done: other UTFWin text fields than the console; the game's own ability key path (a hook
+there would be the clean fix).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Not verified. Test `tools/tests/coop_social_console.py` (not in suite.py): it engages a Kook and
+types 1/2/1 with the console open. The console could not be opened reliably on the lanes:
+injected Ctrl+Shift+C opened it once and then never again in 6 tries (also on a fresh game), the
+cheat manager's vt 0x44(1) did not open it either. `AppShortcuts_OnKeyDown` (0x814180) opens it
+only when vk 0x43 comes with modifiers exactly 3 and `IWindowManager` (0x67CA60, global 0x15FCC4C)
+vt 0x84 (returns +0x82C, a window: a full-screen window id 0xFFFFFFFF on the lane games) is null;
+clearing +0x82C did not make it open either. The runs with the console closed (lane 5, 2026-10-28)
+showed only the expected acts (1 per key press after cooldown).
 
-Extend `tools/tests/coop_creature_social` (or the social test):
-- after engaging, open the cheat console on the guest and type "1234" with `text`;
-- assert on the host that the guest's act count did not change.
-
-FAILS on main 563f72d, PASSES with the fix.
-
-### Related
-#68 (the same kind of raw polling for mouse clicks).
+Next: find what +0x82C is and how the console opens (or open it through its own layout), then
+run the test without and with `coop.social textfix off`.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #128.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fix/w3-creature: console window check and the bit-0 change made; the test cannot open the console on the lanes yet, so it stays open.

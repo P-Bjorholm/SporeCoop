@@ -1,19 +1,19 @@
 ---
 id: BUG-0119
 title: after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#98
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-creature
+commits: 7f36e32
+tests: world_reload
 signature:
-docs:
+docs: docs/re/creature.md#creature-world-epoch
 related: #98
 ---
 
@@ -57,24 +57,29 @@ After every load the own creature is applied again, and only once the new world 
 - A second reviewer verified the reading and rated it low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Reset `g_seen_avatar`, `g_swapped_avatar` and npc's `s_av` in every frame outside the creature stage, as `own_editor_tick` does with `g_settle_avatar`.
-- Better: a world counter that `coop.cpp on_frame` bumps where it detects a world change (`g_local != g_last_avatar`, or `g_local` becoming null). These modules and `game::destroy_creature` would store that counter instead of the avatar pointer.
+A world counter, `game::world_epoch()` (game.cpp): it goes up every time the creature stage is
+entered (a load or a received world passes the galaxy menu and the load mode; the editors keep
+it) and when another avatar replaces the avatar inside the stage. `coop.cpp on_frame` reads it
+every frame, so it sees the frames outside the stage. The own-creature swap (`creations.cpp`:
+3 s settle wait and "swap done"), the guest's first-second proxy wait (`npc.cpp guest_tick`) and
+the deferred destroys (`game.cpp`, token = avatar + counter) compare the counter with the avatar.
+`coop.npc worldfix off` makes the counter 0 (the old checks by address only).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_world_reload.py` (suite `world_reload`), a forced condition: whether the
+allocator gives the old address back cannot be forced, so the guest's `coop.creations sameaddr`
+makes the next new avatar look like the old one (the state a reused address leaves). The host saves
+and shares its world twice; checked: the guest's avatar species key (`coop.avatar`, the game's
+creature) is the guest's own creation after each load.
 
-Two-instance creature test: the guest has an own creature, then the host reloads the world twice. After each load, assert that the guest's avatar species key (read from the game) is the guest's own creation. Also assert that the swap happens at least 3 s after the avatar appeared.
-
-- FAILS without the fix: force the address match with a debug switch that keeps the old pointers.
-- PASSES with it.
-
-### Related
-#22 (recycled NPC objects keep old ids), #44 (deferred removal during cinematics), #54, #69.
-
-This came from an inventory of about 90 game-object pointers the mod keeps across frames, 24 of them used as map keys. This one is the only identity check that relies on the avatar address.
+* FAIL without the fix (`--without-fix` = `coop.npc worldfix off`, lane 5, 2026-10-28, direct run):
+  round 2: the guest kept the host's species 065CBE70 for 30 s, swaps 2 -> 2. (Round 1 passed: the
+  simulated reuse was taken by an earlier avatar change.)
+* PASS with the fix (lane 5, direct run; lab run out/lab/20261028-010504, `world_reload`): both rounds swap 3.1 s after the guest is in the world
+  (the 3 s settle wait holds).
+* Not shown: that the game really reuses the avatar's address after a load.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #98.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-creature (world counter instead of the avatar address); test world_reload (FAIL with worldfix off, PASS with it).

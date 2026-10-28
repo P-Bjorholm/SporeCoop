@@ -565,13 +565,17 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         if (!(*flags & 1))
             flags = nullptr;
     }
+    size_t mark = game::swap_depth();
     if (flags) {
+        game::swap_open(game::swap_undo_or32, flags, 1u, "selection flag"); // BUG-0110
         *flags &= ~1u;
         g_select_guards++;
     }
     o_SelectUI(sel, a2, a3, a4, a5);
-    if (flags)
+    if (flags) {
         *flags |= 1u;
+        game::swap_close(mark);
+    }
 }
 
 // The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
@@ -612,7 +616,12 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
     }
     if (n)
         g_stage_msg_guards++;
+    size_t mark = game::swap_depth(); // BUG-0110: a fault in the handler leaves no blank +0xE84 behind
+    for (int i = 0; i < n; i++)
+        game::swap_open(game::swap_undo_ptr_if, (uint8_t*)patched[i] + 0xE84, (uintptr_t)g_blank_e84, "blank +0xE84");
+    size_t own = game::swap_depth() - mark;
     bool r = o_StageMsg(self, id, msg);
+    game::swap_close(mark, own);
     for (int i = 0; i < n; i++) { // the handler may have destroyed nothing of ours: restore only our pointer
         void** e84 = (void**)((uint8_t*)patched[i] + 0xE84);
         if (!IsBadReadPtr(e84, 4) && *e84 == g_blank_e84)
@@ -895,6 +904,14 @@ void vote_tick(double now)
     }
 }
 
+// BUG-0019: the world sent after an evolution was saved while the host's game played the
+// cinematic of the evolution (CRG_SpeciesMigrate, a caption waiting for OK): the creature in it is
+// still the hatchling (age 0) and the migration not started, and a guest's game that loads it never
+// grows up nor migrates. Such a share waits until the cinematic had 3 s to start and none plays (at
+// most 120 s). `coop.npc sharecine off`: at once, as before (tests).
+bool g_share_cine_fix = true;
+double g_share_cine_since = 0, g_share_due_at = 0;
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
@@ -918,6 +935,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     for (auto& [id, r] : g_remotes)
         if (!r.echo)
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
+    g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
                               : g_name + " evolved the species: everybody gets the new body",
@@ -936,6 +954,16 @@ void follow_phase(double now)
         if (r.echo)
             continue;
         if (r.needs_world && g_local) { // joined while the host was in a menu
+            if (g_share_cine_fix && now < g_share_due_at)
+                continue;
+            if (g_share_cine_fix && world::cinematic_playing()) { // BUG-0019
+                if (g_share_cine_since == 0)
+                    g_share_cine_since = now;
+                if (now - g_share_cine_since < 120.0)
+                    continue;
+                LOG("share: a cinematic plays for 120 s, the world is sent anyway");
+            }
+            g_share_cine_since = 0;
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
@@ -1280,6 +1308,7 @@ void on_frame(void*, int, void*)
     g_last_frame = now;
     diag_tick(now);
     notify::tick(now);
+    game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -1499,6 +1528,11 @@ void draw_civ_tags()
 // frame a few times a second.
 constexpr uint32_t kPauseMenuId = 0x0615B50D;
 std::atomic<bool> g_menu_up{false};
+// BUG-0149: the cheat console (Ctrl+Shift+C) is open: keys typed there are no ability keys. Its
+// window (control id 0x014A4606, its text edit 0x014A4608) exists only while it is open.
+constexpr uint32_t kCheatConsoleId = 0x014A4606;
+std::atomic<bool> g_text_up{false};
+bool g_text_fix = true; // coop.social textfix off: the old key poll (tests)
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
@@ -1540,6 +1574,8 @@ void menu_check_task(void*)
         if (sui::Win root = sui::main_window())
             up = shown_chain(sui::find(root, kPauseMenuId));
     g_menu_up = up;
+    sui::Win root = sui::main_window();
+    g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
 }
 
 void menu_tick(double now)
@@ -1729,6 +1765,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
         creations::on_player_join(p.id);
+        npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto old = g_remotes.find(p.id);
         if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
@@ -1949,6 +1986,7 @@ void setup_callbacks()
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
+        npc::on_player_leave(id);       // BUG-0125
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
@@ -2396,7 +2434,32 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("swap guard %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "sharecine")) { // tests: off = the world goes during a cinematic (BUG-0019)
+        g_share_cine_fix = strcmp(argv[2], "off") != 0;
+        SAY("sharecine %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "stallfix")) { // tests: off = the old proxy driving (BUG-0169)
+        npc::set_stall_fix(strcmp(argv[2], "off") != 0);
+        SAY("stallfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "knownfix")) { // tests: off = a leaving guest's known NPCs stay (BUG-0125)
+        npc::set_known_fix(strcmp(argv[2], "off") != 0);
+        SAY("knownfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "worldfix")) { // tests: off = worlds told apart by the avatar address only (BUG-0119)
+        game::set_world_epoch_fix(strcmp(argv[2], "off") != 0);
+        SAY("world counter %s (now %u)", argv[2], game::world_epoch());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        if (argc > 2 && !strcmp(argv[2], "ledger")) { // the other detours (BUG-0110)
+            game::debug_swap_ledger_fault();
+            SAY("the next detour that changes game state around a call leaves like a fault");
+            return 0;
+        }
         game::debug_swap_fault();
         SAY("the next NPC tick with a partner as the player leaves like a fault");
         return 0;
@@ -2462,6 +2525,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_social(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "textfix")) { // tests: off = ability keys also while the cheat console is open (BUG-0149)
+        g_text_fix = strcmp(argv[2], "off") != 0;
+        SAY("textfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "keys")) { // tests: whether the ability keys are taken now
+        SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
@@ -3053,7 +3125,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         auto it = g_remotes.find(id);
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
-    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open(); };
+    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();

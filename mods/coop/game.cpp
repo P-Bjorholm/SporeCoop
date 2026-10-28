@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "sporekit_game.hpp"
+#include "swap_ledger.h"
 
 using namespace skg;
 
@@ -284,8 +285,10 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 // restore above never runs, the puppet stays the game's avatar (mpAvatar), game::avatar() returns
 // the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per
 // frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
+static void swap_ledger_tick();
 void swap_guard_tick()
 {
+    swap_ledger_tick();
     if (!g_swap_real || !g_swap_guard)
         return;
     void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
@@ -298,6 +301,44 @@ void swap_guard_tick()
     H->log(M, SK_WARN, "creature AI: an NPC tick with a partner as the player did not return (a fault?): "
            "the avatar %p is the game's player again (puppet %p)", real, g_swap_puppet);
     g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
+}
+
+static swapledger::Ledger<512> g_ledger;
+size_t swap_open(void (*undo)(void*, uintptr_t), void* p, uintptr_t v, const char* what)
+{
+    return g_ledger.open(undo, p, v, what);
+}
+size_t swap_depth() { return g_ledger.n; }
+void swap_close(size_t mark, size_t own) { g_ledger.close(mark, own); }
+void swap_undo_u32(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4))
+        *(uint32_t*)p = (uint32_t)v;
+}
+void swap_undo_u8(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 1))
+        *(uint8_t*)p = (uint8_t)v;
+}
+void swap_undo_or32(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4))
+        *(uint32_t*)p |= (uint32_t)v;
+}
+void swap_undo_ptr_if(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4) && *(void**)p == (void*)v)
+        *(void**)p = nullptr;
+}
+void debug_swap_ledger_fault() { g_ledger.fault = true; }
+uint32_t swap_ledger_restored() { return g_ledger.restored; }
+
+static void swap_ledger_tick()
+{
+    g_ledger.guard = g_swap_guard;
+    if (unsigned k = g_ledger.tick())
+        H->log(M, SK_WARN, "swap guard: %u change(s) around a game call were not put back (a fault?), undone now "
+               "(last: %s)", k, g_ledger.last ? g_ledger.last : "?");
 }
 
 void set_swap_guard(bool on) { g_swap_guard = on; }
@@ -384,6 +425,36 @@ void* avatar()
     return field<void*>(nm, kNounAvatarOff);
 }
 
+// BUG-0119: which creature world the game plays, as a counter. The avatar's address is no world
+// identity: the game pools creature objects, the avatar of a reloaded world can have the old
+// address. The counter goes up every time the creature stage is entered (a load or a received
+// world goes through the galaxy menu and the load mode; the editors keep it) and when the avatar
+// is replaced by another one inside the stage. `coop.npc worldfix off`: 0 always (the old checks
+// by address only, tests).
+static uint32_t g_world_epoch = 1;
+static bool g_epoch_in_world = false;
+static void* g_epoch_avatar = nullptr;
+static bool g_epoch_fix = true;
+void set_world_epoch_fix(bool on) { g_epoch_fix = on; }
+
+uint32_t world_epoch()
+{
+    uint32_t m = mode_id();
+    bool editor = m == 0x1654C06 || m == 0x00DBDBA1; // kEdit, kEditor: the world stays
+    if (m != 0x1654C01 && !(editor && g_epoch_in_world)) {
+        g_epoch_in_world = false;
+        g_epoch_avatar = nullptr;
+    } else if (m == 0x1654C01) {
+        void* av = avatar();
+        if (!g_epoch_in_world || (av && g_epoch_avatar && av != g_epoch_avatar))
+            g_world_epoch++;
+        g_epoch_in_world = true;
+        if (av)
+            g_epoch_avatar = av;
+    }
+    return g_epoch_fix ? g_world_epoch : 0;
+}
+
 net::Vec3 position(void* c)
 {
     auto& v = field<Vector3>(c, kPosOff);
@@ -440,20 +511,25 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd)
 // guest's own game claimed the nest when it arrived there and cast the family the update filter
 // was removing, docs/re/creature.md 16). Creatures we remove while a cinematic plays go when it is
 // over.
-static std::vector<std::pair<void*, void*>> g_destroy_later; // creature, avatar when it was queued
+// the creature world the pointers belong to: the noun manager's avatar (it stays through the
+// editors, a load or a stage change replaces it) and the world counter (BUG-0119: a reused avatar
+// address is not the same world)
+struct WorldToken {
+    void* av;
+    uint32_t epoch;
+    bool operator!=(const WorldToken& o) const { return av != o.av || epoch != o.epoch; }
+};
+static WorldToken world_now()
+{
+    void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
+    return {nm ? field<void*>(nm, kNounAvatarOff) : nullptr, world_epoch()};
+}
+static std::vector<std::pair<void*, WorldToken>> g_destroy_later; // creature, world when queued
 static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
 static bool g_defer_keeps_puppet = true; // tests: off = unregistered at once (coop.npc deferpuppet off, BUG-0066)
 void set_defer_keeps_puppet(bool on) { g_defer_keeps_puppet = on; }
-
-// the creature world the pointers belong to: the noun manager's avatar (it stays through the
-// editors, a load or a stage change replaces it)
-static void* world_token()
-{
-    void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
-    return nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
-}
 
 bool destroy_pending(void* c)
 {
@@ -481,7 +557,7 @@ void destroy_creature(void* c)
     if (defer) {
         if (destroy_pending(c))
             return;
-        g_destroy_later.push_back({c, world_token()});
+        g_destroy_later.push_back({c, world_now()});
         g_destroys_deferred++;
         return;
     }
@@ -494,7 +570,7 @@ void destroy_deferred_tick()
 {
     if (g_destroy_later.empty())
         return;
-    void* world = world_token();
+    WorldToken world = world_now();
     // another world since (a load, the stage left): the pointer may be another object now. It is
     // dropped at once, also while a cinematic of the new world plays, and is no puppet of ours
     for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)

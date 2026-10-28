@@ -29,7 +29,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0016](BUG-0016-creature-aggressive-creatures-ignore-the-partner.md) | fixed | bug | Creature | 2026-10-25 | 0.7.2.4 | Creature: aggressive creatures ignore the partner |
 | [BUG-0017](BUG-0017-creature-the-guest-shows-another-species-at-the.md) | fixed | desync | Creature | 2026-10-25 | 0.7.2.4 | Creature: the guest shows another species at the host's nests ("Datzu") |
 | [BUG-0018](BUG-0018-creature-guest-crash-0xc6ae60-after-the-host-mig.md) | fixed | crash | Creature | 2026-10-25 | 0.7.2.4 | Creature: guest crash 0xC6AE60 after the host migrated to a new nest |
-| [BUG-0019](BUG-0019-creature-a-guest-that-gets-the-world-right-after.md) | open | bug | Creature | 2026-10-25 |  | Creature: a guest that gets the world right after the host's editor stays a hatchling |
+| [BUG-0019](BUG-0019-creature-a-guest-that-gets-the-world-right-after.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Creature: a guest that gets the world right after the host's editor stays a hatchling |
 | [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | open | bug | Creature | 2026-10-25 |  | Our objects (puppets, proxies, their herds) are written into saves |
 | [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
 | [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
@@ -129,13 +129,13 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0116](BUG-0116-the-required-fix-switch-coop-fix-name-off-does-n.md) | open | test | All | 2026-10-27 |  | the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch |
 | [BUG-0117](BUG-0117-a-second-superweapon-request-changes-the-weapon.md) | open | bug | Civ | 2026-10-27 |  | a second superweapon request changes the weapon and target of the vote already running |
 | [BUG-0118](BUG-0118-the-selection-guard-clears-0xb58-bit-0x1-but-the.md) | not-reproduced | crash | Creature | 2026-10-27 |  | the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash) |
-| [BUG-0119](BUG-0119-after-a-load-the-guest-may-keep-the-host-s-speci.md) | open | bug | Creature | 2026-10-27 |  | after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity) |
+| [BUG-0119](BUG-0119-after-a-load-the-guest-may-keep-the-host-s-speci.md) | fixed | bug | Creature | 2026-10-27 | unreleased | after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity) |
 | [BUG-0120](BUG-0120-an-npc-city-founded-while-a-guest-joins-or-loads.md) | fixed | desync | Civ | 2026-10-27 | unreleased | an NPC city founded while a guest joins or loads never appears on that guest |
 | [BUG-0121](BUG-0121-every-co-op-epic-creature-leaves-a-mod-made-herd.md) | open | bug | Tribe | 2026-10-27 |  | every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save |
 | [BUG-0122](BUG-0122-host-ships-and-civ-vehicles-jump-ahead-by-up-to.md) | fixed | desync | All | 2026-10-27 | unreleased | host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet |
 | [BUG-0123](BUG-0123-planet-seeding-flags-are-shared-by-all-threads-s.md) | open | bug | Space | 2026-10-27 |  | planet seeding flags are shared by all threads, so another thread can switch the seeding off |
 | [BUG-0124](BUG-0124-a-fixture-that-lacks-its-facts-never-fails-the-t.md) | open | test | All | 2026-10-27 |  | a fixture that lacks its facts never fails the test (check_fixture result ignored) |
-| [BUG-0125](BUG-0125-a-guest-that-rejoins-while-the-host-is-paused-se.md) | open | bug | Creature | 2026-10-27 |  | a guest that rejoins while the host is paused sees no animals near it |
+| [BUG-0125](BUG-0125-a-guest-that-rejoins-while-the-host-is-paused-se.md) | fixed | bug | Creature | 2026-10-27 | unreleased | a guest that rejoins while the host is paused sees no animals near it |
 | [BUG-0126](BUG-0126-coop-space-empire-contact-leaks-one-x87-register.md) | open | bug | Space | 2026-10-27 |  | coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void) |
 | [BUG-0127](BUG-0127-a-crash-from-running-out-of-memory-can-end-the-g.md) | open | bug | All | 2026-10-27 |  | a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written |
 | [BUG-0128](BUG-0128-the-shared-dna-and-cell-food-totals-reach-a-gues.md) | fixed | desync | All | 2026-10-27 | unreleased | the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads |
@@ -179,7 +179,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | fixed | bug | All | 2026-10-27 | unreleased | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
 | [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | fixed | crash | Tribe | 2026-10-23 | unreleased | Guest: fault in the tribe setup with a null simulator object (seen once) |
 | [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
-| [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | open | desync | Creature | 2026-10-23 |  | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
+| [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | fixed | desync | Creature | 2026-10-23 | unreleased | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
 | [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | not-reproduced | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
 | [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | not-reproduced | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
 | [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |

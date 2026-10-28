@@ -47,3 +47,4 @@ Not fixed yet.
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w3-creature (wave 3): triaged, still open. Item 1 (a vote for the Cell -> Creature switch) is a feature; item 2 is by design; item 3 (whether a guest touching a mirrored part token sets the mating-call flag S+0x69) and item 4 (not reproduced on 0.7.2.1) were not checked again. Nothing here is a bug with a reproduction yet; the ticket could be split into a feature request (item 1) and a check (item 3).

@@ -41,3 +41,4 @@ Not fixed yet.
 ## History
 - 2026-10-25: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w3-creature (wave 3): no change; still open. The remaining part (a card built from a nest names the guest's creation of the host's key) needs the nest's species to resolve to the guest's local key, and rewriting the save lost herds before (docs/re/creature.md 15): a redesign of how the host's creations are keyed on the guest, left for a dedicated task. The real-nest check needs a fixture planet with a host creation's nest.
