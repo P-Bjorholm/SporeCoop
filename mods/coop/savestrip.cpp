@@ -97,13 +97,41 @@ static bool SK_THISCALL h_Write(void* self, void* stream, void* obj)
     return o_Write(self, stream, obj);
 }
 
+// cGameBehaviorManager (simulator subsystem, vtable 0x0145CB68) keeps a vector of the objects it
+// updates every frame at +0x20 / +0x24 (4-byte intrusive pointers); our creatures are in it. Its
+// Read 0xB0E570 (slot +0x2C, thiscall(mgr, stream) ret 4) reads our null references back as null
+// entries, and its update 0xB0EA40 calls vt+0x1C on each entry without a null check: a fault every
+// frame (seen: 0xB0EC8C). After the read the null entries are taken out.
+using BhvRead_t = int(SK_THISCALL*)(void*, void*);
+static BhvRead_t o_BhvRead;
+static uint32_t g_bhv_nulls;
+static int SK_THISCALL h_BhvRead(void* mgr, void* stream)
+{
+    int r = o_BhvRead(mgr, stream);
+    if (!g_on || IsBadReadPtr(mgr, 0x2C))
+        return r;
+    void**& b = *(void***)((uint8_t*)mgr + 0x20);
+    void**& e = *(void***)((uint8_t*)mgr + 0x24);
+    if (!b || e < b)
+        return r;
+    void** w = b;
+    for (void** p = b; p != e; ++p)
+        if (*p)
+            *w++ = *p;
+    g_bhv_nulls += (uint32_t)(e - w);
+    for (void** p = w; p != e; ++p)
+        *p = nullptr;
+    e = w;
+    return r;
+}
+
 void tick() { g_main_tid = GetCurrentThreadId(); }
 
 std::string status()
 {
     char b[200];
-    snprintf(b, sizeof b, "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u\n", (int)g_on, g_saves, g_last_count,
-             g_nulled, g_offthread);
+    snprintf(b, sizeof b, "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u\n", (int)g_on,
+             g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls);
     return b;
 }
 
@@ -123,6 +151,11 @@ bool init(const SkHost* host, SkMod* mod)
     add_filter(creature_filter);
     H->command_add(M, "coop.savestrip", "coop.savestrip [0|1] - keep our objects out of saves (tests: 0 = the old behaviour, BUG-0020)",
                    c_savestrip, nullptr, SK_CMD_MAIN_THREAD);
+    uintptr_t br = H->sym("SporeCoop::cGameBehaviorManager_Read");
+    if (!br || H->hook_create(M, (void*)br, (void*)&h_BhvRead, (void**)&o_BhvRead) != 0) {
+        H->log(M, SK_WARN, "savestrip: no hook on the behavior manager's Read: saves keep our objects");
+        return false; // a null in its vector faults every frame: without the cleanup, no nulls
+    }
     uintptr_t a = H->sym("Simulator::COMSerializer::Write");
     if (!a || H->hook_create(M, (void*)a, (void*)&h_Write, (void**)&o_Write) != 0) {
         H->log(M, SK_WARN, "savestrip: no hook on COMSerializer::Write: our objects go into saves");

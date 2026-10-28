@@ -47,6 +47,8 @@ def main():
     herds = archless_herds(host)
     ck(other == 0, f'the loaded save holds no creature without tuning (a puppet of the session: {other})')
     ck(herds == 0, f'the loaded save holds no herd without an archetype (made for a puppet: {herds})')
+    time.sleep(8)  # the simulator's updates run over the loaded world (a null left in a list faults here)
+    print('  ' + host.call('coop.savestrip')['out'].strip(), flush=True)
     host.call('coop.npc strays on')
     ck.faults(host=host, guest=guest)
     return ck.result()
