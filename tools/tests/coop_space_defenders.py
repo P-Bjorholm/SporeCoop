@@ -8,9 +8,9 @@ empire's system, a colony's defence). Any type 6 counted as "our puppet":
    (`coop.fleet spawn 6 own`, SpawnUFO as the game's colony defence does); the guest must remove
    it like its other NPC ships, and both games show as many Defenders in that place;
 2. a game Defender made at a freed puppet's address was adopted as the partner's ship (driven,
-   recoloured, destroyed). Forced: `coop.fleet impostor 1` gives the guest's puppet on the host
-   another model key, as such a ship has; the host must leave that ship alone and show the guest
-   with a new puppet.
+   recoloured, destroyed). Forced: `coop.fleet impostor 1` makes the guest's puppet on the host
+   vulnerable, as such a ship is (the puppets are invincible); the host must leave that ship alone
+   and show the guest with a new puppet.
 
   SPORE_LANE=6 python3 tools/tests/coop_space_defenders.py [--without-fix]
 """

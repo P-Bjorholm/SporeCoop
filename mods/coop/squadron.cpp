@@ -627,15 +627,16 @@ std::string debug(const std::vector<std::string>& a)
         return "dropping";
     }
     if (a.size() >= 2 && (a[0] == "puppet" || a[0] == "impostor")) { // tests (BUG-0111): player <p>'s puppet;
-        // impostor: give it another model key, as a game Defender made at the freed puppet's address has
+        // impostor: make it vulnerable, as a game Defender made at the freed puppet's address is (another
+        // model key would do too, but an invalid one costs every mirror of the ship a caught fault)
         void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[1].c_str())) : nullptr;
         if (!pup || !live(pup))
             return "no puppet";
         if (a[0] == "impostor")
-            F<uint32_t>(pup, kModel) ^= 0x5A5A5A5Au;
-        char b[96];
-        snprintf(b, sizeof b, "puppet %p type=%d pol=%08X model=%08X", pup, F<int>(pup, kType), F<uint32_t>(pup, kPol),
-                 F<uint32_t>(pup, kModel));
+            F<uint8_t>(pup, kInvincible) = 0;
+        char b[120];
+        snprintf(b, sizeof b, "puppet %p type=%d pol=%08X model=%08X invincible=%d", pup, F<int>(pup, kType),
+                 F<uint32_t>(pup, kPol), F<uint32_t>(pup, kModel), (int)F<uint8_t>(pup, kInvincible));
         return b;
     }
     if (a.size() >= 2 && a[0] == "typefix") { // BUG-0111: 0 = any listed Defender is a partner's puppet (tests)
