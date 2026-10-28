@@ -1,19 +1,19 @@
 ---
 id: BUG-0079
 title: guests can see other players' civilization roles swapped after someone rejoins
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#57
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-civ
+commits: caae221
+tests: tests/net_tests.cpp test_lobby_roles (make test)
 signature:
-docs:
+docs: 
 related: #57
 ---
 
@@ -53,12 +53,16 @@ Every machine shows the same role for every player.
 CONFIRMED by reading the full path (write order versus read order). Not run in game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed 2026-10-28 (fix/w2-civ, mods/coop/net/lobby.h, mods/coop/coop.cpp): the lobby table is written and read by `net::write_lobby` / `net::read_lobby`. The host sorts the entries by id before writing (so guests of an older build, which read the roles in id order, get them right), and the guest reads every role together with the id it was written for. Switch: `coop.role fix 0` restores both orders of the code before (tests).
+
+Suggested in the review:
 
 Write the roles in the same order the guest reads them, or better, as id and role pairs. Old guests stop reading at the end of the main table, so a new trailing section `u8 n, n x (u8 id, u8 role)` stays compatible. Simplest: sort `pl` by id in `send_lobby` before writing both tables.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `test_lobby_roles` in tests/net_tests.cpp (`make test`): a table in join order 0, 2, 1 with roles {0: 3, 2: 1, 1: 0}, written and read in every new/old combination, plus an older host without roles. Built with `-DSPORECOOP_TEST_NOFIX=1` (old writer and old reader) it FAILS (`role_of(t, 2) == 1`, `role_of(t, 1) == 0`), with the fix it passes. A three-player game test was not run (a lane has two games).
+
+Planned in the review:
 
 `tests/net_tests.cpp`: build the lobby message from a player list in join order [0, 2, 1] with roles {1:0, 2:1}, parse it with the guest code (factor the parse out of the callback into a function), and assert `roles[2] == 1`. It must fail on main. A two-instance variant in `tools/tests/coop_civ_roles.py` can assert the guest's co-op window text.
 
@@ -68,3 +72,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #57.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-civ (lobby table sorted by id and read in written order; unit test FAIL without, PASS with).

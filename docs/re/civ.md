@@ -631,3 +631,41 @@ Runtime findings (✔ = seen working in the game), with what the co-op code does
 * `HV.pol`: the political id a vehicle had when the host listed it; an entry whose `pol_of(v)`
   changed is listed anew (a new owner from the nearest player city, a new net id).
 * Test commands: `coop.civ tables` (sizes of every pointer table), `coop.civ fix boost|world 0|1`.
+
+## Shared money and food across sessions and crossing spends (2026-10-28, fix/w2-civ)
+<a id="civ-shared-pool-sessions"></a>
+
+How `mods/coop/shared.cpp` keeps one total (tribe food, civ money, space money), after BUG-0049
+and BUG-0106:
+* The sync state ends with the session (`shared::on_session_end`, also every frame while the
+  role is None or a guest has no WELCOME yet). Before, a guest that left, earned money alone and
+  joined again sent the whole difference as one `MSG_RES_ADD` right after HELLO (reliable order
+  HELLO, RES_ADD, then WELCOME): the host added 40000 at once (seen on lane 7). ✔
+* `MSG_RES_ADD` = u8 id, f64 change, **u32 sequence** (new, trailing). `MSG_RES` = u8 id, f64
+  total, **u8 n, n x (u8 player id, u32 last counted sequence)** (new, trailing). Older peers stop
+  reading before the new fields. The guest shows total + changes the host has not counted + the
+  unsent change (`net::SharedLedger`, unit-tested in `make test`). ✔
+* The host floors a guest's change at 0; `s_civ` / `s_space` clamp to 0..99 999 999 like the
+  game's AddMoney (`mWealth` +0x98 and `cEmpire` +0xD0 are written raw). Two spends of 100 out
+  of 150 sent in the same step ended at -50 on both games before, now at 0 (lane 7). ✔
+* Food: `s_food` floors every bundle at 0; the guest now takes what the game holds after a total
+  as its base, so a floored amount is not reported as an earning on the next tick. (~, by reading)
+* Test switches: `coop.res fix reset|floor 0|1`; roles: `coop.role fix 0|1` (BUG-0064, BUG-0079).
+
+## A guest catches up with the host's city count (2026-10-28, fix/w2-civ)
+<a id="civ-city-catch-up"></a>
+
+* `Simulator::cCivExpansion::Get` / `SpawnNextCity` (GOG 2024 names) are the functions the GOG
+  2016 file calls `cCitySimulator::Get` / `AppearNextCity` (same addresses in GOG 2016: 0xB268A0,
+  0xAE3A80). `tools/tests/new_stage_game.py --npc-cities` used the 2016 names and failed on GOG
+  2024 ("bad address"); it uses the 2024 names now. ✔
+* A founding broadcast (`MSG_CIV_BUILD` kNextCitySite) that reaches a guest while it is about to
+  load the host's world is applied to the old copy (or dropped outside Civ), and the host's save
+  was written before the city: the guest stayed one city behind for the stage (lane 7: host 5,
+  guest 4, `cities_in=1`). ✔
+* Now the guest compares the host's city count (`MSG_CIV_STATE` header) with `all_cities()`; short
+  for 6 s and no founding here for 15 s: it replays `SpawnNextCity(ex, 0, 0)` (the free site with
+  the lowest order, the same one the host took). The new city matched the host's position within
+  60 m (lane 7). Counter `cities_caught_up`; switch `coop.civ fix cities 0`. ✔
+* `call Simulator::cCivExpansion::SpawnNextCity thiscall <ex> 0 0` from the console goes through
+  the co-op hook and broadcasts the founding (instant 0, who 0); instant 1 does not broadcast. ✔

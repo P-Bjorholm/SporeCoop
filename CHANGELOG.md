@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Fixed
+- **Shared money and food**: money or food changed while out of a session (playing alone,
+  another save) is no longer added to the next host's pool when joining; two players spending at
+  the same moment can no longer push Civilization or Space money below 0, and a guest's money no
+  longer jumps back up for a moment after a purchase (BUG-0049, BUG-0106). Tests: `coop_civ_shared.py`
+  (suite `civ_shared`), unit tests in `make test`.
+- **Civilization roles**: a player who joins under the id of a player who left no longer gets that
+  player's role (and its bonuses) on the host, and guests no longer see the roles of other players
+  swapped after someone rejoined (BUG-0064, BUG-0079).
+- **Civilization: an NPC city founded while a guest joined or loaded** now appears on that guest
+  a few seconds later instead of never (BUG-0120). Test: `coop_civ_city_join.py`.
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

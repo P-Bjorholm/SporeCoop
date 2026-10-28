@@ -1,19 +1,19 @@
 ---
 id: BUG-0064
 title: a new player inherits the civilization role of the player who had their id before
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#42
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-civ
+commits: caae221, 5fb37c8
+tests: tools/tests/coop_civ_shared.py (suite civ_shared)
 signature:
-docs:
+docs: 
 related: #42
 ---
 
@@ -52,14 +52,21 @@ The same happens across sessions: the host stops hosting and hosts again, or a f
 CONFIRMED by reading the full path. Not run in game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed 2026-10-28 (fix/w2-civ, mods/coop/coop.cpp): `g_roles.erase(id)` when a player leaves, `g_roles.clear()` in `reset_lobby()` (host, join, leave), and a guest replaces its whole role table with the host's lobby table (players that left drop out). Switch: `coop.role fix 0` restores the code before (tests).
+
+Suggested in the review:
 
 - `g_roles.erase(id)` in `cb.player_leave`.
 - `g_roles.clear()` in `reset_lobby()` (and in the session-end helper of #11).
 - On the host, `player_join` could also send the current table at once (`g_lobby_dirty = true` is already set).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `tools/tests/coop_civ_shared.py` (part 2): the guest picks military, leaves and joins again under the same id; the host's `coop.role` (the table `role_of` reads for the damage, conversion and trade bonuses) must list it as none and agree with the guest.
+- FAIL with `--nofix` (out/lab/w2civ-manual/shared_nofix.log: `host {0: 'none', 1: 'military'}`).
+- PASS with the fix (out/lab/w2civ-manual/shared_fix1.log, lab run out/lab/20261027-225434).
+The damage of a vehicle was not measured in the game (the table is what the bonuses read).
+
+Planned in the review:
 
 `tools/tests/coop_civ_roles.py` (host plus one guest that rejoins, civ fixture):
 1. Guest `coop.role 1`, guest `coop.leave`, guest joins again (id 1 again).
@@ -76,3 +83,4 @@ It must fail on main.
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #42.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-civ (roles erased with their player and session; coop_civ_shared FAIL without, PASS with).

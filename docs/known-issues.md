@@ -23,8 +23,9 @@ anchor so other docs can link to it:
 
 * [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): fixed
   (unreleased) for the stage modules: every way a session ends now runs the same cleanup. Still
-  open: `shared` resources, `g_roles` and `g_host_away` are not reset on any path. The vote (BUG-0043)
-  and the world share queue (BUG-0140) are reset by the same cleanup since fix/w1-core.
+  open: `g_host_away` is not reset on any path. The vote (BUG-0043)
+  and the world share queue (BUG-0140) are reset by the same cleanup since fix/w1-core; the
+  `shared` resources (BUG-0049) and `g_roles` (BUG-0064) since fix/w2-civ.
 
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 
@@ -629,7 +630,6 @@ keeps the history).
 * BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
 * BUG-0047 (#25, bug): RefPack decoder reads one byte past a 5-byte compressed record.
 * BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
-* BUG-0049 (#27, bug): money or food changed while offline is added to the next host's shared pool.
 * BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
 * BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
@@ -653,7 +653,6 @@ keeps the history).
 * BUG-0103 (#81, tooling): more places that can kill the owner's own Spore on lane 1 (BUG-0025)
 * BUG-0104 (#83, bug): the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line.
 * BUG-0105 (#84, bug): a received world is loaded even when writing its files failed (disk full, locked or read-only file)
-* BUG-0106 (#85, bug): shared money can be spent twice in one round trip, and Civ/Space money goes negative.
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
@@ -727,10 +726,7 @@ keeps the history).
 **Civ**
 
 * BUG-0031 (#9, bug): vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them.
-* BUG-0064 (#42, bug): a new player inherits the civilization role of the player who had their id before.
-* BUG-0079 (#57, desync): guests can see other players' civilization roles swapped after someone rejoins.
 * BUG-0117 (#96, bug): a second superweapon request changes the weapon and target of the vote already running.
-* BUG-0120 (#99, desync): an NPC city founded while a guest joins or loads never appears on that guest.
 * BUG-0161 (#140, bug): the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol.
 
 **Space**
