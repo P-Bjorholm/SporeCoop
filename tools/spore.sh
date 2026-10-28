@@ -119,15 +119,16 @@ sk_ini_set() {
 }
 
 cmd_run() {
-    local inst=1 profile=""
+    local inst=1 profile="" extra=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -i) inst="$2"; shift 2 ;;
             -p) profile="$2"; shift 2 ;;
+            -x) extra+=("$2"); shift 2 ;;
             *) inst="$1"; shift ;;
         esac
     done
-    local args=()
+    local args=("${extra[@]}")
     [[ "$inst" != "1" ]] && args+=("-sporekit-instance:$inst")
     if [[ -n "$profile" ]]; then
         prepare_profile "$profile"
@@ -376,5 +377,5 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-1}" ;;
     fixture) shift; cmd_fixture "$@" ;;
-    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile]|kill|pids [inst]|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
+    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile] [-x game-arg]|kill|pids [inst]|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
 esac

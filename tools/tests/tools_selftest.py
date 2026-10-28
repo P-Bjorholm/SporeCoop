@@ -74,7 +74,7 @@ def state(p):
 
 def spore(lane, game, *args):
     env = dict(os.environ, SPORE_LANE=str(lane), SPORE_GAME=game, SPORE_FIXTURES=os.path.join(TMP, 'fx'),
-               HOME=TMP)
+               HOME=TMP, USER=os.environ.get('USER', 'u'))
     return subprocess.run(['bash', SPORE, *args], env=env, capture_output=True, text=True, timeout=60)
 
 
