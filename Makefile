@@ -87,6 +87,7 @@ test:
 	python3 tools/docs_lint.py
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
+	python3 tools/tests/tools_selftest.py
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
 test-asan:
