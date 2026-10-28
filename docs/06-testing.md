@@ -1045,3 +1045,23 @@ Each runs on the Space fixture in ~1-3 min (warm) and has `--without-fix`, which
   into a plain empire of that galaxy (no contact, no alliance); `diplomacy mirrorfix 0` (BUG-0071).
 * BUG-0141 (unique names) is a unit test in `make test`; `coop.corefix unique_names 0` switches it
   off in game.
+
+## Netcode and the co-op window, wave 3 (2026-10-28, fix/w3-net)
+<a id="testing-net-w3"></a>
+
+* Unit tests in `make test` (each FAILS with `net_tests --nofix`): `test_lost_first_packet`
+  (BUG-0030), `test_interp_wrap` (BUG-0053), `test_discovery_prune` (BUG-0039),
+  `test_address_parse` (BUG-0138). `test_refpack_short` (BUG-0047) is a bounds check without a
+  switch: the ASan build (`test-asan`) reports a heap-buffer-overflow with the old `dbpf.cpp`.
+* In game, `coop.corefix` switches: `first_ack`, `time_wrap`, `lan_prune`, `addr_check` (the
+  `net::g_fix` fields), `host_away_reset` (BUG-0085), `ui_status` (BUG-0104), `lan_pages` (BUG-0183).
+  `first_ack` is read when a connection sends its first packet.
+* `coop.lanfake <n> [seconds]`: n made-up games (`fake1`..`fakeN` at 192.0.2.x, TEST-NET-1, never
+  joinable) answer the LAN discovery for that long; other lanes' hosts may be listed too, so a
+  test looks for its own `fakeN` rows instead of counting rows.
+* `coop_ui_status.py` (suite `ui_status`, cold, ~6 min): the guest leaves and joins again through
+  the co-op window (a wrong port, then the address with a leading space), checks the status and
+  the lobby world line once in, pages through six fake games with "More >", rejoins, and the host
+  leaves while it is in the main menu (`coop.menu`): no "(host) is back" line in the guest's log
+  after `disconnected:`, and the window status starts with "Disconnected". `--without-fix` sets
+  the four switches to 0.

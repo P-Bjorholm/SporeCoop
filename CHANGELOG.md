@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Fixed
+- **Joining over a lossy link no longer fails when the host's first answer is lost** (BUG-0030):
+  the lost welcome counted as delivered and the join ended with "no answer from host (timeout)"
+  after 10 s (about one join in ten at 10 % loss). Test: `make test`.
+- **Co-op window: the address field and the status line** (BUG-0138, BUG-0104): an address pasted
+  with spaces around it (or the whole "Friends connect to" line) joins the first address; a port
+  that is not a number from 1 to 65535 is refused at once instead of a 10 s timeout. The status
+  no longer says "Connecting to ..." for the whole session: it clears when you are in, shows why
+  a session ended, and button messages go away after a few seconds, so the update line shows
+  again. Test: `coop_ui_status.py` (suite `ui_status`).
+- **Co-op window: more than three games on the network** (BUG-0183): "More >" pages through all
+  of them; the list forgets hosts that stopped answering and holds at most 32 (BUG-0039).
+- **No "player0 (host) is back: your N DNA go to the pack" after a disconnect** while the host was
+  in the main menu (BUG-0085).
+- **A partner no longer freezes when the other PC has been up for 49.7 days** (its millisecond
+  clock wraps, BUG-0053). Test: `make test`.
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

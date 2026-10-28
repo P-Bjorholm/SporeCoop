@@ -213,3 +213,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | open | bug | Creature | 2026-10-25 |  | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
 | [BUG-0202](BUG-0202-making-a-hook-while-another-thread-runs-the-firs.md) | open | crash | All | 2026-10-27 |  | making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt) |
 | [BUG-0203](BUG-0203-twoinst-monitor-game-log-points-to-a-wrong-folde.md) | open | tooling | All | 2026-10-27 |  | twoinst Monitor.game_log points to a wrong folder when a test runs from a git worktree |
+| [BUG-0204](BUG-0204-joining-by-host-name-resolves-dns-on-the-game-s.md) | open | freeze | Menu | 2026-10-28 |  | joining by host name resolves DNS on the game's main thread: a slow name server freezes the game |

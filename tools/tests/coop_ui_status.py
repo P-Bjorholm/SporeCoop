@@ -58,10 +58,12 @@ def main():
     st = ui.wait(lambda s: s.get('status', '') != '', 10, 'a status line')
     status = st.get('status', '') if st else ''
     ck('port must be a number' in status, f'a wrong port is refused at once ({status!r})')
-    ui.type_into('address', f' 127.0.0.1:{lane.PORT}')
-    ui.click('join')
+    if 'offline' not in guest.call('coop.status')['out']:
+        guest.call('coop.leave')  # the old code tried the wrapped port: back to the connect page
+        ui.wait(lambda s: s['address']['vis'], 20, 'the connect page again')
+    typed = ui.type_into('address', f' 127.0.0.1:{lane.PORT}') and ui.click('join')
     st = ui.state()
-    ck('cannot resolve' not in st.get('status', ''), f'a leading space is no error ({st.get("status")!r})')
+    ck(typed and 'cannot resolve' not in st.get('status', ''), f'a leading space is no error ({st.get("status")!r})')
     joined = wait(lambda: connected(guest), 15)
     ck(joined, 'the guest is connected after joining with a leading space')
     if not joined:
@@ -72,7 +74,7 @@ def main():
     # ---- 2. the status after the join (BUG-0104) ----
     time.sleep(3)
     guest.call('coop.uistate 1')
-    st = ui.wait(lambda s: 'world' in s, 20, 'the lobby')
+    st = ui.wait(lambda s: 'world' in s and 'world' not in s['world'].lower(), 120, 'the lobby after the transfer')
     status = st.get('status', '') if st else ''
     world_line = st.get('world', '') if st else ''
     ck(not status.startswith('Connecting'), f'the status no longer says "Connecting" once in ({status!r})')
@@ -88,6 +90,7 @@ def main():
     for _ in range(6):
         if not st:
             break
+        print('  rows:', [st.get(f'lan{i}', {}).get('text') for i in range(3)], st.get('lan'))
         for i in range(3):
             w = st.get(f'lan{i}', {})
             if w.get('vis'):
