@@ -35,6 +35,10 @@ public:
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
+    // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
+    // guest takes its name from the roster). Space tables keyed by name mixed up two players with
+    // the same (default) name. false = the old behaviour (tests: coop.corefix unique_names 0)
+    bool unique_names = true;
     uint32_t world = 0;      // host world id (save hash), sent in WELCOME
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network

@@ -434,7 +434,58 @@ static void test_rejoin_same_endpoint()
     run(g2, 200);
     CHECK(chats == 1);
     CHECK(leaves == 1 && host.players().size() == 2);
+    CHECK(g2.name_of(g2.my_id()) == "bob"); // a rejoin keeps its name (BUG-0141: not "bob 2")
     printf("  %s", host.status().c_str());
+}
+
+// BUG-0141: two guests with the default name were one player to the Space tables keyed by name.
+// The host makes names unique; each guest takes its name from the roster. Run with the fix off as
+// well: the same checks must see the shared names (the test catches the bug).
+static int unique_names_case(bool fix)
+{
+    Session host, a, b;
+    host.unique_names = a.unique_names = b.unique_names = fix;
+    std::string err;
+    int bad = 0;
+    if (!host.host(0, "Player", err) || !a.join("127.0.0.1:" + std::to_string(host.port()), "Player", err))
+        return -1;
+    auto run = [&](int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            a.update();
+            b.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    run(300);
+    if (!b.join("127.0.0.1:" + std::to_string(host.port()), "Player", err))
+        return -1;
+    run(400);
+    if (!a.connected() || !b.connected())
+        return -1;
+    auto names = [](const Session& s) {
+        std::vector<std::string> v;
+        for (auto& p : s.players())
+            v.push_back(s.name_of(p.id));
+        std::sort(v.begin(), v.end());
+        return v;
+    };
+    std::vector<std::string> want = {"Player", "Player 2", "Player 3"};
+    bad += names(host) != want;
+    bad += names(a) != want;
+    bad += names(b) != want;
+    bad += a.name_of(a.my_id()) != host.name_of(a.my_id()); // the guest knows the name the others see
+    bad += b.name_of(b.my_id()) != host.name_of(b.my_id());
+    return bad;
+}
+
+static void test_unique_names()
+{
+    printf("equal player names are made unique by the host (BUG-0141)\n");
+    int with = unique_names_case(true), without = unique_names_case(false);
+    printf("  with the fix: %d problem(s); without: %d\n", with, without);
+    CHECK(with == 0);
+    CHECK(without > 0);
 }
 
 // the host's player state and every chunk of a big snapshot (a cell pool of 600 cells = 43
@@ -821,6 +872,7 @@ int main(int argc, char** argv)
     test_session();
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();
+    test_unique_names();
     test_big_snapshot();
     test_interp();
     test_interp_gap();

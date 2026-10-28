@@ -2813,7 +2813,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
         bool* on;
     } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
                 {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
-                {"update_pin", &autoupdate::g_pin_fix}};
+                {"update_pin", &autoupdate::g_pin_fix}, {"unique_names", &g_sess.unique_names}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

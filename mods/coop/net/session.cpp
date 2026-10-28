@@ -327,6 +327,19 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             }
             p.id = alloc_id();
             p.name = h.name.empty() ? "guest" + std::to_string(p.id) : h.name;
+            if (unique_names) {
+                auto taken = [&](const std::string& n) {
+                    if (n == my_name_)
+                        return true;
+                    for (auto& o : peers_)
+                        if (o->accepted && o.get() != &p && o->name == n)
+                            return true;
+                    return false;
+                };
+                std::string base = p.name;
+                for (int k = 2; taken(p.name) && k < 300; k++)
+                    p.name = base + " " + std::to_string(k);
+            }
             p.accepted = true;
             Welcome wl;
             wl.your_id = p.id;
@@ -413,9 +426,12 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         welcomed_ = true;
         p.accepted = true;
         roster_ = wl.players;
-        for (auto& pl : roster_)
+        for (auto& pl : roster_) {
             if (pl.id == 0)
                 p.name = pl.name;
+            if (pl.id == my_id_ && unique_names && !pl.name.empty())
+                my_name_ = pl.name; // the host may have made it unique (BUG-0141)
+        }
         logf(cb, "joined as player %u (host '%s', %d players)", my_id_, p.name.c_str(), (int)roster_.size());
         if (cb.connected)
             cb.connected();
