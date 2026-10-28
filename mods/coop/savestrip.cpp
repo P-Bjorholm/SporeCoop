@@ -45,6 +45,10 @@ static bool creature_filter(void* o, uint32_t noun)
         return own_kind_herd(o);
     if (noun != kCreatureNoun || o == game::avatar() || IsBadReadPtr(o, 0x1680))
         return false;
+    // (a puppet in the avatar's herd, the fallback for a partner whose creation is unknown, stays: the
+    // herd's member list would get a null entry, whose load is not checked)
+    if (game::herd_of(o) == game::avatar_herd())
+        return false;
     return game::is_puppet(o) || npc::is_proxy(o) || own_kind_herd(game::herd_of(o));
 }
 
