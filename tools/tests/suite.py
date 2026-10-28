@@ -42,6 +42,7 @@ add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair 
 add('vote', P + 'coop_vote.py', minutes=5)
 add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its session and its stage (BUG-0043)
 add('world_queue', P + 'coop_world_queue.py', minutes=6)  # one save for shares waiting at once, shares of gone players dropped, no load inside an editor, no host world after Leave (BUG-0112/0166/0157/0074; --without all fails)
+add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130; --without-fix fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu's Co-op item is dropped as the game leaves the menu (BUG-0163)

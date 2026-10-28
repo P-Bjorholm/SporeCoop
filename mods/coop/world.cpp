@@ -1234,6 +1234,11 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "queued %d share(s)\n", argc - 2);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "autoload")) { // tests: auto_load_world of coop.ini
+        g_auto_load = atoi(argv[2]) != 0;
+        H->out_printf(out, "auto_load_world %d\n", g_auto_load ? 1 : 0);
+        return 0;
+    }
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

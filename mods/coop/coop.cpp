@@ -389,8 +389,43 @@ bool host_here() // the host plays in our world again (not loading it any more)
     return same_place(ls) && (ls.flags & net::PF_IN_WORLD);
 }
 
+// BUG-0130: the guest plays another world of the host's stage (joined from its own game, loaded
+// a save of its own, or the host loaded another save): nothing of the host's world is applied to
+// it (DNA, food, cells, tribe, relations, time of day, NPCs), its game would save the changes.
+// `coop.corefix same_place 0` = the old behaviour (tests).
+bool g_place_fix = true;
+uint32_t g_place_dropped = 0;
+float g_dna_pending = -1; // the host's DNA total that arrived while we were elsewhere
+// unknown: what to say before the host's first state arrived (just joined)
+bool host_elsewhere(bool unknown = false)
+{
+    if (!g_place_fix || g_sess.role() != net::Role::Client || !stage_mode(g_mode))
+        return false;
+    auto it = g_remotes.find(0);
+    if (it == g_remotes.end() || it->second.buf.empty())
+        return unknown; // not known yet
+    const auto& ls = it->second.buf.latest();
+    return ls.mode == g_mode && !same_place(ls);
+}
+
+// a message of the host's world state a guest elsewhere must not apply
+static bool world_state_msg(uint8_t type)
+{
+    return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
+           (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
+           type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL;
+}
+
 void host_away_tick(double now)
 {
+    if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
+        float d = g_dna_pending - game::dna(); // the host's total, once we play its world
+        if (d != 0)
+            game::dna_add_raw(d);
+        g_dna_pending = -1;
+        g_dna_rx++;
+    }
     // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
     // with its creature for 1 s (a guest gain sent while the host loads is dropped there)
     bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
@@ -1633,6 +1668,7 @@ void end_session_modules(bool cell)
         drop_vote("the session ended");
     world::reset_shares();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
+    g_dna_pending = -1;
 }
 
 void setup_callbacks()
@@ -1680,6 +1716,16 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        // (the DNA total also before the host's first state: it is applied once we play its world)
+        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA)) {
+            if (type == net::MSG_DNA) {
+                float total = r.f32();
+                if (r.ok())
+                    g_dna_pending = total;
+            }
+            g_place_dropped++;
             return;
         }
         if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
@@ -2036,6 +2082,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f\n", (int)host_elsewhere(), g_place_dropped,
+        g_dna_pending); // BUG-0130
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden);
     double now = H->time_seconds();
@@ -2815,7 +2863,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
         bool* on;
     } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
                 {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
-                {"update_pin", &autoupdate::g_pin_fix}};
+                {"update_pin", &autoupdate::g_pin_fix}, {"same_place", &g_place_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -2883,7 +2931,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
     };
     ctx.feed = feed;
-    ctx.host_away = [] { return g_host_away; };
+    // its own NPCs stay while it plays another world (BUG-0130), also until the host's first state
+    // says where the host is (a join from inside a game of its own)
+    ctx.host_away = [] { return g_host_away || host_elsewhere(true); };
+    ctx.in_place = [](uint8_t id) {
+        if (!g_place_fix)
+            return true;
+        auto it = g_remotes.find(id);
+        return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
