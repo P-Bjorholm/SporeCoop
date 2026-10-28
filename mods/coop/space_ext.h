@@ -65,6 +65,9 @@ bool is_host();
 uint8_t my_id();
 std::string name_of(uint8_t id);
 bool in_space();          // the Space stage is running
+// the game's saves made while the mod runs (space_allies' save hook counts them; 0 without it)
+void note_save();
+uint32_t saves();
 bool russian();           // the co-op window speaks Russian
 inline const char* tr(const char* en, const char* ru) { return russian() ? ru : en; }
 void notice(const std::string& text); // a local toast + chat log line

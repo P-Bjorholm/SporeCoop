@@ -594,6 +594,7 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
         g_reapply_at = H->time_seconds() + 3.0; // the game may finish writing after the call
     }
     g_saves++;
+    spaceext::note_save();
     o_Save(mgr, name, flag);
 }
 
