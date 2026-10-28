@@ -45,12 +45,22 @@ def check(cond, what):
 
 
 # ---------------------------------------------------------------- kill (inside a PID namespace)
+# comm of the half-dead fakes. A real game's comm is SporeApp.exe, and main's spore.sh kill (BUG-0101)
+# SIGKILLs every half-dead SporeApp on the machine: the parent PID namespace sees our fakes, so a
+# parallel lane's old `spore.sh kill` would end them in the middle of this test. Only a run against
+# an old copy (SELFTEST_SPORE, the run that must FAIL) uses the real name.
+COMM = b'SporeApp.exe' if 'SELFTEST_SPORE' in os.environ else b'sk-fake-game'
 HALF_DEAD = ('import ctypes, threading, time\n'
-             'ctypes.CDLL(None).prctl(15, b"SporeApp.exe")  # PR_SET_NAME: comm as Wine shows it\n'
+             f'ctypes.CDLL(None).prctl(15, {COMM!r})  # PR_SET_NAME\n'
              'threading.Thread(target=time.sleep, args=(600,)).start()\n'
              'time.sleep(0.2)\n'
              'ctypes.CDLL(None).syscall(60, 0)  # SYS_exit: only the main thread ends (zombie leader)\n')
 SLEEP = 'import time; time.sleep(600)'
+
+
+# game folders of the fake lanes 1, 2, 3: names no real lane has, so a parallel `spore.sh kill` of a
+# real lane (its folder is SPORE or laneN) never matches our fakes
+F1, F2, F3 = 'sk-selftest-L1', 'sk-selftest-L2', 'sk-selftest-L3'
 
 
 def win(folder):
@@ -82,14 +92,14 @@ def spore(lane, game, *args):
 def kill_inside():
     """runs as PID 1's child of a fresh PID namespace: only our fakes are visible and killable"""
     t = TMP
-    lane1 = os.path.join(t, 'SPORE')
-    lane2 = os.path.join(t, 'lane2')
-    owner = fake('SPORE')                                       # the owner's own game: no test argument
-    host = fake('SPORE', '-sporekit-profile:test')              # a lane 1 test host
-    guest = fake('SPORE', '-sporekit-instance:2')               # a lane 1 test guest
-    l2 = fake('lane2', '-sporekit-instance:3', '-sporekit-profile:test')
-    l2_half = fake('lane2', '-sporekit-instance:4', code=HALF_DEAD)
-    l3_half = fake('lane3', '-sporekit-instance:6', code=HALF_DEAD)
+    lane1 = os.path.join(t, F1)
+    lane2 = os.path.join(t, F2)
+    owner = fake(F1)                                       # the owner's own game: no test argument
+    host = fake(F1, '-sporekit-profile:test')              # a lane 1 test host
+    guest = fake(F1, '-sporekit-instance:2')               # a lane 1 test guest
+    l2 = fake(F2, '-sporekit-instance:3', '-sporekit-profile:test')
+    l2_half = fake(F2, '-sporekit-instance:4', code=HALF_DEAD)
+    l3_half = fake(F3, '-sporekit-instance:6', code=HALF_DEAD)
     time.sleep(1)
     check(state(l2_half) == 'Z' and state(l3_half) == 'Z', 'the half-dead fakes have a zombie leader '
           f'(states {state(l2_half)} {state(l3_half)})')
