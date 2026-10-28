@@ -556,8 +556,28 @@ static void host_command(uint8_t from, net::Reader& r)
 }
 
 // ---------------- guest: mirrors ----------------
+// The game-over caption ("Alas! Your population has fallen below the minimum...") comes when no
+// member of the player tribe has health left. A member added while it is up has no species fields
+// (+0xB20, +0xB54) and the OK (bounce back) faulted at 0xC0DAE3 on it, then the game froze
+// (BUG-0172). No member is added to the player tribe then. `coop.tribe fix gameover 0`: the old way.
+static bool g_fix_gameover = true;
+static uint32_t g_spawns_blocked;
+static bool player_tribe_out(void* t)
+{
+    if (!g_fix_gameover || !t || t != player_tribe())
+        return false;
+    for (void* c : members(t))
+        if (game::health(c) > 0)
+            return false;
+    return true;
+}
+
 static void* spawn_member(void* t, uint8_t age)
 {
+    if (player_tribe_out(t)) {
+        g_spawns_blocked++;
+        return nullptr;
+    }
     // SpawnMember (vt 0x98) returns null at the population cap: then create + add directly
     void* c = vcall<void*>(t, 0x98 / 4, (int)age);
     if (!c) {
@@ -772,6 +792,45 @@ static float host_health(void* c)
     return g == g_gm.end() ? game::health(c) : g->second.hp;
 }
 
+// A former chief gets its own size back (spatial vt 0x40 SetScale). BUG-0081: it is called only
+// for a citizen that is still a member of the player tribe in the game's own list; before, the only
+// check was object_alive, which reads the citizen's own memory and cannot tell a freed one (a guest
+// mirror removed by guest_state, a load): the call went through a vtable read from freed memory.
+// keep: the chiefs that stay (nullptr: none, the session ends). `coop.tribe fix chiefs 0`: the old check.
+static bool g_fix_chiefs = true;
+static uint32_t g_chief_restores, g_chief_gone, g_chief_bad_calls;
+static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
+{
+    std::unordered_set<void*> mem;
+    if (void* pt = g_ok && game::mode_id() == modes::kTribe ? player_tribe() : nullptr) {
+        void** b = F<void**>(pt, kMembersOff);
+        void** e = F<void**>(pt, kMembersOff + 4);
+        for (void** it = b; it && it < e && mem.size() < 256; ++it)
+            if (*it)
+                mem.insert(*it);
+    }
+    for (auto it = g_chief_scale.begin(); it != g_chief_scale.end();) {
+        bool still = false;
+        if (keep)
+            for (auto& [o, c] : *keep)
+                if (c == it->first)
+                    still = true;
+        if (still) {
+            ++it;
+            continue;
+        }
+        bool member = mem.count(it->first) != 0;
+        if (g_fix_chiefs ? member : game::object_alive(it->first)) {
+            if (!member)
+                g_chief_bad_calls++; // the old check let a call into a non-member through (test)
+            vcall<void>((uint8_t*)it->first + 0xC0, 0x40 / 4, it->second);
+            g_chief_restores++;
+        } else
+            g_chief_gone++; // gone from the tribe: nothing to restore
+        it = g_chief_scale.erase(it);
+    }
+}
+
 // every machine picks the same chiefs (ids, owners and health come from the host)
 static void chiefs_tick()
 {
@@ -791,18 +850,7 @@ static void chiefs_tick()
             }
         }
     // scale: chiefs stand out (spatial vt 0x40 SetScale; citizen vt 0x80 its desired scale)
-    for (auto it = g_chief_scale.begin(); it != g_chief_scale.end();) {
-        bool still = false;
-        for (auto& [o, c] : want)
-            if (c == it->first)
-                still = true;
-        if (!still) {
-            if (game::object_alive(it->first))
-                vcall<void>((uint8_t*)it->first + 0xC0, 0x40 / 4, it->second);
-            it = g_chief_scale.erase(it);
-        } else
-            ++it;
-    }
+    restore_chief_scales(&want);
     for (auto& [o, c] : want)
         if (!g_chief_scale.count(c)) {
             float sc = vcall<float>(c, 0x80 / 4, 0); // GetDesiredScale(int), ret 4
@@ -1011,9 +1059,30 @@ static bool spawn_epic()
     return true;
 }
 
+// the epic is still an animal of the game's object list (BUG-0171: object_alive reads the
+// creature's own memory and cannot tell a freed one; g_epic is a raw pointer kept for minutes)
+static bool epic_listed()
+{
+    struct Q {
+        void* want;
+        bool found = false;
+    } q{g_epic};
+    if (!g_epic)
+        return false;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (o == q->want)
+                q->found = true;
+            return !q->found;
+        },
+        &q);
+    return q.found;
+}
+
 static void epic_tick(double now)
 {
-    if (g_epic && (!game::object_alive(g_epic) || game::is_dead(g_epic))) {
+    if (g_epic && (!epic_listed() || !game::object_alive(g_epic) || game::is_dead(g_epic))) {
         int food = g_epic_hitters.size() >= 2 ? 80 : 30;
         bonus_food(food);
         g_epic_kills++;
@@ -1113,8 +1182,26 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         host_command(from, r);
 }
 
+// the co-op mechanics' tables of game pointers (chiefs, pincer, epic): a new session or world
+// must not inherit them (BUG-0081: a former chief's size was restored through a freed pointer)
+static void clear_coop_tables(bool restore)
+{
+    if (!g_fix_chiefs)
+        return;
+    if (restore)
+        restore_chief_scales(nullptr); // the chiefs are plain members again after the session
+    g_chief_scale.clear();
+    g_chief.clear();
+    g_chief_saved.clear();
+    g_pincer.clear();
+    g_pincer_told.clear();
+    g_epic = nullptr;
+    g_epic_hitters.clear();
+}
+
 void on_session_end()
 {
+    clear_coop_tables(true);
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();
@@ -1126,6 +1213,7 @@ void on_session_end()
 void on_world_change()
 {
     g_resets++;
+    clear_coop_tables(false); // every citizen of the old world is freed: nothing to restore
     on_session_end();
 }
 
@@ -1176,6 +1264,20 @@ std::string status()
              "chiefs=%s\n",
              g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills, g_epic,
              chiefs.c_str());
+    out += b;
+    // the chiefs' size in the game (spatial GetScale / their own scale) and the lifetime checks
+    std::string scales;
+    for (auto& [o, c] : g_chief) {
+        auto it = g_chief_scale.find(c);
+        char sb[32];
+        snprintf(sb, sizeof sb, " %u:%.2f", o, it != g_chief_scale.end() && it->second > 0 ? game::scale(c) / it->second : 0.f);
+        scales += sb;
+    }
+    snprintf(b, sizeof b,
+             "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
+             "fix_gameover=%d chief_scale=%s\n",
+             g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
+             scales.c_str());
     return out + b;
 }
 
@@ -1195,7 +1297,11 @@ std::string debug(const std::vector<std::string>& a)
     // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe
     auto hit = [](void* victim, void* attacker, float dmg) {
         float before = F<float>(victim, 0x5E0);
+        // a dead victim takes no more blows: the test loop went on hitting the dying epic (BUG-0171)
+        if (before <= 0 || game::is_dead(victim))
+            return std::string("hp 0.00 -> 0.00 (dead)");
         // the combatant's TakeDamage (vt 0x18): the same path as a real blow, with our hooks
+        // (the push vector: (0,0,0) as the game's own bites and strikes, docs/re/creature.md 3)
         static const float zero[3] = {0, 0, 0}; // the hit direction must not be null
         vcall<int>((uint8_t*)victim + 0x5A8, 0x18 / 4, dmg, 0xFFFFFFFFu, 0, zero,
                    attacker ? (uint8_t*)attacker + 0x5A8 : nullptr);
@@ -1203,6 +1309,42 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "hp %.2f -> %.2f", before, F<float>(victim, 0x5E0));
         return std::string(b);
     };
+    if (a.size() >= 3 && a[0] == "fix") { // fix chiefs|gameover 0|1: the code before BUG-0081 / BUG-0172 (tests)
+        bool on = atoi(a[2].c_str()) != 0;
+        if (a[1] == "chiefs")
+            g_fix_chiefs = on;
+        else if (a[1] == "gameover")
+            g_fix_gameover = on;
+        else
+            return "usage: coop.tribe fix chiefs|gameover 0|1";
+        return "fix " + a[1] + " " + (on ? "on" : "off");
+    }
+    if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
+        // (RemoveMember(c, destroy) as guest_state does for a mirror the host no longer sends):
+        // BUG-0081, the next chiefs_tick must not call into it
+        auto it = g_chief.find((uint8_t)atoi(a[1].c_str()));
+        if (it == g_chief.end() || !it->second)
+            return "no chief";
+        void* c = it->second;
+        uint16_t id = member_id(c);
+        remove_member(c);
+        return "dropped chief #" + std::to_string(id);
+    }
+    if (a.size() >= 2 && a[0] == "stale_chief") { // stale_chief <id>: as if a former chief's freed block
+        // now held this member (another tribe's citizen): the next chiefs_tick must leave it alone
+        // (BUG-0081; before the fix it got the old chief's size, 2.0 here)
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        if (!c)
+            return "no such member";
+        g_chief_scale[c] = 2.f;
+        return "stale chief entry for #" + a[1];
+    }
+    if (a.size() >= 2 && a[0] == "scale") { // scale <id>: the member's size in the game (spatial GetScale)
+        void* c = local_of((uint16_t)atoi(a[1].c_str()));
+        char b[64];
+        snprintf(b, sizeof b, "scale %.3f", c ? game::scale(c) : 0.f);
+        return c ? std::string(b) : std::string("no such member");
+    }
     if (a.size() >= 4 && a[0] == "pincer" && is_host()) { // pincer <victim id> <attacker id> <dmg>
         void* v = local_of((uint16_t)atoi(a[1].c_str())), *at = local_of((uint16_t)atoi(a[2].c_str()));
         if (!v || !at)
@@ -1212,7 +1354,7 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "epic" && is_host()) {
         if (a.size() >= 3 && a[1] == "hit") { // epic hit <attacker id> <dmg>
             void* at = local_of((uint16_t)atoi(a[2].c_str()));
-            if (!g_epic || !at)
+            if (!g_epic || !at || !epic_listed())
                 return "no epic / member";
             return hit(g_epic, at, a.size() > 3 ? (float)atof(a[3].c_str()) : 50.f);
         }

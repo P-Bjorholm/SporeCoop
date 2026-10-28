@@ -613,3 +613,21 @@ Runtime findings (✔ = seen working in the game), with what the co-op code does
   caption was up (meaning **?**).
 * A land vehicle sent onto water or across the sea gets no order (the game ignores the click):
   ~20-30 % of the bots' random move clicks, on host and guest alike.
+
+## Pointer tables across a load and a leave (2026-10-27, fix/w1-tribe-civ)
+<a id="civ-pointer-tables"></a>
+
+* ✔ A host `coop.load` of the same civ save while connected (civ_npc, GOG 2024): coop.cpp sees
+  "no local" (the RTS marker of `modes.cpp rts_local` is null while the world loads), so
+  `civ::on_world_change` runs once per load (`coop.civ tables`: `world_resets=1`). The host is back
+  in Civ about 7 s after the command; the guest stays in its world (same stage: nothing is sent).
+* ✔ Before BUG-0059 nothing in civ reset on a load: `g_alarm_at` (and `g_boost` until its 20 s ran
+  out) kept the old world's pointers, and `on_session_end` did not clear `g_boost` / `g_alarm_at`
+  (after a `coop.leave`: `boost=3 alarm_at=2`, coop_civ_reload.py --nofix).
+* ~ Vehicle addresses after a reload of the same save: 4 of 4 vehicles got other addresses than
+  before (1 try). The inherited-owner case of BUG-0059 needs address reuse: not seen, still possible.
+* The vehicle and building editors also have no co-op adapter (no local): `on_world_change` skips
+  them (`modes::kEdit`, `kEditor`) so the owners survive an editor visit.
+* `HV.pol`: the political id a vehicle had when the host listed it; an entry whose `pol_of(v)`
+  changed is listed anew (a new owner from the nearest player city, a new net id).
+* Test commands: `coop.civ tables` (sizes of every pointer table), `coop.civ fix boost|world 0|1`.

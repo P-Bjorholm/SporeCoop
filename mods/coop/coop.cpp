@@ -1122,6 +1122,7 @@ void avatar_change_check()
         forget_puppets();
         npc::on_world_change();
         tribe::on_world_change();
+        civ::on_world_change(); // BUG-0059
     }
     g_last_avatar = local;
 }

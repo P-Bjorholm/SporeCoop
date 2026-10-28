@@ -1,19 +1,19 @@
 ---
 id: BUG-0081
 title: restoring a former chief's size can call into a freed citizen
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#59
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-tribe-civ
+commits: ba9dc46
+tests: tribe_chief_removed, tribe_play, tribe_coop
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-lifetime
 related: #59
 ---
 
@@ -61,23 +61,25 @@ for (auto it = g_chief_scale.begin(); it != g_chief_scale.end();) {
 CONFIRMED by reading that the only liveness check is `object_alive`, and that guests destroy mirrors in the message handler. The crash itself is PLAUSIBLE and depends on reuse of the freed block. Not run on the lab.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Build an `unordered_set` of `members(pt)` once per `chiefs_tick`, and call `SetScale` only for entries in that set. Otherwise just erase them: a freed citizen needs no restore.
-- Also clear `g_chief_scale` in `on_world_change`.
-- Keep the old check behind `coop.fix tribe_chief_members off`.
+Fixed on fix/w1-tribe-civ (ba9dc46): `restore_chief_scales` builds the set of the player tribe's
+members (the tribe's own vector) once per `chiefs_tick` and calls `SetScale` only for an entry in it;
+anything else is just erased. `on_session_end` restores the chiefs' size (the chiefs stayed 1.3x
+after a session, part of BUG-0067) and clears `g_chief_scale`, `g_chief`, `g_chief_saved`, the
+pincer and the epic tables; `on_world_change` clears them without a restore.
+`coop.tribe fix chiefs 0` restores the old `object_alive` check (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `tools/tests/coop_tribe_chief_removed.py` (suite `tribe_chief_removed`, tribe):
+`coop.tribe spawn 4`, `coop.tribe drop_chief 1` (RemoveMember(c, destroy) on the guest's chief, as
+guest_state does for a mirror), a new chief with 1.3x its game scale on both machines; then a
+forced address reuse: `coop.tribe stale_chief <id>` puts another tribe's citizen where a former chief
+was, and it must keep its own size in the game (spatial GetScale).
 
-`tools/tests/coop_tribe_chief_removed.py` on 2 instances, guest under a page heap:
-
-1. Wait for both chiefs.
-2. Add a host debug command `coop.tribe remove <id>` that calls the game's `RemoveMember(c, true)` on the guest's chief, so it disappears from the next snapshot at once.
-3. Play 10 s, then assert that the guest game is alive and wrote no crash report (the lab's crash check).
-4. Assert that the guest's new chief has 1.3x its desired scale, read from the game's spatial scale field.
-
-On main the page heap turns the freed call into an immediate fault (test fails); with the fix it passes.
+- Found on the way: right after RemoveMember the destroyed flag is already set, so the old check
+  skipped a just-removed chief; the danger is the block reused later, which the forced step shows.
+- FAIL with `--nofix` (out/lab/nofix-20261027/nofix2_tribe_chief_removed.log): the other tribe's citizen went
+  from scale 2.54 to 2.00 (the stale entry's size), `chief_bad_calls=1`.
+- PASS with the fix: lab run 20261027-185915 (2x).
 
 ### Related
 - Chiefs keep 1.3x after the session ends and `g_chief_scale` is never cleared (separate issue).
@@ -88,3 +90,4 @@ On main the page heap turns the freed call into an immediate fault (test fails);
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #59.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test tribe_chief_removed (FAIL with --nofix, PASS with the fix).

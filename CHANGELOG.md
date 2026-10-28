@@ -26,6 +26,15 @@
   the guest's world was being reloaded went to the freed creature of the old world, and a guest kept
   pointers to its own creatures while the host was in the main menu and used them when the host
   came back. Tests: `coop_anim_teardown.py`, `coop_host_away_kill.py`.
+- **Civilization: a load or a Leave no longer leaves old vehicles and cities behind in the mod**:
+  after the host loaded another save (or left) during a city alarm, the defenders' speed boost could
+  write into vehicles that no longer existed, and the host's and guest's vehicle and city tables
+  kept the old world (new vehicles could inherit old owners). Test: `coop_civ_reload.py` (suite
+  `civ_reload`).
+- **Tribe: a chief that leaves the tribe** no longer gets its size put back through a removed
+  citizen (possible crash), chiefs get their normal size back when the session ends, and no member
+  is added to a tribe that is out while the game-over caption is up. Tests:
+  `coop_tribe_chief_removed.py`, `coop_tribe_gameover.py`.
 
 ## [0.7.2.4] - 2026-10-25
 

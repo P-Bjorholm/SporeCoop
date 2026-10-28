@@ -630,3 +630,26 @@ docs/known-issues.md.
 
 New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 citizens) after
 ~8 minutes, on host and guest alike (the guest's own game spawns them too; the positions match).
+
+## Chiefs, epic and game over: object lifetime (2026-10-27, fix/w1-tribe-civ)
+<a id="tribe-lifetime"></a>
+
+* ✔ `RemoveMember(c, destroy=1)` (tribe vt 0x9C) on a chief: right after it `object_alive(c)` is
+  already false (the destroyed flag +0x21 is set at once), so the old check skipped that case; the
+  danger is a freed block reused by another object later (BUG-0081). Restores now go only to members
+  of the player tribe's own vector (`kMembersOff`). Forced reuse in the test (`coop.tribe
+  stale_chief <id>`): with the old check another tribe's citizen got the old chief's size (2.54 ->
+  2.00), with the fix it keeps its own.
+* ✔ Game over (GOG 2024, lane 5): the caption window `0x0445C9AB` reads "Alas! Your population has
+  fallen below the minimum needed to survive. Will this tragic story repeat itself? Bounce back in
+  time to find out!" (`coop.ui find "Alas"`); it comes several seconds (< 15 s) after the last member
+  has no health left. A `coop.tribe spawn 2` while it was up, then OK: no fault, the bounce back
+  reloaded the save (3 members with health) in 4 of 4 tries with the old code: the 0xC0DAE3 fault
+  of 2026-10-23 (GOG 2016 era) is not reproduced on GOG 2024 (BUG-0172). The mod now adds no member
+  to a player tribe without health (`coop.tribe fix gameover 0`: the old way; `spawns_blocked=` in
+  `coop.status`).
+* The epic (`g_epic`) is checked against the game's object list (`game::for_each_object`) before
+  any read; `coop.tribe epic hit` stops at a dead victim (BUG-0171 hunt on main: 4 tribe_play + 4
+  chaos_tribe runs without the freeze, lab run 20261027-183142; 14 tribe_play runs before).
+* `coop.status` line `tribe lifetime:` (chief_restores, chief_gone, chief_bad_calls,
+  spawns_blocked, chief_scale = game scale / own scale of every chief).
