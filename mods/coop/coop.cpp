@@ -2959,7 +2959,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
         return nullptr;
     }
-    char nm[64];
+    char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
     g_name = nm;
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;

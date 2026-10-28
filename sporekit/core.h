@@ -244,6 +244,7 @@ extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not
 extern KitFix g_fix_hookkeep;  // BUG-0132: removed hooks keep their trampolines, a grace before FreeLibrary
 extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a thread that waits beforehand
 extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
+extern KitFix g_fix_iniutf;    // BUG-0142: settings with non-ASCII text are kept in UTF-16
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);

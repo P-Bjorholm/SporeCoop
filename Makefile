@@ -92,9 +92,9 @@ test-asan:
 # Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
 # a lane's bottle by tools/tests/win_unit.py (lab test win_unit)
 test-win: $(B)/win_tests.exe
-$(B)/win_tests.exe: tests/win_tests.cpp mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp
+$(B)/win_tests.exe: tests/win_tests.cpp mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
 	@mkdir -p $(B)
-	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp -lwinhttp
+	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp
 
 clean:
 	rm -rf $(B)

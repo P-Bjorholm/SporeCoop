@@ -8,6 +8,7 @@
 //  - a report on request (console `report`, the co-op window): the same without the exception
 //  - ExitProcess is logged (a game that closes itself leaves its exit code in the log)
 #include "core.h"
+#include "inifile.h"
 
 #include <d3d9.h>
 
@@ -433,7 +434,7 @@ static std::vector<std::wstring> files_in(const std::wstring& dir, const wchar_t
 // a settings file without the address of the last host joined (a friend's IP)
 static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
 {
-    std::string s(d.begin(), d.end()), out;
+    std::string s = skini::to_utf8_text(std::string(d.begin(), d.end())), out; // UTF-16 since BUG-0142
     size_t i = 0;
     while (i < s.size()) {
         size_t e = s.find('\n', i);
