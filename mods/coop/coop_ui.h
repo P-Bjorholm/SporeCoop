@@ -77,6 +77,10 @@ bool is_open();
 void shutdown(); // mod unload: hide our windows
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
+extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)
+extern bool g_status_fix; // tests: `coop.corefix ui_status 0` keeps the status of the last button (BUG-0104)
+// the session was joined (connected) or ended (why): replaces the status line of the join
+void session_event(bool connected, const std::string& why);
 extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu item pointer after the menu (BUG-0163)
 
 // the dialog text font (0 until the co-op window was built once)

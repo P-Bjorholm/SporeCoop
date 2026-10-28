@@ -140,6 +140,8 @@ bool g_lobby_dirty = false;
 double g_last_lobby = 0;
 net::Discovery g_disc;
 bool g_disc_on = false;
+int g_lan_fake_n = 0;           // coop.lanfake: games on the network that answer (tests, BUG-0183)
+uint32_t g_lan_fake_until = 0;
 
 void chat_log(const std::string& s)
 {
@@ -377,6 +379,7 @@ bool g_host_away = false;
 double g_host_away_since = -1;
 float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
+bool g_host_away_fix = true; // BUG-0085: the away state ends with the session, without a "host is back"
 
 bool host_in_menu()
 {
@@ -434,6 +437,14 @@ void host_away_tick(double now)
     }
     // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
     // with its creature for 1 s (a guest gain sent while the host loads is dropped there)
+    if (g_host_away_fix && g_host_away && !g_sess.connected()) {
+        // BUG-0085: the session ended while the host was away: it is not back (the guest was told
+        // "player0 (host) is back: your N DNA go to the pack" and nothing was sent)
+        g_host_away = false;
+        g_host_away_since = -1;
+        g_solo_dna = 0;
+        return;
+    }
     bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
     if (!change)
         g_host_away_since = -1;
@@ -1006,8 +1017,20 @@ void lobby_tick(double now)
             g_sess.lobby_info = std::string(mode) + (world.empty() || !g_adapter ? "" : " - " + world);
         }
     }
-    if (g_disc_on)
-        g_disc.update(net::now_ms());
+    if (g_disc_on) {
+        uint32_t t = net::now_ms();
+        if (g_lan_fake_n && (int32_t)(t - g_lan_fake_until) < 0) // coop.lanfake (tests)
+            for (int i = 0; i < g_lan_fake_n; i++) {
+                net::DiscoverReply rep;
+                rep.port = net::kDefaultPort;
+                rep.name = "fake" + std::to_string(i + 1);
+                rep.players = 1;
+                rep.max_players = 4;
+                rep.info = "test";
+                g_disc.on_reply({0x000200C0u | (uint32_t)(i + 1) << 24, 0}, rep, t); // 192.0.2.<i+1> (TEST-NET-1)
+            }
+        g_disc.update(t);
+    }
 }
 
 // Network keepalive without frames: a modal game dialog (e.g. "game saved") can stop the frames
@@ -1680,15 +1703,24 @@ void end_session_modules(bool cell)
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
+    if (g_host_away_fix) { // BUG-0085
+        g_host_away = false;
+        g_host_away_since = -1;
+        g_solo_dna = 0;
+    }
 }
 
 void setup_callbacks()
 {
     g_sess.build = build_id();
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
-    g_sess.cb.connected = [] { feed("connected to host"); };
+    g_sess.cb.connected = [] {
+        feed("connected to host");
+        coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
+    };
     g_sess.cb.disconnected = [](const std::string& why) {
         feed("disconnected: " + why);
+        coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
         g_ready.clear();
         g_lobby_rtt.clear();
@@ -2928,7 +2960,11 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}};
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
+                {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
+                {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
+                {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
+                {"lan_pages", &coop_ui::g_lan_pages_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -3037,6 +3073,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
+    H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       g_lan_fake_n = argc > 1 ? std::clamp(atoi(argv[1]), 0, 64) : 0;
+                       g_lan_fake_until = net::now_ms() + (uint32_t)(argc > 2 ? atoi(argv[2]) : 60) * 1000u;
+                       SAY("fake games %d, listed %zu, kept %zu\n", g_lan_fake_n, g_disc.games(net::now_ms()).size(),
+                           g_disc.stored());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.corefix", "coop.corefix [name 0|1] - the core's fix switches (tests: 0 = the old behaviour)",
                    c_corefix, nullptr, MT);
     H->command_add(M, "coop.exittest", "coop.exittest [old] - end the game with ExitProcess(0) without Shutdown (tests, BUG-0107)",

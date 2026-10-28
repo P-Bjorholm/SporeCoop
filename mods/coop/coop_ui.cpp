@@ -9,6 +9,8 @@
 #include <map>
 
 #include "modes.h"
+#include "net/fixes.h"
+#include "net/udp.h"
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
@@ -29,6 +31,8 @@ static bool g_want_open, g_pending, g_dirty = true;
 static double g_last_refresh;
 static std::string g_status;
 static uint32_t g_status_color = 0xFFFFD866;
+static double g_status_until; // the status goes away then (0 = stays until the next session event)
+bool g_status_fix = true;     // BUG-0104 (`coop.corefix ui_status 0`: the status of the last button stays)
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static double g_skip_since; // the Co-op item was clicked during the menu intro: open once it is over
@@ -44,6 +48,8 @@ constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, k
 constexpr float kW = 760, kH = 600; // 560 + a footer row (version, "Report a problem")
 constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
+static int g_lan_first;   // the first game on the network listed (pages of three, BUG-0183)
+bool g_lan_pages_fix = true; // `coop.corefix lan_pages 0`: only the first three games, no "More" (BUG-0183)
 static int g_space_first; // the first row shown (pages of kSpaceRows rows)
 
 static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
@@ -200,6 +206,7 @@ struct Dialog {
     Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[3] = {};
     std::string lan_addr[3];
+    Win lan_more = nullptr; // BUG-0183: the next three games on the network
     // lobby page
     std::vector<Win> page_lobby;
     Win session = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
@@ -263,11 +270,26 @@ static Win add_edit(std::vector<Win>& page, const char* name, const Rect& r, con
     return w;
 }
 
-static void set_status(const std::string& s, uint32_t c)
+// ttl: seconds the text stays (0: until the session event that ends it, session_event)
+static void set_status(const std::string& s, uint32_t c, double ttl = 0)
 {
     g_status = s;
     g_status_color = c;
+    g_status_until = ttl > 0 ? H->time_seconds() + ttl : 0;
     g_dirty = true;
+}
+
+// BUG-0104: "Connecting to ..." stayed for the whole session (the lobby showed it as the world line)
+// and hid the update line on the connect page for good; the end of the join or of the session now
+// replaces it
+void session_event(bool connected, const std::string& why)
+{
+    if (!g_status_fix || !g_ok)
+        return;
+    if (connected)
+        set_status("", kYellow);
+    else
+        set_status(std::string(T("Disconnected: ", "Отключено: ")) + why, kRed, 30);
 }
 
 static void save_str(const char* section, const char* key, const std::string& v)
@@ -295,6 +317,8 @@ static void do_join(const std::string& address)
 {
     apply_name();
     std::string addr = address;
+    if (net::g_fix.addr_check) // BUG-0138: a leading space or the whole pasted hint line
+        addr = net::Endpoint::clean(addr);
     while (!addr.empty() && addr.back() == ' ')
         addr.pop_back();
     if (addr.empty()) {
@@ -304,7 +328,7 @@ static void do_join(const std::string& address)
     }
     std::string err;
     if (!A.join(addr, err)) {
-        set_status(std::string(T("Cannot join: ", "Не удалось подключиться: ")) + err, kRed);
+        set_status(std::string(T("Cannot join: ", "Не удалось подключиться: ")) + err, kRed, g_status_fix ? 30 : 0);
         return;
     }
     save_str("ui", "last_address", addr);
@@ -419,7 +443,11 @@ static void build_dialog()
     D.addr_edit = add_edit(P, "address", {230, 194, 520, 226}, load_str("ui", "last_address", ""), 64);
     D.join_btn = add_button(P, "join", {540, 190, 720, 230}, T("Join", "Подключиться"),
                             [] { do_join(sui::edit_text(D.addr_edit)); });
-    D.lan_hdr = add_label(P, {40, 242, 720, 268}, "", kDim);
+    D.lan_hdr = add_label(P, {40, 242, 590, 268}, "", kDim);
+    D.lan_more = add_button(P, "lanmore", {600, 238, 720, 268}, T("More >", "Ещё >"), [] {
+        g_lan_first += 3; // refresh_connect wraps it to the first page
+        g_dirty = true;
+    });
     for (int i = 0; i < 3; i++) {
         char nm[16];
         snprintf(nm, sizeof nm, "lan%d", i);
@@ -498,11 +526,11 @@ static void build_dialog()
     });
     D.share_btn = add_button(L, "share", {260, 488, 480, 528}, T("Send my world", "Отправить мир"), [] {
         A.share_world();
-        set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow);
+        set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow, g_status_fix ? 5 : 0);
     });
     D.leave_btn = add_button(L, "leave", {500, 488, 720, 528}, "", [] {
         A.leave();
-        set_status(T("Left the session", "Вы вышли из игры"), kYellow);
+        set_status(T("Left the session", "Вы вышли из игры"), kYellow, g_status_fix ? 5 : 0);
     });
     // ---- Space page ----
     auto& S = D.page_space;
@@ -568,12 +596,26 @@ static void refresh_connect()
 {
     bool scanning = A.role() == 0;
     auto games = A.lan_games ? A.lan_games() : std::vector<LanGame>{};
-    text(D.lan_hdr, games.empty() ? T("Games on your network: searching...", "Игры в вашей сети: поиск...")
-                                  : T("Games on your network (click to join):", "Игры в вашей сети (нажмите, чтобы войти):"));
+    // BUG-0183: only the first three answers were listed; with more hosts on the network (lab lanes,
+    // a LAN party) the others could not be joined from the list. "More >" shows the next three.
+    bool pages = g_lan_pages_fix && games.size() > 3;
+    if (!pages || g_lan_first >= (int)games.size() || g_lan_first < 0)
+        g_lan_first = 0;
+    if (games.empty())
+        text(D.lan_hdr, T("Games on your network: searching...", "Игры в вашей сети: поиск..."));
+    else if (pages) {
+        char b[160];
+        snprintf(b, sizeof b, T("Games on your network: %d-%d of %d (click to join)", "Игры в сети: %d-%d из %d (нажмите, чтобы войти)"),
+                 g_lan_first + 1, std::min(g_lan_first + 3, (int)games.size()), (int)games.size());
+        text(D.lan_hdr, b);
+    } else
+        text(D.lan_hdr, T("Games on your network (click to join):", "Игры в вашей сети (нажмите, чтобы войти):"));
+    show(D.lan_more, pages && scanning);
     for (int i = 0; i < 3; i++) {
-        bool have = i < (int)games.size();
+        int k = g_lan_first + i;
+        bool have = k < (int)games.size();
         if (have) {
-            const auto& g = games[i];
+            const auto& g = games[k];
             char b[256];
             snprintf(b, sizeof b, "%s  -  %s  -  %d/%d  -  %s", g.name.c_str(), g.info.c_str(), g.players,
                      g.max_players, g.address.c_str());
@@ -596,7 +638,8 @@ static void refresh_connect()
     // the session status wins; otherwise the update line (a new SporeCoop release)
     text(D.status, g_status.empty() && up ? up_line : g_status);
     color(D.status, g_status.empty() && up ? kGreen : g_status_color);
-    show(D.update_btn, up && !up_btn.empty());
+    // the Update button belongs to the update line, not to a session message (BUG-0104)
+    show(D.update_btn, up && !up_btn.empty() && (!g_status_fix || g_status.empty()));
     text(D.update_btn, up_btn);
 }
 
@@ -841,6 +884,11 @@ void tick()
         }
     }
     double now = H->time_seconds();
+    if (g_status_until > 0 && now >= g_status_until) { // a message of a finished action (BUG-0104)
+        g_status.clear();
+        g_status_until = 0;
+        g_dirty = true;
+    }
     double period = g_want_open ? 0.25 : 1.0;
     if (!g_pending && (g_dirty || now - g_last_refresh >= period)) {
         g_pending = true;
