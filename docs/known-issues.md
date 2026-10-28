@@ -345,6 +345,9 @@ anchor so other docs can link to it:
   2026-10-28 (fix/w2-net): BUG-0122 removed one candidate, the velocity from the arrival time
   (one late packet put a mirror 22 units ahead at 100 u/s); the snapshots now carry the host's
   time. Not re-measured with play_civ.py yet.
+* 2026-10-28 (fix/w2-civ), with both fixes merged: seed 9 gave p90 0.15 m, max 17.4 m, and the max
+  is a standing vehicle (v2) with the same ~17 m offset at the same place in both seed 9 runs: a
+  different cause, open (details in the ticket).
 * Ticket: BUG-0186.
 
 ## Civilization: the host's capture caption stops everybody's game
