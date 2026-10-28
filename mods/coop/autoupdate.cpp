@@ -44,17 +44,19 @@ static std::wstring game_root()
 // quiet after on_unload (it only finishes its own copy of the state).
 static std::atomic<bool> g_unloaded{false};
 static std::atomic<int> g_threads{0};
+bool g_pin_fix = true; // tests: `coop.corefix update_pin 0` = threads without a module reference
 
 static bool start_thread(LPTHREAD_START_ROUTINE fn)
 {
     HMODULE self = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)(void*)&start_thread, &self))
+    if (g_pin_fix && !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)(void*)&start_thread, &self))
         return false;
     g_threads++;
     HANDLE h = CreateThread(nullptr, 0, fn, self, 0, nullptr);
     if (!h) {
         g_threads--;
-        FreeLibrary(self);
+        if (self)
+            FreeLibrary(self);
         return false;
     }
     CloseHandle(h);
@@ -65,6 +67,8 @@ static bool start_thread(LPTHREAD_START_ROUTINE fn)
 {
     g_busy = false;
     g_threads--;
+    if (!self)
+        ExitThread(0); // the old way (update_pin 0): the image may be gone under this thread
     FreeLibraryAndExitThread((HMODULE)self, 0);
 }
 

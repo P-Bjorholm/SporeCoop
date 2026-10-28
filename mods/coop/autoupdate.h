@@ -19,5 +19,6 @@ std::string command(const std::string& arg); // coop.update [check | apply | sta
 // on_unload: no thread logs or notifies any more; returns how many still run (each holds the
 // module, so the old image stays mapped until they end: BUG-0060)
 int shutdown();
+extern bool g_pin_fix; // tests: `coop.corefix update_pin 0`, the old threads without a module reference
 
 } // namespace autoupdate

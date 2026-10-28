@@ -43,6 +43,7 @@ add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its s
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu's Co-op item is dropped as the game leaves the menu (BUG-0163)
+add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('notify', P + 'coop_notify.py', minutes=3)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
