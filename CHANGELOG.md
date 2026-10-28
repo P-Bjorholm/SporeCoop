@@ -4,6 +4,10 @@
 
 ### Fixed
 - **Cell: leaving co-op** removes the guest's mirrored cells so they do not remain in its pool.
+- **Leaving co-op cleans up every stage**: after a guest pressed Leave in Space the host's ships it
+  showed stayed in its game and flew on by themselves; starting to host or join while still in a
+  session kept the old players. Every way a session ends (Leave, the host gone, a new host or join,
+  a mod reload) now cleans up the same way. Test: `coop_leave_cleanup.py` (suite `leave_cleanup`).
 
 ## [0.7.2.4] - 2026-10-25
 

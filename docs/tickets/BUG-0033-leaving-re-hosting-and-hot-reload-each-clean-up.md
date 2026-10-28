@@ -1,19 +1,19 @@
 ---
 id: BUG-0033
 title: leaving, re-hosting and hot reload each clean up a different subset of the co-op state
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#11
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: integrate/pr5-pr6
+commits: a387323
+tests: leave_cleanup, cell_coop
 signature:
-docs:
+docs: docs/known-issues.md#issue-session-cleanup-paths
 related: #11
 ---
 
@@ -84,7 +84,17 @@ One `end_session(const char* why)` in coop.cpp that runs every module's `on_sess
 Keep the old `do_leave` behaviour behind `coop.fix session_end off` so the lab can check that the test still catches it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done for the module cleanup (2026-10-27, GOG 2024 lanes): `coop_leave_cleanup.py` (suite
+`leave_cleanup`, Space fixture). With `coop.sessionfix 0` it FAILS: after the guest's Leave the
+host's mirror ship stays in the guest's game, and after `coop.host` while connected the old
+`remote 0 'Alice'` carries over. With the fix it PASSES (3 runs: two by hand on lanes 2-3, one in
+lab run 20261027-175002 together with smoke, cell, space and rejoin tests, all green).
+
+Not covered: the vote, `shared` resources, `g_roles` and `g_host_away` are still not reset on any
+path (their own issues); the Tribe / Civ / creations effects of a Leave are cleaned by the same
+helper but not asserted by a test.
+
+The original plan:
 
 `tools/tests/coop_leave_cleanup.py` on two instances (twoinst.start), one round per stage fixture (cell, tribe, civ, space):
 - The guest presses Leave through the UI (the real button, not a command). Assert the game's own state on that machine: no object of the host's left in the world (`coop.fleet list` / `coop.pool` / `coop.tribe`), the avatar's invulnerable flag is 0 after leaving while knocked out (Cell), and `coop.status` shows no remotes.
@@ -102,3 +112,6 @@ The test must fail on main and with `coop.fix session_end off`, and pass with th
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #11.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-27: BUG-0028 fixes Cell mirrors on voluntary Leave; the remaining paths stay open.
+- 2026-10-27: fixed on integrate/pr5-pr6 (a387323): `end_session_modules()` in coop.cpp runs every
+  stage module's on_session_end and clears the remotes for cb.disconnected, do_leave, on_unload
+  and a coop.host / coop.join while a session is open; `coop.sessionfix 0` restores the old lists.

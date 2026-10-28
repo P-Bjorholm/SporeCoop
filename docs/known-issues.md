@@ -21,9 +21,9 @@ anchor so other docs can link to it:
 ## Session: cleanup differs between leave, disconnection and unload (2026-10-27, code review)
 <a id="issue-session-cleanup-paths"></a>
 
-* [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): voluntary leave
-  and mod unload skip some cleanup handlers called on disconnection. These remaining paths are
-  outside the Cell fix; check their object lifetimes and stage safety before changing them.
+* [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): fixed
+  (unreleased) for the stage modules: every way a session ends now runs the same cleanup. Still
+  open: the vote, `shared` resources, `g_roles` and `g_host_away` are not reset on any path.
 
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 

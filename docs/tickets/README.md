@@ -43,7 +43,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0030](BUG-0030-join-fails-after-10-s-when-the-host-s-first-pack.md) | open | bug | All | 2026-10-27 |  | join fails after 10 s when the host's first packet is lost (WELCOME falsely acked) |
 | [BUG-0031](BUG-0031-vehicles-of-a-player-who-left-stay-theirs-nobody.md) | open | bug | Civ | 2026-10-27 |  | vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them |
 | [BUG-0032](BUG-0032-one-lost-state-packet-makes-the-guest-delete-and.md) | open | desync | Cell | 2026-10-27 |  | one lost state packet makes the guest delete and recreate up to 14 of the host's cells |
-| [BUG-0033](BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md) | open | bug | All | 2026-10-27 |  | leaving, re-hosting and hot reload each clean up a different subset of the co-op state |
+| [BUG-0033](BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md) | fixed | bug | All | 2026-10-27 | unreleased | leaving, re-hosting and hot reload each clean up a different subset of the co-op state |
 | [BUG-0034](BUG-0034-one-reliable-message-bigger-than-a-packet-stalls.md) | open | desync | All | 2026-10-27 |  | one reliable message bigger than a packet stalls all reliable traffic and floods empty packets |
 | [BUG-0035](BUG-0035-a-received-world-can-move-and-overwrite-the-save.md) | open | bug | All | 2026-10-27 |  | a received world can move and overwrite the save slot the guest is playing (auto_load_world=0) |
 | [BUG-0036](BUG-0036-a-game-crash-after-a-test-s-checks-does-not-fail.md) | open | tooling | All | 2026-10-27 |  | a game crash after a test's checks does not fail the test in the lab |
