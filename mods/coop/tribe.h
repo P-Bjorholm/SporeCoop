@@ -21,6 +21,7 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
+    std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing

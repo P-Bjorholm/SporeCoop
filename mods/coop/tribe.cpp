@@ -47,6 +47,12 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kTribe; }
+// BUG-0151: while the host is away (main menu) nothing simulates or orders the guest's members (the
+// host sends no states and drops orders outside Tribe): the guest's own game runs their AI and its
+// orders until the host is back. `coop.tribe fix away 0`: the old frozen tribe (tests).
+static bool g_fix_away = true;
+static uint32_t g_away_orders;
+static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 
 static void* player_tribe()
 {
@@ -205,7 +211,7 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
-    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe) {
+    if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe && !local_play()) {
         g_bt_skipped++;
         return 0;
     }
@@ -302,6 +308,10 @@ using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
 static DoActionForObjects_t o_DoActionForObjects;
 static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, void* target, void* prop)
 {
+    if (local_play()) {
+        g_away_orders++;
+        return o_DoActionForObjects(self, vec, action, target, prop);
+    }
     if (!is_guest() || game::mode_id() != modes::kTribe) {
         if (is_host() && game::mode_id() == modes::kTribe) {
             char lb[96];
@@ -332,6 +342,10 @@ using WalkSelected_t = int(SK_THISCALL*)(void*, const float*);
 static WalkSelected_t o_WalkSelected;
 static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 {
+    if (local_play()) {
+        g_away_orders++;
+        return o_WalkSelected(self, pos);
+    }
     if (!is_guest() || game::mode_id() != modes::kTribe || !pos) {
         if (is_host() && game::mode_id() == modes::kTribe && pos) {
             char lb[96];
@@ -733,6 +747,8 @@ static uint32_t g_ko_shown, g_ko_replaced;
 
 static void guest_tick(double now)
 {
+    if (local_play())
+        return; // the last states would hold the members for 3 s
     for (auto& [id, g] : g_gm) {
         if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
             continue;
@@ -1398,9 +1414,9 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
-                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u\n",
+                 "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u ai_skipped=%u/%u away_orders=%u local=%d\n",
                  (unsigned)g_gm.size(), g_spawned, g_removed, g_cmds_sent, g_rx, g_rx_skipped, g_resets,
-                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls);
+                 (unsigned)all_tribes().size(), player_tribe(), g_unselected, g_incomplete, g_bt_skipped, g_bt_calls, g_away_orders, (int)local_play());
     std::string out = b;
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
@@ -1472,8 +1488,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_epic_players = on;
         else if (a[1] == "epic_herd")
             g_fix_epic_herd = on;
+        else if (a[1] == "away")
+            g_fix_away = on;
         else
-            return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd 0|1";
+            return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once

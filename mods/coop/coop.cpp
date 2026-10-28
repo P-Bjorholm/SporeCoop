@@ -94,8 +94,19 @@ uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 // DNA earned locally: the host's total is authoritative
 extern bool g_host_away;
 extern float g_solo_dna;
+// BUG-0151: a goal card's reward a guest earns while the host is away is kept like any other DNA
+// (social::goal_dna sent it to a host that drops it); the host keeps a guest's MSG_DNA_ADD that
+// arrives while it has no creature (editor, load) and pays it when it has one again.
+// `coop.corefix away_dna 0`: the old behaviour (tests).
+bool g_away_dna_fix = true;
+float g_dna_owed = 0;     // host: guests' DNA that arrived without an avatar
+uint32_t g_dna_owed_paid; // tests
 bool on_dna(float delta)
 {
+    if (g_away_dna_fix && g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
+        g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
+        return true;
+    }
     if (social::goal_dna(delta))
         return false; // a goal card's reward: the host pays it into the shared pool once
     if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
@@ -426,6 +437,12 @@ static bool world_state_msg(uint8_t type)
 
 void host_away_tick(double now)
 {
+    if (g_dna_owed > 0 && g_sess.role() == net::Role::Host && game::avatar() && stage_mode(g_mode)) {
+        game::dna_add_raw(g_dna_owed);
+        feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
+        g_dna_owed = 0;
+        g_dna_owed_paid++;
+    }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
         if (d != 0)
@@ -1681,6 +1698,7 @@ void end_session_modules(bool cell)
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
+    g_dna_owed = 0;
 }
 
 void setup_callbacks()
@@ -1763,7 +1781,8 @@ void setup_callbacks()
             if (r.ok() && d > 0 && d < 10000 && game::avatar()) {
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
-            }
+            } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000)
+                g_dna_owed += d; // in an editor or a load: paid when our creature is back
             return;
         }
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
@@ -2104,7 +2123,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", squadron::status().c_str());
     SAY("%s", spacecoop::status().c_str());
     SAY("%s", gamefixes::status().c_str());
-    SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
+    SAY("dna=%.1f (rx %u totals, forwarded %u gains) solo=%.1f owed=%.1f owed_paid=%u away=%d\n", game::dna(), g_dna_rx,
+        g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
@@ -2937,7 +2957,8 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}};
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
+                {"away_dna", &g_away_dna_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -3128,6 +3149,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.sess = &g_sess;
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
+    trc.host_away = [] { return g_host_away; };
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
@@ -3259,6 +3281,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
+    cvc.host_away = [] { return g_host_away; };
     civ::init(H, M, std::move(cvc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;

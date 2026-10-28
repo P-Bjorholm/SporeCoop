@@ -53,6 +53,12 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
+// BUG-0151: while the host is away (main menu) the guest's vehicles run their own AI and the guest's
+// orders go to its own game (the host sends no states and drops orders outside Civ).
+// `coop.civ fix away 0`: the old frozen vehicles (tests).
+static bool g_fix_away = true;
+static uint32_t g_away_orders;
+static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
 
 static void* nm() { return game::noun_manager(); }
@@ -213,7 +219,7 @@ static BT_t o_BT;
 static int SK_CDECL h_BT(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t agent, uint32_t a5, uint32_t a6,
                          uint32_t a7, uint32_t a8)
 {
-    if (agent && is_guest() && game::mode_id() == modes::kCiv && !IsBadReadPtr((void*)agent, 4) &&
+    if (agent && is_guest() && game::mode_id() == modes::kCiv && !local_play() && !IsBadReadPtr((void*)agent, 4) &&
         *(uintptr_t*)agent == a_VehicleVt)
         return 0;
     return o_BT(a0, a1, a2, a3, agent, a5, a6, a7, a8);
@@ -287,7 +293,9 @@ using SetOrder_t = int(SK_THISCALL*)(void*, void*, int, int);
 static SetOrder_t o_SetOrder;
 static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (local_play() && !g_applying)
+        g_away_orders++;
+    else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
             // a mirror of another player's or nation's vehicle: the guest's own civ AI orders the
@@ -313,7 +321,9 @@ using SetMoveOrder_t = int(SK_THISCALL*)(void*, float, float, float, int);
 static SetMoveOrder_t o_SetMoveOrder;
 static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int flag)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (local_play() && !g_applying)
+        g_away_orders++;
+    else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
             if (g_gv[it->second].owner != C.sess->my_id()) {
@@ -1721,6 +1731,8 @@ static void guest_tick(double now)
         last_sel = now;
         drop_foreign_selection();
     }
+    if (local_play())
+        return; // the last states would stop every order for 3 s (StopMovement below)
     for (auto& [id, g] : g_gv) {
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
             continue;
@@ -1883,7 +1895,7 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
 
 std::string status()
 {
-    char b[512];
+    char b[768];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
@@ -1897,10 +1909,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play());
     return b;
 }
 
@@ -2004,8 +2016,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_orphans = on;
         else if (a[1] == "caption")
             g_fix_caption = on;
+        else if (a[1] == "away")
+            g_fix_away = on;
         else
-            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans|caption 0|1";
+            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans|caption|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (!a.empty() && a[0] == "spawns") { // spawns: the game's own vehicle spawns on this guest by caller
