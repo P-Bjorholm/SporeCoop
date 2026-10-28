@@ -68,7 +68,7 @@ menu stays up, then the host closes it. Checked on the guest's game: spawned pro
 
 * FAIL without the fix (`--without-fix` = `coop.npc knownfix off`, lane 5, 2026-10-28, direct run):
   no mirrored NPC near the guest 15 s after the host went on, the host counted 21 as mirrored.
-* PASS with the fix (lane 5, direct run): 19 mirrored NPCs near the guest.
+* PASS with the fix (lane 5, direct run; lab run out/lab/20261028-010504, `npc_rejoin_paused`): 19 mirrored NPCs near the guest.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #104.

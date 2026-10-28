@@ -75,7 +75,7 @@ creature) is the guest's own creation after each load.
 * FAIL without the fix (`--without-fix` = `coop.npc worldfix off`, lane 5, 2026-10-28, direct run):
   round 2: the guest kept the host's species 065CBE70 for 30 s, swaps 2 -> 2. (Round 1 passed: the
   simulated reuse was taken by an earlier avatar change.)
-* PASS with the fix (lane 5, direct run): both rounds swap 3.1 s after the guest is in the world
+* PASS with the fix (lane 5, direct run; lab run out/lab/20261028-010504, `world_reload`): both rounds swap 3.1 s after the guest is in the world
   (the 3 s settle wait holds).
 * Not shown: that the game really reuses the avatar's address after a load.
 

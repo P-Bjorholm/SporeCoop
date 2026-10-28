@@ -41,7 +41,7 @@ checked on the guest's game after its load: the avatar's age (+0xB34) and the pr
 * FAIL without the fix (`--without-fix` = `coop.npc sharecine off` on the host, lane 5, 2026-10-28,
   direct run): the guest loaded twice while the caption was up and ended with age 0, migration 1
   (the host: age 1, migration 2).
-* PASS with the fix (lane 5, direct run): no load while the caption was up; the guest has age 1,
+* PASS with the fix (lane 5, direct run; lab run out/lab/20261028-010504, `evolve_world`): no load while the caption was up; the guest has age 1,
   migration 2.
 
 ## History
