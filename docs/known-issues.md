@@ -611,14 +611,12 @@ keeps the history).
 * BUG-0047 (#25, bug): RefPack decoder reads one byte past a 5-byte compressed record.
 * BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
 * BUG-0049 (#27, bug): money or food changed while offline is added to the next host's shared pool.
-* BUG-0050 (#28, freeze): stack dump (stack, hangdump, watchdog) can freeze the game for good.
 * BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
 * BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
 * BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
 * BUG-0060 (#38, crash): hot reload of coop.dll can crash while the update check thread or a queued task still runs old code.
 * BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
-* BUG-0065 (#43, freeze): `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good)
 * BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
 * BUG-0069 (#47, bug): netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state)
 * BUG-0073 (#51, tooling): a lab test that FAILs and then passes on retry counts as passed.
@@ -644,7 +642,6 @@ keeps the history).
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
 * BUG-0113 (#92, bug): after a resolution change the co-op window stays at its old position, partly off-screen.
 * BUG-0114 (#93, bug): every game start deletes all *.old files in the game folders, also the player's own backups.
-* BUG-0115 (#94, freeze): a fault inside the exception logger or the log freezes the game for good.
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
 * BUG-0122 (#101, desync): host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
@@ -652,7 +649,6 @@ keeps the history).
 * BUG-0128 (#107, desync): the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads.
 * BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
-* BUG-0132 (#111, crash): hooks that game worker threads run are removed without stopping those threads.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
 * BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
 * BUG-0135 (#114, test): coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC.
@@ -663,6 +659,7 @@ keeps the history).
 * BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
+* BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
 * BUG-0150 (#129, bug): a deferred update file is never applied if its swap fails once (the pending list is deleted anyway)
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.

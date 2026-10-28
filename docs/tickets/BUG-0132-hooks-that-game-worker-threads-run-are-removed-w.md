@@ -1,19 +1,19 @@
 ---
 id: BUG-0132
 title: hooks that game worker threads run are removed without stopping those threads
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#111
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w1-sporekit
+commits: 5d46dbb, 4de4d0a, 5e4dc7f
+tests: tools/tests/kit_freeze.py (suite kit_freeze)
+signature: 0xC0000005 in a freed trampoline (eip in no module) on a thread running a hook at removal
+docs: docs/02-modkit.md (Diagnostics: hook removal), docs/06-testing.md#testing-kit-freeze
 related: #111
 ---
 
@@ -54,17 +54,33 @@ Each case ends in an access violation on that thread, written as a crash report 
 PLAUSIBLE. Freezing is off (checked by reading). That worker threads call the global RNG comes from docs/re/space.md 7.3. The window per call is tiny. A second reviewer verified the reading and the line numbers. Severity: low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-sporekit (the generic SporeKit part; coop's own reload order is BUG-0060).
+* MinHook patch `MH_SetKeepTrampolines` (third_party/minhook): `MH_RemoveHook` no longer frees the
+  trampoline. Observed: MinHook's `FreeBuffer` at once writes its free-list pointer into the first
+  bytes of the trampoline, frees the whole block when it is empty, and hands the slot to the next
+  hook; a thread inside a detour that then calls the original ran garbage. A few bytes per removed
+  hook stay allocated (64 per hook per reload).
+* `unload_from` (sporekit/mods.cpp): a mod that had hooks gets 50 ms after `hooks_remove_all`
+  before `FreeLibrary`, so a thread inside a short detour (h_RandomInt) returns before the code is
+  unmapped. Argued, not forced by the test: a detour that blocks longer is not covered.
+* Not fixed here: writing the 5-byte `jmp` while a thread runs the first bytes of the function
+  (making a hook, also at hot reload): BUG-0202. Removing a hook does not have that problem (while
+  hooked no thread is inside those bytes).
 
-For hooks on functions other threads can call:
-- Either do not remove them at unload: point the detour at a small stub owned by `sporekit.dll` that forwards to the original when the mod is gone. This is how `uiproc.cpp` keeps UI handlers alive across reloads.
-- Or freeze threads for just those hooks with a safe method, for example by waiting until no thread is inside the detour, counted with an atomic in-flight counter, before `FreeLibrary`.
-- At minimum, do not free the trampoline memory of such hooks.
+Switch: `kit.fix hookkeep 0` (trampolines freed, no grace).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `tools/tests/kit_freeze.py` case `hookchurn`: `kit.test.hookchurn 200 3` hooks a function of
+sporekit.dll whose detour spins before it calls the original; 3 threads call it in a loop. Each
+round the threads wait at a gate while the hook is made (BUG-0202), then run while the hook is
+removed with `hooks_remove_all` (the path of a mod unload).
 
-The reload loop with an RNG thread described above, counting faults (`exc`) and crash reports. It should FAIL on main within the loop, if the window can be hit, and PASS with the fix.
+FAIL (fixes off, `tools/tests/kit_freeze.py --old` on lane 3; manual run 2026-10-27 19:3x): the game crashed within 1.2 s; and with the final test (a second manual run):
+`0xC0000005 access violation at 0x02FA03E0 ? write of address 0x00000000` (eip in the freed
+trampoline block), crash-20261027-194744-i5.txt.
+
+PASS (fixes on): lab runs out/lab/20261027-184811 and out/lab/20261027-184904 (lane 3, all six cases PASS both times; `diag` passed in the second run, its one flaky check "a minidump is written next to it" failed in the first attempt and on main before, 2026-10-24/25). With the fix: `200 rounds (200 hooked), 34520617 calls on 3 threads, trampolines kept`, no
+crash. The `FreeLibrary` grace is a written argument only (the test does not unload a DLL).
 
 ### Related
 #38 (hot reload of coop.dll can crash while a thread or a queued task still runs old code).
@@ -72,3 +88,4 @@ The reload loop with an RNG thread described above, counting faults (`exc`) and 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #111.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.

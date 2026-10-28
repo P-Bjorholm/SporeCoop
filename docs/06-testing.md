@@ -836,3 +836,8 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   (the first one) saw the fault.
 * `hookchurn` (BUG-0132): a hook on a function of sporekit.dll is made and removed 200 times while
   3 threads call it through a detour that spins before it calls the original.
+* Runs (2026-10-27, lane 3): with `--old` all six cases FAIL (stack / hangdump / logfault / excfault:
+  no answer and frames stop; cheat: `sk shot` 15 s, `sk wait.frames 2` no answer; hookchurn: a crash
+  in the freed trampoline); with the fixes all PASS, the whole test 38 s. A first hookchurn made
+  the hook while the threads ran and crashed with the fix too: that is BUG-0202, the gate in
+  `hooks_churn_test` keeps it out of this test.

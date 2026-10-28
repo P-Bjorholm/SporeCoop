@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could
+  stop the game for good when the game was allocating memory at that moment; `sk shot`,
+  `sk wait.frames`, `sk stack`, `sk hangdump` in the cheat console froze it (they are now refused
+  there); a fault inside the exception logger or the log froze the game without a crash report.
+  Removing a mod's hooks (quit, hot reload) no longer frees code another thread may still run.
+  Test: `kit_freeze.py` (suite `kit_freeze`, BUG-0050, BUG-0065, BUG-0115, BUG-0132).
 - **Cell: leaving co-op** removes the guest's mirrored cells so they do not remain in its pool.
 - **Leaving co-op cleans up every stage**: after a guest pressed Leave in Space the host's ships it
   showed stayed in its game and flew on by themselves; starting to host or join while still in a

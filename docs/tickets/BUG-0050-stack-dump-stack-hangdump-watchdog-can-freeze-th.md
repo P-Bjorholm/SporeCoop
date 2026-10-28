@@ -1,19 +1,19 @@
 ---
 id: BUG-0050
 title: stack dump (stack, hangdump, watchdog) can freeze the game for good
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#28
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w1-sporekit
+commits: 5d46dbb, 4de4d0a, 5e4dc7f
+tests: tools/tests/kit_freeze.py (suite kit_freeze)
+signature: stack / hangdump never answer; the main thread stays suspended
+docs: docs/02-modkit.md (Diagnostics, commands), docs/06-testing.md#testing-kit-freeze
 related: #28
 ---
 
@@ -65,14 +65,29 @@ The automatic path matters most: the watchdog calls `dump_thread_stack` on the m
 CONFIRMED by reading the full path (suspend, allocate, resume order in both functions). Not verified on a running game; how often the main thread is inside the heap at a random instant is not measured.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-sporekit. `thread_snapshot` (sporekit/watchdog.cpp) is the one place that suspends a
+thread: it calls only `GetThreadContext`, `VirtualQuery` and copies the registers and up to 4096
+dwords from esp into a caller-owned buffer (static, no allocation), then resumes. `stack`
+(commands.cpp `c_stack`), `hangdump` and the watchdog (`dump_thread_stack`) format, resolve symbols
+and log from the copy after the resume. The callback for the old order is a plain function pointer
+(a `std::function` could allocate on the way to the suspend).
 
-While the thread is suspended, only copy raw data into fixed-size buffers on the stack: the `CONTEXT`, and up to N dwords from `esp` (checked with `VirtualQuery`, no allocation). Call `ResumeThread` right after, then format, resolve symbols and log. The same for `c_stack` and `dump_thread_stack`. `VirtualQuery` and `GetThreadContext` are fine while suspended; nothing that allocates or takes a user-mode lock is.
+Switch: `kit.fix stackdump 0` formats while the thread is suspended (the old order).
+
+Also: the 2026-10-22 note in docs/06-testing.md ("`stack` and `hangdump` suspend the main thread;
+under Wine that hung the console for good") is very likely this bug.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `tools/tests/kit_freeze.py` cases `stack` and `hangdump` (suite `kit_freeze`). The console
+command `kit.test.stackheap [stack|hangdump] 3000` makes the main thread lock the CRT heap
+(`_get_heap_handle()`) and the process heap with `HeapLock` and sleep 3 s (as a thread suspended
+inside malloc holds the heap), and then dumps its stack from the console thread.
 
-`tools/tests/kit_stack_dump.py` on one instance: add a debug command (for example `kit.holdheap <ms>`) that on the main thread locks the CRT heap (`HeapLock` on the handle from `_get_heap_handle()`, or a tight `malloc`/`free` loop as a weaker variant) for 3 s; while it holds it, call `stack` and `hangdump` from the console. Assert that both answer within 5 s, that frames continue afterwards (`frame` advances) and that no crash or hang report was written. Without the fix the console times out and the game stays frozen; with it both pass.
+FAIL (fixes off, `tools/tests/kit_freeze.py --old` on lane 3; manual run 2026-10-27 19:3x): `stack: no answer (25.0 s)`, `hangdump: no answer (25.0 s)`, frames stopped for good
+(the game had to be killed), no crash report: the freeze of the report, reproduced.
+
+PASS (fixes on): lab runs out/lab/20261027-184811 and out/lab/20261027-184904 (lane 3, all six cases PASS both times; `diag` passed in the second run, its one flaky check "a minidump is written next to it" failed in the first attempt and on main before, 2026-10-24/25). With the fix: `stack answered after 3001 ms (heaps held 3000 ms)`, `hangdump answered after
+3003 ms`, frames go on.
 
 ### Related
 `stack.scan` was added because suspending the main thread under Wine could hang the console (commands.cpp comment above `c_stack_scan`); this may be the same or a second cause.
@@ -80,3 +95,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #28.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.

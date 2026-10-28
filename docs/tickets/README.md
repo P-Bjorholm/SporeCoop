@@ -60,7 +60,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0047](BUG-0047-refpack-decoder-reads-one-byte-past-a-5-byte-com.md) | open | bug | All | 2026-10-27 |  | RefPack decoder reads one byte past a 5-byte compressed record |
 | [BUG-0048](BUG-0048-lab-py-branch-can-test-another-branch-s-worktree.md) | open | tooling | All | 2026-10-27 |  | lab.py --branch can test another branch's worktree (prefix match) |
 | [BUG-0049](BUG-0049-money-or-food-changed-while-offline-is-added-to.md) | open | bug | All | 2026-10-27 |  | money or food changed while offline is added to the next host's shared pool |
-| [BUG-0050](BUG-0050-stack-dump-stack-hangdump-watchdog-can-freeze-th.md) | open | freeze | All | 2026-10-27 |  | stack dump (stack, hangdump, watchdog) can freeze the game for good |
+| [BUG-0050](BUG-0050-stack-dump-stack-hangdump-watchdog-can-freeze-th.md) | fixed | freeze | All | 2026-10-27 | unreleased | stack dump (stack, hangdump, watchdog) can freeze the game for good |
 | [BUG-0051](BUG-0051-the-guest-s-food-total-can-briefly-drop-below-a.md) | open | desync | Cell | 2026-10-27 |  | the guest's food total can briefly drop below a level line, so it levels down and up again |
 | [BUG-0052](BUG-0052-a-lab-test-timeout-kills-only-bin-sh-the-test-ke.md) | open | tooling | All | 2026-10-27 |  | a lab test timeout kills only /bin/sh, the test keeps driving the lane |
 | [BUG-0053](BUG-0053-partner-s-puppet-freezes-when-the-sender-s-milli.md) | open | bug | All | 2026-10-27 |  | partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime) |
@@ -75,7 +75,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0062](BUG-0062-tickets-py-new-private-in-a-worktree-writes-to-t.md) | open | tooling | All | 2026-10-27 |  | tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost |
 | [BUG-0063](BUG-0063-flying-to-a-partner-who-is-in-the-galaxy-view-co.md) | open | bug | Space | 2026-10-27 |  | flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled |
 | [BUG-0064](BUG-0064-a-new-player-inherits-the-civilization-role-of-t.md) | open | bug | Civ | 2026-10-27 |  | a new player inherits the civilization role of the player who had their id before |
-| [BUG-0065](BUG-0065-sk-shot-sk-wait-frames-in-the-cheat-console-free.md) | open | freeze | All | 2026-10-27 |  | `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good) |
+| [BUG-0065](BUG-0065-sk-shot-sk-wait-frames-in-the-cheat-console-free.md) | fixed | freeze | All | 2026-10-27 | unreleased | `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good) |
 | [BUG-0066](BUG-0066-a-puppet-or-proxy-removed-during-a-cinematic-get.md) | open | bug | Creature | 2026-10-27 |  | a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC |
 | [BUG-0067](BUG-0067-chiefs-stay-1-3x-big-after-the-session-ends-and.md) | open | bug | Tribe | 2026-10-27 |  | chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load |
 | [BUG-0068](BUG-0068-twoinst-monitor-reads-the-wrong-game-log-in-work.md) | open | test | All | 2026-10-27 |  | twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE |
@@ -125,7 +125,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0112](BUG-0112-with-2-guests-waiting-for-the-world-the-host-pos.md) | open | bug | All | 2026-10-27 |  | with 2+ guests waiting for the world, the host posts one save per guest in the same frame |
 | [BUG-0113](BUG-0113-after-a-resolution-change-the-co-op-window-stays.md) | open | bug | All | 2026-10-27 |  | after a resolution change the co-op window stays at its old position, partly off-screen |
 | [BUG-0114](BUG-0114-every-game-start-deletes-all-old-files-in-the-ga.md) | open | bug | All | 2026-10-27 |  | every game start deletes all *.old files in the game folders, also the player's own backups |
-| [BUG-0115](BUG-0115-a-fault-inside-the-exception-logger-or-the-log-f.md) | open | freeze | All | 2026-10-27 |  | a fault inside the exception logger or the log freezes the game for good |
+| [BUG-0115](BUG-0115-a-fault-inside-the-exception-logger-or-the-log-f.md) | fixed | freeze | All | 2026-10-27 | unreleased | a fault inside the exception logger or the log freezes the game for good |
 | [BUG-0116](BUG-0116-the-required-fix-switch-coop-fix-name-off-does-n.md) | open | test | All | 2026-10-27 |  | the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch |
 | [BUG-0117](BUG-0117-a-second-superweapon-request-changes-the-weapon.md) | open | bug | Civ | 2026-10-27 |  | a second superweapon request changes the weapon and target of the vote already running |
 | [BUG-0118](BUG-0118-the-selection-guard-clears-0xb58-bit-0x1-but-the.md) | open | crash | Creature | 2026-10-27 |  | the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash) |
@@ -142,7 +142,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0129](BUG-0129-chat-in-notifications-is-cut-short-for-non-latin.md) | open | bug | All | 2026-10-27 |  | chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere |
 | [BUG-0130](BUG-0130-a-guest-in-another-world-gets-the-host-s-dna-npc.md) | open | bug | All | 2026-10-27 |  | a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved |
 | [BUG-0131](BUG-0131-a-disabled-knocked-out-dead-or-frozen-partner-co.md) | open | bug | Space, Cell | 2026-10-27 |  | a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you |
-| [BUG-0132](BUG-0132-hooks-that-game-worker-threads-run-are-removed-w.md) | open | crash | All | 2026-10-27 |  | hooks that game worker threads run are removed without stopping those threads |
+| [BUG-0132](BUG-0132-hooks-that-game-worker-threads-run-are-removed-w.md) | fixed | crash | All | 2026-10-27 | unreleased | hooks that game worker threads run are removed without stopping those threads |
 | [BUG-0133](BUG-0133-after-the-latency-rises-partners-and-npcs-move-i.md) | open | desync | All | 2026-10-27 |  | after the latency rises, partners and NPCs move in steps for about 50 s |
 | [BUG-0134](BUG-0134-new-stage-game-py-npc-cities-uses-gog-2016-only.md) | open | tooling | All | 2026-10-27 |  | new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures |
 | [BUG-0135](BUG-0135-coop-team-py-checks-the-joint-hunt-bonus-only-by.md) | open | test | All | 2026-10-27 |  | coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC |
