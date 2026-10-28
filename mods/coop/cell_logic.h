@@ -21,6 +21,26 @@ inline bool slot_in_pool(uint32_t slot, uint32_t high_water, uint32_t capacity, 
     return slot < high_water && slot < capacity;
 }
 
+// BUG-0093: the slot argument of `coop.cell spawn <slot>`: a decimal number (no sign, nothing after
+// it) of a slot inside the pool's live range [1, highWater) and below 4096. atoi took "99999" or
+// "-1" and the command read a model pointer far outside the pool. The caller still checks that the
+// slot holds a live cell (its index's low 16 bits are the slot).
+inline bool parse_cell_slot(const char* s, uint32_t high_water, uint32_t* out)
+{
+    if (!s || !*s)
+        return false;
+    uint32_t v = 0;
+    for (const char* p = s; *p; p++) {
+        if (*p < '0' || *p > '9' || v > 100000)
+            return false;
+        v = v * 10 + (uint32_t)(*p - '0');
+    }
+    if (v == 0 || !slot_in_pool(v, high_water, 4096, true))
+        return false;
+    *out = v;
+    return true;
+}
+
 // BUG-0032: the chunks of the host's state rounds (MSG_CELL_STATE {cycle, chunk, chunks}), unreliable.
 // The guest removes the mirrors a round did not list only when it saw every chunk of that round; a
 // chunk of an older round (reordered) is dropped instead of starting the round again.
