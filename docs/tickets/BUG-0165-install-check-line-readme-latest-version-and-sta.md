@@ -1,17 +1,17 @@
 ---
 id: BUG-0165
 title: INSTALL check line, README latest version and stability-report lane count are out of date
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#144
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: ee9b778
+tests: docs (README, INSTALL, stability-report): checked by reading
 signature:
 docs:
 related: #144
@@ -55,16 +55,14 @@ Three instructions or statements no longer match the code. A player or contribut
 Confirmed by reading. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- INSTALL.md:189: "has a line `loaded coop v0.7...` (the version you installed)".
-- README.md:208: "Version 0.7 (latest 0.7.2.4)", or generate it from `COOP_VERSION` at release time. The release step in CLAUDE.md section 4 could list README as a file to update.
-- stability-report.md:125: `--lanes 6 # ~45 min on 6 lanes` (or the measured time).
+- INSTALL.md: "a line `loaded coop v<version> (gen 1)` with the version you installed".
+- README: no patch number in "Status and roadmap" (links the Releases page), so it cannot go stale.
+- stability-report.md: `--lanes 6` with the cap and SPORE_MAX_LANES named.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A release checklist item, or a docs_lint check that the version in README "latest" equals `COOP_VERSION`.
+By reading: `grep -n "loaded coop" docs/INSTALL.md`, `grep -n latest README.md`, the
+stability-report command. No automated check: the texts no longer name a version that can go out
+of date (a docs_lint version check would have nothing left to compare).
 
 ### Related
 #47 (netcode doc vs code), #75 (release job does not check the tag against `COOP_VERSION`).
@@ -72,3 +70,4 @@ A release checklist item, or a docs_lint check that the version in README "lates
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #144.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

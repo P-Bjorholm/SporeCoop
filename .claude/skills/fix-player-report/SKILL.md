@@ -10,7 +10,7 @@ description: Fix one SporeCoop player bug or crash report on your own branch, wo
    names or paths into the repo.
 1. **Ticket**: the brief names one (`BUG-NNNN`, made by the orchestrator with `tools/tickets.py
    new`); fill its Report, keep it up to date, name it in every commit message.
-   **Identify**: `tools/tickets.py find <address | symptom>` and (when it exists)
+   **Identify**: `tools/tickets.py find <address | symptom>` and (a crash: the triage-crash skill)
    `python3 -I tools/crash_triage.py <file>`. Seen and fixed in a newer version: report "fixed in
    X (BUG-NNNN)", stop.
 2. **Look up before analysing**: grep the address / function / symptom in `data/symbols/*.sym`,

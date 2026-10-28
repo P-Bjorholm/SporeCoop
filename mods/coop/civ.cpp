@@ -456,7 +456,8 @@ static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t ty
 // The guest's own planet tick founded cities the host never had (and the host's came without their
 // first buildings): guests only found the cities the host founds, in the same order.
 constexpr uint8_t kNextCitySite = 0xFF; // MSG_CIV_BUILD city index: "found the next city site", noun 0
-using SpawnNextCity_t = bool(SK_THISCALL*)(void*, void*, int);
+// (ex, bool instant, void* who): the runtime-checked order (docs/re/civ.md, BUG-0134)
+using SpawnNextCity_t = bool(SK_THISCALL*)(void*, int, void*);
 static SpawnNextCity_t o_SpawnNextCity;
 static uint32_t g_cities_founded, g_cities_in, g_cities_blocked, g_cities_caught_up;
 // BUG-0120: a founding broadcast while a guest was not in Civ (receiving or loading the world) was
@@ -464,14 +465,14 @@ static uint32_t g_cities_founded, g_cities_in, g_cities_blocked, g_cities_caught
 // site itself when it stays behind (`coop.civ fix cities 0`: only the event, the code before).
 static bool g_fix_cities = true;
 static double g_city_short_since = -1, g_last_city_spawn = -1e9;
-static bool SK_THISCALL h_SpawnNextCity(void* ex, void* who, int flag)
+static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 {
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         g_cities_blocked++;
         return false; // both callers ignore the result
     }
-    bool r = o_SpawnNextCity(ex, who, flag);
-    if (r && is_host() && game::mode_id() == modes::kCiv && !who && !flag) {
+    bool r = o_SpawnNextCity(ex, instant, who);
+    if (r && is_host() && game::mode_id() == modes::kCiv && !who && !instant) {
         net::Writer w;
         w.u8(kNextCitySite);
         w.u32(0);
@@ -1532,7 +1533,7 @@ static void city_catch_up(size_t host_total)
     if (!ex)
         return;
     g_applying = true;
-    o_SpawnNextCity(ex, nullptr, 0);
+    o_SpawnNextCity(ex, 0, nullptr);
     g_applying = false;
     g_last_city_spawn = now;
     g_city_short_since = -1;
@@ -1763,7 +1764,7 @@ static void guest_build(net::Reader& r)
     if (r.ok() && ci == kNextCitySite && noun == 0) { // the host's planet grew a new city: the same site here
         if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet)) {
             g_applying = true;
-            o_SpawnNextCity(ex, nullptr, 0);
+            o_SpawnNextCity(ex, 0, nullptr);
             g_applying = false;
             g_cities_in++;
             g_last_city_spawn = H->time_seconds();

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 
+#include "cell_logic.h"
 #include "game.h"
 #include "modes.h"
 #include "world.h"
@@ -68,7 +69,7 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
     uint32_t n = *(uint32_t*)(g + 0x1C + 0x10);
     uint32_t av = *(uint32_t*)(g + 0x411C);
     if (argc < 2 || !strcmp(argv[1], "list")) {
-        for (uint32_t i = 1; i <= n && i < 4096; i++) {
+        for (uint32_t i = 1; i < n && i < 4096; i++) { // [1, highWater): BUG-0083, BUG-0093
             uint8_t* c = data + i * 0x398;
             if ((*(uint32_t*)c & 0xFFFF) != i)
                 continue;
@@ -81,9 +82,19 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (!strcmp(argv[1], "spawn") && argc >= 3) {
-        uint32_t slot = (uint32_t)atoi(argv[2]);
+        // BUG-0093: only a live cell of the pool (atoi let "99999" / "-1" read far outside it)
+        uint32_t slot = 0;
+        if (!data || !cell_logic::parse_cell_slot(argv[2], n, &slot) || (*(uint32_t*)(data + slot * 0x398) & 0xFFFF) != slot) {
+            SAY("no such cell: %s (coop.cell list shows the live ones)", argv[2]);
+            return 1;
+        }
+        uint32_t me_slot = av & 0xFFFF;
+        if (!cell_logic::slot_in_pool(me_slot, n, 4096, true) || (*(uint32_t*)(data + me_slot * 0x398) & 0xFFFF) != me_slot) {
+            SAY("no avatar cell");
+            return 1;
+        }
         uint8_t* src = data + slot * 0x398;
-        uint8_t* me = data + (av & 0xFFFF) * 0x398;
+        uint8_t* me = data + me_slot * 0x398;
         float* mp = (float*)(me + 0x4C);
         Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
         uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,

@@ -123,16 +123,14 @@ def checks(ck, host, guest, tag, edited=True):
 
 
 def kill_game(inst):
-    """SIGKILL one game (a crash): this lane's SporeApp.exe with that instance (pgrep -x + /proc)"""
-    folder = f'\\lane{lane.LANE}\\' if lane.LANE > 1 else '\\SPORE\\SporebinEP1\\'
-    for pid in subprocess.run(['pgrep', '-x', 'SporeApp.exe'], capture_output=True, text=True).stdout.split():
-        try:
-            cmd = open(f'/proc/{pid}/cmdline', 'rb').read().decode('utf-8', 'replace')
-        except OSError:
-            continue
-        arg = f'-sporekit-instance:{inst}\0'
-        if folder in cmd and ((arg in cmd + '\0') if inst != 1 else '-sporekit-instance:' not in cmd):
-            subprocess.run(['kill', '-9', pid])
+    """SIGKILL one game (a crash): this lane's SporeApp.exe of that instance. spore.sh pids knows the
+    lane's game folder and, on lane 1 (the real install), takes only games started for tests: the
+    owner's own Spore there has no test argument and is never touched (BUG-0103)"""
+    pids = subprocess.run([lane.SPORE, 'pids', str(inst)], capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        subprocess.run(['kill', '-9', pid])
+    if not pids:
+        print(f'  kill_game: no game of instance {inst} found on lane {lane.LANE}')
 
 
 def crash_and_reload(host, guest, planet):

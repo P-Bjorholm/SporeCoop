@@ -1,17 +1,17 @@
 ---
 id: BUG-0158
 title: the triage-crash skill and tools/crash_triage.py are referenced but do not exist
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#137
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: ee9b778
+tests: tools/tests/tools_selftest.py triage (make test)
 signature:
 docs:
 related: #137
@@ -49,15 +49,18 @@ The documented skill and tool exist, or the docs list only what exists.
 Confirmed by listing the tree. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Either add `.claude/skills/triage-crash/SKILL.md` and `tools/crash_triage.py` (build from the exe hash in the report, signature `<build>:<address>`, `tickets.py find` on it), or remove `triage-crash` from CLAUDE.md section 5 and the `crash_triage` references from the skill and the brief.
-- Have `tools/docs_lint.py` check that `tools/...` paths and skill names named in CLAUDE.md, skills and docs exist.
+Both written (the tool is small): `tools/crash_triage.py` reads crash reports, hang reports and
+the fault lines of sporekit.log (files, folders, zips read in memory) and prints the build, the
+signature `<exe hash 8>:<where>` (instance tags folded: coop.i7.1.dll -> coop.dll), the first own
+frames, the tickets that already name it (`tickets.py find` on the place, the address, the symbol,
+the first own frames) and the action. `.claude/skills/triage-crash/SKILL.md` is the checklist;
+fix-player-report and the brief template in docs/10-dev-pipeline.md point at it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`make test` fails while a referenced tool or skill is missing.
+`tools/tests/tools_selftest.py triage`: a made-up report of the known crash 0xC6AE60: build, version, stage, signature
+read, BUG-0018 found.
+- FAIL with the tool missing (main): "tools/crash_triage.py exists" FAIL.
+- PASS with the fix. Also run on a real lab crash report (lane 4) and on a game log with a fault line.
 
 ### Related
 None of #7 to #82 covers this.
@@ -65,3 +68,4 @@ None of #7 to #82 covers this.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #137.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

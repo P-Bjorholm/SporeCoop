@@ -1,17 +1,17 @@
 ---
 id: BUG-0057
 title: tickets.py new reuses ticket ids of branches whose worktree is gone
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#35
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 60c9c1e
+tests: tools/tests/tools_selftest.py tickets (make test)
 signature:
 docs:
 related: #35
@@ -70,23 +70,15 @@ The lock (`tickets.lock` in the common git dir) is fine; the gap is in what is s
 CONFIRMED by running.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `next_id`, also collect the names from every local branch (and the remote-tracking `main`):
-
-```python
-refs = git('for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes/origin/main').split()
-for ref in refs:
-    names = git('ls-tree', '--name-only', ref, 'docs/tickets/').split()
-    nums += [int(m.group(1)) for n in names if (m := re.match(r'^docs/tickets/BUG-(\d{4})-', n))]
-```
-
-(`ls-tree` on all branches is fast; it reads trees, not files.)
+`next_id` also reads the `docs/tickets/` file names of every local branch and remote-tracking ref
+(`git for-each-ref refs/heads refs/remotes` + `git ls-tree --name-only`), besides the worktrees'
+folders and out/tickets. The lock path is absolute (`--path-format=absolute`).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A unit test in a temporary repo doing the steps above: the second id must be `BUG-0029`. It fails today. It could run in `make test` next to `tickets.py check`.
+`tools/tests/tools_selftest.py tickets`: a temporary repo; a ticket committed on fix/a, its worktree removed, a new
+ticket in the main checkout.
+- FAIL with main's tickets.py: BUG-0001 twice.
+- PASS with the fix: BUG-0001, BUG-0002.
 
 ### Related
 CLAUDE.md section 1 ("the number is free across all worktrees"; "Agents open tickets themselves ... in their own worktree"). Commit 1694eb9 (lock in the common git dir).
@@ -94,3 +86,4 @@ CLAUDE.md section 1 ("the number is free across all worktrees"; "Agents open tic
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #35.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

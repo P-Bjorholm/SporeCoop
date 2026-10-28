@@ -1,17 +1,17 @@
 ---
 id: BUG-0102
 title: spore.sh fixture restore with profile "-" deletes the player's own saves
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#80
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 14463ee
+tests: tools/tests/tools_selftest.py fixture (make test)
 signature:
 docs:
 related: #80
@@ -50,20 +50,16 @@ cmd_fixture() {
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-```bash
-if [[ "$profile" == "-" && "$op" != "save" ]]; then
-    echo "fixture $op: never into the player's own profile (only test profiles)" >&2; exit 1
-fi
-```
-
-and change the usage line to `fixture save [name] [profile|-] | restore [name] [profile] | slot ...`. Also check that the fixture file exists before the `rm -rf`.
+`spore.sh fixture restore|slot` exits 1 for the profile `-` (only `save` may read from the
+player's own profile), refuses profile names other than `[A-Za-z0-9_-]+`, and checks that the
+fixture file exists before anything is deleted. Usage line: `fixture save [name] [profile|-] |
+restore [name] [profile] | slot name profile N`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-With `HOME` pointed at a temporary folder that holds a fake bottle (`.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users/$USER/AppData/Roaming/Spore/Games/Game0/x`): `tools/spore.sh fixture restore creature -` must exit non-zero and leave `Game0/x` in place. Today it deletes it.
+`tools/tests/tools_selftest.py fixture`: HOME pointed at a temporary folder with a fake "Games" bottle holding
+`Spore/Games/Game0/x`, SPORE_FIXTURES at a temporary fixture.
+- FAIL with main's spore.sh: restore into "-" exits 0 and deletes `Game0/x`; slot too.
+- PASS with the fix: refused, the save stays; restore into a test profile still works.
 
 ### Related
 CLAUDE.md section 3 ("Tests must not touch the player's own Spore profile (only the test profiles)") and section 2 ("Never change files of the save that is loaded").
@@ -71,3 +67,4 @@ CLAUDE.md section 3 ("Tests must not touch the player's own Spore profile (only 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #80.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

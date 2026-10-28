@@ -1,17 +1,17 @@
 ---
 id: BUG-0134
 title: new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#113
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 880c7df (part 2); afdcc31 on main (part 1, fix/w2-civ)
+tests: new_stage_game.py civ --npc-cities 3 (manual, lane 3); coop_civ_city_join / coop_civ_ai_spawn
 signature:
 docs:
 related: #113
@@ -56,19 +56,19 @@ The script works on GOG 2024, and there is one name and one documented argument 
 CONFIRMED by reading both sides, and a second reviewer verified it. Low severity: tooling, plus a naming contradiction that does no harm today.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `new_stage_game.py`, use `Simulator::cCivExpansion::Get` and `Simulator::cCivExpansion::SpawnNextCity` (or add `cCitySimulator::*` aliases to `overrides_dc04aee5.sym` with GOG 2024 addresses and a verified note).
-- Merge the two GOG 2016 entries into one with the runtime-checked order `(bool instant, void* who)`. Record a CORRECTION on the "likely (obj, bool)" one.
-- Rename the detour parameters to `(int instant, void* who)`.
-- A re_lint check for symbol names used in `tools/tests/*.py` would have caught the first part.
+1. The script: fixed in wave 2 (afdcc31, BUG-0120's branch): it calls `Simulator::cCivExpansion::Get`
+   / `SpawnNextCity`, the GOG 2024 names.
+2. The signature: the runtime-checked order `(ex, bool instant, void* who)` holds. The detour is
+   `h_SpawnNextCity(void* ex, int instant, void* who)` now (and the replays call `(ex, 0, nullptr)`);
+   no behaviour change (all callers pass zeros, the broadcast condition is symmetric). The GOG 2016
+   "likely (obj, bool)" entry got a CORRECTION note pointing at the verified one, the GOG 2024 entry
+   names the arguments. docs/re/civ.md#civ-spawn-next-city-args.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Run `new_stage_game.py civ --npc-cities 3` on a GOG 2024 lane.
-- FAILS on main: "no city simulator".
-- PASSES with the fix: `cities: 1 -> 4`.
+- 2026-10-28, lane 3, this branch: a fresh profile, `new_stage_game.py civ --npc-cities 3`:
+  `cities: 1 -> 4`, rc 0 (main 563f72d printed "FAILED: no city simulator", per the review).
+- The rename is binary-identical in behaviour (two 4-byte arguments, symmetric condition): a
+  written argument, plus the civ city tests run on lane 3 (see the branch report).
 
 ### Related
 #64 (re_lint gaps).
@@ -76,3 +76,4 @@ Run `new_stage_game.py civ --npc-cities 3` on a GOG 2024 lane.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #113.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

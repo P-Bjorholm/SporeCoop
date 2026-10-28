@@ -1,17 +1,17 @@
 ---
 id: BUG-0093
 title: coop.cell spawn reads outside the cell pool for a slot number that does not exist
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#71
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 8f08a4a
+tests: tools/tests/coop_cell_spawn_guard.py (lab cell_spawn_guard); tests/cell_tests.cpp spawn_slot (make test)
 signature:
 docs:
 related: #71
@@ -47,18 +47,19 @@ In the Cell stage: `coop.cell spawn 99999`, or `coop.cell spawn -1`. Expect an a
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Before using `src`:
-```cpp
-if (slot == 0 || slot > n || slot >= 4096 || (*(uint32_t*)src & 0xFFFF) != slot) { SAY("no such cell"); return 1; }
-```
-Use `strtoul` with an end check instead of `atoi`.
+`cell_logic::parse_cell_slot` (portable, unit-tested): a decimal number without sign or trailing
+text, in [1, highWater) and below 4096. `coop.cell spawn` then checks that the slot holds a live
+cell (index low 16 bits == slot) and that the avatar slot is live, else "no such cell". `coop.cell
+list` stops below highWater (it read slot == highWater, the BUG-0083 off-by-one).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Add a step to `tools/tests/coop_cell_leave.py` (or any cell test): `coop.cell spawn 99999` must answer "no such cell", and the game must still run (no crash report). It fails (crash) on main.
+`coop_cell_spawn_guard.py` (lab `cell_spawn_guard`, lane 3): spawn 99999, -1, abc, 0 and a slot
+past the live cells must answer "no such cell" with the game running and no fault; a live slot
+still spawns.
+- FAIL on main's debug.cpp: out/lab/20261028-030358 (the console stops answering at
+  `coop.cell spawn 99999`; the host log has `exception 0xC0000005 at 0x74F9A1FF coop.i5.1.dll+0x7A1FF`).
+- PASS with the fix: out/lab/20261028-030258 (and the final run of the branch).
+Unit: `tests/cell_tests.cpp` spawn_slot (make test).
 
 ### Related
 - Other debug commands with unchecked input: `coop.npc goherd <hex>` checks the pointer, `coop.cell spawn` does not.
@@ -66,3 +67,4 @@ Add a step to `tools/tests/coop_cell_leave.py` (or any cell test): `coop.cell sp
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #71.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

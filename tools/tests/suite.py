@@ -43,6 +43,7 @@ add('cell_sync', P + 'coop_cell_sync.py', minutes=8, fixture='cell')  # mirror m
 add('cell_net', 'SPORE_NET="delay=250,loss=0.05" ' + P + 'coop_cell_net.py', minutes=8, fixture='cell')  # lost state chunks, food race over a level line (BUG-0032, 0051)
 add('cell_guest_bite', P + 'coop_cell_guest_bite.py', warm=True, minutes=4, fixture='cell')  # a guest's bite passes DamageCell's gate (BUG-0078; SPORE_CELL_FIX=0 fails)
 add('cell_rescue', P + 'coop_cell_rescue.py', warm=True, minutes=3, fixture='cell')  # a knocked-out partner rescues nobody (BUG-0131; SPORE_CELL_FIX=0 fails)
+add('cell_spawn_guard', P + 'coop_cell_spawn_guard.py', warm=True, minutes=3, fixture='cell')  # coop.cell spawn with a slot that is not a live cell: "no such cell", no fault (BUG-0093)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
 add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
@@ -80,6 +81,7 @@ add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, sk
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('diag', P + 'diag_check.py --crash', minutes=5, reports=True)  # kept logs, environment, version in the menu, report button, hang / crash reports
 add('kit_freeze', P + 'kit_freeze.py', minutes=4, reports=True)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function (BUG-0050/0065/0115/0132/0202; --old: every case fails)
+add('kit_docs', P + 'kit_profile_docs.py', minutes=2)  # a test profile's My Spore Creations is in the profile, the bottle's own Documents unchanged (BUG-0156; --old fails)
 add('kit_crash', P + 'kit_crash.py', minutes=4, reports=True)  # crash reports for a stack overflow and a failed archive (out of memory); old reports pruned (BUG-0056/0127/0137; --old: every case fails)
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')

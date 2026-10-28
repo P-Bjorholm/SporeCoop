@@ -714,3 +714,15 @@ GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`)
   orders local (`SetOrder`, `SetMoveOrder`); a vehicle the guest's game created as a mirror of a
   bought one drives too (39.7 m in 10 s). The same in Tribe (`DoActionForObjects`,
   `WalkSelectedTo`). `coop.civ fix away 0`, `coop.tribe fix away 0`.
+
+## SpawnNextCity: one argument order (2026-10-28, fix/w4-tools)
+<a id="civ-spawn-next-city-args"></a>
+
+* CORRECTION (2026-10-28, fix/w4-tools, BUG-0134): `overrides_922af7c7.sym` had two entries for
+  0xAE3A80: `cCitySimulator::AppearNextCity` "thiscall(cs, bool instant, void* who)" (verified at
+  runtime: a non-zero `who` is dereferenced, who=1 crashed) and `cCivExpansion::SpawnNextCity`
+  "likely thiscall(obj, bool)". The runtime-checked order holds: `(ex, bool instant, void* who)`.
+  The co-op detour named them `(who, flag)`, the other way round; it is `(ex, instant, who)` now.
+  No behaviour changed: every caller (the planet tick, the cheat, civ.cpp's replay) passes (0, 0),
+  and the broadcast condition `!instant && !who` is symmetric. The GOG 2024 entry
+  (`overrides_dc04aee5.sym`, 0xAE3AB0) names the arguments too. ✔ by reading

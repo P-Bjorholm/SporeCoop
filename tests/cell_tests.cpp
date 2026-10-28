@@ -144,9 +144,26 @@ static void numerics()
     CHECK(std::fabs(x - 1850) < 1); // the right edge less the margin
 }
 
+// BUG-0093: coop.cell spawn's slot argument stays inside the pool
+static void spawn_slot()
+{
+    uint32_t v = 0;
+    CHECK(parse_cell_slot("3", 10, &v) && v == 3);
+    CHECK(parse_cell_slot("9", 10, &v) && v == 9);
+    CHECK(!parse_cell_slot("10", 10, &v)); // highWater itself is not live
+    CHECK(!parse_cell_slot("99999", 10, &v));
+    CHECK(!parse_cell_slot("-1", 10, &v));
+    CHECK(!parse_cell_slot("0", 10, &v));
+    CHECK(!parse_cell_slot("3x", 10, &v));
+    CHECK(!parse_cell_slot("", 10, &v));
+    CHECK(!parse_cell_slot("4096", 5000, &v)); // a corrupt highWater: never past 4095
+    CHECK(!parse_cell_slot("99999999999", 5000, &v));
+}
+
 int main()
 {
     slots();
+    spawn_slot();
     rounds();
     meals();
     body();

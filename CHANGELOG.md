@@ -14,6 +14,7 @@
   answered can no longer corrupt the setup's memory (BUG-0077).
 - **install.bat keeps your settings on a reinstall** (BUG-0080): `mods\coop.ini` (name, last address,
   `[update] check=0`) and `mods\sporekit.ini` are only copied when missing.
+- **Docs: GOG 2016 players are told which fixes their build does not get**: the fixes since 0.7.2.2 that need new game addresses switch themselves off on the old GOG 2016 build; the README and these notes now say so (BUG-0108). `INSTALL.md` names the right log line to check an install (BUG-0165).
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
   players a partner in your own system made every press fail), and the notice names that partner
   (BUG-0072). Flying to a partner in the galaxy view is refused while your ship is disabled
@@ -260,6 +261,8 @@
 
 ## [0.7.2.4] - 2026-10-25
 
+**GOG 2016 build (`922af7c7`):** the fixes of 0.7.2.4 that need new game addresses are not in it (Alt+Shift+Enter, the hatchling growing up, the pack, the Cell bites, meat and spin): on GOG 2016 they switch themselves off, the rest works. Use the GOG 2024 or Steam build for them (BUG-0108).
+
 More fixes from players' reports (Creature stage, Alt+Shift+Enter). 0.7.2.4 plays together with
 0.7.x (the network protocol did not change); both players need 0.7.2.4 for the fixes on the guest's
 side (the guest's respawn, deaths it sees, the host's species at the nests).
@@ -305,6 +308,8 @@ side (the guest's respawn, deaths it sees, the host's species at the nests).
 
 ## [0.7.2.3] - 2026-10-25
 
+**GOG 2016 build (`922af7c7`):** the fixes of 0.7.2.3 that need new game addresses are not in it (Alt+Shift+Enter, the hatchling growing up, the pack, the Cell bites, meat and spin): on GOG 2016 they switch themselves off, the rest works. Use the GOG 2024 or Steam build for them (BUG-0108).
+
 Fixes from players' crash reports and screenshots (Cell and Creature stage). 0.7.2.3 plays
 together with 0.7.x (the network protocol did not change); both players need 0.7.2.3 for the
 species transfer (creatures of species only the host has).
@@ -342,6 +347,8 @@ species transfer (creatures of species only the host has).
   save) each time it appears. Test: `coop_creature_e84.py` (suite `creature_e84`).
 
 ## [0.7.2.2] - 2026-10-25
+
+**GOG 2016 build (`922af7c7`):** the fixes of 0.7.2.2 that need new game addresses are not in it (Alt+Shift+Enter, the hatchling growing up, the pack, the Cell bites, meat and spin): on GOG 2016 they switch themselves off, the rest works. Use the GOG 2024 or Steam build for them (BUG-0108).
 
 Fixes from a player report (two brothers playing the Cell and the Creature stage). 0.7.2.2 plays
 together with 0.7.x (the network protocol did not change), but the fixes need both players on

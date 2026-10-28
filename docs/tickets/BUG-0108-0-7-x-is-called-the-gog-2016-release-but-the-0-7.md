@@ -1,17 +1,17 @@
 ---
 id: BUG-0108
 title: 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#87
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 342e273, ee9b778
+tests: re_lint lists the frozen build's missing names (make test); docs by reading
 signature:
 docs:
 related: #87
@@ -77,16 +77,17 @@ Otherwise, the 13 addresses are ported.
 Confirmed by reading and by running re_lint. A second reviewer verified it, and classified it as a docs issue: the clean switch-off follows the CLAUDE.md policy.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Add a build note to the 0.7.2.2-0.7.2.4 CHANGELOG sections and to README footnote 2.
-- Have `install.bat` / `SporeCoopSetup` tell a GOG 2016 player that newer fixes need the GOG 2024 build.
-- Make `tools/re_lint.py` print the missing frozen-build names (one line each, or with `-v`) as well as the count.
+Decided by what the code does: the 14 symbols the newer fixes need have no GOG 2016 address and
+each feature switches itself off there (the policy since 2026-10-23), so this is a docs correction,
+not a port. README (Compatibility row and footnote 2) and the 0.7.2.2, 0.7.2.3 and 0.7.2.4
+CHANGELOG sections now say which fixes are off on GOG 2016; [Unreleased] has a line. re_lint prints
+the missing names, not only their count. The installer still accepts GOG 2016 without a word (left:
+a message there is an installer change, wave 4 has an installer agent).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`make test` lists the 13 names. The README and CHANGELOG text names the build limit.
+`python3 tools/re_lint.py` prints "14 symbol(s) missing for the frozen build(s) 922af7c7 (not
+supported, these features are off there): Simulator::Cell::Bite, ..." (main printed only the
+count). README and CHANGELOG by reading.
 
 ### Related
 #64 (re_lint gaps).
@@ -94,3 +95,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #87.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

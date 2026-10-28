@@ -11,8 +11,9 @@
   tickets.py release 0.7.3               fixed tickets with fixed_in "unreleased" get that version
   tickets.py check                       (in make test) fields valid, ids unique, index up to date
 
-Private tickets (security problems not fixed yet, anything with player data) go to
-out/tickets/ (not in git) with --private; `list`/`find` read both places."""
+Private tickets (security problems not fixed yet, anything with player data) go to the MAIN
+checkout's out/tickets/ (not in git, shared by every worktree) with --private; `list`/`find` read
+both places. A new id is free on every local branch, in every worktree and in out/tickets/."""
 import argparse
 import os
 import re
@@ -22,7 +23,21 @@ from datetime import date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PUBLIC = os.path.join(ROOT, 'docs', 'tickets')
-PRIVATE = os.path.join(ROOT, 'out', 'tickets')
+
+
+def main_checkout():
+    """the main checkout (the common git dir's folder): shared by every worktree"""
+    try:
+        common = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        return os.path.dirname(common) if common else ROOT
+    except (OSError, subprocess.CalledProcessError):
+        return ROOT
+
+
+# private tickets live in ONE place for all worktrees, the main checkout's out/tickets: a worktree's
+# own out/ (ignored by git) is deleted with the worktree, and the main checkout never saw it (BUG-0062)
+PRIVATE = os.path.join(main_checkout(), 'out', 'tickets')
 INDEX = os.path.join(PUBLIC, 'README.md')
 FIELDS = ['id', 'title', 'status', 'kind', 'stage', 'reported', 'source', 'role', 'versions', 'fixed_in',
           'branch', 'commits', 'tests', 'signature', 'docs', 'related']
@@ -131,14 +146,28 @@ def worktree_ticket_dirs():
     return dirs
 
 
+def branch_ticket_names():
+    """docs/tickets file names committed on any local branch or remote-tracking ref: a branch whose
+    worktree is gone (or was never checked out here) still owns its ids (BUG-0057)"""
+    names = []
+    try:
+        refs = subprocess.run(['git', '-C', ROOT, 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'],
+                              capture_output=True, text=True, check=True).stdout.split()
+        for ref in refs:
+            out = subprocess.run(['git', '-C', ROOT, 'ls-tree', '--name-only', ref, 'docs/tickets/'],
+                                 capture_output=True, text=True).stdout
+            names += [os.path.basename(n) for n in out.split()]
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return names
+
+
 def next_id():
-    nums = [0]
+    names = branch_ticket_names()
     for d in worktree_ticket_dirs():
         if os.path.isdir(d):
-            for n in os.listdir(d):
-                m = re.match(r'^BUG-(\d{4})-', n)
-                if m:
-                    nums.append(int(m.group(1)))
+            names += os.listdir(d)
+    nums = [0] + [int(m.group(1)) for n in names if (m := re.match(r'^BUG-(\d{4})-', n))]
     return f'BUG-{max(nums) + 1:04d}'
 
 
@@ -157,8 +186,9 @@ def cmd_new(a):
     d = PRIVATE if a.private else PUBLIC
     os.makedirs(d, exist_ok=True)
     # one lock for all worktrees: the common git dir is shared by them
-    common = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--git-common-dir'], capture_output=True, text=True).stdout.strip()
-    lock = open(os.path.join(ROOT, common, 'tickets.lock') if common else os.path.join(d, '.lock'), 'w')
+    common = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                            capture_output=True, text=True).stdout.strip()
+    lock = open(os.path.join(common, 'tickets.lock') if common else os.path.join(d, '.lock'), 'w')
     fcntl.flock(lock, fcntl.LOCK_EX)
     tid = next_id()
     path = os.path.join(d, f'{tid}-{slug(a.title)}.md')

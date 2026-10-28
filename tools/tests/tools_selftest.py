@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Self-tests of the dev tools (make test): they must never touch the owner's own Spore, profile or
+saves, and keep the knowledge files honest. Every check runs on fakes in a temporary folder:
+
+  kill      spore.sh kill / pids on fake game processes inside a private PID namespace
+            (unshare): lane 1 leaves the owner's game alone, a lane leaves other lanes alone,
+            a half-dead game of the lane is ended (BUG-0025, BUG-0101, BUG-0103)
+  fixture   spore.sh fixture restore|slot into the player's own profile ("-") is refused and deletes
+            nothing (BUG-0102), with HOME pointed at a fake bottle
+  headless  headless.sh down with a stale pgid file (the shell is gone, the number now belongs to
+            another process group of the user) leaves that group alone
+  tickets   tickets.py new: ids used on a branch without a worktree are not given out again
+            (BUG-0057); a private ticket made in a worktree is seen from the main checkout and
+            survives the worktree's removal (BUG-0062)
+  relint    re_lint.py flags an overrides entry without a confidence word also when a generated
+            .sym has the same name (BUG-0086)
+  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158)
+  release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
+            tag's CHANGELOG section (BUG-0097)
+
+  tools_selftest.py [check ...]      all checks by default; exit 1 when one fails
+Environment: SELFTEST_SPORE / SELFTEST_TICKETS / SELFTEST_RELINT / SELFTEST_RELEASE run a check
+against another copy of the tool (an old version: the check must FAIL there)."""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+SPORE = os.environ.get('SELFTEST_SPORE', os.path.join(ROOT, 'tools', 'spore.sh'))
+TICKETS = os.environ.get('SELFTEST_TICKETS', os.path.join(ROOT, 'tools', 'tickets.py'))
+RELINT = os.environ.get('SELFTEST_RELINT', os.path.join(ROOT, 'tools', 're_lint.py'))
+RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'release_check.sh'))
+HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
+fails = []
+
+
+def check(cond, what):
+    print(('  ok   ' if cond else '  FAIL ') + what)
+    if not cond:
+        fails.append(what)
+
+
+# ---------------------------------------------------------------- kill (inside a PID namespace)
+# comm of the half-dead fakes. A real game's comm is SporeApp.exe, and main's spore.sh kill (BUG-0101)
+# SIGKILLs every half-dead SporeApp on the machine: the parent PID namespace sees our fakes, so a
+# parallel lane's old `spore.sh kill` would end them in the middle of this test. Only a run against
+# an old copy (SELFTEST_SPORE, the run that must FAIL) uses the real name.
+COMM = b'SporeApp.exe' if 'SELFTEST_SPORE' in os.environ else b'sk-fake-game'
+HALF_DEAD = ('import ctypes, threading, time\n'
+             f'ctypes.CDLL(None).prctl(15, {COMM!r})  # PR_SET_NAME\n'
+             'threading.Thread(target=time.sleep, args=(600,)).start()\n'
+             'time.sleep(0.2)\n'
+             'ctypes.CDLL(None).syscall(60, 0)  # SYS_exit: only the main thread ends (zombie leader)\n')
+SLEEP = 'import time; time.sleep(600)'
+
+
+# game folders of the fake lanes 1, 2, 3: names no real lane has, so a parallel `spore.sh kill` of a
+# real lane (its folder is SPORE or laneN) never matches our fakes
+F1, F2, F3 = 'sk-selftest-L1', 'sk-selftest-L2', 'sk-selftest-L3'
+
+
+def win(folder):
+    return f'Z:\\home\\someone\\{folder}\\SporebinEP1\\SporeApp.exe'
+
+
+def fake(folder, *args, code=SLEEP):
+    """a process whose command line looks like a Wine SporeApp.exe of that game folder"""
+    return subprocess.Popen([win(folder), '-c', code, *args], executable=sys.executable)
+
+
+def alive(p):
+    return p.poll() is None
+
+
+def state(p):
+    try:
+        return open(f'/proc/{p.pid}/stat').read().rsplit(')', 1)[1].split()[0]
+    except OSError:
+        return '-'
+
+
+def spore(lane, game, *args):
+    env = dict(os.environ, SPORE_LANE=str(lane), SPORE_GAME=game, SPORE_FIXTURES=os.path.join(TMP, 'fx'),
+               HOME=TMP, USER=os.environ.get('USER', 'u'))
+    return subprocess.run(['bash', SPORE, *args], env=env, capture_output=True, text=True, timeout=60)
+
+
+def kill_inside():
+    """runs as PID 1's child of a fresh PID namespace: only our fakes are visible and killable"""
+    t = TMP
+    lane1 = os.path.join(t, F1)
+    lane2 = os.path.join(t, F2)
+    owner = fake(F1)                                       # the owner's own game: no test argument
+    host = fake(F1, '-sporekit-profile:test')              # a lane 1 test host
+    guest = fake(F1, '-sporekit-instance:2')               # a lane 1 test guest
+    l2 = fake(F2, '-sporekit-instance:3', '-sporekit-profile:test')
+    l2_half = fake(F2, '-sporekit-instance:4', code=HALF_DEAD)
+    l3_half = fake(F3, '-sporekit-instance:6', code=HALF_DEAD)
+    time.sleep(1)
+    check(state(l2_half) == 'Z' and state(l3_half) == 'Z', 'the half-dead fakes have a zombie leader '
+          f'(states {state(l2_half)} {state(l3_half)})')
+    if 'pids' in open(SPORE).read():
+        out = spore(1, lane1, 'pids', '1').stdout.split()
+        check(out == [str(host.pid)], f'lane 1 pids 1: only the test host ({out})')
+        out = spore(1, lane1, 'pids', '2').stdout.split()
+        check(out == [str(guest.pid)], f'lane 1 pids 2: only the test guest ({out})')
+    else:
+        check(False, 'spore.sh pids exists (the PIDs of a lane\'s games, for kill_game)')
+    spore(2, lane2, 'kill')
+    time.sleep(0.5)
+    check(not alive(l2), 'lane 2 kill ends the game of lane 2')
+    check(not alive(l2_half), 'lane 2 kill ends the half-dead game of lane 2')
+    check(alive(l3_half), 'lane 2 kill leaves the half-dead game of lane 3 alone (BUG-0101)')
+    check(alive(owner) and alive(host) and alive(guest), 'lane 2 kill leaves lane 1 alone')
+    spore(1, lane1, 'kill')
+    time.sleep(0.5)
+    check(alive(owner), 'lane 1 kill leaves the owner\'s own Spore alone (BUG-0025)')
+    check(not alive(host) and not alive(guest), 'lane 1 kill ends the test games of lane 1')
+    check(alive(l3_half), 'lane 1 kill leaves lane 3 alone')
+    for p in (owner, host, guest, l2, l2_half, l3_half):
+        if alive(p):
+            p.kill()
+            p.wait()
+
+
+def test_kill():
+    print('kill: spore.sh kill on fake games in a private PID namespace')
+    if not shutil.which('unshare'):
+        print('  skip: no unshare')
+        return
+    probe = subprocess.run(['unshare', '-Urpf', '--mount-proc', 'true'], capture_output=True)
+    if probe.returncode:
+        print('  skip: no unprivileged PID namespace here (' + probe.stderr.decode(errors='replace').strip() + ')')
+        return
+    r = subprocess.run(['unshare', '-Urpf', '--mount-proc', sys.executable, '-I', __file__, '--kill-inside', TMP],
+                       env=dict(os.environ), capture_output=True, text=True, timeout=120)
+    sys.stdout.write(r.stdout)
+    sys.stdout.write(r.stderr[-2000:])
+    check(r.returncode == 0, 'the namespace part ran and passed')
+
+
+# ---------------------------------------------------------------- fixture
+def test_fixture():
+    print('fixture: restore / slot into the player\'s own profile')
+    user = os.environ.get('USER', 'u')
+    roaming = os.path.join(TMP, '.var/app/com.usebottles.bottles/data/bottles/bottles/Games/drive_c/users', user,
+                           'AppData/Roaming')
+    save = os.path.join(roaming, 'Spore', 'Games', 'Game0', 'x')
+    os.makedirs(os.path.dirname(save), exist_ok=True)
+    open(save, 'w').write('the player\'s save')
+    # a fixture whose restore would replace the save
+    src = os.path.join(TMP, 'fxsrc')
+    os.makedirs(os.path.join(src, 'Games', 'Game0'), exist_ok=True)
+    os.makedirs(os.path.join(TMP, 'fx'), exist_ok=True)
+    subprocess.run(['tar', '-C', src, '-czf', os.path.join(TMP, 'fx', 'creature.tgz'), 'Games'], check=True)
+    game = os.path.join(TMP, 'SPORE')
+    r = spore(1, game, 'fixture', 'restore', 'creature', '-')
+    check(r.returncode != 0, f'fixture restore into "-" is refused (rc {r.returncode})')
+    check(os.path.exists(save), 'the player\'s save is still there after restore (BUG-0102)')
+    r = spore(1, game, 'fixture', 'slot', 'creature', '-', '0')
+    check(r.returncode != 0 and os.path.exists(save), 'fixture slot into "-" is refused, the save stays')
+    r = spore(1, game, 'fixture', 'restore', 'nosuchfixture', 'test')
+    check(r.returncode != 0, 'restore of a missing fixture fails')
+    r = spore(1, game, 'fixture', 'restore', 'creature', 'test')
+    check(r.returncode == 0 and os.path.isdir(os.path.join(roaming, 'SporeKit-test', 'Spore', 'Games', 'Game0')),
+          'restore into a test profile still works')
+
+
+# ---------------------------------------------------------------- headless
+def test_headless():
+    print('headless: down with a stale pgid file')
+    rt_parent = os.path.join(TMP, 'run')
+    rt = os.path.join(rt_parent, 'sporecoop-headless')
+    os.makedirs(rt)
+    # a process group of "the user" (its own session) that is not our shell
+    other = subprocess.Popen([sys.executable, '-c', SLEEP], start_new_session=True)
+    open(os.path.join(rt, 'pgid'), 'w').write(f'{other.pid}\n')
+    subprocess.run(['bash', HEADLESS, 'down'], env=dict(os.environ, XDG_RUNTIME_DIR=rt_parent),
+                   capture_output=True, timeout=30)
+    time.sleep(0.3)
+    check(alive(other), 'headless.sh down leaves a process group that is not its shell alone')
+    if alive(other):
+        other.kill()
+    other.wait()
+
+
+# ---------------------------------------------------------------- tickets
+def git(cwd, *a):
+    return subprocess.run(['git', '-C', cwd, *a], capture_output=True, text=True, check=True).stdout
+
+
+def test_tickets():
+    print('tickets: ids across branches and worktrees, private tickets of worktrees')
+    repo = os.path.join(TMP, 'repo')
+    os.makedirs(os.path.join(repo, 'tools'))
+    os.makedirs(os.path.join(repo, 'docs', 'tickets'))
+    shutil.copy(TICKETS, os.path.join(repo, 'tools', 'tickets.py'))
+    env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+               GIT_COMMITTER_EMAIL='t@t')
+    run = lambda cwd, *a: subprocess.run([sys.executable, '-I', os.path.join(cwd, 'tools', 'tickets.py'), *a],
+                                         cwd=cwd, env=env, capture_output=True, text=True)
+    git(repo, 'init', '-q', '-b', 'main')
+    open(os.path.join(repo, '.gitignore'), 'w').write('out/\n')
+    subprocess.run(['git', '-C', repo, 'add', '-A'], check=True)
+    subprocess.run(['git', '-C', repo, 'commit', '-qm', 'init'], env=env, check=True)
+    wt = os.path.join(TMP, 'wt-a')
+    git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/a')
+    first = run(wt, 'new', 'found on the way').stdout.strip()
+    subprocess.run(['git', '-C', wt, 'add', '-A'], check=True)
+    subprocess.run(['git', '-C', wt, 'commit', '-qm', 'ticket'], env=env, check=True)
+    git(repo, 'worktree', 'remove', wt)
+    second = run(repo, 'new', 'another one').stdout.strip()
+    check(os.path.basename(first).startswith('BUG-0001') and os.path.basename(second).startswith('BUG-0002'),
+          f'an id committed on a branch without a worktree is not reused (BUG-0057): '
+          f'{os.path.basename(first)}, {os.path.basename(second)}')
+    wt = os.path.join(TMP, 'wt-sec')
+    git(repo, 'worktree', 'add', '-q', wt, '-b', 'fix/sec')
+    sec = run(wt, 'new', 'open security hole', '--kind', 'security', '--private').stdout.strip()
+    found = run(repo, 'find', 'security hole').stdout
+    check('open security hole' in found, f'a private ticket made in a worktree is found from the main checkout '
+          f'(BUG-0062): {sec}')
+    git(repo, 'worktree', 'remove', '--force', wt)
+    found = run(repo, 'find', 'security hole').stdout
+    nxt = run(repo, 'new', 'next', '--private').stdout.strip()
+    check('open security hole' in found and not os.path.basename(nxt).startswith(os.path.basename(sec)[:8]),
+          f'it survives the worktree\'s removal and its id is not given out again ({os.path.basename(nxt)})')
+
+
+# ---------------------------------------------------------------- re_lint
+def test_relint():
+    print('relint: confidence of overrides entries that a generated .sym also names')
+    tree = os.path.join(TMP, 'relint')
+    os.makedirs(os.path.join(tree, 'tools'))
+    shutil.copytree(os.path.join(ROOT, 'data', 'symbols'), os.path.join(tree, 'data', 'symbols'))
+    shutil.copytree(os.path.join(ROOT, 'mods'), os.path.join(tree, 'mods'),
+                    ignore=shutil.ignore_patterns('*.o', '*.d', '*.dll'))
+    shutil.copytree(os.path.join(ROOT, 'sporekit'), os.path.join(tree, 'sporekit'),
+                    ignore=shutil.ignore_patterns('*.o', '*.d', '*.dll'))
+    shutil.copy(RELINT, os.path.join(tree, 'tools', 're_lint.py'))
+    lint = lambda: subprocess.run([sys.executable, '-I', os.path.join(tree, 'tools', 're_lint.py')],
+                                  capture_output=True, text=True)
+    base = lint()
+    check(base.returncode == 0, 're_lint passes on the tree as it is')
+    gen = open(os.path.join(ROOT, 'data', 'symbols', 'march2017_dc04aee5.sym'), errors='replace').read()
+    import re
+    name = re.search(r'^([A-Za-z_][A-Za-z0-9_:]*)\s*=', gen, re.M).group(1)
+    ovr = os.path.join(tree, 'data', 'symbols', 'overrides_dc04aee5.sym')
+    # a name the overrides file already has (a second entry: which one counts depended on the order)
+    dup = re.search(r'^([A-Za-z_][A-Za-z0-9_:]*)\s*=', open(ovr, errors='replace').read(), re.M).group(1)
+    with open(ovr, 'a') as f:
+        f.write(f'\n{name}=0x00401000 ; TODO\nFoo::NewThing=0x00401000 ; TODO\n{dup}=0x00401000 ; TODO\n')
+    r = lint()
+    flagged = [l for l in r.stdout.splitlines() if 'say how sure' in l]
+    check(any(name in l for l in flagged), f'the override of the generated name {name} is flagged (BUG-0086)')
+    check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
+    check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
+          f'a second overrides entry of {dup} without a confidence word is flagged')
+
+
+# ---------------------------------------------------------------- release
+def test_release():
+    print('release: tag vs COOP_VERSION, notes = exactly the tag\'s section')
+    if not os.path.exists(RELEASE):
+        check(False, f'{os.path.relpath(RELEASE, ROOT)} exists (the release job\'s checks)')
+        return
+    tree = os.path.join(TMP, 'rel')
+    os.makedirs(os.path.join(tree, 'mods', 'coop'))
+    open(os.path.join(tree, 'mods', 'coop', 'coop.cpp'), 'w').write('#define COOP_VERSION "0.7.3.0"\n')
+    open(os.path.join(tree, 'CHANGELOG.md'), 'w').write(
+        '# Changelog\n\n## [Unreleased]\n\n## [0.7.3.0] - 2026-10-30\n\n- three\n\n## [0.7.3] - 2026-10-01\n\n'
+        '- older\n\n## [0.7.2.4] - 2026-09-01\n\n- four\n\n## [0.7.2] - 2026-08-01\n\n- two\n')
+
+    def rel(tag):
+        r = subprocess.run(['bash', RELEASE, tag, os.path.join(tree, 'notes.md')], cwd=tree, capture_output=True,
+                           text=True)
+        notes = open(os.path.join(tree, 'notes.md')).read() if os.path.exists(os.path.join(tree, 'notes.md')) else ''
+        return r.returncode, notes
+    rc, notes = rel('v0.7.3.0')
+    check(rc == 0 and notes.strip() == '- three', f'v0.7.3.0: ok, notes are its own section ({notes.strip()!r})')
+    rc, _ = rel('v0.7.3.1')
+    check(rc != 0, 'a tag that is not COOP_VERSION fails')
+    open(os.path.join(tree, 'mods', 'coop', 'coop.cpp'), 'w').write('#define COOP_VERSION "0.7.2"\n')
+    rc, notes = rel('v0.7.2')
+    check(rc == 0 and notes.strip() == '- two', f'v0.7.2: notes without the 0.7.2.N sections ({notes.strip()!r})')
+    open(os.path.join(tree, 'mods', 'coop', 'coop.cpp'), 'w').write('#define COOP_VERSION "0.7.4"\n')
+    rc, _ = rel('v0.7.4')
+    check(rc != 0, 'a version without a CHANGELOG section fails')
+
+
+# ---------------------------------------------------------------- crash triage
+def test_triage():
+    print('triage: crash_triage.py on a made-up report of a known crash')
+    tool = os.path.join(ROOT, 'tools', 'crash_triage.py')
+    if not os.path.exists(tool):
+        check(False, 'tools/crash_triage.py exists (CLAUDE.md 5 and the fix-player-report skill name it)')
+        return
+    check(os.path.exists(os.path.join(ROOT, '.claude', 'skills', 'triage-crash', 'SKILL.md')),
+          'the triage-crash skill exists')
+    rep = os.path.join(TMP, 'crash-20261025-000000-i2.txt')
+    open(rep, 'w').write('SporeCoop crash 20261025-000000 (unhandled exception)\n\n== Environment\n'
+                         'SporeKit 0.3.4, game GOG 2024 (exe dc04aee5a3debc3f), frames from Present\n'
+                         'game mode: Creature, frame 1, up 1 s\nmods: coop 0.7.2.3  \n\n== Exception\n'
+                         '0xC0000005 access violation at 0x00C6AE60 SporeApp.exe Foo::Bar+0x20 (thread 1)\n'
+                         'read of address 0x00000160\n\n== Call chain\n'
+                         '  10043000 coop.i2.1.dll+0x43000\n')
+    r = subprocess.run([sys.executable, '-I', tool, rep], capture_output=True, text=True)
+    out = r.stdout
+    check('GOG 2024' in out and 'coop 0.7.2.3' in out and 'mode Creature' in out, 'build, version and stage read')
+    check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
+    check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
+
+
+CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets, 'relint': test_relint,
+          'release': test_release, 'triage': test_triage}
+
+if __name__ == '__main__':
+    if sys.argv[1:2] == ['--kill-inside']:
+        TMP = sys.argv[2]
+        kill_inside()
+        sys.exit(1 if fails else 0)
+    want = sys.argv[1:] or list(CHECKS)
+    for c in want:
+        TMP = tempfile.mkdtemp(prefix=f'sk-selftest-{c}-')
+        try:
+            CHECKS[c]()
+        finally:
+            shutil.rmtree(TMP, ignore_errors=True)
+    print(f'tools_selftest: {len(want)} check(s), {len(fails)} failure(s)')
+    sys.exit(1 if fails else 0)

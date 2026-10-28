@@ -169,7 +169,7 @@ merge steps: `.claude/skills/merge-batch`), so a brief only says what is specifi
 Fix player report BUG-NNNN: <one line> (source: issue #N | report zip path | screenshot text below)
 Branch fix/<name>, worktree ../SporeCoop-wt/fix/<name>, lane <N> only.
 Follow .claude/skills/fix-player-report and return its report format.
-Context: <known-issues anchor, docs/re anchor, crash_triage output>
+Context: <known-issues anchor, docs/re anchor, tools/crash_triage.py output (skill triage-crash)>
 Others in this batch: <branches and the files or areas they own>
 ```
 
@@ -179,3 +179,34 @@ same batch do not find the same thing twice; the orchestrator folds the lines in
 merges. Practices taken over from a review of another co-op modding project (2026-10-25): unnumbered
 sections with anchors, CORRECTION lines, union merges of shared files, "a test you never saw fail
 proves nothing", oracles on the other machine, crash triage by signature (CLAUDE.md).
+
+## Dev tools never touch the owner's game (2026-10-28, fix/w4-tools)
+<a id="pipeline-owner-safety"></a>
+
+* Lane 1 is the real install the owner plays from. `spore.sh kill` there ends only games started
+  for tests (a `-sporekit-profile:` or `-sporekit-instance:` argument); the owner's own Spore is
+  never killed and, while it runs, no Wine tree of the "Games" bottle either (its wineserver may sit
+  in a test's launch sandbox). On lanes 2..10 it ends every game of the lane and whatever runs in
+  the lane's bottle, never another lane's (a half-dead game is matched by a live thread's command
+  line). `spore.sh pids [inst]` lists what it would end (BUG-0025, BUG-0101, BUG-0103).
+* `lab.py kill` cleans lanes 2..10; lane 1 only with `--include-lane-1` (test games only).
+* `spore.sh fixture restore|slot` refuses the player's own profile `-` (only `save` reads from it)
+  and a missing fixture before it deletes anything (BUG-0102).
+* A test profile redirects Documents ("My Spore Creations") as well as AppData (BUG-0156):
+  `AppData\Roaming\SporeKit-<profile>\Documents`. `-sporekit-profile-docs:0` turns that off (the
+  old behaviour, for `kit_profile_docs.py --old`).
+* `headless.sh down` kills the process group of its pgid file only while the group's leader still
+  runs with the headless runtime folder (BUG-0207).
+* `tools/tests/tools_selftest.py` (in `make test`) checks all of this on fakes: a private PID
+  namespace (`unshare -Urpf --mount-proc`) with fake game processes, a fake HOME and bottle, a
+  temporary git repository. `SELFTEST_<TOOL>=<old copy>` runs a check against an older tool.
+
+## Releases: the tag, COOP_VERSION and the notes (2026-10-28, fix/w4-tools)
+<a id="pipeline-release-check"></a>
+
+`tools/release_check.sh vX.Y.Z [notes.md]` (run by the build and release jobs on a tag, and
+locally before tagging) fails when the tag is not `COOP_VERSION` (the updater would offer an update
+that never applies) or when CHANGELOG.md has no `## [X.Y.Z]` section, and writes exactly that
+section as the release notes (not the X.Y.Z.N sections after it) (BUG-0097). Before a release
+also check README (Compatibility, footnotes) and INSTALL, which name no patch versions any more
+(BUG-0165).
