@@ -175,6 +175,7 @@ std::string ftrace_set(const std::string& substr);
 // exceptions.cpp (more below)
 void exceptions_pump(); // every frame: SK_EV_FAULT for a fault caught in SporeKit / mod code
 bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t); // the last fault seen (copies)
+bool exceptions_stack_overflow(EXCEPTION_RECORD* er, CONTEXT* ctx, DWORD* tid, double* t); // BUG-0056
 // zip.cpp
 struct ZipEntry {
     std::string name; // UTF-8, '/' separated
@@ -241,6 +242,9 @@ extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, res
 extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it
 extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not re-entered by a fault
 extern KitFix g_fix_hookkeep;  // BUG-0132: removed hooks keep their trampolines, a grace before FreeLibrary
+extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a thread that waits beforehand
+extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
+extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);
 std::vector<KitFix*> kit_fixes();
