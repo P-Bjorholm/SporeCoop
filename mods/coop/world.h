@@ -25,6 +25,11 @@ bool save_busy();
 bool save_pending();
 // the session ended: drop the shares and transfers queued for its players (BUG-0140)
 void reset_shares();
+// the session ended: drop the guest's queued loads of a received world and a half-received
+// transfer (BUG-0074); the player's own coop.load stays
+void on_session_end();
+// guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
+bool load_queued();
 extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
@@ -41,7 +46,10 @@ void set_auto_load(bool on);
 // true while the local player controls something in a stage (coop.cpp): a load waits until the
 // stage has been playable for a few seconds before it leaves it
 void set_playing_probe(bool (*probe)());
-bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err);
+// share_host: a received world of that host (dropped when the session ends, BUG-0074); "" for the
+// player's own load (coop.load)
+bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err,
+               const std::string& share_host = "");
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
 

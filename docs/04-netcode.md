@@ -131,3 +131,39 @@ before it changes anything, and a snapshot chunk that does not parse does not co
 A message is used and passed on only when it fits the player it came from. Shared checks: `mods/coop/net/validate.h` (unit tests
 `tests/validate_tests.cpp`); in game: `coop_net_robust.py`
 ([06-testing](06-testing.md#testing-net-robust)).
+
+## Big messages, late states, clocks and ids (2026-10-28, fix/w2-net)
+<a id="netcode-w2"></a>
+
+* **Reliable messages above one packet are split** (BUG-0034). A reliable payload fits a packet up
+  to 1163 bytes (1200 minus the 31-byte header and 6 bytes of message header). A bigger one is cut
+  into pieces of that size by `Connection::send_reliable`, each its own reliable message with flag
+  bit 2 ("more pieces follow") on all but the last; the receiver joins them in order (reliable
+  delivery is ordered) and delivers one message. Limit `kMaxReliable` = 1 MB per message (a sender
+  refuses more, a receiver drops what goes past it). Before, such a message was never sent, blocked
+  every reliable message after it and made every flush send a full burst of empty packets (5000
+  packets/s on a LAN). Old peers (protocol 7, no change of `kProtoVersion`) deliver the pieces as
+  separate messages, which their parsers reject; they stalled on such a message anyway.
+* **A guest ignores the state of a player not in its roster** (BUG-0109). The host relays a guest's
+  state unreliably behind the frame's snapshot chunks, so the last state of a leaving guest could
+  arrive after the reliable `PLAYER_LEAVE` and made a ghost partner (in Space a "partner" that
+  disabled instead of killed and repaired the ship). `player_join` also drops an old entry of the
+  id (its puppet, its snapshot buffer).
+* **Clock offset over a window** (BUG-0133, `net::ClockOffset` in interp.h): local time minus sender
+  time of the fastest snapshots, the minimum of 1 s buckets over the last 3 s. A faster snapshot is
+  taken at once; a higher minimum (the latency rose) is followed at 0.25 s per second, so the render
+  clock slows down and never jumps back. After +300 ms of latency puppets and NPC proxies
+  interpolate again after ~3.4 s (before: 50 s of 20 Hz steps).
+* **Ship and vehicle snapshots carry the host's time** (BUG-0122): a u32 `now_ms()` after the last
+  entry of each `MSG_UFO_STATE` / `MSG_CIV_STATE` chunk (`net::snapshot_time` finds it by the entry
+  size; older guests ignore it, older hosts do not send it and the guest falls back to the arrival
+  time). `VelocityEstimate::update(p, now, sender_s)` divides by the host's interval and ages the
+  snapshot in host time mapped by a `ClockOffset`. One packet 75 ms late: 0.1 units of error at
+  100 u/s (before 22).
+* **Net ids of host objects** (BUG-0154): `net::alloc_id` (net/ids.h) skips ids in use and 0, for
+  ships (squadron.cpp), civ vehicles (civ.cpp, both places) and tribe members (tribe.cpp).
+* **A player's creations leave with the player** (BUG-0076): `creations::on_player_leave` forgets the
+  owner's bundles (host store, received pieces, applied keys), so the next player of the id is shown
+  with its own creature or the world's species, and later joiners do not get the old one.
+* Fix switches (tests): `coop.corefix big_reliable|state_roster|offset_window|sender_time|id_reuse|creations_leave 0|1`;
+  unit tests: `net_tests --nofix` runs the wave 2 cases on the code before the fixes (they fail).

@@ -1,19 +1,19 @@
 ---
 id: BUG-0128
 title: the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#107
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a, b5ebdb2
+tests: tools/tests/coop_cell_sync.py (suite cell_sync), tools/tests/coop_dna_resend.py (suite dna_resend)
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #107
 ---
 
@@ -63,13 +63,26 @@ It heals at the next change of the host's total. A guest eating also triggers on
 CONFIRMED by reading; checked independently by a second reviewer (low). Not run in the game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004, b5ebdb2). The host sends the Cell food total to each guest when it
+(or that guest's meal acknowledgement) changed, at once to a guest it has not sent to yet (a
+newcomer), and again every 2 s; the DNA total (coop.cpp) also every 2 s. A guest that dropped a
+total while loading or in an editor has the host's within 2 s. The per-guest bookkeeping goes with
+the player (`cellsync::on_player_leave`) and the session. Old behaviour: `coop.pool fix resend 0`
+(works in every stage). Not touched: the shared money pool (fix/w2-civ owns BUG-0049/0106).
+
+The review suggested:
 
 - Resend both totals periodically (every 2 s, like `MSG_RES`), or send them when a guest's state first shows the stage mode.
 - Reset `g_food_sent` in `player_join` as `g_dna_sent` is.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Food: `coop_cell_sync.py` changes the guest's own total by 1 point (`coop.pool foodlocal`, as a total
+it missed) and waits 4 s while the host's total stays the same. FAIL with `SPORE_CELL_FIX=0`
+(out/lab/20261027-231147): guest 1, host 0. PASS (out/lab/20261027-231004, out/lab/20261027-231523).
+DNA: `coop_dna_resend.py` (Creature) adds 7 DNA to the guest's own total (`coop.dna local 7`).
+FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-232647); PASS (out/lab/20261027-232430).
+
+The planned test was:
 
 `coop_cell_*` on two lanes:
 1. The host changes its food while the guest loads (`coop.res add`-style debug, or eating), then stands still.
@@ -83,3 +96,4 @@ It FAILS on main and PASSES with the fix. The same for DNA in Creature.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #107.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

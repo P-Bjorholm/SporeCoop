@@ -1,19 +1,19 @@
 ---
 id: BUG-0110
 title: a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#89
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-creature
+commits: c068f08
+tests: npc_swap
 signature:
-docs:
+docs: docs/re/creature.md#creature-pool-ids
 related: #89
 ---
 
@@ -62,18 +62,26 @@ After any return or unwind of the tick, `mpAvatar`, `g_swap_real`, the lent tuni
 PLAUSIBLE, low to medium severity: a game fault inside the swapped call must happen first. The mechanism (restore only on normal return, no handler of ours) is confirmed by reading the code, and a second reviewer verified it independently. That reviewer also found the stale `game::avatar()` effect.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Keep the swap state in one place and check it once per frame. If `g_swap_real` is still set outside `h_NPCTickAI`, write it back to `mpAvatar`, clear the lent tuning, clear `g_swap_real` and log it. Do the same for the saved G+0x411C in `h_NoAttack`.
-- An alternative is a real SEH frame around the original call (`__try1`/`__except1` in mingw, or a small asm thunk that registers an `EXCEPTION_REGISTRATION`).
-- `h_SelectUI`, `h_StageMsg` and `b_damage` can use the same per-frame check.
+Fixed for `h_NPCTickAI` (fix/w2-creature): the swap remembers the puppet and the lent tuning;
+`game::swap_guard_tick`, called once per frame from `npc::tick_frame` (outside every NPC tick),
+finds a swap still open, writes the real avatar back into `mpAvatar` (if the puppet is still
+there), takes the lent +0xE84 off the puppet, clears the state and logs a warning
+(`swaps_restored=` in `coop.npc`). `coop.npc swapguard off` keeps the old behaviour,
+`coop.npc swapfault` makes the next swapped tick leave without its restore (tests).
+Not changed (other areas, smaller leftovers): `h_NoAttack` (cellsync.cpp, the cell avatar index),
+`h_SelectUI` / `h_StageMsg` (coop.cpp), `b_damage` (civ.cpp).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_npc_swap.py` (suite `npc_swap`), a test command that forces the condition
+(the state an unwind leaves): the guest stands next to NPCs far from the host until `ai_swaps`
+grows, then `coop.npc swapfault`; the game's avatar slot `[cGameNounManager::Get() + 0x54]` is read
+between frames.
 
-A test in `tools/tests/` that makes the swapped NPC tick fault once, for example through a test-only switch that dereferences null inside the detour's critical section after the swap (inside game code via a probe if possible). Then it asserts the game's own `mpAvatar` and the avatar shown to the player, not a mod counter.
-- FAILS on main: `mpAvatar` stays the puppet and swaps stop.
-- PASSES with the fix: the next frame restores it and swaps continue.
+* FAIL without the fix (`--without-fix` = `coop.npc swapguard off`, lane 5, 2026-10-28, direct run):
+  the slot stayed the puppet 0x1dd587d0 in 5 of 5 reads, ai_swaps stopped (399 -> 399).
+* PASS with the fix: direct run (lane 5): the slot is the host's avatar, ai_swaps 1512 -> 3288;
+  lab run out/lab/20261027-232407 (`npc_swap`).
+* Not shown: a real fault inside NPCTickAI and which frame catches it.
 
 ### Related
 #69 (freed puppet after a world teardown), #44 (puppet or proxy gets its AI back during a cinematic).
@@ -81,3 +89,4 @@ A test in `tools/tests/` that makes the swapped NPC tick fault once, for example
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #89.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-creature for h_NPCTickAI (per-frame swap guard); test npc_swap. The other detours of the report stay open in their areas.

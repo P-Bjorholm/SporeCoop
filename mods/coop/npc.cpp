@@ -17,6 +17,7 @@
 #include "driver.h"
 #include "game.h"
 #include "net/validate.h"
+#include "npc_ids.h"
 #include "world.h"
 #include "sporekit_game.hpp"
 
@@ -41,6 +42,8 @@ static bool rts_stage() { return game::mode_id() == 0x1654C02; }
 struct HostNpc {
     uint16_t id;
     double last_seen;
+    uint32_t species = 0; // what the object was when it got the id (BUG-0044)
+    bool dead = false;
 };
 static std::unordered_map<void*, HostNpc> g_host_npcs;  // creature -> id
 static std::unordered_map<uint16_t, void*> g_host_by_id;
@@ -49,6 +52,12 @@ static uint16_t g_next_id = 1;
 static double g_last_state = 0;
 static double g_frozen_since = 0;                       // host: no creature updates since then
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
+static bool g_reuse_fix = true; // coop.npc reusefix off: a reused creature object keeps its id (BUG-0044)
+static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use (BUG-0023)
+static uint32_t g_reused = 0;   // host: creature objects that became another NPC (new id)
+void set_reuse_fix(bool on) { g_reuse_fix = on; }
+void set_id_fix(bool on) { g_id_fix = on; }
+void debug_next_id(uint16_t id) { g_next_id = id; }
 
 // ------------------------------------------------------------------ guest side
 struct Proxy {
@@ -209,6 +218,19 @@ static void send_despawn(uint8_t guest, uint16_t id)
     C.sess->send_reliable_to(guest, net::MSG_NPC_DESPAWN, w);
 }
 
+// host: net id `id` of creature object `c` is over: the guests that mirror it drop it
+static void retire(uint16_t id, void* c)
+{
+    for (auto& [g, ks] : g_known)
+        if (ks.erase(id))
+            send_despawn(g, id);
+    auto b = g_host_by_id.find(id);
+    if (b != g_host_by_id.end() && b->second == c)
+        g_host_by_id.erase(b);
+    g_ai_target.erase(c);
+    teamplay::forget_target(c);
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -233,26 +255,35 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     for (void* c : creatures) {
         if (c == av || game::is_puppet(c) || game::is_destroyed(c))
             continue;
-        g_seen_now.insert(c);
+        uint32_t species = game::species_instance(c);
+        bool dead = game::is_dead(c);
         auto it = g_host_npcs.find(c);
+        if (it != g_host_npcs.end() && g_reuse_fix &&
+            npc_object_reused(it->second.species, it->second.dead, species, dead)) {
+            // the game freed this NPC and built another one in the same object (BUG-0044): the
+            // guests drop the old one, the new one gets a new id and a spawn with its species
+            retire(it->second.id, c);
+            g_host_npcs.erase(it);
+            it = g_host_npcs.end();
+            g_reused++;
+        }
         if (it == g_host_npcs.end()) {
-            uint16_t id = g_next_id++;
-            if (g_next_id == 0xFFFF)
-                g_next_id = 1;
-            g_host_npcs[c] = {id, now};
+            uint16_t id = alloc_npc_id(
+                g_next_id, [](uint16_t i) { return g_host_by_id.count(i) != 0; }, g_id_fix);
+            if (!id) // 65534 NPCs at once: not in this world
+                continue;
+            g_host_npcs[c] = {id, now, species, dead};
             g_host_by_id[id] = c;
-        } else
+        } else {
             it->second.last_seen = now;
+            it->second.dead = dead;
+        }
+        g_seen_now.insert(c);
     }
     // forget creatures that stopped updating (destroyed / unloaded)
     for (auto it = g_host_npcs.begin(); it != g_host_npcs.end();) {
         if (now - it->second.last_seen > 2.0) {
-            uint16_t id = it->second.id;
-            for (auto& [g, ks] : g_known)
-                if (ks.erase(id))
-                    send_despawn(g, id);
-            g_host_by_id.erase(id);
-            g_ai_target.erase(it->first);
+            retire(it->second.id, it->first);
             it = g_host_npcs.erase(it);
         } else
             ++it;
@@ -266,6 +297,12 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         auto& known = g_known[p.id];
         net::Vec3 gp;
         float relevance = kRelevance;
+        if (C.in_place && !C.in_place(p.id)) { // another world (BUG-0130): its proxies go, sent again later
+            for (uint16_t id : known)
+                send_despawn(p.id, id);
+            known.clear();
+            continue;
+        }
         if (rts) {
             gp = center;
             relevance = kRtsRelevance;
@@ -573,6 +610,7 @@ static void hatch_tick(double now, bool simulating)
 static void tick_frame(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
+    game::swap_guard_tick();                            // outside every NPC tick here
     game::destroy_deferred_tick();                      // creatures removed while a cinematic played
     if (game::in_creature_stage())
         remove_saved_strays(now);
@@ -648,6 +686,7 @@ void on_world_change()
     g_host_npcs.clear();
     g_host_by_id.clear();
     g_ai_target.clear();
+    teamplay::reset();
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
 }
@@ -666,6 +705,7 @@ void on_session_end()
     g_known.clear();
     g_kill.clear();
     g_ai_target.clear();
+    teamplay::reset();
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
@@ -845,10 +885,10 @@ std::string status()
         for (auto& [c, pup] : g_ai_target)
             on_partner += g_seen_now.count(c) != 0;
         snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
-                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u\n",
+                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u reused=%u hunt_targets=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
-                 g_ai_partner_picks, game::ai_swaps());
+                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), g_reused, (unsigned)teamplay::hit_targets());
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)
@@ -1090,6 +1130,25 @@ void* debug_spawn(uint32_t instance)
     p.x += 4.f;
     void* herd = game::create_herd(p, sp);
     return herd ? game::spawn_creature(p, sp, herd) : nullptr;
+}
+
+// host (tests, BUG-0044): dead NPC #id's object becomes a living creature of its species again, the
+// state host_tick meets when the game builds a new creature in a freed one (cCreatureAnimal::Create
+// with its reuse flag takes a free slot of the creature pool whose object had the same species
+// profile, 0xAD2020). A natural reuse could not be forced: DestroyInstance on a corpse, then up to 8
+// Create(reuse) of its species over 8 frames, never returned the freed object (2026-10-28, lane 5).
+// So the object itself is made alive again: the death flag cleared, full health.
+std::string debug_reuse(uint16_t id)
+{
+    void* c = host_npc(id);
+    if (!is_host() || !c)
+        return "not the host or no such npc";
+    char b[160];
+    snprintf(b, sizeof b, "npc #%u %p species %08X dead=%d: alive again (as a new creature in its object)", id, c,
+             game::species_instance(c), (int)game::is_dead(c));
+    *((uint8_t*)c + game::kDeadOff) = 0;
+    game::set_health(c, game::max_health(c));
+    return b;
 }
 
 // host (tests): an epic creature (archetype 0xFC811218, isEpic: always hostile to the player,

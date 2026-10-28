@@ -1,19 +1,19 @@
 ---
 id: BUG-0034
 title: one reliable message bigger than a packet stalls all reliable traffic and floods empty packets
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#12
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-net
+commits: a8341cf, 29fa3f6
+tests: tests/net_tests.cpp test_big_reliable; tools/tests/coop_chat_long.py (suite chat_long)
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-w2, docs/06-testing.md#testing-net-w2
 related: #12
 ---
 
@@ -92,7 +92,17 @@ Unreliable messages that cannot fit are dropped (`used++`, a known and documente
 CONFIRMED by harness (stall and storm). The `coop say` trigger is CONFIRMED by reading (`c_say` has no limit; the UI edit box limits chat to 120 characters). The `MSG_SPECIES` trigger is PLAUSIBLE: the 41-record threshold is exact, but a real planet's table size was not checked. Other unchunked reliable senders with a count-prefixed list (space_contracts, space_rivalry, space_map, spacecoop) were not checked.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-net (a8341cf). `Connection::send_reliable` splits a payload above 1163 bytes
+(`kRelPiece`) into reliable pieces of one packet each; all but the last carry wire flag bit 2
+("more pieces follow"). The receiver (`Connection::deliver_reliable`) joins the pieces in order
+(reliable delivery is ordered) and delivers one message; it never collects more than
+`kMaxReliable` (1 MB), the sender refuses bigger messages (`stats.too_big`). Every queued message
+now fits a packet, so the due check can no longer cause the empty-packet burst, and chat and
+`MSG_SPECIES` need no chunking of their own. No protocol version bump: a peer on protocol 7 gets
+the pieces as separate messages, which its parsers reject (it stalled on such a message anyway).
+Switch: `coop.corefix big_reliable 0` (and `net_tests --nofix`) restores the old path.
+
+The review's suggestions were:
 
 - In `Connection::send_reliable`: if `payload.size() > kMaxPacket - kHeader - 6`, log and drop the message (or assert in debug builds), so it can never block the queue.
 - In `build_packet`: compute `any_rel_due` only over messages that can fit, so a stuck message cannot cause the empty-packet storm.
@@ -100,7 +110,16 @@ Not fixed yet. Suggested in the review:
 - Keep the old behaviour behind `coop.fix big_reliable off` so the lab can show the test catches it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `test_big_reliable` (tests/net_tests.cpp): a 1180-byte and a 30000-byte reliable
+message, then a 4-byte one, with 0 % and 20 % loss. With the fix: all three delivered intact,
+nothing pending, 127 / 73 packets in 3 s. `net_tests --nofix`: nothing delivered, 3 pending,
+38400 packets in 3 s (FAIL).
+
+In game, `coop_chat_long.py` on lane 2: `--without-fix` FAIL (neither the 1500-character line nor
+the next one reached the host, guest pending=8, 5280 packets/s to the host);
+with the fix PASS twice (both lines, pending=0, 33 packets/s).
+
+Planned in the review:
 
 - `tests/net_tests.cpp`: the harness above as a test that CHECKs `got == 1` and `pkts` below a few hundred. It fails on main and passes with the fix.
 - Lab: `tools/tests/coop_chat_long.py` (2 instances). The guest sends a 1500-character `coop say`, then a normal one. Assert that the host's chat log shows the second message, and that a DNA gain on the guest still reaches the host's DNA counter (the game's value).
@@ -112,3 +131,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #12.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.

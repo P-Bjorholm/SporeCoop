@@ -1,19 +1,19 @@
 ---
 id: BUG-0044
 title: a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#22
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-creature
+commits: 8de7ca7
+tests: npc_reuse
 signature:
-docs:
+docs: docs/re/creature.md#creature-pool-ids
 related: #22
 ---
 
@@ -57,14 +57,28 @@ A new creature always gets a new net id (or at least a fresh spawn), and the gue
 PLAUSIBLE. The code path is CONFIRMED by reading. Not verified: how often the game hands out a freed creature object again within 2 s (pool order, timing).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Store the species key (and the dead flag) in `HostNpc`. In `host_tick`, when a known pointer now has another species key, or went from dead to alive, despawn the old id for every guest and give it a new id with a new spawn. On the guest, also clear `px.killed` when a state says the NPC is alive (no `NF_DEAD`). Keep the old behaviour behind `coop.fix npc_reuse off`.
+Fixed (fix/w2-creature): `HostNpc` keeps the species instance and the death flag the object had.
+In `host_tick` a known object that now has another species, or is alive after it was dead
+(`npc_object_reused`, mods/coop/npc_ids.h), is retired: despawn to every guest that mirrors it,
+its id and AI target forgotten, its joint-hunt hits dropped; then it gets a new id and a fresh
+spawn with its species. `coop.npc reusefix off` keeps the old behaviour (tests). Guest side
+unchanged (a new id is a new proxy). Not caught: a living NPC freed and rebuilt alive in the same
+object with the same species (the guest then shows that creature with the old one's health for a
+moment: harmless). docs/re/creature.md#creature-pool-ids: Create's reuse flag takes pool objects
+of the same species, so "dead, then alive" is the main case.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_npc_reuse.py` (suite `npc_reuse`), part 1, a test command that forces the
+condition: a natural reuse could not be forced (DestroyInstance on a corpse, then Create with the
+reuse flag of its species for 8 frames never returned the object, lane 5), so `coop.npc reuse <id>`
+makes the dead NPC's object alive again (death flag cleared, full health): what host_tick meets
+after the game rebuilt it. The assertion is the guest's game: the mirror of the host's id of that
+object, its species and death flag in `coop.npc creatures`.
 
-`tools/tests/coop_npc_reuse.py` on two instances (host + guest, Creature stage): on the host, destroy an NPC and create a creature of another species in the same frame until the pointer is reused (debug command). Assert on the guest the game's own state of the proxy at that id: its species key (`+0xB28`) equals the host creature's, and its dead flag (`+0xB5E`) is 0 when the host's creature is alive. It fails on main and passes with the fix.
+* FAIL without the fix (`--without-fix` = `coop.npc reusefix off`, lane 5, 2026-10-28, direct run):
+  host object 0FA923A8 alive with the same id 19; the guest's mirror of #19 is still DEAD in its game.
+* PASS with the fix: direct run (lane 5): the object got id 22, the guest's mirror of #22 is alive
+  and the same species; lab run out/lab/20261027-232407 (`npc_reuse`).
 
 ### Related
 - BUG-0023 (net ids repeat after about 65k allocations): same allocator, a different cause.
@@ -73,3 +87,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #22.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-creature (host_tick retires a reused object's id); test npc_reuse FAIL without / PASS with.

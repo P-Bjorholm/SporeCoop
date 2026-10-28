@@ -1,19 +1,19 @@
 ---
 id: BUG-0066
 title: a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#44
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-creature
+commits: c068f08
+tests: cinematic_puppet
 signature:
-docs:
+docs: docs/re/creature.md#creature-pool-ids
 related: #44
 ---
 
@@ -60,19 +60,30 @@ A creature that waits for its deferred destroy keeps the puppet treatment: no lo
 CONFIRMED by reading the full path (`destroy_creature`, `h_NPCTickAI`, `host_tick`). Not verified at runtime: what the AI of an untuned puppet does during those seconds.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `destroy_creature`, call `puppet_unregister(c)` only on the immediate path. In `destroy_deferred_tick`, unregister right before `DestroyInstance` (and also for entries that are dropped because the world changed). Callers that rely on `is_puppet(c)` being false at once (the proxy maps) already erase their own maps. Keep the old order behind `coop.npc cinedefer` or a new `coop.fix defer_keeps_puppet off`. Then update the known-issues entry: since the AI runs, "they stand still" holds only for creatures that are still puppets.
+Fixed (fix/w2-creature): `game::destroy_creature` unregisters the puppet only on the immediate
+path; a deferred one stays in the puppet list (no `NPCTickAI`, skipped by `host_tick` and the
+stray removals) until `destroy_deferred_tick` destroys it. Entries queued in another world are
+dropped and unregistered at once, also while a cinematic of the new world plays; `puppet_register`
+of an object that is still queued takes it off the queue. Local NPCs the guest removes during a
+cinematic were never puppets and still run their AI until it is over. `coop.npc deferpuppet off`
+keeps the old order (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_cinematic_puppet.py` (suite `cinematic_puppet`): the host plays
+CRG_ClaimNest, the guest switches its creation (`coop.creations next creature`), the host builds a
+new puppet during the cinematic; the old one must have no host NPC id (none is sent to the guest).
 
-`tools/tests/coop_cinematic_puppet.py`: two instances, Creature stage, host plays a cinematic and rebuilds the guest's puppet while it runs. Assert on the guest, using the game's state, that there is no creature of its own species other than its avatar within 50 m during the cinematic (`coop.npc creatures 0 <species>`). Assert on the host that the deferred puppet's position does not change (no AI movement). It fails on main and passes with the fix.
+* FAIL without the fix (`--without-fix` = `coop.npc deferpuppet off`, lane 5, 2026-10-28, direct
+  run): the old puppet 2003BFD8 had host NPC id 23 in 12 of 12 reads (so it went to the guest).
+* PASS with the fix: direct run (lane 5) and lab run out/lab/20261027-232407 (`cinematic_puppet`).
+* Position is not a usable sign of AI here: the old puppet moved 0.4 m (without) and 1.4 m (with
+  the fix) on its last velocity; the planned "does not move" check was dropped.
 
 ### Related
 - docs/re/creature.md 16 (migration crash 0xC6AE60, why destroys are deferred), docs/re/creature.md 12 (untuned creatures with AI on).
-- docs/known-issues.md "While a cinematic plays the creatures the mod removes on a guest ... stand still": needs a CORRECTION after this is confirmed.
+- docs/known-issues.md "While a cinematic plays the creatures the mod removes on a guest ... stand still": CORRECTION and FIXED note added (2026-10-28).
 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #44.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: confirmed in the game (host NPC id 23 for the old puppet) and fixed on fix/w2-creature; test cinematic_puppet.

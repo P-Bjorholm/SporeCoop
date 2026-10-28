@@ -1,19 +1,19 @@
 ---
 id: BUG-0070
 title: the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#48
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_sync.py (suite cell_sync)
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #48
 ---
 
@@ -68,12 +68,24 @@ PR #5 (BUG-0028) adds an `on_session_end` call to `do_leave`, but `on_session_en
 CONFIRMED by reading the full path. Not run in the game. Not checked: whether the game itself resets `+0x111` or `+0xA4` on the avatar later (a level change or rebuild may).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004). `reset_knockout()`: in the Cell stage with an avatar, invulnerability
+`+0x111` cleared (when knocked out or within the post-revive window), opacity `+0xA4` 1 and hp at
+least 1 after a knockout; then `g_downed`, `g_hold`, `g_down_since`, `g_invuln_until` and `g_ko`
+are cleared. Called from `on_session_end` and from the stage-leave block of `tick` (the state only,
+the pool is gone there). Old behaviour: `coop.pool fix koreset 0`.
+
+The review suggested:
 
 Add `reset_knockout()`: if in the Cell stage and the avatar exists, set `+0x111 = 0`, `+0xA4 = 1`, and hp to at least 1 (keep the current hp when it is higher). Then clear `g_downed`, `g_hold`, `g_invuln_until` and the `KO_OUT` entries in `g_ko`. Call it from `on_session_end` and from the stage-leave block in `tick` (before the pool is gone, or skip the avatar writes when `in_cell()` is false). Keep the old behaviour behind `coop.fix koreset off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_cell_sync.py`: case A, the host revives the guest and the guest leaves at once (`coop.leave`,
+the same session-end path as the host quitting); 4 s later the avatar's `+0x111`. Case B, the guest
+leaves 1 s into a knockout; its avatar's `+0xA4`. FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-231147): invuln=1,
+then opacity 0.35. PASS (out/lab/20261027-231004, out/lab/20261027-231523): invuln 0, opacity 1.00, hp 1. Case C (a stage change
+during a knockout) is covered by the reset in the stage-leave block, not run in the game.
+
+The planned test was:
 
 `tools/tests/coop_cell_ko_reset.py` on `twoinst.start`: a revive next to the host, then the host's game is killed within 1 s. On the guest, wait 5 s and assert the game's own state through `coop.pool`: `+0x111` (invuln) is 0 and `+0xA4` (avatar_opacity) is 1.0. Then let a host-free bite through `coop.pool kill` on the guest's own cell, or `coop.pool hp`, and check that hp really drops. A second case kills the host during the knockout and checks opacity 1.0. Both fail today and pass with the fix. The lab must ignore the host's crash report for the deliberately killed game only.
 
@@ -86,3 +98,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #48.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

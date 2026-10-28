@@ -5,9 +5,12 @@
 
 #include <algorithm>
 
+#include "pending.h"
 #include "sha256.h"
 
 namespace upd {
+
+bool g_old_fix = true;
 
 std::wstring widen(const std::string& s)
 {
@@ -206,6 +209,10 @@ static std::string why(const char* what, const std::wstring& p)
 bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* pending)
 {
     std::string later; // relative paths that wait for the next start
+    if (std::string d = g_dup_fix ? duplicate_path(p.files) : std::string(); !d.empty()) {
+        err = "the pack lists a file twice: " + d; // BUG-0089 (packs built in memory too)
+        return false;
+    }
     // the game's own steam_api.dll is kept as steam_api_orig.dll (the loader forwards to it)
     // before the loader takes its place
     std::wstring sa = root + L"\\SporebinEP1\\steam_api.dll", orig = root + L"\\SporebinEP1\\steam_api_orig.dll";
@@ -238,7 +245,8 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
         if ((f.flags & kOnlyIfMissing) && s.had)
             continue;
         s.fresh = s.target + L".new";
-        s.old = s.target + L".old";
+        // our own suffix (BUG-0114): "<file>.old" may be the player's own backup
+        s.old = s.target + (g_old_fix ? SC_OLD_SUFFIX : L".old");
         make_dirs(s.target);
         if (!write_all(s.fresh, f.data)) {
             err = why("cannot write", s.fresh);
@@ -306,34 +314,33 @@ rollback:
 
 void apply_pending(const std::wstring& root)
 {
-    std::wstring list = root + L"\\SporebinEP1\\mods\\sporecoop.pending";
-    HANDLE f = CreateFileW(list.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE)
-        return;
-    char b[4096];
-    DWORD got = 0;
-    ReadFile(f, b, sizeof b, &got, nullptr);
-    CloseHandle(f);
-    std::string text(b, got);
-    size_t p = 0;
-    while (p < text.size()) {
-        size_t e = text.find('\n', p);
-        if (e == std::string::npos)
-            e = text.size();
-        std::string rel = text.substr(p, e - p);
-        while (!rel.empty() && rel.back() == '\r')
-            rel.pop_back();
-        p = e + 1;
-        if (!allowed_path(rel))
-            continue;
-        std::wstring t = native(root, rel);
-        if (exists(t + L".new")) {
-            MoveFileExW(t.c_str(), (t + L".old").c_str(), MOVEFILE_REPLACE_EXISTING);
-            if (!MoveFileExW((t + L".new").c_str(), t.c_str(), MOVEFILE_REPLACE_EXISTING))
-                MoveFileExW((t + L".old").c_str(), t.c_str(), MOVEFILE_REPLACE_EXISTING);
-        }
-    }
-    DeleteFileW(list.c_str());
+    sc_pending_keep_failed = g_old_fix ? 1 : 0; // tests: the same switch as the backups
+    sc_apply_pending(root.c_str(), 0); // the replaced files: cleanup_old
+}
+
+// The backups an update made: "<file>.sporecoop-old" (BUG-0114). Before, every "*.old" in these
+// folders was deleted, also a player's own SporeApp.exe.old or another mod's backup. Backups from
+// versions before the fix were named "<file>.old": only those of SporeCoop's own files go.
+bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bool loader_old)
+{
+    std::wstring n;
+    for (wchar_t c : name)
+        n += (wchar_t)towlower(c);
+    auto ends = [&](const wchar_t* t) {
+        size_t k = wcslen(t);
+        return n.size() >= k && n.compare(n.size() - k, k, t) == 0;
+    };
+    if (!ends(L".old"))
+        return false;
+    if (dir_rel == L"\\SporebinEP1")
+        return n == L"sporekit.dll.old" || (n == L"steam_api.dll.old" && loader_old);
+    if (dir_rel == L"\\SporebinEP1\\mods")
+        return n == L"coop.dll.old" || n == L"sporecoop.version.old";
+    if (dir_rel == L"\\SporebinEP1\\mods\\sporekit\\symbols")
+        return ends(L".sym.old");
+    if (dir_rel == L"\\Data")
+        return n == L"sporecoop.package.old";
+    return false;
 }
 
 void cleanup_old(const std::wstring& root)
@@ -342,12 +349,22 @@ void cleanup_old(const std::wstring& root)
                                L"\\Data"}) {
         std::wstring d = root + dir;
         WIN32_FIND_DATAW fd;
-        HANDLE h = FindFirstFileW((d + L"\\*.old").c_str(), &fd);
+        HANDLE h = FindFirstFileW((d + L"\\*").c_str(), &fd);
         if (h == INVALID_HANDLE_VALUE)
             continue;
-        do
-            DeleteFileW((d + L"\\" + fd.cFileName).c_str()); // still loaded: removed next time
-        while (FindNextFileW(h, &fd));
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                continue;
+            std::wstring n = fd.cFileName, p = d + L"\\" + n;
+            size_t k = wcslen(SC_OLD_SUFFIX);
+            bool ours = n.size() > k && _wcsicmp(n.c_str() + n.size() - k, SC_OLD_SUFFIX) == 0;
+            if (!g_old_fix) // the old behaviour: every *.old
+                ours = n.size() > 4 && _wcsicmp(n.c_str() + n.size() - 4, L".old") == 0;
+            else if (!ours)
+                ours = own_legacy_backup(dir, n, _wcsicmp(n.c_str(), L"steam_api.dll.old") == 0 && is_loader(p));
+            if (ours)
+                DeleteFileW(p.c_str()); // still loaded: removed next time
+        } while (FindNextFileW(h, &fd));
         FindClose(h);
     }
 }

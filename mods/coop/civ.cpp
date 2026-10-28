@@ -11,6 +11,7 @@
 #include "game.h"
 #include "shared.h"
 #include "modes.h"
+#include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
@@ -1035,9 +1036,7 @@ static void host_tick(double now)
             if (owner == 0xFF || owner == kShared)
                 owner = 0;
         }
-        uint16_t id = g_next_id++;
-        if (!g_next_id)
-            g_next_id = 1;
+        uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154: never a live id, never 0
         g_hv[v] = {id, owner, pol_of(v)};
         g_hv_by_id[id] = v;
     }
@@ -1047,7 +1046,7 @@ static void host_tick(double now)
     // a city's buildings): ~1200 bytes with 9 cities and 24 vehicles, so with a grown planet the
     // guest got no cities, captures or the first 24 vehicles at all. The items are packed in order
     // (cities, spice nodes, one city's buildings, vehicles) into as many chunks as needed.
-    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kVehBytes = 41, kHead = 10;
+    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kVehBytes = 41, kHead = 14; // + u32 time (BUG-0122)
     const size_t kBudget = g_chunk_budget; // net::kMaxPacket - 48 (packet + message headers); tests: less
     std::vector<std::pair<net::Vec3, uint32_t>> nodes;
     if (g_cycle % 10 == 0)
@@ -1140,6 +1139,7 @@ static void host_tick(double now)
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             w.f32(F<float>(v, kVHp));
         }
+        w.u32(net::now_ms()); // BUG-0122: the host's time of the snapshot (velocity on the guest)
         g_max_chunk = std::max<uint32_t>(g_max_chunk, (uint32_t)w.size());
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
@@ -1287,7 +1287,7 @@ static void host_command(uint8_t from, net::Reader& r)
         g_pending_owner = from;
         void* v = host_buy(city, loco);
         if (v && !g_hv.count(v)) {
-            uint16_t id = g_next_id++;
+            uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154 (this one could hand out 0)
             g_hv[v] = {id, from, pol_of(v)};
             g_hv_by_id[id] = v;
         }
@@ -1543,6 +1543,7 @@ static void guest_state(net::Reader& r)
     guest_nodes_and_buildings(r);
     double now = H->time_seconds();
     uint8_t n = r.u8();
+    double sent = net::snapshot_time(r, (size_t)n * 41); // 41 bytes per vehicle
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
         GV m;
@@ -1557,7 +1558,7 @@ static void guest_state(net::Reader& r)
         void* v = g.v;
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
-        g.est.update(m.pos, now);
+        g.est.update(m.pos, now, sent);
         if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
             g_gv_of.erase(v);
             g.v = v = nullptr;

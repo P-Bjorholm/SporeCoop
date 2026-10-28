@@ -17,6 +17,65 @@
   its last health (BUG-0173). Test: `coop_tribe_ko.py`.
 - **Civilization: an NPC city founded while a guest joined or loaded** now appears on that guest
   a few seconds later instead of never (BUG-0120). Test: `coop_civ_city_join.py`.
+- **Long chat lines and big tables no longer stop a player's network traffic** (BUG-0034): a message
+  bigger than one network packet (a chat line of more than ~1100 characters, the species table of
+  a rich planet) is now sent in pieces; before, it and everything reliable after it (damage, DNA,
+  NPCs, chat) never arrived, and the connection flooded the other player with empty packets.
+  Tests: `make test`, `coop_chat_long.py` (suite `chat_long`).
+- **A player who joins under the id of a player who left is shown with their own look**
+  (BUG-0076): the host and the others no longer show the newcomer with the previous player's
+  creature, cell or ship, and do not hand that creation to later joiners. With 3 or more players a
+  leaving player no longer leaves a frozen "ghost" behind on the others (in Space a ghost partner
+  disabled instead of destroyed your ship and could "repair" it, BUG-0109). Tests: `make test`,
+  `coop_creations_rejoin.py` (suite `creations_rejoin`).
+- **Smoother partners, NPCs, ships and vehicles on unstable connections**: after the latency rose
+  (a world sent to a third player, Wi-Fi), partners and NPCs moved in steps for up to a minute; now
+  for about 3 s (BUG-0133). The host's ships and Civilization vehicles no longer jump up to 40 m
+  ahead after a late packet (BUG-0122). Ship, vehicle and tribe member ids are never handed out
+  twice in long sessions (BUG-0154). Tests: `make test`.
+- **Cell: steadier sync on a lossy link**: one lost or late state packet made the guest delete and
+  re-create up to 14 of the host's cells (they blinked, lost their facing, a dying creature died
+  again); a guest's own meal over a level line could be taken back for a moment by an older total
+  from the host (a level down and up again). The food and DNA totals reach a guest that was loading
+  or just joined within 2 s. Tests: `coop_cell_net.py` (suite `cell_net`), `coop_cell_sync.py`
+  (suite `cell_sync`), unit tests `tests/cell_tests.cpp` (BUG-0032, BUG-0051, BUG-0088, BUG-0128).
+- **Cell: knockouts end cleanly**: a partner who left or whose "up again" was missed in an editor
+  no longer stays translucent with a frozen "KO" label; a session ending or the stage changing
+  during or right after a knockout no longer leaves the player's cell invulnerable, translucent or
+  moved. After a small respawn, a level-up gives the cell its normal size instead of up to twice
+  that (BUG-0061, BUG-0070, BUG-0041, BUG-0083).
+- **A received world never overwrites your game**: a guest with `auto_load_world=0` playing its
+  co-op slot had that slot moved away and rewritten when the host shared again (BUG-0035); a new host's
+  world was written over an old co-op slot of another host and mixed with its planets (BUG-0087); a
+  world whose files could not be written (disk full, a file in use) was still loaded (BUG-0105). A
+  received world now goes into its own slot (same host and planet, or a free one), is written into a
+  temporary folder, checked and moved into place as a whole, and is never loaded half-written.
+  Test: `win_unit` (Windows file handling under Wine).
+- **A guest in another world is left alone**: a player who joined from inside its own game (or loaded
+  its own save while connected) got the host's DNA, its own creatures removed and the host's cells,
+  tribe and relations applied, and the game then saved that (BUG-0130). Test: `coop_join_other_world.py`.
+- **World sharing with several players**: one save is made for all guests waiting for the world, not
+  one per guest in the same moment (BUG-0112); a share for a player who already left no longer saves
+  the host's game or holds its editors (BUG-0166); a world load no longer starts inside an editor
+  that opened just before (it waits until the editor is closed; it crashed the game, BUG-0157); after
+  Leave, the old host's world is no longer loaded once the editor closes (BUG-0074). Test:
+  `coop_world_queue.py`.
+- **Updates keep your own files**: SporeCoop's update deleted every `*.old` file in the game folders at
+  each start, also a player's `SporeApp.exe.old` backup (BUG-0114; its own backups are now
+  `*.sporecoop-old`); a file that could not be replaced at the next start was never replaced later
+  (BUG-0150); a pack listing a file twice could lose the original file on rollback (BUG-0089).
+- **Creature: NPCs on the guest match the host's after the game reuses a creature**: when the game
+  built a new NPC in the object of a freed one, guests kept showing the old one (another species,
+  or its corpse dragged along the new creature's path); NPC ids no longer repeat in long sessions
+  (BUG-0044, BUG-0023). Test: `coop_npc_reuse.py` (suite `npc_reuse`).
+- **Creature: a partner's creature removed during a cinematic** no longer shows up for that partner
+  as an extra AI-driven copy of itself (BUG-0066). Test: `coop_cinematic_puppet.py`.
+- **Creature: an error in an NPC's AI next to a partner** can no longer leave the partner's creature
+  as the host's player creature for good (BUG-0110). Test: `coop_npc_swap.py`.
+- **After leaving a session, a guest's own creation is its own again**: the host's creation with the
+  same id kept replacing it until the game was restarted (BUG-0055). Test: `coop_creation_leave.py`.
+- **Joint-hunt bonus**: the hit table no longer grows for the whole session, and a new creature does
+  not inherit the hits of a dead one (BUG-0099). Test: `tests/npc_tests.cpp` (`make test`).
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

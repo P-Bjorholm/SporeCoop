@@ -44,6 +44,10 @@ anchor so other docs can link to it:
   `destroy_creature` unregisters the puppet or proxy before the cinematic deferral, so its
   NPCTickAI runs again and it can move, and the host may send it to the guests as an NPC (code
   reading, verified by a second reviewer; not seen in the game yet). BUG-0066.
+* FIXED (2026-10-28, fix/w2-creature): seen in the game (`coop_cinematic_puppet.py`: the host's old
+  puppet got NPC id 23 during CRG_ClaimNest); a puppet or proxy that waits for the end of the
+  cinematic now stays a puppet (no AI, no host NPC id) until it is destroyed. Local NPCs the guest
+  removes in that time still run their AI until then. BUG-0066.
 * Ticket: BUG-0019.
 
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
@@ -100,6 +104,14 @@ anchor so other docs can link to it:
   The same offset on every guest points at the host side or at a spot the proxy cannot stand on
   (pushed out by collision after each stuck-teleport of `drive::step`). Not seen again in 5 min of
   watching nor in 4 more sessions. Hunt: `coop.npc list` on host and guests for that id (err, want).
+* 2026-10-28 (fix/w2-creature): not reproduced (no runs of the 4-player probe). Code reading of
+  `drive::step` (driver.h) gives a candidate (inferred, not observed): a proxy 4 m off is under the
+  8 m snap, and the stuck teleport fires only while the host's NPC reports less than 0.3 m/s. An NPC
+  of the host that pushes against something (velocity reported, position fixed) keeps the proxy
+  walking towards a spot it cannot reach on any guest (collision), for as long as it pushes. A
+  second candidate was fixed on the way: a reused creature object kept its net id (BUG-0044), but
+  that shows the old species or a corpse, not an offset. Next time: `coop.npc list` on the host
+  for that id (its vel: `coop.npc` sync entries) and on a guest (err, want).
 * Ticket: BUG-0169.
 
 ## Creature chaos: a guest crashed with a corrupted heap (seen once)
@@ -330,6 +342,9 @@ anchor so other docs can link to it:
   estimate (BUG-0122, fix/w2-net) and the guest's own NPC AI vehicles that could be bound as a
   mirror (BUG-0188, fix/w2-civ: one of two such spawns was bound, not killed, in
   `coop_civ_ai_spawn.py --nofix`). Re-measure after both are merged.
+  2026-10-28 (fix/w2-net): BUG-0122 removed one candidate, the velocity from the arrival time
+  (one late packet put a mirror 22 units ahead at 100 u/s); the snapshots now carry the host's
+  time. Not re-measured with play_civ.py yet.
 * Ticket: BUG-0186.
 
 ## Civilization: the host's capture caption stops everybody's game
@@ -612,8 +627,8 @@ keeps the history).
 
 * BUG-0030 (#8, bug): join fails after 10 s when the host's first packet is lost (WELCOME falsely acked)
 * BUG-0033 (#11, bug): leaving, re-hosting and hot reload each clean up a different subset of the co-op state.
-* BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
 * BUG-0035 (#13, bug): a received world can move and overwrite the save slot the guest is playing (auto_load_world=0)
+* BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
 * BUG-0036 (#14, tooling): a game crash after a test's checks does not fail the test in the lab.
 * BUG-0039 (#17, bug): LAN game list is never pruned, so fake discovery replies grow memory and slow the game.
 * BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
@@ -631,8 +646,6 @@ keeps the history).
 * BUG-0076 (#54, desync): a new player is shown with the creature or ship of the player who had their id before.
 * BUG-0085 (#63, bug): after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack".
 * BUG-0086 (#64, tooling): re_lint skips the confidence check for overrides entries whose name is also in a generated .sym.
-* BUG-0087 (#65, bug): a received world is written over any old co-op slot and mixed with another host's files.
-* BUG-0089 (#67, bug): a pack listing the same file twice loses the original file on rollback.
 * BUG-0093 (#71, tooling): coop.cell spawn reads outside the cell pool for a slot number that does not exist.
 * BUG-0096 (#74, test): coop.vote editor submits the editor request inside Present, a path the real game never takes.
 * BUG-0097 (#75, tooling): release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section.
@@ -642,16 +655,14 @@ keeps the history).
 * BUG-0103 (#81, tooling): more places that can kill the owner's own Spore on lane 1 (BUG-0025)
 * BUG-0104 (#83, bug): the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line.
 * BUG-0105 (#84, bug): a received world is loaded even when writing its files failed (disk full, locked or read-only file)
+* BUG-0106 (#85, bug): shared money can be spent twice in one round trip, and Civ/Space money goes negative.
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
-* BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
+* BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
 * BUG-0113 (#92, bug): after a resolution change the co-op window stays at its old position, partly off-screen.
-* BUG-0114 (#93, bug): every game start deletes all *.old files in the game folders, also the player's own backups.
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
-* BUG-0122 (#101, desync): host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
 * BUG-0127 (#106, bug): a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written.
-* BUG-0128 (#107, desync): the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads.
 * BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
@@ -664,40 +675,24 @@ keeps the history).
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
-* BUG-0150 (#129, bug): a deferred update file is never applied if its swap fails once (the pending list is deleted anyway)
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
-* BUG-0154 (#133, desync): ship, vehicle and tribe member ids can repeat after 65 535 allocations, and guests then mix up two objects.
 * BUG-0155 (#134, bug): at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
-* BUG-0157 (#136, bug): a queued world load can run under an editor that opened after the world arrived.
 * BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
 * BUG-0159 (#138, bug): name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
 * BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
-* BUG-0166 (#145, bug): a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s.
 
 **Cell**
 
-* BUG-0032 (#10, desync): one lost state packet makes the guest delete and recreate up to 14 of the host's cells.
-* BUG-0041 (#19, bug): after a small respawn, the next level-up makes the player's cell up to twice too big.
-* BUG-0051 (#29, desync): the guest's food total can briefly drop below a level line, so it levels down and up again.
-* BUG-0061 (#39, desync): a partner can stay shown as knocked out for good (translucent, frozen "KO" label)
-* BUG-0070 (#48, bug): the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent)
 * BUG-0078 (#56, bug): the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments)
-* BUG-0083 (#61, bug): modes::cell_at accepts one slot past the pool's used range (off by one)
-* BUG-0088 (#66, bug): the guest's local-to-host index map keeps an entry for every mirror it recreates.
 * BUG-0160 (#139, bug): small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int)
 
 **Creature**
 
-* BUG-0044 (#22, desync): a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse.
-* BUG-0055 (#33, bug): after leaving a session, the host's creations still replace a guest's own creation with the same id.
-* BUG-0066 (#44, bug): a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC.
-* BUG-0099 (#77, bug): the joint-hunt hit table grows without bound and keys hits by reusable creature addresses.
-* BUG-0110 (#89, bug): a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good.
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
 * BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.

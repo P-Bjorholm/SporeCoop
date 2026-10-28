@@ -1,19 +1,19 @@
 ---
 id: BUG-0122
 title: host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#101
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-net
+commits: a8341cf, 9afc74d
+tests: tests/net_tests.cpp test_velocity_jitter
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-w2
 related: #101
 ---
 
@@ -124,14 +124,28 @@ This is a candidate cause of the civ vehicle outliers in docs/known-issues.md ("
 Confirmed with the harness above (real `interp.h`). A second reviewer verified it. Severity low to medium: it is visible as mirrors jumping and rubber-banding on jittery links (Wi-Fi), and it adds to hit and position errors on fast ships.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-net. The host appends its `net::now_ms()` (u32) after the last entry of every
+`MSG_UFO_STATE` (squadron.cpp) and `MSG_CIV_STATE` (civ.cpp, chunk budget +4 bytes) chunk; the guest
+finds it by the entry size (`net::snapshot_time`), so older guests ignore it and an older host's
+chunks fall back to the arrival time. `VelocityEstimate::update(p, now, sender_s)` uses the host's
+interval for the speed and ages the snapshot in host time mapped onto the local clock by a
+`ClockOffset` (the BUG-0133 window), so a late snapshot is moved on further and a bunched one is
+not. Switch: `coop.corefix sender_time 0`.
+
+The review's suggestions were:
 
 - Put the host's `net::now_ms()` (u32) in the header of the ship and vehicle snapshot chunks, next to the u16 cycle.
 - Change `VelocityEstimate::update(p, now, sender_s)` to use `dt = sender_s - last_sender_s` for the speed. Keep the local receive time only for the age in `at()`, or better use the `SnapshotBuffer` offset logic so the age is in sender time too.
 - For compatibility with older peers, fall back to `cycle_delta * 0.1` when no time is sent.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `test_velocity_jitter` at 100 u/s with 0.1 s snapshots and a 30 ms path: one packet
+75 ms late: max error 0.1 units with the fix, 22.1 with the arrival time (`--nofix`, FAIL);
+packets 20 and 21 in one frame and 22 60 ms late: 0.1 vs 9.9 (FAIL). The ticket's second case put
+packet 22 45 ms before its send time on the truth clock, which no network does; the test keeps
+every packet at or above the 30 ms path. Not measured in game (play_civ.py outliers, BUG-0186).
+
+Planned in the review:
 
 New case `test_velocity_estimate_jitter` in `tests/net_tests.cpp`:
 1. Feed the case-1 stream above (0.1 s snapshots at 100 u/s, packet 20 arriving 75 ms late).
@@ -145,3 +159,4 @@ On main it FAILS (22.1). With the sender-time `update` it PASSES (the error stay
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #101.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include "net/dbpf.h"
 #include <cmath>
 #include <cstdio>
@@ -14,6 +15,8 @@
 
 #include "net/connection.h"
 #include "net/discovery.h"
+#include "net/fixes.h"
+#include "net/ids.h"
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/shared_ledger.h"
@@ -22,6 +25,7 @@
 using namespace net;
 
 static int g_fail = 0;
+static bool g_nofix = false; // --nofix: the code before the wave 2 netcode fixes
 #define CHECK(c)                                                         \
     do {                                                                 \
         if (!(c)) {                                                      \
@@ -718,6 +722,24 @@ static void test_refpack_untrusted()
 }
 
 // the updater: packs, paths, versions, the GitHub answer (updater/pack.h)
+// BUG-0089: a pack that lists a file twice (also differing only in case: the same file on
+// Windows) is rejected; apply_pack's second entry used to delete the first one's backup of the
+// original and the rollback lost it. `net_tests --old` runs with the fix off (must fail here).
+static void test_updater_dup()
+{
+    printf("updater: a file listed twice\n");
+    upd::Pack dup, q;
+    std::string err;
+    dup.version = "1";
+    dup.files.push_back({"SporebinEP1/mods/coop.dll", 0, {1}});
+    dup.files.push_back({"SporebinEP1/mods/coop.dll", 0, {2}});
+    CHECK(!upd::parse_pack(upd::write_pack(dup), q, err));
+    dup.files[1].path = "SporebinEP1/mods/COOP.dll";
+    CHECK(!upd::parse_pack(upd::write_pack(dup), q, err));
+    dup.files[1].path = "SporebinEP1/mods/sporekit.dll";
+    CHECK(upd::parse_pack(upd::write_pack(dup), q, err) && q.files.size() == 2);
+}
+
 static void test_updater()
 {
     printf("updater: packs, paths, versions, release answer\n");
@@ -805,15 +827,15 @@ static int fakepeer_host()
     return 0;
 }
 
-// SPORECOOP_TEST_NOFIX=1 builds the code paths before the fixes (to see these tests fail)
+// `net_tests --nofix` (or a build with -DSPORECOOP_TEST_NOFIX=1) runs the logic before the fixes
 #ifndef SPORECOOP_TEST_NOFIX
 #define SPORECOOP_TEST_NOFIX 0
 #endif
-static const bool kFix = !SPORECOOP_TEST_NOFIX;
 
 static void test_lobby_roles()
 {
     printf("lobby roles keep their ids after an id was reused (BUG-0079)\n");
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
     // guests 1 and 2 joined, 1 left, a newcomer got id 1: the host's list is in join order 0, 2, 1
     std::vector<LobbyEntry> pl(3);
     pl[0].id = 0; pl[0].role = 3;
@@ -857,6 +879,7 @@ static void test_lobby_roles()
 static void test_shared_ledger()
 {
     printf("shared resources: a crossing host total does not undo a spend (BUG-0106)\n");
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
     SharedLedger g;
     g.pending = -100; // the guest buys for 100 out of 150
     uint32_t s1 = g.send();
@@ -883,10 +906,249 @@ static void test_shared_ledger()
     CHECK(shared_add(150, -100, kFix) == 50);
 }
 
+// ---- wave 2 netcode fixes (each FAILS with `net_tests --nofix`, the code before the fix) ----
+
+// BUG-0034: a reliable message bigger than one packet (a long `coop say`, the species table of a
+// rich planet) was never sent, blocked every reliable message after it and made every flush send a
+// full burst of empty packets
+static void test_big_reliable()
+{
+    printf("reliable message bigger than a packet (BUG-0034)\n");
+    for (float loss : {0.f, 0.2f}) {
+        Connection a, b;
+        std::mt19937 rng(7);
+        std::uniform_real_distribution<float> U(0, 1);
+        uint32_t now = 1000;
+        Writer big, huge, small;
+        for (int i = 0; i < 1180; i++)
+            big.u8((uint8_t)i);
+        for (int i = 0; i < 30000; i++) // 26 pieces
+            huge.u8((uint8_t)(i * 7));
+        small.u32(5);
+        a.send_reliable(MSG_CHAT, big);
+        a.send_reliable(MSG_SPECIES, huge);
+        a.send_reliable(MSG_NOTICE, small);
+        int got_small = 0, got_big = 0, got_huge = 0, other = 0, pkts = 0;
+        std::vector<uint8_t> pkt;
+        for (int step = 0; step < 300; step++) { // 3 s of 10 ms frames
+            now += 10;
+            for (int i = 0; i < 128 && a.build_packet(now, pkt); i++) {
+                pkts++;
+                if (U(rng) < loss)
+                    continue;
+                b.on_packet(pkt.data(), pkt.size(), now, [&](uint8_t t, Reader& r) {
+                    if (t == MSG_NOTICE && r.left() == 4 && r.u32() == 5)
+                        got_small++;
+                    else if (t == MSG_CHAT && r.left() == 1180) {
+                        bool same = true;
+                        for (int i = 0; i < 1180; i++)
+                            same &= r.u8() == (uint8_t)i;
+                        got_big += same;
+                    } else if (t == MSG_SPECIES && r.left() == 30000) {
+                        bool same = true;
+                        for (int i = 0; i < 30000; i++)
+                            same &= r.u8() == (uint8_t)(i * 7);
+                        got_huge += same;
+                    } else
+                        other++;
+                });
+            }
+            for (int i = 0; i < 128 && b.build_packet(now, pkt); i++)
+                if (U(rng) >= loss)
+                    a.on_packet(pkt.data(), pkt.size(), now, [](uint8_t, Reader&) {});
+        }
+        printf("  loss %.0f%%: small=%d big=%d huge=%d other=%d packets=%d pending=%zu\n", loss * 100, got_small,
+               got_big, got_huge, other, pkts, a.pending_reliable());
+        CHECK(got_small == 1 && got_big == 1 && got_huge == 1 && other == 0);
+        CHECK(a.pending_reliable() == 0);
+        CHECK(pkts < 1000); // 300 frames: about one keepalive / ack each, not 128 empty packets
+    }
+}
+
+// BUG-0109: with 3 players the host relays a leaving guest's last state unreliably, behind the
+// frame's snapshot chunks: it reached the third player after the reliable PLAYER_LEAVE and made a
+// ghost partner there for the rest of the session
+static void test_state_after_leave()
+{
+    printf("a departed player's last state after PLAYER_LEAVE (BUG-0109)\n");
+    Session host, b, c;
+    host.build = b.build = c.build = 0x922af7c7;
+    std::string err;
+    CHECK(host.host(0, "host", err));
+    std::string addr = "127.0.0.1:" + std::to_string(host.port());
+    auto run = [&](int ms) {
+        for (int i = 0; i < ms / 5; i++) {
+            host.update();
+            if (b.role() != Role::None)
+                b.update();
+            c.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    };
+    CHECK(b.join(addr, "bob", err));
+    run(300);
+    CHECK(c.join(addr, "carol", err));
+    run(300);
+    CHECK(b.my_id() == 1 && c.my_id() == 2);
+    bool left = false;
+    int ghost = 0;
+    c.cb.player_leave = [&](uint8_t id, uint8_t) { left |= id == 1; };
+    c.cb.player_state = [&](const PlayerState& st) { ghost += left && st.id == 1; };
+    // the modules queued their snapshot chunks for c in the frame before (two ~990-byte chunks)
+    Writer chunk;
+    for (int i = 0; i < 990; i++)
+        chunk.u8(0);
+    host.send_unreliable_to(2, MSG_CELL_STATE, chunk);
+    host.send_unreliable_to(2, MSG_CELL_STATE, chunk);
+    PlayerState st;
+    st.pos = {1, 2, 3};
+    b.send_state(st); // b's last frame, then Leave: state and BYE reach the host in one update()
+    b.leave("test");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    run(300);
+    printf("  c: left=%d, states of the departed player after the leave=%d\n", (int)left, ghost);
+    CHECK(left);
+    CHECK(ghost == 0);
+}
+
+// BUG-0122: velocity of ship / vehicle mirrors over the sender's time, not the arrival time
+static double velocity_error(int scenario, bool sender_time)
+{
+    const float S = 100.f; // u/s along x; truth at local time t is S*(t-1000)
+    VelocityEstimate e;
+    double maxerr = 0, recv[40];
+    for (int k = 0; k < 40; k++)
+        recv[k] = 1000 + k * 0.1 + 0.03;
+    if (scenario == 0)
+        recv[20] += 0.075; // one packet 75 ms late
+    else {
+        // two packets in one guest frame (20 is 100 ms late), the next one 60 ms late. (The
+        // ticket's case put 22 25 ms after 21, i.e. 45 ms before it was sent on the truth clock:
+        // no network does that, every packet here takes at least the 30 ms path.)
+        recv[20] = recv[21];
+        recv[22] += 0.06;
+    }
+    for (int k = 0; k < 40; k++) {
+        double sent = k * 0.1;
+        e.update({(float)(S * sent), 0, 0}, recv[k], sender_time ? 5000 + sent : -1); // own clock
+        double nxt = k < 39 ? recv[k + 1] : recv[k] + 0.1;
+        for (double t = recv[k]; t < nxt; t += 1 / 60.0) {
+            double err = std::fabs(e.at(t).x - S * (t - 1000));
+            if (k >= 5 && err > maxerr)
+                maxerr = err;
+        }
+    }
+    return maxerr;
+}
+
+static void test_velocity_jitter()
+{
+    printf("ship / vehicle velocity under jitter (BUG-0122)\n");
+    double late_old = velocity_error(0, false), bunch_old = velocity_error(1, false);
+    double late = velocity_error(0, true), bunch = velocity_error(1, true);
+    printf("  max error: late packet %.1f (arrival time %.1f), bunched %.1f (arrival time %.1f)\n", late, late_old,
+           bunch, bunch_old);
+    CHECK(late < 5.0);
+    CHECK(bunch < 5.0);
+}
+
+// BUG-0133: after the one-way latency rose by 300 ms the buffer rendered past its newest snapshot
+// (puppets and NPCs in 20 Hz steps) for about 50 s
+static void test_interp_latency_rise()
+{
+    printf("interpolation after the latency rises (BUG-0133)\n");
+    SnapshotBuffer b; // delay 0.10 s
+    double lat = 0.03, first_bad = -1, recovered = -1, worst_jump = 0;
+    PlayerState prev_out;
+    bool have_prev = false;
+    for (int k = 0; k < 20 * 80; k++) { // 80 s of 20 Hz states
+        double sent = 1000 + k * 0.05;
+        if (sent > 1010)
+            lat = 0.33;
+        PlayerState s;
+        s.time_ms = (uint32_t)(sent * 1000);
+        s.pos = {(float)(k * 0.25), 0, 0};
+        s.vel = {5, 0, 0};
+        s.flags = PF_IN_WORLD;
+        double now = sent + lat;
+        b.push(s, now);
+        bool extrap = b.age(now) > b.delay + 1e-9;
+        if (sent > 1010 && extrap && first_bad < 0)
+            first_bad = sent;
+        if (first_bad > 0 && !extrap && recovered < 0)
+            recovered = sent;
+        // the drawn path never goes backwards (the render clock slows down, it does not jump back)
+        for (int f = 0; f < 3; f++) {
+            PlayerState o;
+            b.sample(now + f / 60.0, o);
+            if (have_prev && prev_out.pos.x - o.pos.x > worst_jump)
+                worst_jump = prev_out.pos.x - o.pos.x;
+            prev_out = o;
+            have_prev = true;
+        }
+    }
+    double took = recovered > 0 ? recovered - first_bad : 1e9;
+    printf("  extrapolating from %.1f s, interpolating again %.1f s later, largest step back %.2f\n",
+           first_bad - 1000, took, worst_jump);
+    CHECK(took <= 5.0);
+    CHECK(worst_jump < 0.5);
+    // steady jitter keeps it interpolating (no drift past the newest snapshot)
+    SnapshotBuffer j;
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<double> J(0, 0.04);
+    int extr = 0, n = 0;
+    for (int k = 0; k < 20 * 60; k++) {
+        double sent = 2000 + k * 0.05, now = sent + 0.05 + J(rng);
+        PlayerState s;
+        s.time_ms = (uint32_t)(sent * 1000);
+        j.push(s, now);
+        if (k > 100) {
+            n++;
+            extr += j.age(now) > j.delay + 1e-9;
+        }
+    }
+    printf("  jitter 0-40 ms: %d of %d samples past the newest snapshot\n", extr, n);
+    CHECK(extr == 0);
+}
+
+// BUG-0154: net ids of host objects never repeat while in use and are never 0
+static void test_alloc_id()
+{
+    printf("net id allocator (BUG-0154)\n");
+    // --nofix: the inline `id = next++; if (!next) next = 1;` of squadron / civ / tribe before
+    auto alloc = [](uint16_t& next, const std::map<uint16_t, int>& in_use) -> uint16_t {
+        if (!g_nofix)
+            return alloc_id(next, in_use);
+        uint16_t id = next++;
+        if (!next)
+            next = 1;
+        return id;
+    };
+    std::map<uint16_t, int> live{{1, 0}, {2, 0}};
+    uint16_t next = 0xFFFF;
+    uint16_t a = alloc(next, live);
+    live[a] = 0;
+    uint16_t b = alloc(next, live);
+    printf("  after 0xFFFF with 1 and 2 alive: %u, then %u\n", a, b);
+    CHECK(a == 0xFFFF);
+    CHECK(b == 3);
+    std::map<uint16_t, int> full;
+    for (uint32_t i = 1; i <= 0xFFFF; i++)
+        full[(uint16_t)i] = 0;
+    CHECK(alloc(next, full) == 0);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
+    if (argc == 2 && (std::string(argv[1]) == "--nofix" || std::string(argv[1]) == "--old")) {
+        // the code before the wave 2 fixes (tests must fail)
+        g_fix = Fixes{false, false, false, false};
+        g_nofix = true;
+        upd::g_dup_fix = false;
+        printf("netcode fixes OFF\n");
+    }
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
@@ -894,6 +1156,7 @@ int main(int argc, char** argv)
     test_dbbf();
     test_refpack_untrusted();
     test_updater();
+    test_updater_dup();
     test_reliability();
     test_ackbits();
     test_bulk();
@@ -907,6 +1170,11 @@ int main(int argc, char** argv)
     test_discovery();
     test_lobby_roles();
     test_shared_ledger();
+    test_big_reliable();
+    test_state_after_leave();
+    test_velocity_jitter();
+    test_interp_latency_rise();
+    test_alloc_id();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

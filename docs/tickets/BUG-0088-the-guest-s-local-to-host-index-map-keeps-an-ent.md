@@ -1,19 +1,19 @@
 ---
 id: BUG-0088
 title: the guest's local-to-host index map keeps an entry for every mirror it recreates
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#66
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_sync.py (suite cell_sync)
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #66
 ---
 
@@ -56,12 +56,21 @@ When the guest recreates a mirror cell because the old local cell is gone, it ad
 CONFIRMED by reading. The generation-wrap mismatch is theoretical. The growth is certain but small (8 bytes plus node overhead per entry).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004): before a recreated mirror's `m.local` is overwritten, its old entry
+is erased from `g_host_of`. `coop.status` (guest) prints `host_of=`. Old behaviour (tests):
+`coop.pool fix hostof 0`.
+
+The review suggested:
 
 Before overwriting `m.local`, erase the old entry: `if (m.local) g_host_of.erase(m.local);`. No switch needed.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_cell_sync.py`: `coop.pool zap 4` destroys 4 mirror cells outside the mod's removal path (as
+the game does); the next state recreates them; then `host_of` must equal `mirrors`. This one asserts
+the mod's table on purpose (the bug is in it). FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-231147): host_of 284,
+mirrors 280. PASS (out/lab/20261027-231004, out/lab/20261027-231523): 377 = 377.
+
+The planned test was:
 
 Add the size of `g_host_of` to the guest's `coop.status` line (`host_of=`). In `tools/tests/coop_cell.py`, after the mirrors have settled, destroy a few mirrors on the guest through the game (a debug command that calls DestroyCell on a mirror's local index, so the next state recreates it). Assert `host_of` equals `mirrors` afterwards. Today it is larger by the number of recreated mirrors; with the fix they are equal. This one asserts a mod table on purpose: the bug is in that table.
 
@@ -71,3 +80,4 @@ Add the size of `g_host_of` to the guest's `coop.status` line (`host_of=`). In `
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #66.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

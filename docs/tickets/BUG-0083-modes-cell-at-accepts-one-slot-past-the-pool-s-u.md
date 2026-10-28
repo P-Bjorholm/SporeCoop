@@ -1,19 +1,19 @@
 ---
 id: BUG-0083
 title: modes::cell_at accepts one slot past the pool's used range (off by one)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#61
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tests/cell_tests.cpp slots() (make test)
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #61
 ---
 
@@ -52,7 +52,10 @@ By reading. In a debugger: on the host in the Cell stage, send `MSG_CELL_HIT` wi
 CONFIRMED by reading (the comparison and the documented pool layout). Not seen as a crash.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004): `modes::cell_at` accepts a slot only in `[0, highWater)` and below the
+capacity `+0x18` (`cell_logic::slot_in_pool`). `coop.pool fix cellat 0` restores the old bound.
+
+The review suggested:
 
 ```cpp
 uint32_t hw = *(uint32_t*)(g + 0x1C + 0x10), cap = *(uint32_t*)(g + 0x1C + 0x18);
@@ -62,7 +65,13 @@ if (!data || size != 0x398 || slot >= hw || slot >= cap)
 No switch needed: it only rejects indices that can never be a live cell.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `slots()` in tests/cell_tests.cpp (make test): slot == highWater, a full pool and a
+highWater above the capacity are rejected with the fix and accepted by the old bound (the same
+function with the fix off). Not reproduced in the game (the forged index needs a slot past the
+used range holding a matching value); the area tests (cell_coop, cell_meat, cell_spin, cell_leave,
+cell_sync, cell_net) pass with the new bound.
+
+The planned test was:
 
 A unit-level check is enough here. Add a `coop.pool at <index>` debug command that calls `cell_at`, and a case in `tools/tests/coop_cell.py`: with the host in the Cell stage, ask for the index `highWater | (gen << 16)`, with `gen` taken from the slot's memory so the compare would match if read. Assert the answer is "no cell". Today it reads the slot, so with a forged generation it can return a pointer; with the fix it returns null.
 
@@ -72,3 +81,4 @@ A unit-level check is enough here. Add a `coop.pool at <index>` debug command th
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #61.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

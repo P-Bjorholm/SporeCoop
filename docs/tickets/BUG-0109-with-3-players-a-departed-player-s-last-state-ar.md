@@ -1,19 +1,19 @@
 ---
 id: BUG-0109
 title: with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#88
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-net
+commits: a8341cf, 9afc74d
+tests: tests/net_tests.cpp test_state_after_leave
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-w2, docs/06-testing.md#testing-net-w2
 related: #88
 ---
 
@@ -112,14 +112,27 @@ After `MSG_PLAYER_LEAVE` no state of that player is applied, and a new player un
 CONFIRMED by harness for the delivery order (rebuilt independently by a verifier on the real `net::Connection`, same result). The common trigger was confirmed by reading: BYE goes out right after the last state, and the relay and `drop_peer` happen in the same `update()`. The consequences on C (ghost entry, Space partner list, inherited buffer) were confirmed by reading and not run in the game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-net. `Session::handle_msg` (client) ignores a `MSG_PLAYER_STATE` whose id is not
+in its roster (a8341cf), so the late relay of a departed player's state no longer recreates its
+`g_remotes` entry. `cb.player_join` in coop.cpp (9afc74d) despawns and drops an existing entry of
+the joining id, so a newcomer never inherits a ghost's snapshot buffer. The Space partner list
+(`spc.partners`) still has no age check of its own; with no ghost entry it no longer lists one.
+Switches: `coop.corefix state_roster 0`, `coop.corefix id_reuse 0`.
+
+The review's suggestions were:
 
 - In `Session::handle_msg` (client), ignore `MSG_PLAYER_STATE` whose id is not in `roster_`.
 - In `player_join`, clear `r.buf` (and the drive state) of a reused entry.
 - Optional: send the relay with `first = true`, or flush unreliable relays before a LEAVE of the same peer.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `test_state_after_leave` (three real Sessions over localhost): the host queues two
+~990-byte chunks for C, then B sends its state and leaves; B's state and BYE reach the host in one
+update. `net_tests --nofix`: C gets 1 state of B after PLAYER_LEAVE (FAIL, the ticket's order
+reproduced on the real sockets); with the fix 0 (PASS, 3 of 3 runs). Not run with 3 games (the
+consequence in the game follows from the entry no longer being created).
+
+Planned in the review:
 
 - `tests/net_tests.cpp`: a two-session test (host plus a client with a known roster) where a state for a departed id arrives after LEAVE, asserting that `cb.player_state` is not called. It FAILS on main and PASSES with the roster check.
 - In the game, `coop_*` with 3 instances: B leaves while the host is in Cell with more than 14 cells near C. Assert on C that no puppet of B's id exists 1 s later. Then a new instance joins as id 2: assert C shows its puppet at the game's position.
@@ -130,3 +143,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #88.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.

@@ -1,19 +1,19 @@
 ---
 id: BUG-0076
 title: a new player is shown with the creature or ship of the player who had their id before
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#54
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-net
+commits: 9afc74d, 65922a9
+tests: tools/tests/coop_creations_rejoin.py (suite creations_rejoin)
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-w2, docs/06-testing.md#testing-net-w2
 related: #54
 ---
 
@@ -55,7 +55,14 @@ After the host's own "Stop hosting" and a re-host, the same happens across sessi
 CONFIRMED by reading the full path. Not verified in game: whether some other path (e.g. a fresh "none" message from B) would overwrite the entry; creations.cpp has no such message for "the world's own" that I found.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-net (9afc74d). `creations::on_player_leave(id)`, called from `cb.player_leave`,
+erases the leaving owner's `g_store`, `g_rx` and `g_applied` entries and `g_own_sent`. Its
+registered packages stay registered, as in `on_session_end` (its puppet is gone with it). The
+session-end part (`do_leave` skipping `creations::on_session_end`) was already fixed by BUG-0033
+(`end_session_modules`). `player_join` also drops an old remote entry of the id (BUG-0109).
+Switch: `coop.corefix creations_leave 0` (with `id_reuse 0`).
+
+The review's suggestions were:
 
 Add `creations::on_player_leave(uint8_t id)` and call it from `cb.player_leave`. It should:
 - erase every `g_applied` and `g_store` entry with `owner == id` (unregistering its package as `apply` does for a replaced one);
@@ -64,7 +71,13 @@ Add `creations::on_player_leave(uint8_t id)` and call it from `cb.player_leave`.
 Also run `creations::on_session_end` from every session-end path (#11). Keep the old behaviour behind `coop.fix creations_leave off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_creations_rejoin.py` on lane 2 (two games): the guest plays its own creature (7C329711),
+chooses "the world's own", leaves and joins again as id 1. `--without-fix`: the host shows the
+newcomer as 7C329711 (FAIL); with the fix the host shows it as the world's species 065CBE70
+(PASS, 2 of 2). Not run with a third machine (the forward to later joiners follows from the
+erased `g_store` entry).
+
+Planned in the review:
 
 `tools/tests/coop_creations_rejoin.py` (three instances, or two with a second guest profile):
 1. A with an own creature joins, then leaves.
@@ -81,3 +94,4 @@ It must fail on main.
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #54.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.

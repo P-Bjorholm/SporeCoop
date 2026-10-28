@@ -39,6 +39,7 @@
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
+#include "net/fixes.h"
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
@@ -86,6 +87,7 @@ bool g_share_world = true; // host sends its save to joining guests
 bool g_anim_log = false;
 double g_last_time_sync = 0;
 float g_dna_sent = -1;      // host: last broadcast total
+double g_dna_at = 0;        // host: when it was sent
 uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 
 // DNA earned locally: the host's total is authoritative
@@ -393,8 +395,43 @@ bool host_here() // the host plays in our world again (not loading it any more)
     return same_place(ls) && (ls.flags & net::PF_IN_WORLD);
 }
 
+// BUG-0130: the guest plays another world of the host's stage (joined from its own game, loaded
+// a save of its own, or the host loaded another save): nothing of the host's world is applied to
+// it (DNA, food, cells, tribe, relations, time of day, NPCs), its game would save the changes.
+// `coop.corefix same_place 0` = the old behaviour (tests).
+bool g_place_fix = true;
+uint32_t g_place_dropped = 0;
+float g_dna_pending = -1; // the host's DNA total that arrived while we were elsewhere
+// unknown: what to say before the host's first state arrived (just joined)
+bool host_elsewhere(bool unknown = false)
+{
+    if (!g_place_fix || g_sess.role() != net::Role::Client || !stage_mode(g_mode))
+        return false;
+    auto it = g_remotes.find(0);
+    if (it == g_remotes.end() || it->second.buf.empty())
+        return unknown; // not known yet
+    const auto& ls = it->second.buf.latest();
+    return ls.mode == g_mode && !same_place(ls);
+}
+
+// a message of the host's world state a guest elsewhere must not apply
+static bool world_state_msg(uint8_t type)
+{
+    return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
+           (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
+           type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD ||
+           type == net::MSG_SPECIES || type == net::MSG_SOCIAL;
+}
+
 void host_away_tick(double now)
 {
+    if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
+        float d = g_dna_pending - game::dna(); // the host's total, once we play its world
+        if (d != 0)
+            game::dna_add_raw(d);
+        g_dna_pending = -1;
+        g_dna_rx++;
+    }
     // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
     // with its creature for 1 s (a guest gain sent while the host loads is dropped there)
     bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
@@ -1166,7 +1203,8 @@ void own_editor_tick(double now)
         g_own_editor_due = 0;
         return;
     }
-    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending()) {
+    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending() ||
+        world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
     }
@@ -1178,7 +1216,7 @@ void own_editor_tick(double now)
             if (!id)
                 return;
             // the player may have left the stage since (pause menu "Exit to Main Menu")
-            if (game::mode_id() != modes::kCreature || mode_switch_pending())
+            if (game::mode_id() != modes::kCreature || mode_switch_pending() || world::load_queued())
                 return; // own_editor_tick decides again
             // an editor opened under the pause menu or its "save your game?" boxes: a click on
             // "Don't Save" right after left the guest in a black editor for good
@@ -1238,8 +1276,10 @@ void on_frame(void*, int, void*)
     shared::tick(g_sess, game::mode_id(), now);
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
-        if (total != g_dna_sent) {
+        // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
+        if (total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
             g_dna_sent = total;
+            g_dna_at = now;
             net::Writer w;
             w.f32(total);
             for (auto& p : g_sess.players())
@@ -1619,6 +1659,7 @@ void on_remote_anim(const net::AnimEvent& ev)
 // tribe and civ tables and the creations of the others stayed, and a new session inherited the old
 // remotes. `coop.sessionfix 0` restores the old per-path lists (tests).
 bool g_session_end_fix = true;
+bool g_id_reuse_fix = true; // coop.corefix id_reuse 0: a joining player inherits an old entry of its id
 void end_session_modules(bool cell)
 {
     npc::on_session_end();
@@ -1637,6 +1678,8 @@ void end_session_modules(bool cell)
         drop_vote("the session ended");
     world::reset_shares();
     shared::on_session_end();
+    world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
+    g_dna_pending = -1;
 }
 
 void setup_callbacks()
@@ -1655,6 +1698,14 @@ void setup_callbacks()
         shared::on_session_change();
         creations::on_player_join(p.id);
         g_dna_sent = -1; // resend the DNA total to the newcomer
+        auto old = g_remotes.find(p.id);
+        if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
+            // BUG-0109 / BUG-0076: an entry of an earlier player under this id (a ghost made by a
+            // late state): its puppet and its buffer are not the newcomer's (states of the new
+            // player's clock older than the ghost's newest were all dropped as old)
+            despawn(old->second);
+            g_remotes.erase(old);
+        }
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
@@ -1684,6 +1735,16 @@ void setup_callbacks()
             net::AnimEvent ev;
             if (ev.read(r))
                 on_remote_anim(ev);
+            return;
+        }
+        // (the DNA total also before the host's first state: it is applied once we play its world)
+        if (from == 0 && world_state_msg(type) && host_elsewhere(type == net::MSG_DNA)) {
+            if (type == net::MSG_DNA) {
+                float total = r.f32();
+                if (r.ok())
+                    g_dna_pending = total;
+            }
+            g_place_dropped++;
             return;
         }
         if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
@@ -1855,6 +1916,7 @@ void setup_callbacks()
         if (g_role_fix)
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
+        creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
@@ -1862,6 +1924,7 @@ void setup_callbacks()
         chat_log("* " + it->second.name + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
+        cellsync::on_player_leave(id);
         despawn(it->second);
         g_remotes.erase(it);
     };
@@ -2046,6 +2109,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     void* av = g_local;
     SAY("mode=0x%08X local=%p overlay-self=(%.1f %.1f ok=%.0f)\n", game::mode_id(), av, g_dbg_sc[0], g_dbg_sc[1], g_dbg_sc[2]);
     SAY("host_away=%d (times %u) solo_dna=%.1f\n", (int)g_host_away, g_host_away_count, g_solo_dna);
+    SAY("host elsewhere=%d, its world's messages dropped %u, dna pending %.1f\n", (int)host_elsewhere(), g_place_dropped,
+        g_dna_pending); // BUG-0130
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
     SAY("labels: menu_up=%d window=%d hidden_frames=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden);
     double now = H->time_seconds();
@@ -2277,6 +2342,36 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "killfix")) { // tests: off = the guest's kill list survives skipped frames (BUG-0082)
         npc::set_kill_clear(strcmp(argv[2], "off") != 0);
         SAY("kill list cleared every frame: %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "reuse")) { // host (tests): reuse <id>: a dead NPC's object alive again (BUG-0044)
+        SAY("%s", npc::debug_reuse((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 2 && (!strcmp(argv[1], "reusefix") || !strcmp(argv[1], "idfix"))) { // tests (BUG-0044 / BUG-0023)
+        bool on = strcmp(argv[2], "off") != 0;
+        (argv[1][0] == 'r' ? npc::set_reuse_fix : npc::set_id_fix)(on);
+        SAY("%s %s", argv[1], on ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "deferpuppet")) { // tests: off = a deferred puppet loses its puppet state at once (BUG-0066)
+        game::set_defer_keeps_puppet(strcmp(argv[2], "off") != 0);
+        SAY("deferred puppets stay puppets: %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "swapguard")) { // tests: off = no undo of a swap left open (BUG-0110)
+        game::set_swap_guard(strcmp(argv[2], "off") != 0);
+        SAY("swap guard %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        game::debug_swap_fault();
+        SAY("the next NPC tick with a partner as the player leaves like a fault");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "nextid")) { // host (tests): the next net id tried (BUG-0023)
+        npc::debug_next_id((uint16_t)atoi(argv[2]));
+        SAY("next npc id %s", argv[2]);
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "killhold")) { // tests: the avatar into the guest's kill list
@@ -2829,7 +2924,11 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
         bool* on;
     } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
                 {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
-                {"update_pin", &autoupdate::g_pin_fix}};
+                {"update_pin", &autoupdate::g_pin_fix}, {"big_reliable", &net::g_fix.big_reliable},
+                {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
+                {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
+                {"creations_leave", &creations::g_leave_fix},
+                {"same_place", &g_place_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -2897,7 +2996,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
     };
     ctx.feed = feed;
-    ctx.host_away = [] { return g_host_away; };
+    // its own NPCs stay while it plays another world (BUG-0130), also until the host's first state
+    // says where the host is (a join from inside a game of its own)
+    ctx.host_away = [] { return g_host_away || host_elsewhere(true); };
+    ctx.in_place = [](uint8_t id) {
+        if (!g_place_fix)
+            return true;
+        auto it = g_remotes.find(id);
+        return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);

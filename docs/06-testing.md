@@ -943,3 +943,85 @@ All take `--nofix` (the fix switches off) and must FAIL with it; logs of both ru
   then `dead=` in the guest's `coop.tribe`. The member did not get up within 60 s in any run.
 * Unit tests (`make test`): `test_lobby_roles`, `test_shared_ledger` in tests/net_tests.cpp; build
   them with `-DSPORECOOP_TEST_NOFIX=1` to see them fail on the old logic.
+## Netcode wave 2: big messages, rejoin under a reused id (2026-10-28, fix/w2-net)
+<a id="testing-net-w2"></a>
+
+* Unit tests (`make test`): `test_big_reliable`, `test_state_after_leave` (three Sessions over
+  localhost: the host queues two ~990-byte chunks for C, then B's last state and BYE arrive in one
+  host update), `test_velocity_jitter`, `test_interp_latency_rise`, `test_alloc_id`.
+  `build/host/net_tests --nofix` runs everything with the `net::g_fix` switches off (and the old
+  inline id allocator): exactly these cases fail (12 checks), the older ones still pass.
+* `coop_chat_long.py` (suite `chat_long`, warm, ~1 min): the guest sends a 1500-character
+  `coop.say`, then a short one; the host's chat (coop.status `chat:` lines) must show both, the
+  guest's `pending` stay low and its packets to the host stay ~33/s. `--without-fix`
+  (`coop.corefix big_reliable 0` on the guest): neither line arrives, pending 8, 5280 packets/s.
+* `coop_creations_rejoin.py` (suite `creations_rejoin`, cold, ~2 min): the guest plays its own
+  creature, chooses "the world's own" (`coop.creations choose creature none`), leaves and joins
+  again as id 1; the host's puppet of it (`species=` of the puppet) must be the world's species.
+  After the rejoin the host shares its world again and the guest reloads it: the puppet first
+  appears from the old world and is hidden during the reload, so the test waits 20 s and for
+  `together` again before it reads the species. `--without-fix` (`creations_leave 0`,
+  `id_reuse 0` on the host): the puppet is the old player's creature.
+* Cell sync (fix/w2-cell): `coop_cell_sync.py` (suite `cell_sync`, ~1.5 min cold, two rejoins) and
+  `coop_cell_net.py` (suite `cell_net`, runs over `SPORE_NET="delay=250,loss=0.05"`). Both take
+  `SPORE_CELL_FIX=0`, which sets `coop.pool fix all 0` on both games (the old behaviour: the run
+  that must fail). Pitfalls seen: after `coop.leave` the guest keeps its avatar, so a rejoin looks
+  "in" (`wait_guest_in`) before the guest even started loading the host's world again: wait for
+  `coop.avatar` to fail first. The avatar's `+0x358` is -1 (no level there): the level line is
+  every 50 food points. Over the lossy link the guest's mirror map kept every local index for 20 s
+  with the fix (157 rounds with a lost chunk).
+## World sharing and updater files (2026-10-28, fix/w2-world)
+<a id="testing-world-sharing"></a>
+
+* `win_unit` (`tools/tests/win_unit.py`, ~10 s, no game): `make test-win` builds
+  `build/win_tests.exe` (tests/win_tests.cpp + mods/coop/slotfs.cpp + the updater) and runs it
+  under Wine in the lane's bottle (`bottles-cli run` of `cmd /c ... > file`: bottles-cli does not
+  return the program's output); it works in `%TEMP%\sporecoop-win-tests` of the bottle. Real Win32
+  file calls: where a received world goes and how it is written (BUG-0035, BUG-0087, BUG-0105),
+  the updater's backups, pending list and duplicate paths (BUG-0114, BUG-0150, BUG-0089).
+  `win_unit.py --old` switches every fix off and must FAIL. Wine enforces share modes on a file
+  rename (a file opened without sharing cannot be moved: the pending test relies on it) but moves a
+  folder that has a file open inside (Windows refuses), so the "file in use" case of a slot write
+  only fails on Windows.
+* `coop.worldfix [<name> 0|1 | all 0|1 | queue <id>... | autoload 0|1]`: the world sharing fix
+  switches `busy_slot`, `slot_match`, `write_check`, `world_reset`, `share_drop_peer`,
+  `share_one_save`, `load_in_editor`; `queue` queues shares with a save for those player ids in one
+  frame (id 0 = the host itself, a stand-in for a second guest); `autoload` sets
+  auto_load_world at runtime. `coop.status` prints "world saves posted N, for shares M, shares
+  dropped, loads dropped, loads held" and whether a load is queued.
+* `coop.corefix same_place 0|1` (BUG-0130); `coop.status` prints "host elsewhere=0|1, its world's
+  messages dropped N, dna pending X".
+* `coop_world_queue.py` (two games, ~2.5 min, `--without <names>|all`): one save for two shares,
+  a share for a player who is gone, a load queued inside the editor, Leave while the host's world
+  waits on the editor. The load-in-editor part without its fix loads from the editor and the
+  guest logs ~170 caught faults: run `--without load_in_editor` alone.
+* `coop_join_other_world.py` (two games, ~1.5 min, `--without-fix`): a second Creature world for
+  the guest is the fixture slot copied with the planet renamed (`Otherworld.spo`): the game loads it
+  under that name (another world id, same creatures). Only one fixture per stage exists otherwise.
+* The test games' logs from a worktree: `twoinst.Monitor.game_log` derives the game folder from the
+  repository root and points into the worktree's parent in a worktree; use the git common dir
+  (`coop_rejoin_net.py`, `coop_world_queue.py`).
+## NPC ids, deferred puppets, the AI swap, creations after leaving (2026-10-28, fix/w2-creature)
+<a id="testing-creature-npc-ids"></a>
+
+* `coop_npc_reuse.py` (BUG-0044 / BUG-0023, ~1.5 min): the host kills an NPC (`coop.npc hosthit`),
+  `coop.npc reuse <id>` makes the dead object alive again (a natural pool reuse could not be forced,
+  docs/re/creature.md#creature-pool-ids); the guest's mirror of the host's id of that object must
+  be alive and of its species in the guest's game (`coop.npc creatures`). Then `coop.npc nextid
+  <id in use>` and `coop.npc epic 0 8`: no two NPCs with one id. `--without-fix` = `coop.npc
+  reusefix off` + `idfix off`: FAILS (the mirror stays the corpse; id 1 twice).
+* `coop_cinematic_puppet.py` (BUG-0066, ~1.5 min): the host plays CRG_ClaimNest (`call
+  Simulator::cCinematicManager::PlayCinematic thiscall <cm> s:CRG_ClaimNest 1 1 0 0 0`, the caption
+  keeps it running), the guest `coop.creations next creature` (the host builds a new puppet). The
+  old puppet must have no host NPC id while it waits. `--without-fix` = `coop.npc deferpuppet off`:
+  FAILS (id 23).
+* `coop_npc_swap.py` (BUG-0110, ~1.5 min): the guest goes to NPCs far from the host (`coop.social
+  goto`) until `ai_swaps` grows, `coop.npc swapfault` makes the next swapped tick skip its restore;
+  `[cGameNounManager::Get() + 0x54]` must be the host's avatar again. `--without-fix` = `coop.npc
+  swapguard off`: FAILS (the slot stays the puppet, ai_swaps stops).
+* `coop_creation_leave.py` (BUG-0055, ~3 min, restarts the guest): the host chooses its TigerHorse,
+  the guest gets the Kirgle under that key (`coop_nest_species.restart_guest`), joins and
+  `coop.leave`s; `coop.creations bem 290229B9` on the guest must be the Kirgle's after leaving.
+  `--without-fix` = `coop.creations worlddrop off`: FAILS (still the host's bem).
+* `tests/npc_tests.cpp` (`make test`): the id allocator and the hit table, each with its old
+  behaviour (`skip_used` false, `legacy`) checked to show the bug.

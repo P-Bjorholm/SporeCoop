@@ -55,6 +55,7 @@ std::string current_world_name(); // the planet file being played, UTF-8 ("Name.
 // ---- cell stage helpers (pool access, creation with a given model) ----
 uint8_t* cell_game();             // cCellGame*
 uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
+extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);

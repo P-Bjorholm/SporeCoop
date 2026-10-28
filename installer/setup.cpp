@@ -238,7 +238,7 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
     std::wstring bin = root + L"\\SporebinEP1";
     std::wstring sa = bin + L"\\steam_api.dll", orig = bin + L"\\steam_api_orig.dll";
     if (exists(orig) && upd::is_loader(sa)) {
-        std::wstring old = sa + L".old";
+        std::wstring old = sa + SC_OLD_SUFFIX;
         DeleteFileW(old.c_str());
         if (!MoveFileExW(sa.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING) ||
             !MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -248,7 +248,7 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
     }
     for (const wchar_t* f : {L"\\sporekit.dll", L"\\mods\\coop.dll", L"\\mods\\sporecoop.version"})
         if (exists(bin + f) && !DeleteFileW((bin + f).c_str()))
-            MoveFileExW((bin + f).c_str(), (bin + f + L".old").c_str(), MOVEFILE_REPLACE_EXISTING); // in use
+            MoveFileExW((bin + f).c_str(), (bin + f + SC_OLD_SUFFIX).c_str(), MOVEFILE_REPLACE_EXISTING); // in use
     WIN32_FIND_DATAW fd;
     std::wstring sym = bin + L"\\mods\\sporekit\\symbols";
     HANDLE h = FindFirstFileW((sym + L"\\*.sym").c_str(), &fd);

@@ -568,3 +568,34 @@ for verification and its limits.
 - Camera behaviour after an avatar teleport; whether 0xE6ECB0/0xE6EB60 is the egg/hatch intro.
 - Existing `cell_despawn` in mods/coop/modes.cpp sets hp=0 and opacity 0: that only hides the puppet
   (cells are removed by DestroyCell or size→0), so puppets may leak - use DestroyCell 0xE780A0.
+
+## Sync robustness: state rounds, meal numbers, knockout lifetime (2026-10-28, fix/w2-cell)
+<a id="cell-sync-robustness"></a>
+
+* ✔ `MSG_CELL_STATE` rounds are unreliable chunks of 14 cells `{u16 cycle, u8 chunk, u8 chunks}`.
+  The guest removes the mirrors a round did not list only when every chunk of that round arrived
+  (`cell_logic::Rounds`); a chunk of an older round (within 64 rounds) is dropped. A mirror not
+  listed for 1 s goes anyway, so a cell the host lost is still removed on a lossy link
+  (BUG-0032). `coop.status` guest: `rounds_partial=`, `late_chunks=`.
+* ✔ A recreated mirror erases its old local index from `g_host_of` (`host_of=` equals `mirrors=`,
+  BUG-0088).
+* ✔ Food totals carry meal numbers: the guest appends `u32 meal` to `MSG_CELL_FOOD` and
+  `MSG_CELL_EAT`; the host sends each guest `MSG_CELL_FOOD {i32 food, i32 plant, u32 last meal
+  applied}` and the guest applies `host total + meals still on the way - own total`
+  (`cell_logic::Meals`, BUG-0051). Older peers ignore or lack the field: the old difference.
+  A refused meal (eaten first, `eats_late`) is acknowledged without points, so it is still taken back.
+* ✔ The host sends the food total to each guest again every 2 s and at once to a newcomer; the
+  DNA total (coop.cpp) also every 2 s (BUG-0128). A guest drops both without an avatar.
+* ✔ The avatar's `+0x358` is -1 (not its level); the level line is every 50 food points. A
+  meal over a line resizes the avatar inside AddFoodPoints (target `+0xB4` changes during the
+  call): after a small respawn that size is the full one, `g_body` becomes 1 (BUG-0041, measured:
+  target 0.55 -> 0.82 on host and guest alike over the line from 10 to 51 points).
+* ✔ Knockout lifetime: `MSG_CELL_KO` is stored and relayed outside the Cell stage; a remote
+  `KO_OUT` not refreshed for 2 s (its owner sends it every 0.25 s) ends; `cb.player_leave` calls
+  `cellsync::on_player_leave` (knockout, puppet and food bookkeeping of that id, BUG-0061). The
+  local knockout (`+0x111` invulnerability, `+0xA4` opacity, hp) ends with the session and with
+  the stage (`reset_knockout`, BUG-0070).
+* ✔ `modes::cell_at` accepts slots in `[0, highWater)` within `[0, capacity)` only (BUG-0083).
+* Old behaviour of each: `coop.pool fix <purge|hostof|foodseq|resend|kostale|koreset|bodylevel|cellat|all> 0|1`.
+  Test helpers: `coop.pool zap <n>` (the game removes n mirror cells), `mirrormap`, `small`,
+  `foodlocal <n>` (our total only), `invuln 0|1`; `coop.pool` lists `puppet <id> op=`.

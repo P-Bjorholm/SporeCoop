@@ -1,19 +1,19 @@
 ---
 id: BUG-0150
 title: a deferred update file is never applied if its swap fails once (the pending list is deleted anyway)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#129
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: 6e8e765
+tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
 signature:
-docs:
+docs: 
 related: #129
 ---
 
@@ -48,14 +48,24 @@ An entry whose swap did not happen stays in the list (or the list is rewritten w
 CONFIRMED by reading the code. A second reviewer checked it independently. Severity low (needs a file still in use at the next start, but then the mismatch is silent and permanent).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (6e8e765). The pending swap is one shared function, `updater/pending.h`
+(`sc_apply_pending`, plain C and Win32 only: the loader includes it, `upd::apply_pending` calls it).
+It reads the whole list (up to 1 MB, was 4096 bytes), keeps every entry whose target could not be
+moved aside or whose `.new` could not be moved in, rewrites the list with those and deletes it
+only when it is empty. Old behaviour: `upd::g_old_fix = false` (the list is deleted).
+
+The review suggested:
 
 - In `loader.c` and `winupdate.cpp apply_pending`, collect the entries whose `.new` still exists after the attempt and write them back to the list; delete the list only when it is empty.
 - Read the whole list (no 4096-byte limit), or cap the list when it is written.
 - Optionally, when `.new` exists but is not listed, apply it too (it is only ever written by the updater).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Windows-side unit test `win_unit` (tests/win_tests.cpp built with llvm-mingw, run under Wine in the lane's bottle by tools/tests/win_unit.py; real Win32 file calls, no game). `win_unit.py --old` switches the fixes off. Lane 3, 2026-10-28: FAIL with `--old` (21 failed checks), PASS with the fixes (lab runs 20261027-225936 and the smoke run of the branch). Case `test_pending`: the package is held open without sharing (another instance) while the list
+is applied: with `--old` the list is deleted and the package never becomes the new one; with the
+fix coop.dll is swapped, the package entry stays listed and is applied at the next call.
+
+The planned test was:
 
 Host-side or lane test of the updater:
 - Prepare a game folder with `Data\SporeCoop.package.new` listed in `sporecoop.pending`, hold `Data\SporeCoop.package` open without share-delete from a helper process, and run `apply_pending` (the loader path through a game start).
@@ -70,3 +80,4 @@ Host-side or lane test of the updater:
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #129.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: entries whose swap failed stay in sporecoop.pending (win_unit).

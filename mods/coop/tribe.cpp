@@ -11,6 +11,7 @@
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
+#include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
@@ -419,9 +420,8 @@ static void host_tick(double now)
             if (it == g_hm.end()) {
                 // the player tribe is split between the players in turns; others belong to nobody
                 uint8_t owner = player && !players.empty() ? players[g_player_members_seen++ % players.size()] : 0xFE;
-                it = g_hm.emplace(c, HMember{g_next_id++, owner}).first;
-                if (g_next_id == 0)
-                    g_next_id = 1;
+                // BUG-0154: never a live id, never 0
+                it = g_hm.emplace(c, HMember{net::alloc_id(g_next_id, g_hm_by_id), owner}).first;
                 g_hm_by_id[it->second.id] = c;
             }
             entries.push_back({it->second.id, (uint8_t)ti, it->second.owner, F<uint8_t>(c, kAgeOff), c});
