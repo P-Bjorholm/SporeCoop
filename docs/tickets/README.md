@@ -50,7 +50,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0037](BUG-0037-one-lost-ship-state-packet-makes-up-to-18-of-the.md) | open | desync | Space | 2026-10-27 |  | one lost ship-state packet makes up to 18 of the host's ships explode and respawn on the guest |
 | [BUG-0038](BUG-0038-allies-mirror-reuses-the-old-galaxy-s-empire-aft.md) | open | bug | Space | 2026-10-27 |  | allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire |
 | [BUG-0039](BUG-0039-lan-game-list-is-never-pruned-so-fake-discovery.md) | open | bug | All | 2026-10-27 |  | LAN game list is never pruned, so fake discovery replies grow memory and slow the game |
-| [BUG-0040](BUG-0040-the-city-alarm-speed-boost-can-write-into-freed.md) | open | crash | Civ | 2026-10-27 |  | the city-alarm speed boost can write into freed vehicles after a leave or a load |
+| [BUG-0040](BUG-0040-the-city-alarm-speed-boost-can-write-into-freed.md) | fixed | crash | Civ | 2026-10-27 | unreleased | the city-alarm speed boost can write into freed vehicles after a leave or a load |
 | [BUG-0041](BUG-0041-after-a-small-respawn-the-next-level-up-makes-th.md) | open | bug | Cell | 2026-10-27 |  | after a small respawn, the next level-up makes the player's cell up to twice too big |
 | [BUG-0042](BUG-0042-six-suite-tests-smoke-creature-included-pass-wit.md) | open | test | All | 2026-10-27 |  | six suite tests (smoke creature included) pass with faults and check only mod bookkeeping |
 | [BUG-0043](BUG-0043-an-evolution-or-superweapon-vote-still-runs-afte.md) | open | crash | All | 2026-10-27 |  | an evolution or superweapon vote still runs after its stage or session is gone |
@@ -69,7 +69,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0056](BUG-0056-a-stack-overflow-ends-the-game-without-a-crash-r.md) | open | bug | All | 2026-10-27 |  | a stack overflow ends the game without a crash report |
 | [BUG-0057](BUG-0057-tickets-py-new-reuses-ticket-ids-of-branches-who.md) | open | tooling | All | 2026-10-27 |  | tickets.py new reuses ticket ids of branches whose worktree is gone |
 | [BUG-0058](BUG-0058-gifted-tool-charges-and-spice-that-come-back-whi.md) | open | bug | Space | 2026-10-27 |  | gifted tool charges and spice that come back while you are not in Space are lost |
-| [BUG-0059](BUG-0059-vehicle-and-city-tables-survive-a-load-so-new-ve.md) | open | crash | Civ | 2026-10-27 |  | vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities |
+| [BUG-0059](BUG-0059-vehicle-and-city-tables-survive-a-load-so-new-ve.md) | fixed | crash | Civ | 2026-10-27 | unreleased | vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities |
 | [BUG-0060](BUG-0060-hot-reload-of-coop-dll-can-crash-while-the-updat.md) | open | crash | All | 2026-10-27 |  | hot reload of coop.dll can crash while the update check thread or a queued task still runs old code |
 | [BUG-0061](BUG-0061-a-partner-can-stay-shown-as-knocked-out-for-good.md) | open | desync | Cell | 2026-10-27 |  | a partner can stay shown as knocked out for good (translucent, frozen "KO" label) |
 | [BUG-0062](BUG-0062-tickets-py-new-private-in-a-worktree-writes-to-t.md) | open | tooling | All | 2026-10-27 |  | tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost |
@@ -91,7 +91,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0078](BUG-0078-the-guest-s-bites-skip-the-game-s-won-t-attack-t.md) | open | bug | Cell | 2026-10-27 |  | the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments) |
 | [BUG-0079](BUG-0079-guests-can-see-other-players-civilization-roles.md) | open | desync | Civ | 2026-10-27 |  | guests can see other players' civilization roles swapped after someone rejoins |
 | [BUG-0080](BUG-0080-install-bat-overwrites-the-player-s-coop-ini-nam.md) | open | bug | Installer | 2026-10-27 |  | install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall |
-| [BUG-0081](BUG-0081-restoring-a-former-chief-s-size-can-call-into-a.md) | open | crash | Tribe | 2026-10-27 |  | restoring a former chief's size can call into a freed citizen |
+| [BUG-0081](BUG-0081-restoring-a-former-chief-s-size-can-call-into-a.md) | fixed | crash | Tribe | 2026-10-27 | unreleased | restoring a former chief's size can call into a freed citizen |
 | [BUG-0082](BUG-0082-the-guest-keeps-creature-pointers-while-the-host.md) | open | crash | Creature | 2026-10-27 |  | the guest keeps creature pointers while the host is away and destroys them minutes later |
 | [BUG-0083](BUG-0083-modes-cell-at-accepts-one-slot-past-the-pool-s-u.md) | open | bug | Cell | 2026-10-27 |  | modes::cell_at accepts one slot past the pool's used range (off by one) |
 | [BUG-0084](BUG-0084-a-guest-s-own-escort-ships-posse-are-destroyed-w.md) | open | bug | Space | 2026-10-27 |  | a guest's own escort ships (posse) are destroyed while it is with the host |
@@ -177,12 +177,12 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | open | bug | All | 2026-10-27 |  | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | open | bug | All | 2026-10-27 |  | INSTALL check line, README latest version and stability-report lane count are out of date |
 | [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | open | bug | All | 2026-10-27 |  | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
-| [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | open | crash | Tribe | 2026-10-23 |  | Guest: fault in the tribe setup with a null simulator object (seen once) |
+| [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | fixed | crash | Tribe | 2026-10-23 | unreleased | Guest: fault in the tribe setup with a null simulator object (seen once) |
 | [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
 | [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | open | desync | Creature | 2026-10-23 |  | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
 | [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | open | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
-| [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | open | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
-| [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | open | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
+| [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | not-reproduced | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
+| [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
 | [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | open | desync | Tribe | 2026-10-23 |  | Tribe: knocked-out members stand on the guest |
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |

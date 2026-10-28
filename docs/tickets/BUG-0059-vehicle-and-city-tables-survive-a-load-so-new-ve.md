@@ -1,19 +1,19 @@
 ---
 id: BUG-0059
 title: vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities
-status: open
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#37
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-tribe-civ
+commits: ba9dc46
+tests: civ_reload, civ_play, civ_coop
 signature:
-docs:
+docs: docs/re/civ.md#civ-pointer-tables
 related: #37
 ---
 
@@ -68,24 +68,29 @@ Guest:
 - Not run on the lab.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-tribe-civ (ba9dc46):
 
-- Add `civ::on_world_change()`. It runs `on_session_end()` plus clearing `g_boost`, `g_siege`, `g_alarm_at`, `g_joint_told`, `g_city_gifted`, `g_bfix_seen` and `g_ui_city`, and resets `g_rx_cycle`, `g_cycle_ids` and `g_cycle_chunks`.
-- Call it next to `tribe::on_world_change()` in coop.cpp. Note that the RTS adapters share one marker pointer, so also call it from `on_mode_change` when civ mode is entered, or when `modes::current_world()` changes.
-- On the host, drop a `g_hv` entry whose `pol_of(v)` no longer matches what it had.
-- Keep it behind `coop.fix civ_world_reset off`.
+- `civ::on_world_change()`: clears the co-op tables (see BUG-0040), runs `on_session_end()` (host
+  vehicle table, guest mirrors, city owners, host-city table) and resets `g_rx_cycle`,
+  `g_cycle_ids`, `g_cycle_chunks` and the per-frame vehicle cache. coop.cpp calls it next to
+  `tribe::on_world_change()`. It is skipped in the vehicle / building editors (`kEdit`, `kEditor`),
+  which also have no co-op adapter: an editor visit must not lose the owners and gifts.
+- Host: `HV` keeps the vehicle's political id; an entry whose `pol_of(v)` changed is listed anew
+  (new id, owner from the nearest player city).
+- `coop.civ fix world 0` restores the old behaviour (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`tools/tests/coop_civ_reload.py` (suite `civ_reload`), see BUG-0040. In the game the reload of the
+same save runs `on_world_change` once (`world_resets=1`, the host is back in Civ in ~7 s).
 
-`tools/tests/coop_civ_reload.py` on 2 instances:
+- FAIL with `--nofix` (out/lab/nofix-20261027/nofix_civ_reload.log): `world_resets=0`, the old world's
+  `alarm_at` entry is still there after the load.
+- PASS with the fix: lab runs 20261027-184454, 20261027-185915 (2x). The test also asserts that no
+  vehicle keeps its old address and id and that no vehicle of another nation has a player owner.
 
-- The host buys vehicles for the guest, then the host reloads the civ fixture 3 times while connected.
-- After each load, assert on the guest that every vehicle the host marks as owned by a player has the player civilization's political id in the guest's own game (`pol` of the local vehicle object).
-- Assert that the guest's city menu ownership matches the host's city list.
-- Assert that no game crashed.
-
-The `pol` check fails on main when an address is reused (repeat count in the test) and passes with the fix.
+Not observed: address reuse (4 of 4 vehicles got new addresses in the one reload looked at), so the
+inherited owner was never seen; the guest-side freed-city use (a lost cities chunk) was not forced.
+The guest's tables are cleared by the same `on_world_change` when the guest loads a world.
 
 ### Related
 - The city-alarm boost writes into freed vehicles for the same reason (separate issue).
@@ -95,3 +100,4 @@ The `pol` check fails on main when an address is reused (repeat count in the tes
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #37.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test civ_reload (FAIL with --nofix, PASS with the fix).

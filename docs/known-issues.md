@@ -56,6 +56,9 @@ anchor so other docs can link to it:
 * 2026-10-23: it came back once more (4-player tribe, `coop_multi.py`). Since then `gamefixes.cpp`
   skips `SimCamera_LookAt` and `SimCamera_Update` while the camera object is null (`coop.status`:
   "tribe camera skipped N"); the stage setup goes on without pointing that camera.
+* 2026-10-27 (fix/w1-tribe-civ): closed as fixed by that guard (commit d605e96): the null object
+  is the only cause seen, and the guard is on in every tribe run (`game fixes: tribe camera guard
+  on`, GOG 2024). Not seen since in the lab (tribe_play, chaos_tribe, tribe tests).
 * Ticket: BUG-0167.
 
 ## Creature: NPC aggression towards a partner is untested end to end
@@ -112,6 +115,10 @@ anchor so other docs can link to it:
 * `coop_tribe_play.py` on branch feat/net-window, lane 2 (2026-10-22): the host stopped drawing
   during `coop.tribe epic hit` (monitor: FROZE); not reproduced in 14 more runs. The game logs of
   that run were lost (now kept by lab.py). Hunt: `lab.py run tribe_play,chaos_tribe --repeat 10`.
+* 2026-10-27 (fix/w1-tribe-civ): not reproduced on main in 4 tribe_play + 4 chaos_tribe runs (lab
+  run 20261027-183142, GOG 2024). Hardened on the way: the epic is checked against the game's object
+  list, `epic hit` stops at a dead victim, the epic state ends with the session and the world.
+  If it comes back: the game logs are kept by lab.py now.
 * Ticket: BUG-0171.
 
 ## Tribe: host fault and freeze when a member is added during the game-over caption
@@ -132,6 +139,10 @@ anchor so other docs can link to it:
   whenever the host has members it lacks, so a guest that shows its own game-over caption while
   the host already bounced back could hit the same path (not seen: the guest showed no caption in
   4 tries, once it did while the host had none left alive).
+* 2026-10-27 (fix/w1-tribe-civ): not reproduced on GOG 2024: caption up, `coop.tribe spawn 2`, OK,
+  4 of 4 tries without a fault, the bounce back worked (`coop_tribe_gameover.py --nofix`). The
+  2026-10-23 tries were probably on the GOG 2016 lanes. The mod now adds no member to a player tribe
+  without health (`coop.tribe fix gameover 0`: the old way).
 * Ticket: BUG-0172.
 
 ## Tribe: knocked-out members stand on the guest
@@ -708,7 +719,6 @@ keeps the history).
 **Tribe**
 
 * BUG-0067 (#45, bug): chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load.
-* BUG-0081 (#59, crash): restoring a former chief's size can call into a freed citizen.
 * BUG-0121 (#100, bug): every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save.
 * BUG-0146 (#125, bug): a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30)
 
@@ -719,8 +729,6 @@ keeps the history).
 **Civ**
 
 * BUG-0031 (#9, bug): vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them.
-* BUG-0040 (#18, crash): the city-alarm speed boost can write into freed vehicles after a leave or a load.
-* BUG-0059 (#37, crash): vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities.
 * BUG-0064 (#42, bug): a new player inherits the civilization role of the player who had their id before.
 * BUG-0079 (#57, desync): guests can see other players' civilization roles swapped after someone rejoins.
 * BUG-0117 (#96, bug): a second superweapon request changes the weapon and target of the vote already running.

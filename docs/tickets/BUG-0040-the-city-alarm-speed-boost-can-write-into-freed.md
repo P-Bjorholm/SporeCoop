@@ -1,19 +1,19 @@
 ---
 id: BUG-0040
 title: the city-alarm speed boost can write into freed vehicles after a leave or a load
-status: open
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#18
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-tribe-civ
+commits: ba9dc46
+tests: civ_reload, civ_play, civ_coop
 signature:
-docs:
+docs: docs/re/civ.md#civ-pointer-tables
 related: #18
 ---
 
@@ -66,21 +66,28 @@ The mod never touches a vehicle that is not in the game's own vehicle list. All 
 CONFIRMED by reading the full path: map lifetime, call order and the missing clears. The write landing on reused memory is not observed at runtime. In normal play a dead vehicle is pruned from `g_hv` (via `kVDead`) before the game frees it, so the in-session window is small; the stale-across-session case is the real one.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-tribe-civ (ba9dc46), as suggested, checked against today's code first: since
+BUG-0033 `do_leave` already runs `civ::on_session_end`, but that cleared neither `g_boost` nor
+`g_alarm_at` (confirmed in the game: after a `coop.leave` `boost=3 alarm_at=2`).
 
-- In `boost_tick` and `h_OnAttacked`, check vehicles with `exists(v)` (the game's vehicle list, cached per frame) instead of `g_hv.count(v) && object_alive(v)`.
-- Clear `g_boost`, `g_siege`, `g_alarm_at`, `g_joint_told`, `g_city_gifted` and `g_bfix_seen` in `on_session_end`, and call `civ::on_session_end` from `do_leave` (the general session-end helper is filed separately by the core review).
-- Keep the old check behind `coop.fix civ_boost_exists off`.
+- `boost_tick` and `h_OnAttacked` write only to vehicles in the game's own vehicle list
+  (`exists()`, cached per frame) instead of `g_hv.count(v) && object_alive(v)`.
+- `on_session_end` clears `g_boost` (putting the speed back on vehicles still listed), `g_alarm_at`,
+  `g_siege`, `g_joint_told`, `g_city_gifted`, `g_bfix_seen` and `g_ui_city`; `on_world_change`
+  (BUG-0059) clears them without touching the freed vehicles.
+- `coop.civ fix boost 0` restores the old check and the old session end (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `tools/tests/coop_civ_reload.py` (suite `civ_reload`, civ_npc): an alarm boosts the
+vehicles near the capital, the host reloads the planet while connected, alarm again, `coop.leave`;
+`coop.civ tables` must have no boost or alarm entries after the load and after the leave.
 
-`tools/tests/coop_civ_boost_leave.py` on 2 instances:
+- FAIL with `--nofix` (lane 5, by hand, out/lab/nofix-20261027/nofix_civ_reload.log): after the load
+  `alarm_at=1`, after the leave `boost=3 alarm_at=2`.
+- PASS with the fix: lab runs 20261027-184454 and 20261027-185915 (2x).
 
-1. The host raises an alarm so that a host vehicle is boosted.
-2. Then: `coop.leave`, the host loads the `civ_npc` fixture again (every old vehicle is freed), `coop.host`, the guest joins, and play 30 s.
-
-The assertions are that no game wrote a crash report or died (the lab's crash check) and that the game's speed field `+0x218` of the host's vehicles matches the game's own value. To make the bug visible on main without luck, run the host under a page heap (`gflags /p /enable SporeApp.exe` in the lane bottle). The freed write then faults at once, so the test fails on main and passes with the fix.
+The write into a freed vehicle itself was not observed (no page heap on the lanes); the test checks
+the condition that leads to it (a boost entry that outlives its world or session).
 
 ### Related
 - civ has no `on_world_change` either (separate issue: stale `g_hv` / `g_host_cities` after a load).
@@ -90,3 +97,4 @@ The assertions are that no game wrote a crash report or died (the lab's crash ch
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #18.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-tribe-civ (ba9dc46), test civ_reload (FAIL with --nofix, PASS with the fix).

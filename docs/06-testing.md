@@ -816,3 +816,18 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   puppet left over", two creatures of the guest's species in one herd, puppet=0) and its retry too;
   alone it passed 3 of 3 right after on the same tree (lanes 2-4). Treat a single failure under load
   as flaky until it fails alone.
+
+## Tribe and civ lifetime tests (2026-10-27, fix/w1-tribe-civ)
+<a id="testing-tribe-civ-lifetime"></a>
+
+* `coop_civ_reload.py` (suite `civ_reload`, civ_npc, ~1 min cold): alarm, host reload of the same
+  planet from a fresh slot while connected, alarm, `coop.leave`; asserts `coop.civ tables`. The
+  reload updates `lane_state` (slot) like a warm reset. `--nofix` (`coop.civ fix boost 0`, `fix
+  world 0`) must FAIL.
+* `coop_tribe_chief_removed.py` (suite `tribe_chief_removed`, tribe, ~1 min): `coop.tribe spawn 4`
+  first (the fixture's guest has one adult only, so no second chief otherwise), `drop_chief`, then a
+  forced reuse with `stale_chief`. `--nofix` (`coop.tribe fix chiefs 0`) must FAIL.
+* `coop_tribe_gameover.py` (suite `tribe_gameover`, tribe, cold ~1.5 min): the caption comes some
+  seconds after the last member is out: the test waits 15 s and finds it with `coop.ui find
+  "Alas"`. The original fault did not come back on GOG 2024, also with `--nofix`: a regression test,
+  not a proof of the fix.

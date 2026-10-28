@@ -8,6 +8,15 @@
   showed stayed in its game and flew on by themselves; starting to host or join while still in a
   session kept the old players. Every way a session ends (Leave, the host gone, a new host or join,
   a mod reload) now cleans up the same way. Test: `coop_leave_cleanup.py` (suite `leave_cleanup`).
+- **Civilization: a load or a Leave no longer leaves old vehicles and cities behind in the mod**:
+  after the host loaded another save (or left) during a city alarm, the defenders' speed boost could
+  write into vehicles that no longer existed, and the host's and guest's vehicle and city tables
+  kept the old world (new vehicles could inherit old owners). Test: `coop_civ_reload.py` (suite
+  `civ_reload`).
+- **Tribe: a chief that leaves the tribe** no longer gets its size put back through a removed
+  citizen (possible crash), chiefs get their normal size back when the session ends, and no member
+  is added to a tribe that is out while the game-over caption is up. Tests:
+  `coop_tribe_chief_removed.py`, `coop_tribe_gameover.py`.
 
 ## [0.7.2.4] - 2026-10-25
 
