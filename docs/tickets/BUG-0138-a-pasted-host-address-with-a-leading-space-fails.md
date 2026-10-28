@@ -1,20 +1,20 @@
 ---
 id: BUG-0138
 title: a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#117
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418, 1e905bb, 423392b
+tests: coop_ui_status.py (suite ui_status), net_tests test_address_parse
 signature:
-docs:
-related: #117
+docs: docs/06-testing.md#testing-net-w3
+related: #117, BUG-0204
 ---
 
 ## Report
@@ -60,20 +60,23 @@ With a port of 0 or a wrapped port, the guest sends to the wrong port. The join 
 CONFIRMED, low severity: a host-side harness ran on the real `Endpoint::parse` logic. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `do_join` trim both ends with `isspace`. If the text contains `,` or a space inside, take the first `host:port` token.
-- In `Endpoint::parse` use `strtoul` with an end-pointer check and range 1..65535. Report an error string instead of a bool.
-- Resolve on a worker thread and finish the join from the main loop, or accept numeric IPv4 only via `inet_pton` and resolve names asynchronously.
+`Endpoint::parse(s, port, out, err)` (net/udp.cpp) trims whitespace on both sides and takes the
+first address of a pasted list (`Endpoint::clean`: up to a space, `,` or `;`); the port is read
+with `strtoul` and must be 1..65535 ("the port must be a number from 1 to 65535"); an empty host
+is refused. `Session::join` passes the reason through, so the window says "Cannot join: the port
+must be ...". A numeric address is parsed with `AI_NUMERICHOST` first and never waits for DNS.
+The co-op window's `do_join` cleans the text the same way (and saves the cleaned address).
+Switch: `coop.corefix addr_check 0` / `net::g_fix.addr_check`.
+Not fixed here: a host *name* still resolves on the main thread (a slow DNS server freezes the
+game): split into BUG-0204.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Host-side unit test in tests/net_tests.cpp:
-- `Endpoint::parse(" 127.0.0.1:47810")` succeeds with port 47810;
-- `parse("127.0.0.1:")`, `parse("127.0.0.1:99999")` and `parse("127.0.0.1:abc")` fail.
-
-FAILS on main 563f72d, PASSES with the fix.
+Unit test `test_address_parse` (FAILS with `net_tests --nofix`: " 192.168.1.5:47810" gives
+"cannot resolve"; PASS with the fix). In game `coop_ui_status.py` part 1 types `127.0.0.1:<port+60000>`
+then ` 127.0.0.1:<port>` into the real address field and presses Join.
+- FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): "Connecting to 127.0.0.1:107812..." (the wrong port accepted), then
+  "Cannot join: cannot resolve  127.0.0.1:47812".
+- PASS: lab runs `out/lab/20261028-005022` and `out/lab/20261028-011423` (lane 2, both PASS): "Cannot join: the port must be a number from 1 to 65535", then joined.
 
 ### Related
 #8 (join timeout), #83 (the status keeps "Connecting to ..." after such a failed join).
@@ -81,3 +84,4 @@ FAILS on main 563f72d, PASSES with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #117.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

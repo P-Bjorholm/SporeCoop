@@ -1,19 +1,19 @@
 ---
 id: BUG-0202
 title: making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt)
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: found by kit_freeze.py hookchurn, fix/w1-sporekit
 role: both
 versions: 0.7.2.4 and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 51e8cce
+tests: tools/tests/kit_freeze.py hookrace (suite kit_freeze)
+signature: 0xC0000005 two bytes into the hooked function
+docs: docs/02-modkit.md#modkit-crash-hard-cases
 related: BUG-0132
 ---
 
@@ -40,13 +40,22 @@ MinHook's own answer (Freeze + ProcessThreadIPs moves suspended threads' eip) is
 off. Removal does not have this problem: while hooked, no thread can be inside the first 5 bytes.
 
 ## Fix
-Not fixed. Options: suspend only the game's worker threads that can run the target, and only for
-hooks on such functions (a per-hook flag), or keep the RandomInt / RandomFloat hooks of coop alive
-across a reload (a stub owned by sporekit.dll that calls into the current coop.dll, as uiproc.cpp
-does for UI handlers), so they are made once per process.
+Fixed on fix/w3-sys (51e8cce): parked hooks. Every hook jumps to a SporeKit stub `jmp [cur]`; making
+(after the first time), enabling, disabling and removing a hook only switch `cur` (an aligned dword).
+A removed hook is parked (`cur` = MinHook's trampoline, the original code); the next hook on that
+target (the same mod after a hot reload) takes the stub over, so a target's code is written once per
+process. The first hook is still a plain write (at boot, before the game's threads call it; the
+RNG hooks of coop are made at its first load). `kit.fix hookpark 0` = MinHook's create / remove.
+`kit.test.hookchurn <rounds> <threads> nogate` makes the hook while the threads run the function.
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+Test: `tools/tests/kit_freeze.py --case hookrace` (`kit.test.hookchurn 200 3 nogate`).
+* FAIL with `kit.fix hookpark 0` (`kit_freeze.py --old --case hookrace`, manual run on lane 3,
+  2026-10-28 02:11): no answer, crash report `crash-20261028-021159-i5.txt`.
+* PASS with the fix: 2 manual runs 2026-10-28 (200 rounds, ~40 M calls on 3 threads) and lab run
+  out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842). The `hookchurn` case (BUG-0132) now switches `hookpark` off itself, so it still tests
+  MinHook's removal.
 
 ## History
 - 2026-10-27: opened (found by the BUG-0132 test on fix/w1-sporekit).
+- 2026-10-28: fixed on fix/w3-sys (51e8cce); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

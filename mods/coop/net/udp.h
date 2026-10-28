@@ -13,6 +13,9 @@ struct Endpoint {
     bool operator!=(const Endpoint& o) const { return !(*this == o); }
     std::string str() const;
     static bool parse(const std::string& s, uint16_t default_port, Endpoint& out);
+    // err: why not ("the port must be a number from 1 to 65535", "cannot resolve <host>")
+    static bool parse(const std::string& s, uint16_t default_port, Endpoint& out, std::string& err);
+    static std::string clean(const std::string& s); // trimmed, the first address of a list
 };
 
 class UdpSocket {

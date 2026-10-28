@@ -127,6 +127,11 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     w.u32(kMagic);
     w.u16(kProtoVersion);
     w.u32(conn_id);
+    if (!seq_started_) {
+        seq_started_ = true;
+        if (g_fix.first_ack) // read at the first packet, so a test can switch it per connection
+            local_seq_ = 1;
+    }
     uint16_t seq = local_seq_++;
     w.u16(seq);
     w.u16(remote_seq_);

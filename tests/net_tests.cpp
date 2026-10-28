@@ -8,6 +8,7 @@
 #include <map>
 #include "net/dbpf.h"
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <random>
 #include <chrono>
@@ -1189,13 +1190,148 @@ static void test_alloc_id()
     CHECK(alloc(next, full) == 0);
 }
 
+// ---- wave 3 netcode fixes (each FAILS with `net_tests --nofix`) ----
+
+// BUG-0030: a peer that has received nothing writes ack 0; the host's first packet (seq 0, the
+// WELCOME) counted as acknowledged when it was lost, and the join timed out after 10 s
+static void test_lost_first_packet()
+{
+    printf("the host's first packet is lost (BUG-0030)\n");
+    Connection host, guest;
+    host.conn_id = guest.conn_id = 77;
+    uint32_t now = 1000;
+    std::vector<uint8_t> pkt;
+    Writer hello;
+    hello.u32(1);
+    guest.send_reliable(MSG_HELLO, hello);
+    int got_welcome = 0;
+    guest.build_packet(now, pkt);
+    host.on_packet(pkt.data(), pkt.size(), now, [&](uint8_t t, Reader&) {
+        if (t == MSG_HELLO) {
+            Writer w;
+            w.u8(1);
+            host.send_reliable(MSG_WELCOME, w);
+        }
+    });
+    CHECK(host.build_packet(now, pkt)); // the WELCOME packet: lost
+    for (int step = 0; step < 300; step++) { // 3 s without any loss
+        now += 10;
+        while (guest.build_packet(now, pkt))
+            host.on_packet(pkt.data(), pkt.size(), now, [](uint8_t, Reader&) {});
+        while (host.build_packet(now, pkt))
+            guest.on_packet(pkt.data(), pkt.size(), now, [&](uint8_t t, Reader&) { got_welcome += t == MSG_WELCOME; });
+    }
+    printf("  welcome delivered=%d host pending=%zu\n", got_welcome, host.pending_reliable());
+    CHECK(got_welcome == 1);
+    CHECK(host.pending_reliable() == 0);
+}
+
+// BUG-0053: the sender's 32-bit millisecond clock wraps after 49.7 days: every later snapshot was
+// "older" than the last one and the puppet froze
+static void test_interp_wrap()
+{
+    printf("snapshot interpolation across the sender's clock wrap (BUG-0053)\n");
+    SnapshotBuffer b;
+    PlayerState s;
+    s.time_ms = 0xFFFFFF00u;
+    s.pos = {1, 0, 0};
+    b.push(s, 100.0);
+    s.time_ms = 0x00000100u; // 512 ms later, after the wrap
+    s.pos = {5, 0, 0};
+    b.push(s, 100.5);
+    PlayerState out;
+    CHECK(b.sample(101.0, out));
+    printf("  x=%g (5 expected)\n", out.pos.x);
+    CHECK(out.pos.x > 4);
+    CHECK(b.age(101.0) < 1.0);
+    // an older snapshot after the wrap is still dropped, the NPC spawn's time 0 is older than any
+    s.time_ms = 0xFFFFFF80u;
+    s.pos = {-50, 0, 0};
+    b.push(s, 100.6);
+    CHECK(b.sample(101.0, out) && out.pos.x > 4);
+    SnapshotBuffer n;
+    s.time_ms = 0;
+    s.pos = {0, 0, 0};
+    n.push(s, 10.0);
+    s.time_ms = 0x90000000u; // a host up for 28 days
+    s.pos = {7, 0, 0};
+    n.push(s, 10.05);
+    CHECK(n.sample(11.0, out) && out.pos.x > 6);
+}
+
+// BUG-0047: a 5-byte record with the 4-byte-size flag read one byte past the buffer (ASan in
+// test-asan); it is rejected now
+static void test_refpack_short()
+{
+    printf("RefPack: a 5-byte record with a 4-byte size (BUG-0047)\n");
+    uint8_t* p = new uint8_t[5]{0x90, 0xFB, 0, 0, 0};
+    std::vector<uint8_t> out;
+    CHECK(!dbpf::refpack_decode(p, 5, out));
+    delete[] p;
+}
+
+// BUG-0039: answers with a new port each time grew the LAN game list for ever
+static void test_discovery_prune()
+{
+    printf("LAN game list: pruned and capped (BUG-0039)\n");
+    Discovery d;
+    CHECK(d.start());
+    d.targets = {0x0100007F};
+    // what update() does with each answer datagram (64 per frame at most)
+    uint32_t now = 100000;
+    for (int i = 0; i < 500; i++) {
+        DiscoverReply rep;
+        rep.port = (uint16_t)(1000 + i);
+        rep.name = std::string(255, 'x');
+        rep.info = "fake";
+        d.on_reply(Endpoint{0x0100000A, 0}, rep, now + i / 64);
+    }
+    d.update(now + 10);
+    printf("  after 500 fake answers: kept %zu, listed %zu\n", d.stored(), d.games(now + 10).size());
+    CHECK(d.stored() <= Discovery::kMaxGames);
+    d.update(now + 6000);
+    CHECK(d.stored() == 0);
+    CHECK(d.games(now + 6000).empty());
+}
+
+// BUG-0138: a pasted address with spaces around it, the whole hint line, a wrong port
+static void test_address_parse()
+{
+    printf("host address parsing (BUG-0138)\n");
+    struct Case {
+        const char* in;
+        bool ok;
+        uint16_t port;
+    } cases[] = {{" 192.168.1.5:47810", true, 47810},
+                 {"\t192.168.1.5:47811\r\n", true, 47811},
+                 {"192.168.1.5:47810,  10.0.0.2:47810", true, 47810},
+                 {"192.168.1.5", true, kDefaultPort},
+                 {"192.168.1.5:", false, 0},
+                 {"192.168.1.5:abc", false, 0},
+                 {"192.168.1.5:99999", false, 0},
+                 {"192.168.1.5:0", false, 0},
+                 {"192.168.1.5:-1", false, 0},
+                 {":47810", false, 0}};
+    for (auto& c : cases) {
+        Endpoint e;
+        std::string err;
+        bool ok = Endpoint::parse(c.in, kDefaultPort, e, err);
+        bool good = ok == c.ok && (!ok || (e.port == c.port && e.str().rfind("192.168.1.5:", 0) == 0));
+        if (!good)
+            printf("  '%s': ok=%d port=%u err='%s'\n", c.in, ok, e.port, err.c_str());
+        CHECK(good);
+        if (!ok && strchr(c.in, ':') && c.in[0] != ':')
+            CHECK(err.find("port") != std::string::npos);
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
     if (argc == 2 && (std::string(argv[1]) == "--nofix" || std::string(argv[1]) == "--old")) {
         // the code before the wave 2 fixes (tests must fail)
-        g_fix = Fixes{false, false, false, false};
+        g_fix = Fixes{false, false, false, false, false, false, false, false};
         g_nofix = true;
         upd::g_dup_fix = false;
         printf("netcode fixes OFF\n");
@@ -1227,6 +1363,11 @@ int main(int argc, char** argv)
     test_velocity_jitter();
     test_interp_latency_rise();
     test_alloc_id();
+    test_lost_first_packet();
+    test_interp_wrap();
+    test_refpack_short();
+    test_discovery_prune();
+    test_address_parse();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }

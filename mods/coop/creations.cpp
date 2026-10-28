@@ -10,6 +10,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "slotfs.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 
@@ -154,7 +155,9 @@ static bool find_paths()
             g_choice[k] = inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{};
         }
     }
-    H->log(M, SK_INFO, "creations: My Creations %ls", g_es_path.c_str());
+    // UTF-8, not %ls: the C library converts %ls in the "C" locale and cut the line at the first
+    // letter that is not ASCII (a Cyrillic Windows user name, BUG-0164)
+    H->log(M, SK_INFO, "creations: My Creations %s", slotfs::narrow(g_es_path).c_str());
     return true;
 }
 
@@ -778,6 +781,11 @@ static void* g_swapped_avatar;
 static Key g_swapped_key;
 static void* g_seen_avatar; // a new avatar (a world was loaded): wait until the world has settled
 static double g_seen_since;
+// BUG-0119: the world counter with the avatar (the game reuses creature objects: the avatar of a
+// reloaded world may have the old address). Tests: `coop.creations sameaddr` makes the next new
+// avatar look like the old one (a reused address).
+static uint32_t g_seen_epoch, g_swapped_epoch;
+static bool g_sim_same_addr;
 
 // the key this machine uses for its own creation of a kind
 static Key own_key_here(Kind kind)
@@ -840,13 +848,21 @@ static void apply_own_avatar()
     // SetSpecies while a world is still loading crashed (a null call inside the game): only on an
     // avatar that has lived for a few seconds
     double now = H->time_seconds();
-    if (av != g_seen_avatar) {
+    uint32_t epoch = game::world_epoch();
+    if (g_sim_same_addr && g_seen_avatar && av != g_seen_avatar) { // tests: as if the address came back
+        g_sim_same_addr = false;
+        if (g_swapped_avatar == g_seen_avatar)
+            g_swapped_avatar = av;
         g_seen_avatar = av;
+    }
+    if (av != g_seen_avatar || epoch != g_seen_epoch) {
+        g_seen_avatar = av;
+        g_seen_epoch = epoch;
         g_seen_since = now;
     }
     if (now - g_seen_since < 3.0)
         return;
-    if (av == g_swapped_avatar && k == g_swapped_key)
+    if (av == g_swapped_avatar && epoch == g_swapped_epoch && k == g_swapped_key)
         return;
     Key cur = avatar_species_key();
     if (!(cur == k)) {
@@ -859,6 +875,7 @@ static void apply_own_avatar()
         H->log(M, SK_INFO, "creations: own avatar is now %08X", k.instance);
     }
     g_swapped_avatar = av;
+    g_swapped_epoch = epoch;
     g_swapped_key = k;
 }
 
@@ -1122,6 +1139,10 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t inst = a.size() > 2 && a[2] != "none" ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
         choose((Kind)k, inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{});
         return "chosen";
+    }
+    if (!a.empty() && a[0] == "sameaddr") { // tests (BUG-0119): the next new avatar looks like the old one
+        g_sim_same_addr = true;
+        return "the next avatar is taken for the old one (a reused address)";
     }
     if (a.size() >= 2 && a[0] == "worlddrop") { // worlddrop on|off (tests, BUG-0055)
         g_world_drop = a[1] != "off";

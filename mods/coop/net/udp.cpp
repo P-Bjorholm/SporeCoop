@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 
 #ifdef _WIN32
@@ -20,6 +21,8 @@ typedef int socklen_t;
 #include <unistd.h>
 #define CLOSESOCK ::close
 #endif
+
+#include "fixes.h"
 
 namespace net {
 
@@ -53,20 +56,66 @@ std::string Endpoint::str() const
 
 bool Endpoint::parse(const std::string& s, uint16_t default_port, Endpoint& out)
 {
+    std::string err;
+    return parse(s, default_port, out, err);
+}
+
+std::string Endpoint::clean(const std::string& s)
+{
+    // BUG-0138: copied from a chat: spaces, tabs or a newline around it, or the whole "Friends
+    // connect to" hint with several addresses: the first address
+    size_t a = 0;
+    while (a < s.size() && isspace((unsigned char)s[a]))
+        a++;
+    size_t b = a;
+    while (b < s.size() && !isspace((unsigned char)s[b]) && s[b] != ',' && s[b] != ';')
+        b++;
+    return s.substr(a, b - a);
+}
+
+bool Endpoint::parse(const std::string& in, uint16_t default_port, Endpoint& out, std::string& err)
+{
+    bool check = g_fix.addr_check;
+    std::string s = check ? clean(in) : in;
     std::string host = s;
     uint16_t port = default_port;
     size_t c = s.rfind(':');
     if (c != std::string::npos) {
         host = s.substr(0, c);
-        port = (uint16_t)atoi(s.c_str() + c + 1);
+        if (check) {
+            // BUG-0138: atoi made "1.2.3.4:" port 0 and "1.2.3.4:99999" port 34463, and the player
+            // waited 10 s for a timeout that blamed the host's firewall
+            const char* p = s.c_str() + c + 1;
+            char* e = nullptr;
+            unsigned long v = *p >= '0' && *p <= '9' ? strtoul(p, &e, 10) : 0;
+            if (!e || *e || v < 1 || v > 65535) {
+                err = "the port must be a number from 1 to 65535";
+                return false;
+            }
+            port = (uint16_t)v;
+        } else
+            port = (uint16_t)atoi(s.c_str() + c + 1);
+    }
+    if (check && host.empty()) {
+        err = "no host address before the port";
+        return false;
     }
     net_init();
     addrinfo hints{};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     addrinfo* res = nullptr;
-    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res)
-        return false;
+    // a numeric address never waits for a name server; a name still resolves on this thread
+    // (a slow DNS server holds the caller: BUG-0138 notes, numeric addresses are the common case)
+    hints.ai_flags = AI_NUMERICHOST;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) {
+        res = nullptr;
+        hints.ai_flags = 0;
+        if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) {
+            err = "cannot resolve " + (check ? host : s);
+            return false;
+        }
+    }
     out.ip = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr.s_addr;
     out.port = port;
     freeaddrinfo(res);

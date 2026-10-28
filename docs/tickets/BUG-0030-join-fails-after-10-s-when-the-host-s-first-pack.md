@@ -1,19 +1,19 @@
 ---
 id: BUG-0030
 title: join fails after 10 s when the host's first packet is lost (WELCOME falsely acked)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#8
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418
+tests: net_tests test_lost_first_packet
 signature:
-docs:
+docs: docs/04-netcode.md 4.6, docs/06-testing.md#testing-net-w3
 related: #8
 ---
 
@@ -86,14 +86,20 @@ The same thing happens to a REJECT in a lost first packet: the guest only sees a
 CONFIRMED by harness (Connection level). Not verified: the failure rate in the game over netem. The full Session path (WELCOME is the first message in host packet 0, and the 10 s join timeout) was confirmed by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Start `local_seq_` at 1, so ack 0 with no remote never matches a real packet until the sequence wraps, and by then `have_remote_` is long true. A cleaner fix: a header flag "ack fields valid", or the receiver ignoring `ack` and `ackbits` while the header says "nothing received yet". Starting at 1 does not change the wire format. Keep the old behaviour behind a switch (`coop.fix first_ack off`, a static in connection.cpp) so the lab can show the netem test catches it.
+`Connection` starts its packet sequence at 1 (connection.cpp `build_packet`, `seq_started_`): a
+peer that has received nothing writes ack 0 with no ack bits, which now matches none of our
+packets until the sequence wraps (by then the peer has long received something). The lost
+WELCOME stays in `rel_out_` and is resent after the RTO like any reliable message. No wire change:
+an older peer still starts at 0 and keeps the old behaviour on its side only. `tools/fakepeer.py`
+(the Python port) starts at 1 too. Switch: `coop.corefix first_ack 0` / `net::g_fix.first_ack`
+(read when a connection sends its first packet).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tests/net_tests.cpp`: the harness above as `test_lost_first_packet` (CHECK `got_welcome == 1`). It fails on main and passes with the fix. Lab: a `tools/tests/coop_join_lossy.py` that drops the host's first datagram to the guest, through the relay or netem, and asserts that the guest reaches `together` (the game's own connected state) within 3 s.
+Unit test `test_lost_first_packet` (tests/net_tests.cpp, the harness of the report): the host's
+first packet is dropped, then 3 s without loss.
+- FAIL with `build/host/net_tests --nofix` (2026-10-28): `welcome delivered=0 host pending=0`.
+- PASS with the fix (`make test`, also under ASan): `welcome delivered=1 host pending=0`.
+Not run in game over netem (the 1-in-10 failure rate stays computed, not measured).
 
 ### Related
 - docs/04-netcode.md 4.6 (handshake timings over netem: the 1-2 s on `awful` were measured on runs where packet 0 got through).
@@ -102,3 +108,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #8.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

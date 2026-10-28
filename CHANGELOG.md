@@ -18,6 +18,62 @@
 - **Space: unvisited stars get the same planets on both games** even when another thread names
   things during the generation (BUG-0123); `coop.space empire contact` no longer breaks the game's
   float maths after 8 calls (BUG-0126).
+- **Joining over a lossy link no longer fails when the host's first answer is lost** (BUG-0030):
+  the lost welcome counted as delivered and the join ended with "no answer from host (timeout)"
+  after 10 s (about one join in ten at 10 % loss). Test: `make test`.
+- **Co-op window: the address field and the status line** (BUG-0138, BUG-0104): an address pasted
+  with spaces around it (or the whole "Friends connect to" line) joins the first address; a port
+  that is not a number from 1 to 65535 is refused at once instead of a 10 s timeout. The status
+  no longer says "Connecting to ..." for the whole session: it clears when you are in, shows why
+  a session ended, and button messages go away after a few seconds, so the update line shows
+  again. Test: `coop_ui_status.py` (suite `ui_status`).
+- **Co-op window: more than three games on the network** (BUG-0183): "More >" pages through all
+  of them; the list forgets hosts that stopped answering and holds at most 32 (BUG-0039).
+- **No "player0 (host) is back: your N DNA go to the pack" after a disconnect** while the host was
+  in the main menu (BUG-0085).
+- **A partner no longer freezes when the other PC has been up for 49.7 days** (its millisecond
+  clock wraps, BUG-0053). Test: `make test`.
+- **Creature: a guest that gets the world right after the host evolved no longer stays a
+  hatchling** (BUG-0019): the world went out while the host's evolution cinematic waited for OK,
+  and the guest's creature never grew up nor migrated with the species. The host now sends it once
+  the cinematic is over. Test: `coop_evolve_world.py` (suite `evolve_world`).
+- **Creature: after a reload the guest plays its own creature again** (BUG-0119): the mod told the
+  worlds apart by the avatar's memory address, which the game can reuse; the guest could keep the
+  host's species, or get its creature applied while the world was still loading. Test:
+  `coop_world_reload.py` (suite `world_reload`).
+- **Creature: a guest that rejoins while the host is paused sees the animals around it**
+  (BUG-0125) instead of an empty area until they walked away and back. Test:
+  `coop_npc_rejoin_paused.py` (suite `npc_rejoin_paused`).
+- **Creature: an animal that pushes against a rock on the host no longer stays a few metres off on
+  every guest** (BUG-0169): its copy is put in place after 3 s. Unit test in `make test`.
+- **A fault inside the game during a co-op adjustment no longer leaves the game in the adjusted
+  state** (BUG-0110): the cell stage's player index, a selection flag, a creature's tuning and the
+  Civilization capture attribution are put back on the next frame. Unit test in `make test`.
+- **Creature: social ability keys are ignored while the cheat console is open**, and a digit typed
+  in another window no longer plays one when the game comes back to the front (BUG-0149, not yet
+  verified in a game test).
+- **Crash reports in hard cases**: a stack overflow now writes a crash report (before, the game
+  vanished without one), and a crash in a game that ran out of memory still writes the minidump and
+  tells you at the next start where the report is (BUG-0056, BUG-0127). Test: `kit_crash.py`.
+- **Old crash reports are removed**: `mods\logs` keeps the newest 5 crash reports with their
+  dumps, 5 other reports and 3 report archives instead of collecting them for ever (BUG-0137).
+- **Player names in any language**: a Cyrillic or Chinese name survives a restart (it was saved as
+  "????"), and a name typed into `coop.ini` with a normal editor (UTF-8) is read correctly
+  (BUG-0142); names set in the console are capped at 24 characters and cannot change during a
+  session, long texts are never cut inside a character, the creations path in the log keeps its
+  non-Latin letters (BUG-0164). Tests: `win_unit.py`, `make test`.
+- **Chat and notifications**: a Russian or Chinese chat message gets the same room as an English
+  one in the notification panel and never ends in a broken character; chat always looks like chat
+  (a message with "lost" in it is no longer a red alert, a player named "Lost" joining neither),
+  and the co-op window's chat wraps long lines and scrolls back through the last 50 lines with the
+  arrows on its right (BUG-0129).
+- **Name tags and banners with non-Latin text are centred** (Cyrillic names, the arrows of off-screen
+  partners, the Russian contract banner) (BUG-0159).
+- **The co-op window after a resolution change** opens centred on the new screen instead of partly
+  off it, and the overlay's co-op status text is no longer drawn over the co-op window or the
+  notification panels at 1280x720 / 1366x768 (BUG-0113, BUG-0155). Test: `coop_window_layout.py`.
+- **Hot reload of the mod no longer risks crashing a game thread** that was running a re-hooked
+  function at that moment (BUG-0202). Test: `kit_freeze.py` (hookrace).
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

@@ -36,3 +36,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w3-creature (wave 3): not worked on beyond reading; still open. What is left is how the game's own population refills a planet (its respawn rate of removed herds), which needs reverse engineering of the creature spawner; the known fallback (mirrors made local NPCs) failed before (docs/re/creature.md 8.3). Not a quick fix.

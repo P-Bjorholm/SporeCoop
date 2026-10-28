@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -44,8 +45,10 @@
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
+#include "net/utf8.h"
 #include "creations.h"
 #include "notify.h"
+#include "notify_text.h"
 #include "syncdbg.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -120,14 +123,17 @@ float g_echo_offset = 6.f;
 double g_echo_delay = 0.0;
 std::deque<std::pair<double, net::PlayerState>> g_echo_q;
 
-void feed(const std::string& s)
+// kind: the panel kind ("chat", "join", "leave", ...); null: guessed from a system text (BUG-0129)
+void feed_kind(const std::string& s, const char* kind)
 {
     g_feed.emplace_back(H->time_seconds(), s);
     while (g_feed.size() > 8)
         g_feed.pop_front();
     LOG("%s", s.c_str());
-    notify::show(s); // a notification panel; the full history is in the co-op window
+    notify::show(s, kind); // a notification panel; the full history is in the co-op window
 }
+
+void feed(const std::string& s) { feed_kind(s, nullptr); }
 
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
@@ -141,6 +147,8 @@ bool g_lobby_dirty = false;
 double g_last_lobby = 0;
 net::Discovery g_disc;
 bool g_disc_on = false;
+int g_lan_fake_n = 0;           // coop.lanfake: games on the network that answer (tests, BUG-0183)
+uint32_t g_lan_fake_until = 0;
 
 void chat_log(const std::string& s)
 {
@@ -378,6 +386,7 @@ bool g_host_away = false;
 double g_host_away_since = -1;
 float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
+bool g_host_away_fix = true; // BUG-0085: the away state ends with the session, without a "host is back"
 
 bool host_in_menu()
 {
@@ -435,6 +444,14 @@ void host_away_tick(double now)
     }
     // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
     // with its creature for 1 s (a guest gain sent while the host loads is dropped there)
+    if (g_host_away_fix && g_host_away && !g_sess.connected()) {
+        // BUG-0085: the session ended while the host was away: it is not back (the guest was told
+        // "player0 (host) is back: your N DNA go to the pack" and nothing was sent)
+        g_host_away = false;
+        g_host_away_since = -1;
+        g_solo_dna = 0;
+        return;
+    }
     bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
     if (!change)
         g_host_away_since = -1;
@@ -555,13 +572,17 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         if (!(*flags & 1))
             flags = nullptr;
     }
+    size_t mark = game::swap_depth();
     if (flags) {
+        game::swap_open(game::swap_undo_or32, flags, 1u, "selection flag"); // BUG-0110
         *flags &= ~1u;
         g_select_guards++;
     }
     o_SelectUI(sel, a2, a3, a4, a5);
-    if (flags)
+    if (flags) {
         *flags |= 1u;
+        game::swap_close(mark);
+    }
 }
 
 // The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
@@ -602,7 +623,12 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
     }
     if (n)
         g_stage_msg_guards++;
+    size_t mark = game::swap_depth(); // BUG-0110: a fault in the handler leaves no blank +0xE84 behind
+    for (int i = 0; i < n; i++)
+        game::swap_open(game::swap_undo_ptr_if, (uint8_t*)patched[i] + 0xE84, (uintptr_t)g_blank_e84, "blank +0xE84");
+    size_t own = game::swap_depth() - mark;
     bool r = o_StageMsg(self, id, msg);
+    game::swap_close(mark, own);
     for (int i = 0; i < n; i++) { // the handler may have destroyed nothing of ours: restore only our pointer
         void** e84 = (void**)((uint8_t*)patched[i] + 0xE84);
         if (!IsBadReadPtr(e84, 4) && *e84 == g_blank_e84)
@@ -885,6 +911,14 @@ void vote_tick(double now)
     }
 }
 
+// BUG-0019: the world sent after an evolution was saved while the host's game played the
+// cinematic of the evolution (CRG_SpeciesMigrate, a caption waiting for OK): the creature in it is
+// still the hatchling (age 0) and the migration not started, and a guest's game that loads it never
+// grows up nor migrates. Such a share waits until the cinematic had 3 s to start and none plays (at
+// most 120 s). `coop.npc sharecine off`: at once, as before (tests).
+bool g_share_cine_fix = true;
+double g_share_cine_since = 0, g_share_due_at = 0;
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
@@ -908,6 +942,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     for (auto& [id, r] : g_remotes)
         if (!r.echo)
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
+    g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
                               : g_name + " evolved the species: everybody gets the new body",
@@ -926,6 +961,16 @@ void follow_phase(double now)
         if (r.echo)
             continue;
         if (r.needs_world && g_local) { // joined while the host was in a menu
+            if (g_share_cine_fix && now < g_share_due_at)
+                continue;
+            if (g_share_cine_fix && world::cinematic_playing()) { // BUG-0019
+                if (g_share_cine_since == 0)
+                    g_share_cine_since = now;
+                if (now - g_share_cine_since < 120.0)
+                    continue;
+                LOG("share: a cinematic plays for 120 s, the world is sent anyway");
+            }
+            g_share_cine_since = 0;
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
@@ -1007,8 +1052,20 @@ void lobby_tick(double now)
             g_sess.lobby_info = std::string(mode) + (world.empty() || !g_adapter ? "" : " - " + world);
         }
     }
-    if (g_disc_on)
-        g_disc.update(net::now_ms());
+    if (g_disc_on) {
+        uint32_t t = net::now_ms();
+        if (g_lan_fake_n && (int32_t)(t - g_lan_fake_until) < 0) // coop.lanfake (tests)
+            for (int i = 0; i < g_lan_fake_n; i++) {
+                net::DiscoverReply rep;
+                rep.port = net::kDefaultPort;
+                rep.name = "fake" + std::to_string(i + 1);
+                rep.players = 1;
+                rep.max_players = 4;
+                rep.info = "test";
+                g_disc.on_reply({0x000200C0u | (uint32_t)(i + 1) << 24, 0}, rep, t); // 192.0.2.<i+1> (TEST-NET-1)
+            }
+        g_disc.update(t);
+    }
 }
 
 // Network keepalive without frames: a modal game dialog (e.g. "game saved") can stop the frames
@@ -1258,6 +1315,7 @@ void on_frame(void*, int, void*)
     g_last_frame = now;
     diag_tick(now);
     notify::tick(now);
+    game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -1363,7 +1421,9 @@ void on_frame(void*, int, void*)
     }
 }
 
-int text_width(const std::string& s) { return (int)s.size() * 9; } // Arial 18 bold, approx.
+// Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
+// its width, every arrow label moved by its 3-byte arrow)
+int text_width(const std::string& s) { return utf8::overlay_width(s); }
 
 // world marks: "look here" pings and beacons of the stage modules (a city under attack, a
 // partner's ship ...): a label at the world point, an arrow on the screen edge when it is off screen
@@ -1477,6 +1537,11 @@ void draw_civ_tags()
 // frame a few times a second.
 constexpr uint32_t kPauseMenuId = 0x0615B50D;
 std::atomic<bool> g_menu_up{false};
+// BUG-0149: the cheat console (Ctrl+Shift+C) is open: keys typed there are no ability keys. Its
+// window (control id 0x014A4606, its text edit 0x014A4608) exists only while it is open.
+constexpr uint32_t kCheatConsoleId = 0x014A4606;
+std::atomic<bool> g_text_up{false};
+bool g_text_fix = true; // coop.social textfix off: the old key poll (tests)
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
@@ -1518,6 +1583,8 @@ void menu_check_task(void*)
         if (sui::Win root = sui::main_window())
             up = shown_chain(sui::find(root, kPauseMenuId));
     g_menu_up = up;
+    sui::Win root = sui::main_window();
+    g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
 }
 
 void menu_tick(double now)
@@ -1528,6 +1595,9 @@ void menu_tick(double now)
     g_menu_check_queued = true;
     H->run_outside_frame(menu_check_task, nullptr);
 }
+
+bool g_status_block_fix = true;   // BUG-0155
+std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
 
 void on_overlay(void*, int, void*)
 {
@@ -1583,9 +1653,16 @@ void on_overlay(void*, int, void*)
         head = std::string("CO-OP guest  ") + (g_sess.connected() ? "connected" : "connecting...");
     else if (g_echo)
         head = "CO-OP echo test";
-    if (head.empty())
+    // BUG-0155: the block is not drawn over the co-op window or a menu (the lobby shows the same),
+    // and the notification panels start below it; `coop.corefix status_block 0` = the old way
+    // (g_menu_up is only refreshed in a game: in the main menu the window's own flag counts)
+    bool covered = coop_ui::is_open() || (!labels && g_local);
+    if (head.empty() || (covered && g_status_block_fix)) {
+        g_status_block = {0, 0, 0, 0};
+        notify::set_top_min(0);
         return;
-    int x = sw > 0 ? sw - 480 : 900, y = 70;
+    }
+    int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
     if (g_sess.connected() && g_mode == modes::kCreature) {
@@ -1603,8 +1680,11 @@ void on_overlay(void*, int, void*)
             line += std::string("  [") + modes::mode_name(ls.mode) + (same_place(ls) || ls.mode != g_mode ? "" : ", other world") + "]";
         }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
+        wmax = std::max(wmax, utf8::overlay_width(line));
         y += 20;
     }
+    g_status_block = {x, 70, x + wmax, y};
+    notify::set_top_min(g_status_block_fix ? (float)y + 8 : 0.f);
     // notices are notification panels now (notify.cpp); the history is in the co-op window
 }
 
@@ -1681,15 +1761,24 @@ void end_session_modules(bool cell)
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
+    if (g_host_away_fix) { // BUG-0085
+        g_host_away = false;
+        g_host_away_since = -1;
+        g_solo_dna = 0;
+    }
 }
 
 void setup_callbacks()
 {
     g_sess.build = build_id();
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
-    g_sess.cb.connected = [] { feed("connected to host"); };
+    g_sess.cb.connected = [] {
+        feed("connected to host");
+        coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
+    };
     g_sess.cb.disconnected = [](const std::string& why) {
         feed("disconnected: " + why);
+        coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
         g_ready.clear();
         g_lobby_rtt.clear();
@@ -1698,6 +1787,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
         creations::on_player_join(p.id);
+        npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto old = g_remotes.find(p.id);
         if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
@@ -1710,7 +1800,7 @@ void setup_callbacks()
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
-        feed(p.name + " joined the pack");
+        feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
         chat_log("* " + p.name + " joined");
         g_lobby_dirty = true;
         bool own_worlds = g_adapter && g_adapter->own_worlds;
@@ -1918,10 +2008,11 @@ void setup_callbacks()
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
+        npc::on_player_leave(id);       // BUG-0125
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
-        feed(it->second.name + " left");
+        feed_kind(it->second.name + " left", "leave");
         chat_log("* " + it->second.name + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
@@ -1937,7 +2028,7 @@ void setup_callbacks()
         r.buf.push(s, H->time_seconds());
     };
     g_sess.cb.chat = [](uint8_t id, const std::string& t) {
-        feed("<" + g_sess.name_of(id) + "> " + t);
+        feed_kind("<" + g_sess.name_of(id) + "> " + t, "chat"); // never guessed from the words (BUG-0129)
         chat_log(g_sess.name_of(id) + ": " + t);
     };
 }
@@ -2056,7 +2147,7 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
 {
     uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : default_port();
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_host(port, err)) {
         SAY("host failed: %s", err.c_str());
@@ -2073,7 +2164,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
         return 1;
     }
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_join(argv[1], err)) {
         SAY("join failed: %s", err.c_str());
@@ -2099,6 +2190,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
+    SAY("status block (%d %d %d %d)\n", g_status_block[0], g_status_block[1], g_status_block[2], g_status_block[3]);
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
@@ -2145,10 +2237,16 @@ int c_status(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// BUG-0164: capped like the co-op window (24 characters); in a session the others keep the name the
+// session started with, so a change is refused there (`coop.ui` / the window: before host / join)
 int c_name(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && g_sess.role() != net::Role::None) {
+        SAY("name: %s (cannot change it in a session; leave first)", g_name.c_str());
+        return 1;
+    }
     if (argc > 1)
-        g_name = argv[1];
+        g_name = utf8::player_name(argv[1]);
     SAY("name: %s", g_name.c_str());
     return 0;
 }
@@ -2365,7 +2463,32 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("swap guard %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "sharecine")) { // tests: off = the world goes during a cinematic (BUG-0019)
+        g_share_cine_fix = strcmp(argv[2], "off") != 0;
+        SAY("sharecine %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "stallfix")) { // tests: off = the old proxy driving (BUG-0169)
+        npc::set_stall_fix(strcmp(argv[2], "off") != 0);
+        SAY("stallfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "knownfix")) { // tests: off = a leaving guest's known NPCs stay (BUG-0125)
+        npc::set_known_fix(strcmp(argv[2], "off") != 0);
+        SAY("knownfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "worldfix")) { // tests: off = worlds told apart by the avatar address only (BUG-0119)
+        game::set_world_epoch_fix(strcmp(argv[2], "off") != 0);
+        SAY("world counter %s (now %u)", argv[2], game::world_epoch());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        if (argc > 2 && !strcmp(argv[2], "ledger")) { // the other detours (BUG-0110)
+            game::debug_swap_ledger_fault();
+            SAY("the next detour that changes game state around a call leaves like a fault");
+            return 0;
+        }
         game::debug_swap_fault();
         SAY("the next NPC tick with a partner as the player leaves like a fault");
         return 0;
@@ -2431,6 +2554,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_social(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "textfix")) { // tests: off = ability keys also while the cheat console is open (BUG-0149)
+        g_text_fix = strcmp(argv[2], "off") != 0;
+        SAY("textfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "keys")) { // tests: whether the ability keys are taken now
+        SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
@@ -2769,7 +2901,7 @@ void init_ui()
 {
     coop_ui::Api a;
     a.name = [] { return g_name; };
-    a.set_name = [](const std::string& n) { g_name = n; };
+    a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = do_join;
     a.host = do_host;
     a.leave = do_leave;
@@ -2930,7 +3062,13 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}};
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
+                {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
+                {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
+                {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
+                {"lan_pages", &coop_ui::g_lan_pages_fix},
+                {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
+                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -2961,9 +3099,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
         return nullptr;
     }
-    char nm[64];
+    char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
-    g_name = nm;
+    g_name = utf8::player_name(nm);
+    if (g_name.empty())
+        g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);
@@ -3019,7 +3159,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         auto it = g_remotes.find(id);
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
-    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open(); };
+    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
@@ -3039,6 +3179,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
+    H->command_add(M, "coop.lanfake", "coop.lanfake <n> [seconds] - n made-up games on the network answer (192.0.2.x, tests, BUG-0183)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       g_lan_fake_n = argc > 1 ? std::clamp(atoi(argv[1]), 0, 64) : 0;
+                       g_lan_fake_until = net::now_ms() + (uint32_t)(argc > 2 ? atoi(argv[2]) : 60) * 1000u;
+                       SAY("fake games %d, listed %zu, kept %zu\n", g_lan_fake_n, g_disc.games(net::now_ms()).size(),
+                           g_disc.stored());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.corefix", "coop.corefix [name 0|1] - the core's fix switches (tests: 0 = the old behaviour)",
                    c_corefix, nullptr, MT);
     H->command_add(M, "coop.exittest", "coop.exittest [old] - end the game with ExitProcess(0) without Shutdown (tests, BUG-0107)",

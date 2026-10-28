@@ -50,10 +50,8 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
 {
     leave("restart");
     Endpoint ep;
-    if (!Endpoint::parse(addr, kDefaultPort, ep)) {
-        err = "cannot resolve " + addr;
+    if (!Endpoint::parse(addr, kDefaultPort, ep, err))
         return false;
-    }
     if (!sock_.open(0, &err))
         return false;
     role_ = Role::Client;

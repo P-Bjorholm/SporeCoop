@@ -5,6 +5,7 @@
 
 #include <cmath>
 
+#include "drive_plan.h"
 #include "game.h"
 #include "net/interp.h"
 
@@ -12,12 +13,12 @@ namespace drive {
 
 struct State {
     double last_cmd = 0;
-    double stuck_since = 0;
+    Track track;
     net::Vec3 last_target;
     // diagnostics (coop.status): did the last frame's nudge stay where we put it?
     net::Vec3 nudged_to;
     bool nudged = false;
-    uint32_t nudges = 0, nudges_kept = 0, teleports = 0;
+    uint32_t nudges = 0, nudges_kept = 0, teleports = 0, stalls = 0;
     float last_err = 0, last_speed = 0;
 };
 
@@ -28,8 +29,10 @@ inline float speed(const net::Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y 
 // nudge: also pull the puppet a part of the way every frame (it cannot walk faster than the
 // creature's top speed, so a walking puppet would otherwise trail by its latency)
 // snap: teleport when the puppet is this far from where it should be
+// stall: also teleport when it stays more than 2.5 m off for 3 s whatever the remote's speed (NPC
+// proxies, BUG-0169: an NPC of the host pushing against a rock reports a speed while it stands)
 inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const net::Vec3& vel, State& ds, double now,
-                 double age = 0, bool nudge = false, float snap = 8.f)
+                 double age = 0, bool nudge = false, float snap = 8.f, bool stall = false)
 {
     float a = (float)std::min(std::max(age, 0.0), 0.5);
     net::Vec3 pos{pos_in.x + vel.x * a, pos_in.y + vel.y * a, pos_in.z + vel.z * a};
@@ -41,11 +44,12 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     float sp = speed(vel);
     ds.last_err = err;
     ds.last_speed = speed(game::velocity(p));
-    if (err > snap) {
+    Plan pl = plan(ds.track, err, sp, now, snap, stall);
+    if (pl.snap) {
         game::teleport(p, pos, rot);
         ds.teleports++;
         ds.last_cmd = now;
-    } else if (sp > 0.3f || err > 0.8f) {
+    } else if (pl.walk) {
         // walk towards a point slightly ahead, faster than the remote while behind (catch up)
         net::Vec3 tgt{pos.x + vel.x * 0.25f, pos.y + vel.y * 0.25f, pos.z + vel.z * 0.25f};
         float want_sp = std::min((sp > 0.5f ? sp : 2.f) + err * 1.2f, std::max(sp, 2.f) * 2.5f);
@@ -67,17 +71,13 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     } else {
         game::set_orientation(p, rot);
     }
-    // the remote stands still but the puppet could not reach it (rocks, other creatures)
-    if (sp < 0.3f && err > 1.0f) {
-        if (ds.stuck_since == 0)
-            ds.stuck_since = now;
-        else if (now - ds.stuck_since > 1.5) {
-            game::teleport(p, pos, rot);
-            ds.teleports++;
-            ds.stuck_since = 0;
-        }
-    } else
-        ds.stuck_since = 0;
+    // the remote stands still but the puppet could not reach it (rocks, other creatures), or it
+    // stays far off and gets no closer (stall)
+    if (pl.stuck || pl.stall) {
+        game::teleport(p, pos, rot);
+        ds.teleports++;
+        ds.stalls += pl.stall;
+    }
 }
 
 } // namespace drive

@@ -1,17 +1,17 @@
 ---
 id: BUG-0159
 title: name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#138
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 116731e
+tests: make test (tests/text_tests.cpp)
 signature:
 docs:
 related: #138
@@ -52,23 +52,19 @@ Labels are centred on their anchor whatever the script.
 CONFIRMED by reading, low severity. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Move space_map's code-point counter into one shared helper (for example `overlay_text_width(const std::string&)` in coop.h, or a `SkHost` call that measures with the D3DX font: `ID3DXFont::DrawText` with `DT_CALCRECT`).
-- Use it in coop.cpp, cellsync.cpp, spacecoop.cpp and space_contracts.cpp.
+Fixed on fix/w3-sys (116731e). One helper `utf8::overlay_width` (letter cells * 9 px; a CJK
+character two cells) is used by coop.cpp `text_width` (name, owner and civ tags, marks, arrows),
+cellsync.cpp (KO label, arrow), spacecoop.cpp (SHIP DISABLED), space_contracts.cpp (the contract
+banner) and space_map.cpp. `coop.corefix text_utf8 0` does not bring the byte width back (only the
+unit test compares).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Host-side unit test for the helper:
-- `width("Ivan")` == `width("Иван")`;
-- `width("► Bob")` == 5 glyphs.
-
-FAILS with the current `text_width` (16 vs 8 bytes), PASSES with the fix.
-
-### Related
-None of the existing issues.
+Test: `tests/text_tests.cpp` in `make test`: width("Ivan") == width("Иван"), width("► Bob") = 5 cells,
+"太郎" = 4 cells.
+* FAIL with `text_tests --old` (the byte width): 3 checks.
+* PASS with the fix. Not checked in game with a screenshot.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #138.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (116731e); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

@@ -11,8 +11,14 @@ KitFix g_fix_stackdump{"stackdump", "stack / hangdump / watchdog: copy the stack
 KitFix g_fix_cheatwait{"cheatwait", "commands that wait for the main thread refuse to run on it (BUG-0065)", 1};
 KitFix g_fix_reentry{"reentry", "a fault inside the fault logger or the log is not logged again (BUG-0115)", 1};
 KitFix g_fix_hookkeep{"hookkeep", "removed hooks keep their trampolines, a grace before FreeLibrary (BUG-0132)", 1};
+KitFix g_fix_stackov{"stackov", "a stack overflow is reported from a thread waiting beforehand, nothing runs on the full stack (BUG-0056)", 1};
+KitFix g_fix_crashsafe{"crashsafe", "each step of a crash / hang report catches its own failure, the mark first (BUG-0127)", 1};
+KitFix g_fix_hookpark{"hookpark", "a hooked function's code is written once: hooks are made / removed by switching a stub (BUG-0202)", 1};
+KitFix g_fix_iniutf{"iniutf", "mods\\*.ini with text that is not ASCII are kept in UTF-16 (BUG-0142)", 1};
+KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
-std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep}; }
+std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
+                                       &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark}; }
 
 KitFix* kit_fix_find(const char* name)
 {

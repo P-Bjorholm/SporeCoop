@@ -18,6 +18,83 @@ struct HookRec {
 static std::mutex g_mu;
 static std::vector<HookRec> g_hooks;
 
+// Parked hooks (BUG-0202). Writing the 5-byte jmp over a function while another thread runs its first
+// instructions crashes that thread (it continues inside the jmp; MinHook's thread freeze is off under
+// Wine). So the code of a target is written once per process: the jmp goes to a stub of SporeKit,
+// `jmp [cur]`, and making, enabling, disabling or removing the hook only changes `cur` (one aligned
+// dword: atomic for the threads). A removed hook is parked (cur = the trampoline: the original code);
+// the next hook on that target (the same mod after a hot reload) takes the stub over.
+struct Stub {
+    void* target;
+    void* trampoline;      // MinHook's: the original first instructions, then a jmp back
+    void* volatile cur;    // where the stub jumps: the detour, or the trampoline when parked
+    SkMod* owner;          // nullptr = parked
+    uint8_t* code;         // FF 25 <&cur>: jmp dword ptr [&cur]
+};
+static std::vector<Stub*> g_stubs;
+
+static uint8_t* stub_code()
+{
+    static uint8_t* page;
+    static size_t used;
+    if (!page || used + 8 > 4096) {
+        page = (uint8_t*)VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        used = 0;
+        if (!page)
+            return nullptr;
+    }
+    uint8_t* c = page + used;
+    used += 8;
+    return c;
+}
+
+static Stub* stub_of(void* target)
+{
+    for (Stub* s : g_stubs)
+        if (s->target == target)
+            return s;
+    return nullptr;
+}
+
+// the hook through a stub; 0 or a MinHook status
+static int stub_hook(SkMod* mod, void* target, void* detour, void** original)
+{
+    if (Stub* s = stub_of(target)) {
+        if (s->owner)
+            return MH_ERROR_ALREADY_CREATED;
+        s->owner = mod;
+        *original = s->trampoline;
+        s->cur = detour; // no code written: a thread in the function's first bytes is not hurt
+        return 0;
+    }
+    auto* s = new Stub{target, nullptr, nullptr, mod, stub_code()};
+    if (!s->code) {
+        delete s;
+        return MH_ERROR_MEMORY_ALLOC;
+    }
+    s->code[0] = 0xFF;
+    s->code[1] = 0x25;
+    void* volatile* slot = &s->cur;
+    memcpy(s->code + 2, &slot, 4);
+    s->cur = detour;
+    MH_STATUS st = MH_CreateHook(target, s->code, &s->trampoline);
+    if (st == MH_OK && (st = MH_EnableHook(target)) != MH_OK)
+        MH_RemoveHook(target);
+    if (st != MH_OK) {
+        delete s; // its 8 bytes of code stay unused
+        return (int)st;
+    }
+    *original = s->trampoline;
+    g_stubs.push_back(s);
+    return 0;
+}
+
+static void stub_park(Stub* s)
+{
+    s->cur = s->trampoline;
+    s->owner = nullptr;
+}
+
 bool hooks_init()
 {
     MH_STATUS s = MH_Initialize();
@@ -33,6 +110,16 @@ int hook_create(SkMod* mod, void* target, void* detour, void** original)
     if (!target)
         return -1;
     std::lock_guard<std::mutex> lk(g_mu);
+    if (fixed(g_fix_hookpark) || stub_of(target)) {
+        int r = stub_hook(mod, target, detour, original);
+        if (r) {
+            logf(mod, SK_ERROR, "hook_create %p failed: %s", target, MH_StatusToString((MH_STATUS)r));
+            return r;
+        }
+        g_hooks.push_back({mod, target, detour, true});
+        logf(mod, SK_DEBUG, "hooked %p %s (parked stub)", target, symbols_reverse((uintptr_t)target).c_str());
+        return 0;
+    }
     MH_STATUS s = MH_CreateHook(target, detour, original);
     if (s != MH_OK) {
         logf(mod, SK_ERROR, "hook_create %p failed: %s", target, MH_StatusToString(s));
@@ -55,6 +142,11 @@ int hook_enable(SkMod* mod, void* target, int enable)
     std::lock_guard<std::mutex> lk(g_mu);
     for (auto& h : g_hooks)
         if (h.target == target && h.mod == mod) {
+            if (Stub* st = stub_of(target)) {
+                st->cur = enable ? h.detour : st->trampoline;
+                h.enabled = enable != 0;
+                return 0;
+            }
             MH_STATUS s = enable ? MH_EnableHook(target) : MH_DisableHook(target);
             if (s == MH_OK)
                 h.enabled = enable != 0;
@@ -68,6 +160,11 @@ int hook_remove(SkMod* mod, void* target)
     std::lock_guard<std::mutex> lk(g_mu);
     for (size_t i = 0; i < g_hooks.size(); i++)
         if (g_hooks[i].target == target && g_hooks[i].mod == mod) {
+            if (Stub* st = stub_of(target)) {
+                stub_park(st);
+                g_hooks.erase(g_hooks.begin() + i);
+                return 0;
+            }
             MH_SetKeepTrampolines(fixed(g_fix_hookkeep));
             MH_DisableHook(target);
             MH_STATUS s = MH_RemoveHook(target);
@@ -88,8 +185,12 @@ int hooks_remove_all(SkMod* mod)
     int n = 0;
     for (size_t i = 0; i < g_hooks.size();) {
         if (g_hooks[i].mod == mod) {
-            MH_DisableHook(g_hooks[i].target);
-            MH_RemoveHook(g_hooks[i].target);
+            if (Stub* st = stub_of(g_hooks[i].target))
+                stub_park(st);
+            else {
+                MH_DisableHook(g_hooks[i].target);
+                MH_RemoveHook(g_hooks[i].target);
+            }
             g_hooks.erase(g_hooks.begin() + i);
             n++;
         } else
@@ -139,7 +240,9 @@ static DWORD WINAPI churn_thread(void*)
     return 0;
 }
 
-void hooks_churn_test(int rounds, int threads, std::string& out)
+// nogate: after the first round the hook is made while the threads run through the function
+// (BUG-0202; the first hook of a process is made before anything calls it, like at the game start)
+void hooks_churn_test(int rounds, int threads, std::string& out, bool nogate)
 {
     g_churn_mod.name = "kit.test";
     g_churn_ptr = churn_target;
@@ -153,8 +256,8 @@ void hooks_churn_test(int rounds, int threads, std::string& out)
             ts.push_back(t);
     int made = 0;
     for (int r = 0; r < rounds; r++) {
-        g_churn_go = false;
-        for (int w = 0; w < 2000 && g_churn_parked.load() < (int)ts.size(); w++)
+        g_churn_go = nogate && r > 0;
+        for (int w = 0; w < 2000 && !g_churn_go.load() && g_churn_parked.load() < (int)ts.size(); w++)
             Sleep(1);
         void* orig = nullptr;
         if (hook_create(&g_churn_mod, (void*)churn_target, (void*)churn_detour, &orig) == 0)
@@ -171,8 +274,9 @@ void hooks_churn_test(int rounds, int threads, std::string& out)
     for (HANDLE t : ts)
         CloseHandle(t);
     char b[160];
-    snprintf(b, sizeof b, "hookchurn: %d rounds (%d hooked), %u calls on %d threads, trampolines %s", rounds, made,
-             g_churn_calls.load(), (int)ts.size(), fixed(g_fix_hookkeep) ? "kept" : "freed");
+    snprintf(b, sizeof b, "hookchurn: %d rounds (%d hooked%s), %u calls on %d threads, trampolines %s, hooks %s", rounds,
+             made, nogate ? ", threads running" : "", g_churn_calls.load(), (int)ts.size(),
+             fixed(g_fix_hookkeep) ? "kept" : "freed", fixed(g_fix_hookpark) ? "parked" : "rewritten");
     out = b;
 }
 

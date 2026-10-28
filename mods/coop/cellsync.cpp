@@ -12,6 +12,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/utf8.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 
@@ -796,9 +797,11 @@ static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
         return o_NoAttack(a, b);
     uint32_t& av = F<uint32_t>(g, 0x411C);
     uint32_t keep = av;
+    size_t mark = game::swap_open(game::swap_undo_u32, &av, keep, "cell avatar index"); // BUG-0110
     av = F<uint32_t>(b, 0); // single-threaded cell step: restored right after
     bool r = o_NoAttack(a, b);
     av = keep;
+    game::swap_close(mark);
     return r;
 }
 
@@ -1509,7 +1512,7 @@ static std::string bar(float f)
     return s;
 }
 
-static int text_w(const std::string& s) { return (int)s.size() * 9; }
+static int text_w(const std::string& s) { return utf8::overlay_width(s); } // cells, not bytes (BUG-0159)
 
 static void draw_ko(uint8_t* c, const std::string& name, float left, float hold, double now, int sw, int sh)
 {

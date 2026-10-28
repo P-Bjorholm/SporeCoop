@@ -725,3 +725,36 @@ nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`
   (once per frame, outside every NPC tick) puts the real avatar back and takes the lent +0xE84 off
   the puppet (BUG-0110; `swaps_restored=` in `coop.npc`). Seen without it (a forced leave,
   `coop.npc swapfault`): +0x54 stayed the puppet and `ai_swaps` stopped growing.
+
+## World identity, the cheat console and proxy driving (2026-10-28, fix/w3-creature)
+<a id="creature-world-epoch"></a>
+
+* ✔ The avatar's address is no world identity (BUG-0119): the game pools creature objects, so the
+  avatar of a reloaded world may have the old address. `game::world_epoch()` counts creature worlds:
+  +1 when the creature stage is entered (every load and every received world passes the galaxy
+  menu and kLoad; the editors kEdit / kEditor keep it) and when another avatar replaces the avatar
+  inside the stage. Code that remembers "this world" keeps the counter with the avatar (creations'
+  own-creature swap, the guest's first-second proxy wait, the deferred destroys). Seen with a
+  simulated reuse (`coop.creations sameaddr`, `coop_world_reload.py`): without the counter the
+  guest kept the host's species after the load.
+* ✔ A share of the host's world after a reload: the guest's own creature is applied 3.1 s after
+  its avatar appears (the 3 s settle wait of `creations.cpp`), lane 5.
+* ✔ Cheat console (GOG 2024): `AppShortcuts_OnKeyDown` 0x814180 opens it on vk 0x43 with modifiers
+  exactly 3 (shift + ctrl from GetKeyState at 0x848620), and only when `IWindowManager::Get`
+  (0x67CA60, `[0x15FCC4C]`) vt 0x84 returns null; that method returns the manager's +0x82C (a
+  window; on the lane games a full-screen window with control id 0xFFFFFFFF, meaning not found).
+  It then calls `ICheatManager::Get` (0x67DDE0) vt 0x44 with 1 (0x67E730: calls vt 0x20(arg) of
+  every listener in the list at +0x4C). Ctrl+Shift+C does not close it.
+* ~ The console's window, seen once (2026-10-28): container control id 0x014A4606, rect
+  [0 400 800 600], flags 0x47; a text edit 0x014A4608 (the typed text) and an output area
+  0x014A4607. It is not in the UI tree while the console is closed. Injected Ctrl+Shift+C opened it
+  once on a lane game and never again (6 tries, also on a fresh game and with +0x82C cleared);
+  calling vt 0x44(1) directly did not open it either. Why: not found (BUG-0149).
+* ✔ Detours that change game state around a call into the game (NPCTickAI, NoAttack, SelectUI,
+  StageMsg, civ building damage) register their undo in a ledger (`swap_ledger.h`); whatever is
+  still open once per frame is undone (BUG-0110).
+* ~ NPC proxy driving (`drive::step`, BUG-0169): the snap teleport is at 8 m and the stuck
+  teleport needs the host's NPC under 0.3 m/s, so a host NPC that pushes against something (a speed
+  reported, a fixed position) kept its proxy walking towards a spot it could not reach. NPC proxies
+  now also teleport after 3 s more than 2.5 m off without getting 0.5 m closer (then 10 s quiet).
+  Inferred from code, not seen in the game.

@@ -47,6 +47,9 @@ static std::atomic<double> g_last_t{-1};
 
 bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t)
 {
+    DWORD so_tid;
+    if (exceptions_stack_overflow(er, ctx, &so_tid, t) && *t >= g_last_t.load())
+        return true; // a stack overflow is never in g_last_* (BUG-0056)
     if (g_last_t.load() < 0)
         return false;
     std::lock_guard<std::mutex> lk(g_mu);
@@ -77,6 +80,26 @@ static bool in_our_code(uintptr_t eip, std::string& name)
 static std::vector<ExcRec> g_recs; // unique by (code, eip)
 static std::atomic<uint32_t> g_total{0};
 
+// A stack overflow (BUG-0056): the faulting thread has about one page of stack left. The handler
+// only copies into these statics (no lock, no allocation, no log) and the crash report thread
+// formats them on its own stack (diag.cpp).
+static volatile LONG g_so_taken;
+static EXCEPTION_RECORD g_so_er;
+static CONTEXT g_so_ctx;
+static volatile DWORD g_so_tid;
+static volatile double g_so_t = -1;
+
+bool exceptions_stack_overflow(EXCEPTION_RECORD* er, CONTEXT* ctx, DWORD* tid, double* t)
+{
+    if (g_so_t < 0)
+        return false;
+    *er = g_so_er;
+    *ctx = g_so_ctx;
+    *tid = g_so_tid;
+    *t = g_so_t;
+    return true;
+}
+
 // The handler runs at the first chance of every fault, on the faulting thread, maybe inside a lock
 // of SporeKit (BUG-0115):
 //  * a fault inside the handler itself, or while this thread holds g_mu (SK_TF_IN_EXC), is not
@@ -95,6 +118,16 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_STACK_OVERFLOW &&
         code != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
+    if (code == EXCEPTION_STACK_OVERFLOW && fixed(g_fix_stackov)) {
+        if (InterlockedCompareExchange(&g_so_taken, 1, 0) == 0) {
+            memcpy(&g_so_er, ep->ExceptionRecord, sizeof g_so_er);
+            memcpy(&g_so_ctx, ep->ContextRecord, sizeof g_so_ctx);
+            g_so_tid = GetCurrentThreadId();
+            g_so_t = now_seconds();
+        }
+        g_total++;
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
     bool fix = fixed(g_fix_reentry);
     if (fix && (thread_flags() & SK_TF_IN_EXC))
         return EXCEPTION_CONTINUE_SEARCH;
@@ -209,6 +242,12 @@ std::string exceptions_report()
     std::lock_guard<std::mutex> lk(g_mu);
     ThreadFlag tf(SK_TF_IN_EXC);
     std::string s = "total faults: " + std::to_string(g_total.load()) + "\n";
+    if (g_so_t >= 0) {
+        char b[160];
+        snprintf(b, sizeof b, "0xC00000FD stack overflow at 0x%08X tid=%lu%s esp=%08X\n", (unsigned)g_so_ctx.Eip,
+                 g_so_tid, g_so_tid == main_thread_id() ? " (main)" : "", (unsigned)g_so_ctx.Esp);
+        s += b;
+    }
     for (auto& r : g_recs) {
         char b[512];
         snprintf(b, sizeof b, "0x%08lX x%u at 0x%08X %s data=0x%08X tid=%lu%s\n  stack:", r.code, r.count,

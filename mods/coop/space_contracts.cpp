@@ -25,6 +25,7 @@
 #include <set>
 
 #include "game.h"
+#include "net/utf8.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 
@@ -1215,7 +1216,8 @@ void draw_overlay()
         snprintf(b, sizeof b, tr("CONTRACT  survey %d/%d stars  %s", "КОНТРАКТ  разведка %d/%d звёзд  %s"), d,
                  (int)g.targets.size(), mmss(left).c_str());
     }
-    H->overlay_text(sw / 2 - (int)strlen(b) * 9 / 2, 70, left < 60 ? 0xFFFF8040 : 0xFFFFD040, b);
+    H->overlay_text(sw / 2 - utf8::overlay_width(b) / 2, 70, // cells, not bytes (BUG-0159)
+                    left < 60 ? 0xFFFF8040 : 0xFFFFD040, b);
 }
 
 std::string status()

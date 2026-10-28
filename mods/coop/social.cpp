@@ -335,9 +335,18 @@ static void guest_tick(double now)
     // the stance: GetAbilityMode 0 social, 1 combat
     bool social_stance = a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0;
     bool on = g_engaged >= 0 && social_stance && !(C.blocked && C.blocked());
+    // BUG-0149: bit 0 of GetAsyncKeyState ("pressed since the last call") also counts a digit typed
+    // in another window: it is taken only while the game was in front since the last poll
+    HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
+    bool front = !gw || GetForegroundWindow() == gw;
+    static bool s_was_front = true;
+    SHORT mask = front && s_was_front ? 0x8001 : 0x8000;
+    if (!front)
+        on = false;
+    s_was_front = front;
     for (int k = 0; k < 4; k++) {
         SHORT st = GetAsyncKeyState('1' + k); // bit 0: pressed since the last call (a short tap)
-        bool down = (st & 0x8001) != 0;
+        bool down = (st & mask) != 0;
         if (down && !g_keys[k] && on)
             act(k);
         g_keys[k] = down;

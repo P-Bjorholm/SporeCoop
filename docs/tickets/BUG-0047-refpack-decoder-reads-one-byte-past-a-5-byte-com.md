@@ -1,19 +1,19 @@
 ---
 id: BUG-0047
 title: RefPack decoder reads one byte past a 5-byte compressed record
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#25
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418
+tests: net_tests test_refpack_short (ASan in test-asan)
 signature:
-docs:
+docs: docs/06-testing.md#testing-net-w3
 related: #25
 ---
 
@@ -66,14 +66,15 @@ With `n == 5`, `src[5]` is read. Afterwards `o = 6 > n`, so the decode loop does
 CONFIRMED by harness (ASan). Not verified: whether any real package has such an entry. Network reachability was checked by reading: received creation bundles are written raw with `dbpf::write` and parsed by the game, not by this decoder.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-`if (src[0] & 0x80) { if (n < 6) return false; size = be32(src + 2); o = 6; }`. This is a bounds check, so no switch is needed.
+`dbpf::refpack_decode`: with the 4-byte-size flag the header needs 6 bytes; `n < 6` returns false
+before `be32(src + 2)`. A bounds check, no switch.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tests/net_tests.cpp` `test_refpack_untrusted`: add the 5-byte case `{0x90, 0xFB, 0, 0, 0}` copied into an exact-size heap buffer. With `net_tests` built under ASan (see the use-after-free issue for adding an ASan build to `make test`), it fails on main and passes with the fix. Also CHECK that the result is `false`.
+Unit test `test_refpack_short`: the 5-byte record `{0x90, 0xFB, 0, 0, 0}` in an exact-size heap
+buffer, CHECK the result is false.
+- FAIL: the ASan build of net_tests with main's `dbpf.cpp` (built by hand, 2026-10-28):
+  `AddressSanitizer: heap-buffer-overflow ... READ of size 1`.
+- PASS: `make test` (`net_tests` and `net_tests_asan`).
 
 ### Related
 - `test_refpack_untrusted` (the existing untrusted-input checks of the same decoder).
@@ -82,3 +83,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #25.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

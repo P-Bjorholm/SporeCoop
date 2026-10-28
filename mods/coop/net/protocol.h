@@ -25,10 +25,10 @@ enum MsgType : uint8_t {
     MSG_PLAYER_LEAVE = 5,
     MSG_PLAYER_STATE = 6,
     MSG_CHAT = 7,
-    MSG_PING = 8,
-    MSG_PONG = 9,
+    MSG_PING = 8,       // unused (BUG-0144): nothing sends it, the host answers one; RTT comes from acks
+    MSG_PONG = 9,       // unused, the answer to MSG_PING
     MSG_BYE = 10,
-    MSG_ABILITY = 11,  // M2
+    MSG_ABILITY = 11,  // reserved, never sent or handled (BUG-0144)
     MSG_DAMAGE = 12,   // M2
     MSG_NPC_STATE = 13, // M2
     MSG_WORLD_OFFER = 14, // host -> guest: a save folder follows
