@@ -216,7 +216,8 @@
   `coop_space_diplo_mirror.py`.
 - **Players with the same name are told apart**: the host adds " 2", " 3" to a name already in the
   session, so two "Player" guests no longer share one allies mirror, rivals relation or budget
-  (BUG-0141). Test: `make test` (net_tests).
+  (BUG-0141). Test: `make test` (net_tests). A player who rejoins right after a crash keeps its
+  name: its old silent entry is replaced (BUG-0209). Test: `coop_nest_species.py`.
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

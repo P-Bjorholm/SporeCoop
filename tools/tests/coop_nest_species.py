@@ -197,11 +197,13 @@ def main():
         if twoinst.host_frame(host) == f1:
             host.call('key enter')
     ck('saved' in out, f'the host saved ({out.strip()})')
-    def loads():
-        return guest.call('log 400')['out'].count('world: loading ')
-    n0 = loads()
+    def last_load():  # the newest load line (a count in the last 400 lines stops growing once
+        # the older lines scroll out of that window: BUG-0209)
+        lines = [l for l in guest.call('log 400')['out'].splitlines() if 'world: loading ' in l]
+        return lines[-1] if lines else ''
+    l0 = last_load()
     host.call('coop.share')
-    loaded = wait(lambda: loads() > n0, 120)
+    loaded = wait(lambda: last_load() not in ('', l0), 120)
     ok = loaded and wait_in(host, guest)
     ck(ok, 'the guest loaded the host\'s world again')
     time.sleep(6)

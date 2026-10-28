@@ -45,6 +45,9 @@ public:
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
     // the same (default) name. false = the old behaviour (tests: coop.corefix unique_names 0)
     bool unique_names = true;
+    // a new player with the name of an entry silent for 2 s replaces it (a rejoin after a crash)
+    // instead of getting "name 2". false = rename (tests: coop.fix core.rejoin_name off, BUG-0209)
+    bool rejoin_by_name = true;
     uint32_t world = 0;      // host world id (save hash), sent in WELCOME
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network

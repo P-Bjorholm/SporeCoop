@@ -1,17 +1,17 @@
 ---
 id: BUG-0209
 title: nest_species fails on main: the guest does not load the host's world a second time after coop.share
-status: open
-kind: test
+status: fixed
+kind: bug
 stage: Creature
 reported: 2026-10-28
 source: lab run on lane 6, fix/w4-registry and main 7874654
 role: 
 versions: main 7874654
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: main
 commits:
-tests:
+tests: tools/tests/coop_nest_species.py (suite nest_species)
 signature:
 docs:
 related:
@@ -33,13 +33,24 @@ BUG-0157 / BUG-0019 (one save for waiting shares, no load inside an editor, the 
 cinematic).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed in the host's log (lab 20261028-041508): the test restarts the guest's game, so the guest
+sends no BYE and its old entry stays until the 30 s timeout. The guest rejoins before that, and the
+unique names of BUG-0141 call it "Bob 2". The test (and any name-keyed state of the player) waits
+for "Bob". A player whose game crashed and who rejoins at once got the same new name. The guest did
+load the world again; the count of load lines in `log 400` was a second, smaller problem (it stops
+growing once older lines scroll out).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+The host drops an entry of the same name that has been silent for 2 s when a new player with that
+name says HELLO (a rejoin), so the name stays; a live player of that name still makes the newcomer
+"name 2". Switch `coop.fix core.rejoin_name off` (also `coop.corefix rejoin_name 0`). The test
+compares the newest load line instead of counting them.
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+FAIL with `SPORE_FIX_OFF=core.rejoin_name` (lane 2, the guest is not back as Bob). PASS:
+lab 20261028-042319 (nest_species, rejoin_loop, rejoin_mobile, creations_rejoin, fix_registry,
+multi3, net_robust, civ_shared: 8/8).
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28: fixed on main (orchestrator, after the wave 4 merge).

@@ -1798,6 +1798,7 @@ bool g_id_reuse_fix = true; // coop.corefix id_reuse 0: a joining player inherit
 COOP_FIX("session.end", "BUG-0033", g_session_end_fix, "core: every session end runs the same cleanup (coop.sessionfix)");
 COOP_FIX("core.id_reuse", "BUG-0076", g_id_reuse_fix, "core: a joining player does not inherit an old entry of its id");
 COOP_FIX("core.unique_names", "BUG-0141", g_sess.unique_names, "net: players with the same name get unique names");
+COOP_FIX("core.rejoin_name", "BUG-0209", g_sess.rejoin_by_name, "net: a rejoin after a crash replaces the silent entry of its name");
 COOP_FIX("net.big_reliable", "BUG-0034", net::g_fix.big_reliable, "net: reliable messages above one packet are split, not stuck");
 COOP_FIX("net.state_roster", "BUG-0109", net::g_fix.state_roster, "net: a guest ignores the state of a player not in its roster");
 COOP_FIX("net.offset_window", "BUG-0133", net::g_fix.offset_window, "net: the clock offset forgets an old minimum within seconds");
@@ -3195,7 +3196,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}, {"rejoin_name", &g_sess.rejoin_by_name},
                 {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
                 {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
                 {"async_resolve", &net::g_fix.async_resolve},

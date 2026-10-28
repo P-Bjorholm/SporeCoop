@@ -413,11 +413,21 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.id = alloc_id();
             p.name = h.name.empty() ? "guest" + std::to_string(p.id) : h.name;
             if (unique_names) {
+                // a player who rejoins after its game died (no BYE) still has its old entry until
+                // that times out: an entry of this name silent for 2 s is that player, it goes now
+                // and the name stays (BUG-0209)
+                if (rejoin_by_name)
+                    for (auto& o : peers_)
+                        if (o->accepted && o.get() != &p && !o->bye && o->name == p.name &&
+                            this->now() - o->conn.last_recv_ms > 2000) {
+                            o->bye = true;
+                            logf(cb, "player %u (%s) rejoins: its old entry is dropped", o->id, o->name.c_str());
+                        }
                 auto taken = [&](const std::string& n) {
                     if (n == my_name_)
                         return true;
                     for (auto& o : peers_)
-                        if (o->accepted && o.get() != &p && o->name == n)
+                        if (o->accepted && o.get() != &p && !o->bye && o->name == n)
                             return true;
                     return false;
                 };
