@@ -39,6 +39,9 @@ add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  #
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game
 add('vote', P + 'coop_vote.py', minutes=5)
+add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its session and its stage (BUG-0043)
+add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
+add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('notify', P + 'coop_notify.py', minutes=3)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
