@@ -1,19 +1,19 @@
 ---
 id: BUG-0091
 title: a partner's animation or leave in the frame after a world teardown can touch a freed puppet
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#69
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-creature
+commits: d624824, 28cc753
+tests: anim_teardown
 signature:
-docs:
+docs: docs/re/creature.md#creature-kill-list
 related: #69
 ---
 
@@ -53,27 +53,34 @@ No remote message can reach a puppet that is not alive in the current world.
 PLAUSIBLE: the ordering is CONFIRMED by reading. Not verified: that the game frees the creature objects before the next Present when it leaves the stage (very likely for a load; less clear for the editor, where the world stays), and how often an animation message falls into that frame.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed (fix/w1-creature), behind `coop.framefix 0|1` (0 = the old order and unchecked calls):
 
-- In `on_frame`, refresh `g_mode` / `g_adapter` / `g_local` and run the `g_last_avatar` / `forget_puppets` check before `g_sess.update()`. Keep the per-frame order of the rest unchanged.
-- Also guard the event paths: in `on_remote_anim` require `it->second.puppet_adapter == g_adapter && game::creature_listed(puppet)`. Give the creature adapter an `alive` (`creature_listed && !is_destroyed`) so `drive_puppet`'s existing check covers creature puppets too.
-- Keep the old order behind `coop.fix frame_order off`.
+* `on_frame` runs the avatar check (`avatar_change_check`: the local entity of the current mode
+  differs from `g_last_avatar` -> `forget_puppets`, `npc::on_world_change`, `tribe::on_world_change`)
+  before `g_sess.update()` as well as at its old place, so the messages of a frame never see the
+  puppets of a torn-down world.
+* `on_remote_anim` and `despawn(Remote&)` touch a creature (or adventure) puppet only while the game
+  lists it (`game::creature_listed`); otherwise the animation is dropped and the puppet is only
+  unregistered. Counters in `coop.framefix` (anims / despawns dropped and made on an unlisted puppet).
+* Not done: an `alive()` for the creature adapter (drive_puppet every frame): `creature_listed`
+  walks the whole object list, too costly per remote per frame; the teardown case is covered by the
+  ordering.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_anim_teardown.py` (suite `anim_teardown`): the host sends its avatar's
+animation messages 10 times a second (`coop.overlay animsend F37DB906`: the same MSG_ANIM a real
+animation sends; ability keys without a target play none) while the guest leaves for the galaxy
+menu (`coop.menu`) and gets the host's world back, 6 rounds (~11 s each). The guest counts the
+animation calls on a puppet the game no longer lists.
 
-`tools/tests/coop_anim_reload.py` (two instances, creature fixture):
-- The host loops attack animations (`coop.npc hosthit` / `coop.team hit` on an NPC near the host).
-- The guest gets the world 30 times (`coop.share` on the host), then plays for 10 s.
-- Assert both games are alive with no crash report (the lab's crash check counts), and the guest shows the host's puppet again with the host's animation (`coop.status` remote line plus `anims_played` rising after the last load).
-
-It must fail on main (crash within the rounds) and pass with the fix. If it does not fail on main within 30 rounds, the test proves nothing (CLAUDE.md section 3): raise the rounds or force the window with a debug delay.
-
-### Related
-- BUG-0006 (stale cell pool at session end), BUG-0018 (freed creature after a migration).
-- docs/re/creature.md (puppet lifetime).
-- CLAUDE.md section 2 "Object lifetime".
+* FAIL without the fix (`--without-fix` = `coop.framefix 0`, lane 4, 2026-10-27): 15 animations
+  were played on freed puppets in 6 rounds (3, 5, 8, 9, 12, 15 after each round); no fault (the
+  freed memory was still mapped), which is why players saw it only sometimes. Direct run, no lab
+  directory.
+* PASS with the fix twice: lab run out/lab/20261027-185409 (`anim_teardown#1`, `#2`): 0 made, and
+  0 dropped: the ordering alone already forgot the puppet; the list checks are the second layer.
 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #69.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-creature (avatar check before the messages, list checks, `coop.framefix`), test anim_teardown FAIL without (15 anims on freed puppets) / PASS with.

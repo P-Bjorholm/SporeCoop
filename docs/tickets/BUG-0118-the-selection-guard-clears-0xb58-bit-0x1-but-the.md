@@ -1,19 +1,19 @@
 ---
 id: BUG-0118
 title: the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash)
-status: open
+status: not-reproduced
 kind: crash
 stage: Creature
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#97
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: 
+branch: fix/w1-creature
+commits: b4dc4dd
+tests: select
 signature:
-docs:
+docs: docs/re/creature.md#creature-selection-gate
 related: #97
 ---
 
@@ -48,35 +48,42 @@ Ghidra checklist (GOG 2024 0xB6C970, GOG 2016 0xB6C930):
 Selecting any puppet or proxy never reads a null `+0xE84`. The guard covers exactly the bit (or bits) the game tests, and the docs and `.sym` agree on what 0x1, 0x2 and 0x100 mean.
 
 ## Root cause
-**What happens (if the gate is 0x2)**
+**The suspected gate does not exist.** GOG 2024 `CreatureSelectionUI` 0xB6C970, disassembled with
+objdump on 2026-10-27:
 
-1. The guest attacks an NPC proxy, which has `+0xE84 == null`. The attack posts 0xD335362C, and `CreatureStageEventHandler` 0xD47FC0 runs. `h_StageMsg` lends a blank `+0xE84` during the handler. The handler then sets `+0xB58 |= 2` on the creature (one event per creature). The blank pointer is taken away again afterwards.
-2. The player clicks the proxy, which is the normal way to target it.
-3. `CreatureSelectionUI` sees `+0xB58 & 2` and reads `(null)+0x32C`. `h_SelectUI` does nothing because `& 1` is clear. Result: an access violation at 0xB6CA11 (GOG 2024).
+```
+b6c9ba  call 0xc0b8d0        ; adult (+0xB34 == 1)
+b6c9c3  mov eax,[esi+0xb58]
+b6c9c9  test al,0x2
+b6c9cb  jne 0xb6ca37         ; mask 0x2 set: skip the read
+b6c9cd  test al,0x1
+b6c9cf  je 0xb6ca37          ; mask 0x1 clear: skip the read
+b6c9d1  ... vt 0xD0, vt 0xD4 both false
+b6ca0c  call 0xc0c300        ; mov eax,[ecx+0xE84]
+b6ca11  mov ecx,[eax+0x32c]  ; the crash site
+```
 
-The same can happen on the host with a partner's puppet that the host attacked or socialised with.
+The read needs mask 0x1 **set** and mask 0x2 **clear**. A set 0x2 is an early-out, so the guard in
+`h_SelectUI` (hides 0x1 when +0xE84 is null) covers exactly the path that reads +0xE84. The rest of
+the function and its direct callees do not touch +0xE84. The step-1 scenario of the report (the
+stage handler sets 0x2 after an attack, then a click crashes) cannot happen this way: with 0x2 set
+the game skips the read.
 
-### Confidence
-The contradiction is CONFIRMED by reading the code, both `.sym` files and docs/re/creature.md. A second reviewer verified it. The crash path is PLAUSIBLE and not yet run. Medium severity. The guard's history is not recoverable (it is in the squashed root commit).
+What was wrong is the wording. The `.sym` note "test al,2, then call 0xC0C300" read like a gate on
+0x2, and the code comment called mask 0x1 "pack member" (the pack is 0x100).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-1. First record a CORRECTION in docs/re/creature.md (and the `.sym` comment) with the Ghidra evidence, per CLAUDE.md.
-2. Then make the guard clear (and restore) the bit the game tests, probably 0x2, or both 0x1 and 0x2 if both paths reach the read.
-3. A sturdier alternative: lend the blank `+0xE84` object during `CreatureSelectionUI`, as `h_StageMsg` does, instead of hiding a flag bit.
-4. Rename the comment ("pack member") to what the bit really is.
+No code change needed. Corrected the docs (commit b4dc4dd): the CORRECTION and the evidence are in
+docs/re/creature.md#creature-selection-gate, the `.sym` note of 0xB6C970 in
+`overrides_dc04aee5.sym` now gives the real condition, and the coop.cpp comment of `h_SelectUI` names
+the mask instead of "pack member". The frozen GOG 2016 file is unchanged (its "bit 1" means mask 0x1).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Extend `coop_select.py`: the guest first attacks an NPC proxy (or the host attacks or socialises with the partner's puppet), asserts in the game's memory that `+0xB58 & 2` is now set and `+0xE84` is null, then clicks it. It asserts that the game is still running and that `exc` reports no fault.
-- FAILS on main if the gate is 0x2: a fault at 0xB6CA11.
-- PASSES with the fix.
-
-### Related
-#44, #22 (proxies and recycled creature objects).
+Static only (the disassembly above). The existing `select` test (it clicks the partner's puppet
+with mask 0x1 set and +0xE84 null and checks that the guard ran) passed in the smoke run on lane 4 (out/lab/20261027-190036).
+No new test: there is no failing case to reproduce.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #97.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: checked on fix/w1-creature: 0x2 is the early-out, 0x1 the gate; the guard is right. Docs and `.sym` corrected; closed as not-reproduced.

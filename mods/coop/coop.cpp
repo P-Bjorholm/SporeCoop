@@ -219,10 +219,32 @@ uint32_t build_id()
     return (uint32_t)strtoul(b.substr(0, 8).c_str(), nullptr, 16);
 }
 
+// BUG-0091: a creature puppet can be freed by the game before the mod notices (a world teardown
+// between two frames: the messages queued meanwhile are handled first). Animations and despawns
+// only touch a creature puppet that is still in the game's object list. `coop.framefix 0` restores
+// the old order and the unchecked calls (tests).
+bool g_frame_fix = true;
+// calls that met a puppet the game no longer lists: dropped (fix on) / made anyway (framefix 0)
+uint32_t g_anims_dropped = 0, g_anims_unlisted = 0, g_despawns_dropped = 0, g_despawns_unlisted = 0;
+bool creature_puppet(const modes::Adapter* a)
+{
+    return a && (a == modes::for_mode(modes::kCreature) || a == modes::for_mode(modes::kScenario));
+}
+
 void despawn(Remote& r)
 {
-    if (r.puppet && r.puppet_adapter)
-        r.puppet_adapter->despawn(r.puppet);
+    if (r.puppet && r.puppet_adapter) {
+        if (creature_puppet(r.puppet_adapter) && !game::creature_listed(r.puppet)) {
+            (g_frame_fix ? g_despawns_dropped : g_despawns_unlisted)++;
+            LOG("puppet of %s is gone already (%p): forgotten%s", r.name.c_str(), r.puppet,
+                g_frame_fix ? "" : ", destroyed anyway (framefix 0)");
+            if (g_frame_fix)
+                game::puppet_unregister(r.puppet);
+            else
+                r.puppet_adapter->despawn(r.puppet);
+        } else
+            r.puppet_adapter->despawn(r.puppet);
+    }
     r.puppet = nullptr;
     r.puppet_adapter = nullptr;
 }
@@ -463,9 +485,11 @@ void start_vote(void* req, const std::string& text)
     coop_ui::open(true);
 }
 
-// Selecting a creature in the creature stage: for a member of the player's pack (+0xB58 bit 1) the
-// game opens the pack panel with data from +0xE84, which our puppets and proxies do not have (the
-// game crashed reading (+0xE84)->+0x32C). Such a creature is not a pack member while selected.
+// Selecting a creature in the creature stage: CreatureSelectionUI reads (+0xE84)->+0x32C only for
+// an adult with +0xB58 mask 0x1 set and mask 0x2 clear (GOG 2024 0xB6C9C3..0xB6CA11: `test al,2`
+// skips the read, `test al,1` gates it; then vt 0xD0 / 0xD4 false). Our puppets and proxies have no
+// +0xE84 object (the game crashed there), so mask 0x1 is hidden for the call. Mask 0x1 is not the
+// pack (that is 0x100); docs/re/creature.md#creature-selection-gate (BUG-0118).
 typedef void(SK_CDECL* SelectUI_t)(void*, void*, void*, uint32_t, float);
 SelectUI_t o_SelectUI;
 unsigned g_select_guards; // selections that needed the guard (tests)
@@ -1086,6 +1110,22 @@ void own_editor_tick(double now)
         nullptr);
 }
 
+// the local player's entity changed (a load, the editor, the stage left): the puppets and proxies
+// belong to the old world
+void avatar_change_check()
+{
+    const modes::Adapter* a = modes::for_mode(game::mode_id());
+    void* local = a ? a->local() : nullptr;
+    if (local == g_last_avatar)
+        return;
+    if (g_last_avatar) {
+        forget_puppets();
+        npc::on_world_change();
+        tribe::on_world_change();
+    }
+    g_last_avatar = local;
+}
+
 void on_frame(void*, int, void*)
 {
     double now = H->time_seconds();
@@ -1093,6 +1133,8 @@ void on_frame(void*, int, void*)
     diag_tick(now);
     notify::tick(now);
     creations::tick(now);
+    if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
+        avatar_change_check();
     g_sess.update();
     lobby_tick(now);
     vote_tick(now);
@@ -1138,14 +1180,7 @@ void on_frame(void*, int, void*)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     void* av = game::avatar();
-    if (g_local != g_last_avatar) {
-        if (g_last_avatar) {
-            forget_puppets();
-            npc::on_world_change();
-            tribe::on_world_change();
-        }
-        g_last_avatar = g_local;
-    }
+    avatar_change_check();
 
     remove_strays(now);
     follow_phase(now);
@@ -1479,6 +1514,13 @@ void on_remote_anim(const net::AnimEvent& ev)
     auto it = g_remotes.find(ev.id);
     if (it == g_remotes.end() || !it->second.puppet)
         return;
+    if (creature_puppet(it->second.puppet_adapter) && !game::creature_listed(it->second.puppet)) {
+        if (g_frame_fix) { // freed by a teardown the mod has not seen yet (BUG-0091)
+            g_anims_dropped++;
+            return;
+        }
+        g_anims_unlisted++;
+    }
     game::play_animation(it->second.puppet, ev.anim, ev.block, ev.flags & 1);
     g_anims_played++;
 }
@@ -2131,6 +2173,16 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("stray removal %s", strcmp(argv[2], "off") ? "on" : "off");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "killfix")) { // tests: off = the guest's kill list survives skipped frames (BUG-0082)
+        npc::set_kill_clear(strcmp(argv[2], "off") != 0);
+        SAY("kill list cleared every frame: %s", strcmp(argv[2], "off") ? "on" : "off");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "killhold")) { // tests: the avatar into the guest's kill list
+        npc::debug_kill_hold();
+        SAY("held");
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "hatch")) { // tests
         npc::set_hatch_help(strcmp(argv[2], "off") != 0);
         SAY("hatch help %s", strcmp(argv[2], "off") ? "on" : "off");
@@ -2216,6 +2268,13 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_overlay(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "animsend")) { // tests: as if the avatar played animation <hex> (BUG-0091)
+        void* av = game::avatar();
+        if (av)
+            on_anim(av, (uint32_t)strtoul(argv[2], nullptr, 16), 0, false, false);
+        SAY(av ? "animation sent" : "no avatar");
+        return av ? 0 : 1;
+    }
     if (argc > 1 && !strcmp(argv[1], "anims")) {
         g_anim_log = !g_anim_log;
         SAY("avatar animation log %s", g_anim_log ? "on" : "off");
@@ -2649,6 +2708,16 @@ void on_unload()
     }
 }
 
+int c_framefix(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1)
+        g_frame_fix = atoi(argv[1]) != 0;
+    SAY("frame order fix %s: calls on a puppet the game no longer lists: anims dropped=%u made=%u, despawns "
+        "dropped=%u made=%u\n",
+        g_frame_fix ? "on" : "off", g_anims_dropped, g_anims_unlisted, g_despawns_dropped, g_despawns_unlisted);
+    return 0;
+}
+
 int c_sessionfix(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1)
@@ -2737,6 +2806,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
+                   c_framefix, nullptr, MT);
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
     H->command_add(M, "coop.targets",

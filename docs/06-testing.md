@@ -853,3 +853,16 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   in the freed trampoline); with the fixes all PASS, the whole test 38 s. A first hookchurn made
   the hook while the threads ran and crashed with the fix too: that is BUG-0202, the gate in
   `hooks_churn_test` keeps it out of this test.
+## Freed-pointer tests of the creature stage: host_away_kill, anim_teardown (2026-10-27, fix/w1-creature)
+<a id="testing-creature-freed-pointers"></a>
+
+* `coop_host_away_kill.py` (BUG-0082, ~50 s, cold start): the host `coop.menu`, the guest pushes its
+  avatar into the kill list (`coop.npc killhold`) and reads `kill_held=` in `coop.npc`; the host
+  loads back with `coop.load`. `--without-fix` = `coop.npc killfix off`: FAILS (kill_held 1..5).
+* `coop_anim_teardown.py` (BUG-0091, ~130 s): the host sends MSG_ANIM 10x a second
+  (`coop.overlay animsend <hex>`) while the guest does 6 rounds of `coop.menu` (11-12 s each);
+  `coop.framefix` prints the animations and despawns that met a puppet the game no longer lists.
+  `--without-fix` = `coop.framefix 0`: FAILS (15 made in 6 rounds). The host's ability keys
+  (`key 0x31` ...) play no animation without a target, so they cannot drive this test.
+* Both use a second Console connection to the host from a thread (the main thread talks to it too):
+  one `Console` must not be shared between threads.

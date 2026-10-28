@@ -22,6 +22,10 @@
 - **Space: rescue timing**: from the second time a ship was disabled on, a partner repaired it in
   1.5 s instead of 2 s (BUG-0147). After a failed co-op jump, the player's own zoom-out to the
   galaxy no longer loses the game's galaxy caption and hints (BUG-0095).
+- **Creature: fewer crashes around a world change**: a partner's animation (or leave) arriving while
+  the guest's world was being reloaded went to the freed creature of the old world, and a guest kept
+  pointers to its own creatures while the host was in the main menu and used them when the host
+  came back. Tests: `coop_anim_teardown.py`, `coop_host_away_kill.py`.
 
 ## [0.7.2.4] - 2026-10-25
 

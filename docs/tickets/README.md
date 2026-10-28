@@ -92,7 +92,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0079](BUG-0079-guests-can-see-other-players-civilization-roles.md) | open | desync | Civ | 2026-10-27 |  | guests can see other players' civilization roles swapped after someone rejoins |
 | [BUG-0080](BUG-0080-install-bat-overwrites-the-player-s-coop-ini-nam.md) | open | bug | Installer | 2026-10-27 |  | install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall |
 | [BUG-0081](BUG-0081-restoring-a-former-chief-s-size-can-call-into-a.md) | open | crash | Tribe | 2026-10-27 |  | restoring a former chief's size can call into a freed citizen |
-| [BUG-0082](BUG-0082-the-guest-keeps-creature-pointers-while-the-host.md) | open | crash | Creature | 2026-10-27 |  | the guest keeps creature pointers while the host is away and destroys them minutes later |
+| [BUG-0082](BUG-0082-the-guest-keeps-creature-pointers-while-the-host.md) | fixed | crash | Creature | 2026-10-27 | unreleased | the guest keeps creature pointers while the host is away and destroys them minutes later |
 | [BUG-0083](BUG-0083-modes-cell-at-accepts-one-slot-past-the-pool-s-u.md) | open | bug | Cell | 2026-10-27 |  | modes::cell_at accepts one slot past the pool's used range (off by one) |
 | [BUG-0084](BUG-0084-a-guest-s-own-escort-ships-posse-are-destroyed-w.md) | open | bug | Space | 2026-10-27 |  | a guest's own escort ships (posse) are destroyed while it is with the host |
 | [BUG-0085](BUG-0085-after-a-disconnect-the-guest-is-told-player0-hos.md) | open | bug | All | 2026-10-27 |  | after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack" |
@@ -103,6 +103,8 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0090](BUG-0090-galaxy-map-name-tags-react-to-mouse-clicks-in-ot.md) | open | bug | Space | 2026-10-27 |  | galaxy map name tags react to mouse clicks in other windows |
 | [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | open | crash | Creature | 2026-10-27 |  | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
 | [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | fixed | crash | Space | 2026-10-27 | unreleased | star lookup by id reads past the end of the star table |
+| [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | fixed | crash | Creature | 2026-10-27 | unreleased | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
+| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | open | crash | Space | 2026-10-27 |  | star lookup by id reads past the end of the star table |
 | [BUG-0093](BUG-0093-coop-cell-spawn-reads-outside-the-cell-pool-for.md) | open | tooling | All | 2026-10-27 |  | coop.cell spawn reads outside the cell pool for a slot number that does not exist |
 | [BUG-0094](BUG-0094-offline-reinstall-can-silently-downgrade-and-the.md) | open | bug | Installer | 2026-10-27 |  | offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily |
 | [BUG-0095](BUG-0095-after-a-failed-co-op-jump-the-next-real-zoom-out.md) | fixed | bug | Space | 2026-10-27 | unreleased | after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler |
@@ -128,7 +130,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0115](BUG-0115-a-fault-inside-the-exception-logger-or-the-log-f.md) | fixed | freeze | All | 2026-10-27 | unreleased | a fault inside the exception logger or the log freezes the game for good |
 | [BUG-0116](BUG-0116-the-required-fix-switch-coop-fix-name-off-does-n.md) | open | test | All | 2026-10-27 |  | the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch |
 | [BUG-0117](BUG-0117-a-second-superweapon-request-changes-the-weapon.md) | open | bug | Civ | 2026-10-27 |  | a second superweapon request changes the weapon and target of the vote already running |
-| [BUG-0118](BUG-0118-the-selection-guard-clears-0xb58-bit-0x1-but-the.md) | open | crash | Creature | 2026-10-27 |  | the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash) |
+| [BUG-0118](BUG-0118-the-selection-guard-clears-0xb58-bit-0x1-but-the.md) | not-reproduced | crash | Creature | 2026-10-27 |  | the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash) |
 | [BUG-0119](BUG-0119-after-a-load-the-guest-may-keep-the-host-s-speci.md) | open | bug | Creature | 2026-10-27 |  | after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity) |
 | [BUG-0120](BUG-0120-an-npc-city-founded-while-a-guest-joins-or-loads.md) | open | desync | Civ | 2026-10-27 |  | an NPC city founded while a guest joins or loads never appears on that guest |
 | [BUG-0121](BUG-0121-every-co-op-epic-creature-leaves-a-mod-made-herd.md) | open | bug | Tribe | 2026-10-27 |  | every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save |
@@ -180,7 +182,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | open | crash | Tribe | 2026-10-23 |  | Guest: fault in the tribe setup with a null simulator object (seen once) |
 | [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
 | [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | open | desync | Creature | 2026-10-23 |  | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
-| [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | open | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
+| [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | not-reproduced | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
 | [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | open | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
 | [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | open | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
 | [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | open | desync | Tribe | 2026-10-23 |  | Tribe: knocked-out members stand on the guest |
