@@ -221,7 +221,10 @@ check=0
 ```
 
 **Update with the setup:** run `SporeCoopSetup.exe` and press **Update to x.y.z**. **By hand:**
-extract the new zip into `SporebinEP1` over the old files and run `install.bat` again.
+extract the new zip into `SporebinEP1` over the old files and run `install.bat` again. Both keep
+your `mods\coop.ini` and `mods\sporekit.ini` (name, last address, `[update] check=0`). An older setup
+never installs its older version over a newer one without asking (the button then says **Install
+older x.y.z**; silent mode `SporeCoopSetup.exe /S` needs `/downgrade` for that).
 
 **Uninstall:** in `SporeCoopSetup.exe` press **Uninstall**, or run `uninstall.bat` in `SporebinEP1`. It puts the original `steam_api.dll` back and
 removes `sporekit.dll` and `Data\SporeCoop.package`; delete the `mods` folder too if you like.

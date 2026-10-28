@@ -654,7 +654,6 @@ keeps the history).
 * BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
-* BUG-0204 (freeze): joining by host name resolves DNS on the game's main thread; a slow name server freezes the game (numeric addresses never wait).
 * BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
@@ -706,7 +705,4 @@ keeps the history).
 
 **Installer**
 
-* BUG-0077 (#55, bug): clicking Install before the GitHub check returns races on the release data.
-* BUG-0080 (#58, bug): install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall.
-* BUG-0094 (#72, bug): offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily.
-* BUG-0139 (#118, bug): closing the window during Install or Uninstall can leave the game half installed.
+None open (BUG-0077, BUG-0080, BUG-0094 and BUG-0139 fixed on fix/w4-installer).

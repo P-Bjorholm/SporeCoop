@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **Joining by host name no longer freezes the game while the name is looked up** (BUG-0204): the
+  name is resolved in the background and the join goes on when the answer comes; an unknown name
+  ends the join with "cannot resolve <name>". Numeric addresses never waited.
+- **Setup: the newest update pack next to the setup is used, and an older version is never
+  installed over a newer one without asking** (BUG-0094): the button says "Install older x.y.z"
+  and asks first; silent mode refuses unless `/downgrade` is given.
+- **Setup: the window cannot be closed while it installs or removes SporeCoop** (BUG-0139), which
+  could leave the game without `steam_api.dll`; clicking Install before the GitHub check has
+  answered can no longer corrupt the setup's memory (BUG-0077).
+- **install.bat keeps your settings on a reinstall** (BUG-0080): `mods\coop.ini` (name, last address,
+  `[update] check=0`) and `mods\sporekit.ini` are only copied when missing.
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
   players a partner in your own system made every press fail), and the notice names that partner
   (BUG-0072). Flying to a partner in the galaxy view is refused while your ship is disabled

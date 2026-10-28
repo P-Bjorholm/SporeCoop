@@ -1158,3 +1158,32 @@ tickets. Each needs ~1.5-3 min on a warm lane.
 * A capture for tests: `coop.civ capture <city index>` (the game's Capture, plays the caption).
 * `glyph_lint.py` (in `make test`): every non-ASCII character in a string literal of mods/coop must
   be in the overlay font (Arial / WGL4 subset, BUG-0161).
+
+## Setup, install.bat and join by name (2026-10-28, fix/w4-installer)
+<a id="testing-installer-w4"></a>
+
+* `win_unit.py` (suite `win_unit`) now also tests the setup and `install.bat` under Wine, in
+  `%TEMP%\sporecoop-win-tests` of the lane's bottle (never a real game folder):
+  * `test_setup_packs`: `inst::local_pack` takes the newest `SporeCoop-*.pack`, `inst::do_install`
+    refuses a pack older than the installed version (`Result::Older`) unless `downgrade` (BUG-0094).
+  * `test_setup_close`: starts the real `build/SporeCoopSetup.exe` with a hidden window
+    (`SW_HIDE`, found by class `SporeCoopSetup` and process id), clicks Install, sends `WM_CLOSE` and
+    Close during the swap and checks that every file has the new version (BUG-0139).
+    `SPORECOOP_SETUP_TEST_DELAY=<ms>` makes the setup wait between a file's two moves (and skips the
+    "Spore is running" question); `/oldfix` on the setup's command line brings back the old behaviour.
+  * `test_install_bat`: runs `installer/install.bat` twice in a fake `SporebinEP1`
+    (`cmd /c install.bat < NUL`): a changed `mods\coop.ini` stays, a missing `.ini` comes back, the
+    other files are replaced (BUG-0080). `--old` runs the install.bat of 7874654 (taken from
+    `tools/package.sh` by `win_unit.py`).
+  * Wine pitfall: `xcopy /exclude:<file>` fails and copies nothing when the exclude file does not exist.
+  * Bottles (flatpak) does not see the scratch folder under `/tmp`: Wine test files go under the
+    repository (`out/`, `build/`) or the bottle's `%TEMP%`.
+* `make test-tsan` (in `make test`): `tests/release_tsan.cpp`, two writers and a reader on the
+  setup's `upd::ReleaseBox` under ThreadSanitizer; `build/host/release_tsan --old` (no lock) reports
+  a data race and exits 66 (BUG-0077).
+* `coop_join_name.py` (suite `join_name`, creature, ~1.5 min warm): the guest rejoins by
+  `localhost:<port>` with `coop.slowdns 4000` (every name lookup waits 4 s): the frames go on
+  (`frame` from a second console connection) and the guest gets into the world; an unknown name
+  ends with "cannot resolve". `--without-fix` (`coop.corefix async_resolve 0`) fails: 0 frames in
+  2 s, the join command takes 4 s (BUG-0204). Unit test: `net_tests` `test_join_by_name` (fake
+  `net::g_lookup` of 1.5 s).
