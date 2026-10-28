@@ -45,7 +45,8 @@ struct Key {
 
 // ---- state ----
 static double g_down_until, g_repair_t, g_last_down;
-static bool g_down;
+static bool g_down, g_down_fresh; // fresh: disabled since the last down_tick (BUG-0147)
+static bool g_repair_fix = true;   // coop.space repairfix 0: the old head start of up to 0.5 s (tests)
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
@@ -162,6 +163,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
     g_down_until = now + kDownTime;
     g_last_down = now;
     g_repair_t = 0; // invincible from the next frame on (down_tick): this hit still shows
+    g_down_fresh = g_repair_fix;
     net::Writer w;
     w.u8(1);
     w.u8((uint8_t)kDownTime);
@@ -199,6 +201,16 @@ static void end_down(bool rescued)
         thiscall<void>(a_Destroyed, u);
 }
 
+// BUG-0098: the rescue ends outside Space too (left the stage, a load, the session ended): the
+// singleton's ship pointer may be freed then. Clear the invincible byte only on the live own ship;
+// a new ship starts without it anyway.
+static void clear_down_invincible()
+{
+    void* u = my_ufo();
+    if (u && in_space() && game::ufo_listed(u) && game::object_alive(u))
+        F<uint8_t>(u, kInvincible) = 0;
+}
+
 static void down_tick(double now)
 {
     if (!g_down)
@@ -206,8 +218,7 @@ static void down_tick(double now)
     void* u = my_ufo();
     if (!u || !in_space() || !connected()) {
         g_down = false;
-        if (u)
-            F<uint8_t>(u, kInvincible) = 0;
+        clear_down_invincible();
         return;
     }
     F<uint8_t>(u, kInvincible) = 1;
@@ -216,6 +227,10 @@ static void down_tick(double now)
         if (repair_distance(p.pos, ufo_pos(u)) < g_repair_dist)
             close_by = true;
     static double last = now;
+    if (g_down_fresh) { // BUG-0147: the first step of a new disable is 0, not up to 0.5 s from the last one
+        g_down_fresh = false;
+        last = now;
+    }
     double dt = std::min(0.5, now - last);
     last = now;
     g_repair_t = close_by ? g_repair_t + dt : std::max(0.0, g_repair_t - dt);
@@ -415,8 +430,10 @@ static std::string travel_to(uint32_t star, bool force)
         thiscall<void>(to_galaxy, mode);
         ctx = cdecl_call<int>(a_Context);
     }
-    if (ctx != 2)
+    if (ctx != 2) {
+        g_galaxy_pass_until = 0; // BUG-0095: no galaxy pass, so no skip left for the player's own zoom-out
         return "can't reach the galaxy view";
+    }
     // the flight costs energy (cSimulatorPlayerUFO::TravelToStar; with none left it damages the
     // ship): the co-op jump is free, so the energy is put back afterwards
     float energy = F<float>(u, 0x7F4);
@@ -902,8 +919,7 @@ void on_session_end()
 {
     if (g_down) {
         g_down = false;
-        if (void* u = my_ufo())
-            F<uint8_t>(u, kInvincible) = 0;
+        clear_down_invincible();
     }
     g_partner_down.clear();
     g_last_star.clear();
@@ -1301,6 +1317,10 @@ std::string debug(const std::vector<std::string>& a)
             return "no active planet / the ship is not flying";
         thiscall<void>(f, mode);
         return "landing";
+    }
+    if (a[0] == "repairfix" && a.size() > 1) { // BUG-0147: 0 = a new disable starts with the old step
+        g_repair_fix = a[1] != "0";
+        return std::string("repairfix ") + (g_repair_fix ? "1" : "0");
     }
     if (a[0] == "starfix" && a.size() > 1) { // BUG-0092: 0 = the old unchecked index (tests)
         g_star_fix = a[1] != "0";

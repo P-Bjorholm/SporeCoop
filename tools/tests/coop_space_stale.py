@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Space: hit messages about ships the game already freed, and star ids past the star table
-(BUG-0054, BUG-0092).
+(BUG-0054, BUG-0092), stale rescue timing (BUG-0147).
 
 The game frees NPC ships, our mirrors and puppets on every context switch; a hit message handled
 in the frame after that used to hand the freed ship to the game's TakeDamage as the attacker. The
@@ -10,7 +10,8 @@ mirror the way a context switch does and keeps its pointer listed until the next
 attacker. The checks: the hit lands (the ship's hp on the receiving game drops), no freed ship
 reaches TakeDamage (att_freed, counted where the game is called), no fault.
 `coop.space starrec <id>`: a star id one past the last star of its sector finds no record and
-reads nothing outside the sector's array.
+reads nothing outside the sector's array. The guest is disabled twice next to the host: the
+second repair starts from 0 (it kept the first one's last time step, BUG-0147).
 
   SPORE_LANE=6 python3 tools/tests/coop_space_stale.py [--without-fix]
 """
@@ -97,11 +98,35 @@ def main():
                                                       'nothing read outside the array')
         r = host.call(f'coop.space jumpto {past:#x}')['out'].strip()
         ck(r == 'no such star', f'jumpto {past:08X}: {r}')
+    # ---- BUG-0147: the second disable's repair starts at 0, not with the old step of up to 0.5 s
+    if without:
+        print(' ', guest.call('coop.space repairfix 0')['out'].strip())
+    reps = []
+    for rnd in range(2):
+        if rnd:
+            time.sleep(62)  # the rescue has a 60 s cooldown
+        guest.call('coop.space goto')
+        time.sleep(0.5)
+        guest.call('coop.space hit 100000')
+        time.sleep(0.15)
+        r = guest.call('coop.space hp')['out'].strip()
+        m = re.search(r'down=(\d).*?repair=([\d.]+)', r)
+        print(f'  disable {rnd + 1}: {r}')
+        ck(m and m.group(1) == '1', f'disable {rnd + 1}: the guest ship is disabled next to the host')
+        reps.append(float(m.group(2)) if m else -1)
+        for _ in range(10):  # repaired by the host close by (2 s)
+            if 'down=0' in guest.call('coop.space hp')['out']:
+                break
+            time.sleep(1)
+        ck('down=0' in guest.call('coop.space hp')['out'], f'disable {rnd + 1}: repaired')
+    ck(0 <= reps[1] < 0.45, f'the second repair starts from 0 (repair {reps[1]} s after 0.15 s)')
+
     ck.faults(host=host, guest=guest)
     if without:
         for con in (host, guest):
             con.call('coop.fleet hitfix 1')
             con.call('coop.space starfix 1')
+            con.call('coop.space repairfix 1')
     return ck.result()
 
 
