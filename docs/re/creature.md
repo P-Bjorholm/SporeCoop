@@ -178,7 +178,7 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
   sender) ret 0x10`). The NPC's behaviour tree answers: node 0x341BD4BE (table at 0x15943A0: start
   0xDA43D0 "SocialPropose", tick 0xDA49C0, end 0xD9F810) builds the session (rounds = tuning +0x424,
   +1 when +0xB58 bit 0x1 is set: ~ the alpha, its card reads "Alpha Kook"; the selection guard in
-  coop.cpp treats the same bit as "pack member"), the meter UI (0xE31xxx) and the prompts. The player's ability keys
+  coop.cpp treats the same bit as "pack member" (~ superseded 2026-10-27: mask 0x1 is not the pack, see docs/re/creature.md#creature-selection-gate)), the meter UI (0xE31xxx) and the prompts. The player's ability keys
   answer it; without such a session the keys do nothing (no animation either).
 * ✔ The win: `CreatureSocialSuccess` 0xD9BC40 `thiscall(session, npc, other) ret 8` (called at
   0xDA4A6B when the meter is full): ApplyEvent 3, DNA = `CreatureDnaWorth` 0xC04260(npc, 1) (Kook:
@@ -656,3 +656,25 @@ nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`
   (`destroy_deferred_tick`, from npc.cpp every frame; not after a world change). `coop.npc` prints
   "destroys during cinematics: deferred= done_after= pending="; `coop.npc cinedefer off` restores
   the old behaviour for tests. In the test 19-25 removals per claim waited, all gone afterwards.
+
+## Selection gate of CreatureSelectionUI and the +0xB58 bits (2026-10-27, fix/w1-creature)
+<a id="creature-selection-gate"></a>
+
+* ✔ (BUG-0118, GOG 2024 disassembly of `Simulator::CreatureSelectionUI` 0xB6C970, re-read with
+  objdump 2026-10-27) The read of `(+0xE84)->+0x32C` at 0xB6CA11 runs only when all of these hold:
+  the selected object casts to cCreatureAnimal (vt 0xC, 0xD0036E08), adult (0xC0B8D0: `+0xB34 == 1`),
+  `+0xB58 & 0x2` **clear** (`test al,2; jne skip` at 0xB6C9C9), `+0xB58 & 0x1` **set** (`test al,1;
+  je skip` at 0xB6C9CD), creature vt 0xD0 and vt 0xD4 both false. Then `call 0xC0C300` (`mov
+  eax,[ecx+0xE84]`) and `[eax+0x32C]`. The rest of the function (0xB6CA37..0xB6CB0E) and its direct
+  callees (0xB6BBF0, 0xB678E0, 0xB686E0, 0xB683A0, 0xB67C90, 0xB69110, 0xB687A0, 0xB6A820,
+  0xB69560, 0xC048B0) do not touch +0xE84.
+* So the selection guard in coop.cpp (`h_SelectUI`: hides mask 0x1 for the call when +0xE84 is
+  null) covers exactly the path that reads +0xE84. A set mask 0x2 makes the game skip the read; it
+  is not a second way into it.
+* CORRECTION (2026-10-27, fix/w1-creature): the `.sym` note of 0xB6C970 said "reads +0xB58 test
+  al,2, then call 0xC0C300", which read like a gate on 0x2; 0x2 is the early-out and 0x1 the gate
+  (`overrides_dc04aee5.sym` now says so). The GOG 2016 note "a pack member (+0xB58 bit 1)" (frozen
+  file) means mask 0x1 and is not the pack: the pack is mask 0x100 (AddPosseMember 0xB23430,
+  section 11). The coop.cpp comment called mask 0x1 "pack member"; it now names the mask only. What
+  mask 0x1 means is still ~ the alpha (SocialPropose 0xDA43D0 adds a round for it); mask 0x2 is the
+  bit the stage event handler 0xD47FC0 sets after an event (the 0xD48634 notes above).
