@@ -1,19 +1,19 @@
 ---
 id: BUG-0054
 title: ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash)
-status: open
+status: fixed
 kind: crash
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#32
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-space
+commits: 8604dd3, 48a56fc
+tests: space_stale (coop_space_stale.py; --without-fix must fail)
 signature:
-docs:
+docs: docs/re/space.md#space-stale-lookups, docs/06-testing.md#testing-space-stale
 related: #32
 ---
 
@@ -64,13 +64,26 @@ Host side:
 PLAUSIBLE. The code path is confirmed by reading: the pointer is not checked, and the handler runs before the tick that clears it. That the game frees mirrors and puppets on leaving a planet is documented at runtime (docs/re/space.md 9.4). Not seen as a crash yet; the timing window is one frame.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Guest: `if (a && (!live(a) || F<int>(a, kState) == 2)) a = nullptr;` before using it.
-- Host: `if (puppet && !live(puppet)) puppet = nullptr;`. Better: make `puppet_of` check `game::ufo_listed` and the type (6), as `space_alive` in modes.cpp does.
+Fixed in `mods/coop/squadron.cpp`: both hit handlers pass the attacker through one check before
+the game's TakeDamage. `hit_attacker()` drops (null attacker, the hit still applies) a mirror or
+puppet that is no longer in the UFO noun list, destroyed (+0x21) or dying (state 2);
+`hit_puppet()` also requires the puppet to be a type-6 Defender, as `space_alive` does. The
+`coop.fleet hurt` test command checks the puppet too. `coop.fleet hitfix 0` restores the old
+unchecked path. Not changed: `puppet_of` in coop.cpp (shared file); the check sits at the use.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-27, lane 6, GOG 2024). Test command that forces the one-frame window:
+`coop.fleet freemirror <id>` (guest) frees the mirror through the game and keeps its pointer
+listed until the next MSG_UFO_DAMAGE; `coop.fleet freepuppet <p>` (host) frees the guest's
+puppet and makes it the next MSG_UFO_HIT's attacker. `coop_space_stale.py` then sends the hit and
+asserts the ship's hp on the receiving game drops, no fault, and `att_freed` (an attacker handed to
+TakeDamage that is not in the UFO list, counted where the game is called) stays 0.
+- FAIL with `--without-fix` (hitfix 0): lab run 20261027-183320 space_stale_nofix (guest att_freed 0 -> 1,
+  host att_freed 0 -> 1), again in 20261027-190159.
+- PASS with the fix: 20261027-183320, 20261027-183607, 20261027-190159.
+No crash was seen without the fix: the freed memory was still mapped, the game read it quietly.
+
+The original plan:
 
 Hard to hit by timing. Make it deterministic with a test command on the guest: `coop.fleet freemirror <id>` destroys the mirror through the game (`DestroyInstance`) but leaves `g_mirrors[id].u` set, as a context switch does. Then on the host `coop.fleet hurt <id> <guest>`.
 - Without the fix the guest reads the freed object: run the lane with page heap / `WINEDEBUG=+heap`, or check `sporekit.log` for a caught access violation.
@@ -84,3 +97,4 @@ Hard to hit by timing. Make it deterministic with a test command on the guest: `
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #32.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-space (wave 1, Space).

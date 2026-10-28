@@ -733,23 +733,18 @@ keeps the history).
 * BUG-0038 (#16, bug): allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire.
 * BUG-0045 (#23, bug): a guest that leaves the session keeps the host's ships, which then attack it with their own AI.
 * BUG-0046 (#24, bug): armada contract starts a second raid when the host comes back, and the old raid decides the wave.
-* BUG-0054 (#32, crash): ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash)
 * BUG-0058 (#36, bug): gifted tool charges and spice that come back while you are not in Space are lost.
 * BUG-0063 (#41, bug): flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled.
 * BUG-0071 (#49, bug): shared diplomacy sends the allies mirror empire, so a guest can be allied with an NPC it never met.
 * BUG-0072 (#50, bug): with 3 or more players the "Jump to" button fails, and the jump message names the wrong player.
 * BUG-0084 (#62, bug): a guest's own escort ships (posse) are destroyed while it is with the host.
 * BUG-0090 (#68, bug): galaxy map name tags react to mouse clicks in other windows.
-* BUG-0092 (#70, crash): star lookup by id reads past the end of the star table.
-* BUG-0095 (#73, bug): after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler.
-* BUG-0098 (#76, bug): ending the "ship disabled" state writes to the player's ship even after Space was left.
 * BUG-0111 (#90, bug): the guest sees an empire's defender ships twice, because any UfoType 6 ship counts as "our puppet".
 * BUG-0123 (#102, bug): planet seeding flags are shared by all threads, so another thread can switch the seeding off.
 * BUG-0126 (#105, bug): coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void)
 * BUG-0136 (#115, bug): a won raid on a partner's colony can count as aborted, so the owner's raid is never completed.
 * BUG-0141 (#120, bug): two players with the same name share one allies mirror, one set of rivals relations and one budget.
 * BUG-0145 (#124, bug): with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship.
-* BUG-0147 (#126, bug): from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %)
 
 **Space, Cell**
 

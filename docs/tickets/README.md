@@ -64,7 +64,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0051](BUG-0051-the-guest-s-food-total-can-briefly-drop-below-a.md) | open | desync | Cell | 2026-10-27 |  | the guest's food total can briefly drop below a level line, so it levels down and up again |
 | [BUG-0052](BUG-0052-a-lab-test-timeout-kills-only-bin-sh-the-test-ke.md) | open | tooling | All | 2026-10-27 |  | a lab test timeout kills only /bin/sh, the test keeps driving the lane |
 | [BUG-0053](BUG-0053-partner-s-puppet-freezes-when-the-sender-s-milli.md) | open | bug | All | 2026-10-27 |  | partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime) |
-| [BUG-0054](BUG-0054-ship-hit-messages-can-pass-a-freed-mirror-or-pup.md) | open | crash | Space | 2026-10-27 |  | ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash) |
+| [BUG-0054](BUG-0054-ship-hit-messages-can-pass-a-freed-mirror-or-pup.md) | fixed | crash | Space | 2026-10-27 | unreleased | ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash) |
 | [BUG-0055](BUG-0055-after-leaving-a-session-the-host-s-creations-sti.md) | open | bug | Creature | 2026-10-27 |  | after leaving a session, the host's creations still replace a guest's own creation with the same id |
 | [BUG-0056](BUG-0056-a-stack-overflow-ends-the-game-without-a-crash-r.md) | open | bug | All | 2026-10-27 |  | a stack overflow ends the game without a crash report |
 | [BUG-0057](BUG-0057-tickets-py-new-reuses-ticket-ids-of-branches-who.md) | open | tooling | All | 2026-10-27 |  | tickets.py new reuses ticket ids of branches whose worktree is gone |
@@ -102,13 +102,13 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0089](BUG-0089-a-pack-listing-the-same-file-twice-loses-the-ori.md) | open | bug | All | 2026-10-27 |  | a pack listing the same file twice loses the original file on rollback |
 | [BUG-0090](BUG-0090-galaxy-map-name-tags-react-to-mouse-clicks-in-ot.md) | open | bug | Space | 2026-10-27 |  | galaxy map name tags react to mouse clicks in other windows |
 | [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | open | crash | Creature | 2026-10-27 |  | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
-| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | open | crash | Space | 2026-10-27 |  | star lookup by id reads past the end of the star table |
+| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | fixed | crash | Space | 2026-10-27 | unreleased | star lookup by id reads past the end of the star table |
 | [BUG-0093](BUG-0093-coop-cell-spawn-reads-outside-the-cell-pool-for.md) | open | tooling | All | 2026-10-27 |  | coop.cell spawn reads outside the cell pool for a slot number that does not exist |
 | [BUG-0094](BUG-0094-offline-reinstall-can-silently-downgrade-and-the.md) | open | bug | Installer | 2026-10-27 |  | offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily |
-| [BUG-0095](BUG-0095-after-a-failed-co-op-jump-the-next-real-zoom-out.md) | open | bug | Space | 2026-10-27 |  | after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler |
+| [BUG-0095](BUG-0095-after-a-failed-co-op-jump-the-next-real-zoom-out.md) | fixed | bug | Space | 2026-10-27 | unreleased | after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler |
 | [BUG-0096](BUG-0096-coop-vote-editor-submits-the-editor-request-insi.md) | open | test | All | 2026-10-27 |  | coop.vote editor submits the editor request inside Present, a path the real game never takes |
 | [BUG-0097](BUG-0097-release-job-does-not-check-tag-against-coop-vers.md) | open | tooling | All | 2026-10-27 |  | release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section |
-| [BUG-0098](BUG-0098-ending-the-ship-disabled-state-writes-to-the-pla.md) | open | bug | Space | 2026-10-27 |  | ending the "ship disabled" state writes to the player's ship even after Space was left |
+| [BUG-0098](BUG-0098-ending-the-ship-disabled-state-writes-to-the-pla.md) | fixed | bug | Space | 2026-10-27 | unreleased | ending the "ship disabled" state writes to the player's ship even after Space was left |
 | [BUG-0099](BUG-0099-the-joint-hunt-hit-table-grows-without-bound-and.md) | open | bug | Creature | 2026-10-27 |  | the joint-hunt hit table grows without bound and keys hits by reusable creature addresses |
 | [BUG-0100](BUG-0100-a-test-that-prints-result-skip-is-counted-as-pas.md) | open | tooling | All | 2026-10-27 |  | a test that prints RESULT: SKIP is counted as passed by the lab |
 | [BUG-0101](BUG-0101-spore-sh-kill-sigkills-half-dead-sporeapp-proces.md) | open | tooling | All | 2026-10-27 |  | spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own |
@@ -157,7 +157,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0144](BUG-0144-the-netcode-message-table-lists-ping-pong-a-mod.md) | open | bug | All | 2026-10-27 |  | the netcode message table lists PING/PONG, a mod version and fields the protocol does not send |
 | [BUG-0145](BUG-0145-with-swapped-mouse-buttons-a-click-on-a-partner.md) | open | bug | Space | 2026-10-27 |  | with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship |
 | [BUG-0146](BUG-0146-a-member-of-an-npc-tribe-counts-as-a-second-play.md) | open | bug | Tribe | 2026-10-27 |  | a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30) |
-| [BUG-0147](BUG-0147-from-the-second-time-a-ship-is-disabled-on-its-r.md) | open | bug | Space | 2026-10-27 |  | from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %) |
+| [BUG-0147](BUG-0147-from-the-second-time-a-ship-is-disabled-on-its-r.md) | fixed | bug | Space | 2026-10-27 | unreleased | from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %) |
 | [BUG-0148](BUG-0148-coop-creature-desync-s-killed-npc-is-dead-on-the.md) | open | test | All | 2026-10-27 |  | coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death |
 | [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | open | bug | Creature | 2026-10-27 |  | typing digits in the cheat console plays social abilities while a guest is socializing |
 | [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | open | bug | All | 2026-10-27 |  | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |

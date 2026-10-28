@@ -816,3 +816,16 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   puppet left over", two creatures of the guest's species in one herd, puppet=0) and its retry too;
   alone it passed 3 of 3 right after on the same tree (lanes 2-4). Treat a single failure under load
   as flaky until it fails alone.
+
+## Space: forcing freed ships and bad star ids (coop_space_stale.py, 2026-10-27, fix/w1-space)
+<a id="testing-space-stale"></a>
+
+* `coop_space_stale.py` (suite `space_stale`, warm, ~3.5 min with the 62 s rescue cooldown):
+  BUG-0054, BUG-0092, BUG-0147. `--without-fix` switches the fixes off (`coop.fleet hitfix 0`,
+  `coop.space starfix 0`, `coop.space repairfix 0`) and must FAIL; it is not in a suite.
+* The one-frame window between the game freeing a ship and `squadron::tick` dropping it cannot be
+  hit by timing. `coop.fleet freemirror <id>` (guest) frees the mirror and keeps the pointer listed
+  until the next MSG_UFO_DAMAGE; `coop.fleet freepuppet <p>` (host) makes the freed puppet the
+  next MSG_UFO_HIT's attacker. `att_freed` in `coop.status` counts attackers handed to TakeDamage
+  that are not in the UFO list (where the game is called).
+* `coop.space starrec <id>`: the record, the sector size and `read_outside` for one lookup.

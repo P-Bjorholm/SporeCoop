@@ -1,17 +1,17 @@
 ---
 id: BUG-0095
 title: after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#73
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-space
+commits: 30a25b0
+tests: space_jump (regression only)
 signature:
 docs:
 related: #73
@@ -58,12 +58,16 @@ if (ctx != 2)
 CONFIRMED by reading the code. Which situations make `SystemToGalaxy` fail is not verified. If it never fails in practice, this is only a robustness fix.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Clear `g_galaxy_pass_until = 0` on every return after it was armed when the galaxy view was not reached (`ctx != 2`). Simpler: arm it only after `SystemToGalaxy` returned with context 2, since the message is handled a frame later anyway (docs/re/space.md 7.3).
+Fixed in `travel_to` (spacecoop.cpp): when SystemToGalaxy did not reach context 2 the skip is
+disarmed (`g_galaxy_pass_until = 0`) before "can't reach the galaxy view" is returned.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Written argument (2026-10-27): the failing condition (SystemToGalaxy refusing to leave the
+system) is not known, so it cannot be forced from a test. The fix is one assignment on the only
+return between arming and the galaxy pass; the success path is unchanged (`space_jump` passed in
+20261027-190159).
+
+The original plan:
 
 In `tools/tests/coop_space_jump.py`:
 1. Add a debug switch that makes the jump's `SystemToGalaxy` step be skipped (`coop.space jumpto <id> nogalaxy`), simulating the failure.
@@ -77,3 +81,4 @@ In `tools/tests/coop_space_jump.py`:
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #73.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-space (wave 1, Space).

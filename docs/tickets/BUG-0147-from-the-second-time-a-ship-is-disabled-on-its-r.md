@@ -1,19 +1,19 @@
 ---
 id: BUG-0147
 title: from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#126
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-space
+commits: 30a25b0
+tests: space_stale (coop_space_stale.py; --without-fix must fail)
 signature:
-docs:
+docs: docs/re/space.md#space-stale-lookups, docs/06-testing.md#testing-space-stale
 related: #126
 ---
 
@@ -50,12 +50,18 @@ If no partner is close, the same 0.5 is subtracted instead (`max(0, g_repair_t -
 Confirmed by reading the code. A second reviewer verified it. Severity low (a balance and consistency bug, no crash).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Make `last` a file-level `g_down_last` and set it to `now` in `filter_own_damage` where `g_down` becomes true, and in `end_down`. Alternatively, use the frame dt that `cellsync`'s `symbiosis_tick` already computes, `min(now - g_last_tick, 0.5)`, which is updated every tick.
+Fixed in spacecoop.cpp: a new disable sets `g_down_fresh`; the first `down_tick` after it takes its
+time step from now (0), not from the last disable's last frame. `coop.space repairfix 0` restores
+the old head start.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-27, lane 6). `coop_space_stale.py` disables the guest next to the host twice (62 s
+apart, the cooldown) and reads `repair=` 0.15 s after the second hit.
+- FAIL on the build without the fix: lab run 20261027-183607 space_stale (and its retry): `repair=0.6` after
+  0.15 s (first disable: 0.1); again with `--without-fix` in 20261027-190159.
+- PASS with the fix: 20261027-190159.
+
+The original plan:
 
 `tools/tests/coop_space_repair.py` (two instances): disable the guest's ship twice, more than 60 s apart, with the host's ship next to it. Assert, on the guest's game state (`coop.space hp` ship state and HP), that each episode is repaired no earlier than 1.9 s after the disable. On main the second episode FAILS (about 1.5 s). With the fix both PASS (about 2.0 s).
 
@@ -65,3 +71,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #126.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-space (wave 1, Space).

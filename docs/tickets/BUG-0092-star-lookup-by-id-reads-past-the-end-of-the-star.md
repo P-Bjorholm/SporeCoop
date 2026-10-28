@@ -1,19 +1,19 @@
 ---
 id: BUG-0092
 title: star lookup by id reads past the end of the star table
-status: open
+status: fixed
 kind: crash
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#70
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-space
+commits: 8604dd3, 48a56fc
+tests: space_stale (coop_space_stale.py; --without-fix must fail)
 signature:
-docs:
+docs: docs/re/space.md#space-stale-lookups, docs/06-testing.md#testing-space-stale
 related: #70
 ---
 
@@ -51,19 +51,23 @@ Each 20-byte sector starts with `{begin, end, ...}` of its record array (as `nav
 CONFIRMED by reading. No crash or wrong result seen.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Read the sector's end too and check the index:
-```cpp
-void** arr = F<void**>(b + sec * 20, 0);
-void** arr_end = F<void**>(b + sec * 20, 4);
-if (!arr || arr_end <= arr || idx >= (uint32_t)(arr_end - arr))
-    return nullptr;
-```
-The `IsBadReadPtr` calls on the record can then stay as a last guard.
+Fixed in `spacecoop::star_record`: it reads the sector's end pointer (+4) and returns null for an
+index at or past it, before reading the array. `coop.space starfix 0` restores the old read;
+`coop.space starrec <id>` reports the record, the sector size and whether the lookup read outside
+the array (tests). The other table walkers (`nav_entries`, `space_map::nearest_star`, contracts,
+allies) already stop at the sector's end.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-27, lane 6, GOG 2024). `coop_space_stale.py` looks up the own star, then the id one
+past the last star of its sector (00460035 has a sector of 61 stars, so 0046003D), and
+`jumpto` to it.
+- FAIL with `--without-fix` (starfix 0): lab run 20261027-183320 space_stale_nofix: `read_outside=1`, and
+  the host's fault log shows two caught access violations in IsBadReadPtr (kernel32+0x1B997,
+  data=0x00000131, 0046003D on the stack): the word past the array was 0x131, not a pointer, and
+  `IsBadReadPtr(r, 0x74)` touched it. This is the game-side evidence of the bug.
+- PASS with the fix: 20261027-183320, 20261027-183607, 20261027-190159: no record, nothing read, "no such star", no fault.
+
+The original plan:
 
 A test command case in `tools/tests/coop_space_jump.py` (or a small `coop_space_starid.py`):
 1. `coop.space jumpto <id>` with an id whose index is just past the last star of sector 0 (read the sector size from `coop.space empire near` / the table).
@@ -78,3 +82,4 @@ To make the test fail on main deterministically, add a debug read-out `coop.spac
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #70.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-space (wave 1, Space).

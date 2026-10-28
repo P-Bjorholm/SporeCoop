@@ -8,6 +8,14 @@
   showed stayed in its game and flew on by themselves; starting to host or join while still in a
   session kept the old players. Every way a session ends (Leave, the host gone, a new host or join,
   a mod reload) now cleans up the same way. Test: `coop_leave_cleanup.py` (suite `leave_cleanup`).
+- **Space: possible crashes in fights and jumps**: a hit that arrived right after leaving a planet
+  could hand a ship the game had already removed to the game's damage code (BUG-0054), and a star
+  id from the network could make the mod read past the end of the star table (BUG-0092). The
+  "ship disabled" state no longer writes to the ship after Space was left (BUG-0098). Test:
+  `coop_space_stale.py` (suite `space_stale`).
+- **Space: rescue timing**: from the second time a ship was disabled on, a partner repaired it in
+  1.5 s instead of 2 s (BUG-0147). After a failed co-op jump, the player's own zoom-out to the
+  galaxy no longer loses the game's galaxy caption and hints (BUG-0095).
 
 ## [0.7.2.4] - 2026-10-25
 

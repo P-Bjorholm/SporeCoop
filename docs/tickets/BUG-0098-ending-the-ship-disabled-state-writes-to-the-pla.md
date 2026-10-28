@@ -1,17 +1,17 @@
 ---
 id: BUG-0098
 title: ending the "ship disabled" state writes to the player's ship even after Space was left
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#76
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-space
+commits: 30a25b0
+tests: space_rescue, space_stale (regression only)
 signature:
 docs:
 related: #76
@@ -59,12 +59,18 @@ if (!u || !in_space() || !connected()) {
 PLAUSIBLE. The code path is confirmed by reading. That the singleton's +0x40 still points to a freed ship after leaving Space is not verified.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Write only when `in_space()` and the pointer is still in the UFO noun list (`game::ufo_listed(u)`, type 0). Otherwise just clear `g_down`. A new ship in a later Space session starts with the byte cleared anyway.
+Fixed in spacecoop.cpp: `clear_down_invincible()` writes the invincible byte only when the game
+is in Space and the singleton's ship is in the UFO noun list and not destroyed; used by `down_tick`
+and `on_session_end`. Outside Space only `g_down` is cleared (a new ship starts without the byte).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Written argument plus regression tests (2026-10-27): whether `cSimulatorPlayerUFO +0x40` is stale
+after leaving Space is still not known, and a one-byte write into a freed block is not visible
+without a heap checker, so no test can fail on main. The new guard reads only the UFO list
+(`game::ufo_listed`), never the object, before the write. The rescue still ends with the byte
+cleared in Space: `space_rescue` and the two disables of `space_stale` passed in 20261027-190159.
+
+The original plan:
 
 `tools/tests/coop_space_rescue.py`, a new case:
 1. Disable the guest's ship next to the host.
@@ -80,3 +86,4 @@ Run it on a lane with Wine's heap checking (`WINEDEBUG=warn+heap`) so that a wri
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #76.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-space (wave 1, Space).

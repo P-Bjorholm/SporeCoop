@@ -1629,3 +1629,20 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   (stack 0x847EFA, 0x84930F, 0x84935E) seconds later. `cPlayerInventory::GetTool` 0xFF3BF0 is the
   safe way; it also finds tools that are not owned yet (a second list at +0x4C..+0x50): check
   `HasTool` (vt 0x74) first.
+
+## Freed attackers and star ids past the table (2026-10-27, fix/w1-space)
+<a id="space-stale-lookups"></a>
+
+* ✔ A mirror freed through `DestroyInstance` (`game::destroy_creature`) leaves the UFO noun list at
+  once: `game::ufo_listed` is false in the same frame. A puppet freed the same way on the host is
+  gone from the list too; `drive_puppet` spawns a new one on the next tick. Hit messages are handled
+  before `squadron::tick`, so the handlers check the attacker themselves (BUG-0054).
+* ✔ The memory of such a freed ship stays mapped: the game's TakeDamage read it without a fault
+  in the test (`coop.fleet hitfix 0`). The bug is silent until the block is reused.
+* ✔ cStarManager +0xC8 sectors: `{begin, end, ...}` (20 bytes). The word right after a sector's
+  last record (sector 0x046 of the `space` fixture, 61 stars) was 0x00000131, not a pointer;
+  `IsBadReadPtr(0x131, 0x74)` raised a caught access violation in kernel32 under Wine. Always
+  check the index against `end` before reading (BUG-0092).
+* ✔ The rescue's repair timer: the first `down_tick` after a disable must start from a zero step;
+  the old function-local `last` kept the previous disable's time (repair=0.6 after 0.15 s on the
+  second disable, BUG-0147).
