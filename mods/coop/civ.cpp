@@ -1033,14 +1033,39 @@ static bool movie_playing()
     void* cm = a_CinematicMgr ? skg::cdecl_call<void*>(a_CinematicMgr) : nullptr;
     return cm && F<uint32_t>(cm, 0x2C) != 0;
 }
+// BUG-0187: with guests in the session the host's caption closes itself after kCaptionWait seconds
+// (the game's EndCinematic, as Enter does), so a host who is away does not stop everybody's game.
+// `coop.civ fix caption 0`: the old wait for the host's OK (tests).
+static bool g_fix_caption = true;
+static double g_caption_wait = 8.0, g_movie_since;
+static uint32_t g_captions_closed;
 static void movie_tick()
 {
     bool on = movie_playing();
+    double now = H->time_seconds();
+    if (on && g_movie && g_fix_caption && g_movie_since > 0 && now - g_movie_since > g_caption_wait &&
+        C.sess->players().size() >= 2) {
+        g_movie_since = -1; // once per cinematic
+        H->run_outside_frame(
+            [](void*) {
+                uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
+                void* cm = a_CinematicMgr ? skg::cdecl_call<void*>(a_CinematicMgr) : nullptr;
+                if (!end || !cm || !F<uint32_t>(cm, 0x2C) || game::mode_id() != modes::kCiv)
+                    return;
+                thiscall<void>(end, cm);
+                g_captions_closed++;
+                if (C.notice)
+                    C.notice("the caption closed by itself: the world goes on");
+            },
+            nullptr);
+    }
     if (on == g_movie)
         return;
     g_movie = on;
+    g_movie_since = on ? now : 0;
     if (on && C.notice)
-        C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK");
+        C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK" +
+                 (g_fix_caption && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
 }
 
 static void host_tick(double now)
@@ -1977,8 +2002,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_sw_vote = on;
         else if (a[1] == "orphans")
             g_fix_orphans = on;
+        else if (a[1] == "caption")
+            g_fix_caption = on;
         else
-            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans 0|1";
+            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans|caption 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (!a.empty() && a[0] == "spawns") { // spawns: the game's own vehicle spawns on this guest by caller
@@ -2028,6 +2055,21 @@ std::string debug(const std::vector<std::string>& a)
         g_alarm_at.erase(city);
         h_OnAttacked(city, 0, 0x0BADF00D);
         return "alarm raised";
+    }
+    if (a.size() >= 2 && a[0] == "capture" && is_host()) { // capture <city>: the player civ takes it (tests, BUG-0187)
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* pc = player_civ();
+        if (!city || !pc)
+            return "no such city / civ";
+        int r = h_Capture(city, pol_of(pc), a.size() > 2 ? atoi(a[2].c_str()) : 0, 0, 0, 0);
+        return "capture -> " + std::to_string(r);
+    }
+    if (!a.empty() && a[0] == "movie") { // the host's cinematic / caption (BUG-0187)
+        char b[96];
+        snprintf(b, sizeof b, "movie playing=%d closed=%u fix=%d wait=%.0f", (int)movie_playing(), g_captions_closed,
+                 (int)g_fix_caption, g_caption_wait);
+        return b;
     }
     if (!a.empty() && a[0] == "sw") { // the superweapon votes (host, BUG-0117)
         char b[128];
