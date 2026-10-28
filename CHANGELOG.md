@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Fixed
+- **Long chat lines and big tables no longer stop a player's network traffic** (BUG-0034): a message
+  bigger than one network packet (a chat line of more than ~1100 characters, the species table of
+  a rich planet) is now sent in pieces; before, it and everything reliable after it (damage, DNA,
+  NPCs, chat) never arrived, and the connection flooded the other player with empty packets.
+  Tests: `make test`, `coop_chat_long.py` (suite `chat_long`).
+- **A player who joins under the id of a player who left is shown with their own look**
+  (BUG-0076): the host and the others no longer show the newcomer with the previous player's
+  creature, cell or ship, and do not hand that creation to later joiners. With 3 or more players a
+  leaving player no longer leaves a frozen "ghost" behind on the others (in Space a ghost partner
+  disabled instead of destroyed your ship and could "repair" it, BUG-0109). Tests: `make test`,
+  `coop_creations_rejoin.py` (suite `creations_rejoin`).
+- **Smoother partners, NPCs, ships and vehicles on unstable connections**: after the latency rose
+  (a world sent to a third player, Wi-Fi), partners and NPCs moved in steps for up to a minute; now
+  for about 3 s (BUG-0133). The host's ships and Civilization vehicles no longer jump up to 40 m
+  ahead after a late packet (BUG-0122). Ship, vehicle and tribe member ids are never handed out
+  twice in long sessions (BUG-0154). Tests: `make test`.
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

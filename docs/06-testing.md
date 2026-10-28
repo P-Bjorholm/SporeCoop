@@ -923,3 +923,23 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   known caught fault at 0x11ECE4F on both games after a cold start, and its retry once in the survey
   ("both at Kaver: surveyed (0/2)": the guest's page still listed Kaver while the host was at Rebel);
   two cold runs right after passed (out/lab/20261027-195928). Treat a single survey failure as flaky.
+
+## Netcode wave 2: big messages, rejoin under a reused id (2026-10-28, fix/w2-net)
+<a id="testing-net-w2"></a>
+
+* Unit tests (`make test`): `test_big_reliable`, `test_state_after_leave` (three Sessions over
+  localhost: the host queues two ~990-byte chunks for C, then B's last state and BYE arrive in one
+  host update), `test_velocity_jitter`, `test_interp_latency_rise`, `test_alloc_id`.
+  `build/host/net_tests --nofix` runs everything with the `net::g_fix` switches off (and the old
+  inline id allocator): exactly these cases fail (12 checks), the older ones still pass.
+* `coop_chat_long.py` (suite `chat_long`, warm, ~1 min): the guest sends a 1500-character
+  `coop.say`, then a short one; the host's chat (coop.status `chat:` lines) must show both, the
+  guest's `pending` stay low and its packets to the host stay ~33/s. `--without-fix`
+  (`coop.corefix big_reliable 0` on the guest): neither line arrives, pending 8, 5280 packets/s.
+* `coop_creations_rejoin.py` (suite `creations_rejoin`, cold, ~2 min): the guest plays its own
+  creature, chooses "the world's own" (`coop.creations choose creature none`), leaves and joins
+  again as id 1; the host's puppet of it (`species=` of the puppet) must be the world's species.
+  After the rejoin the host shares its world again and the guest reloads it: the puppet first
+  appears from the old world and is hidden during the reload, so the test waits 20 s and for
+  `together` again before it reads the species. `--without-fix` (`creations_leave 0`,
+  `id_reuse 0` on the host): the puppet is the old player's creature.

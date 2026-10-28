@@ -1,19 +1,19 @@
 ---
 id: BUG-0154
 title: ship, vehicle and tribe member ids can repeat after 65 535 allocations, and guests then mix up two objects
-status: open
+status: fixed
 kind: desync
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#133
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-net
+commits: a8341cf, 9afc74d
+tests: tests/net_tests.cpp test_alloc_id
 signature:
-docs:
+docs: docs/04-netcode.md#netcode-w2
 related: #133
 ---
 
@@ -51,7 +51,14 @@ Example with ships:
 Confirmed by reading the code. A second reviewer verified it. Severity low (theoretical, about 65k allocations).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-net. `net::alloc_id(next, in_use)` (mods/coop/net/ids.h) skips 0 and every id in
+the reverse map, and returns 0 only when all 65 535 ids are taken. Used for ships (squadron.cpp,
+`g_hid_rev`), civ vehicles (civ.cpp, the scan and the guest's purchase, which could hand out 0)
+and tribe members (tribe.cpp, `g_hm_by_id`). The counters are not reset on a world change (not
+needed once live ids are skipped). NPC ids (npc.cpp, BUG-0023 / BUG-0044) belong to the Creature
+agent of wave 2 and can use the same header.
+
+The review's suggestions were:
 
 One small allocator in `net/` (portable, unit-tested), shared with the planned BUG-0023 fix. It skips ids present in the reverse map, never returns 0, and returns failure when all 65 535 ids are in use:
 
@@ -69,7 +76,11 @@ template <class Map> uint16_t alloc_id(uint16_t& next, const Map& in_use) {
 Reset the counters on a world change, together with the tables.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test `test_alloc_id`: ids 1 and 2 alive, `next = 0xFFFF`: two allocations give 65535 and 3,
+a full map gives 0. `--nofix` runs the old inline pattern: 65535 then 1, a live id (FAIL). No
+in-game test (it needs 65k allocations).
+
+Planned in the review:
 
 `tests/net_tests.cpp` case `test_alloc_id`: fill a map with id 1, set `next = 0xFFFF`, and allocate twice. Assert the results are 0xFFFF and 2, never 1 or 0. This FAILS with the current inline `g_next_id++` pattern (copied into the test as the baseline) and PASSES with `alloc_id`.
 
@@ -79,3 +90,4 @@ BUG-0023 in docs/tickets ("NPC net ids can repeat after about 65k allocations in
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #133.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-net (wave 2, netcode); tests above FAIL without the fix and PASS with it.
