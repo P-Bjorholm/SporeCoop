@@ -568,7 +568,7 @@ static void hatch_tick(double now, bool simulating)
     }
 }
 
-void tick(double now)
+static void tick_frame(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
     game::destroy_deferred_tick();                      // creatures removed while a cinematic played
@@ -599,6 +599,28 @@ void tick(double now)
         if (!away)
             guest_tick(now);
     }
+}
+
+// BUG-0082: g_kill holds pointers of this frame's update only. Every frame that does not reach
+// guest_tick (the frame the host goes away, NPC sync off, another stage) drops them: they used to
+// wait, possibly minutes, until the host was back, and guest_tick then destroyed objects the game
+// had freed or reused meanwhile. `coop.npc killfix off` keeps the old behaviour (tests).
+static bool g_kill_clear = true;
+void set_kill_clear(bool on) { g_kill_clear = on; }
+
+void tick(double now)
+{
+    tick_frame(now);
+    if (g_kill_clear)
+        g_kill.clear(); // guest_tick empties it itself; anything left here is from a skipped frame
+}
+
+void debug_kill_hold()
+{
+    // tests: what the update filter collects on the frame the host goes away (the avatar is a safe
+    // stand-in: guest_tick never destroys it)
+    if (void* av = game::avatar())
+        g_kill.push_back(av);
 }
 
 void on_world_change()
@@ -808,7 +830,7 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
 
 std::string status()
 {
-    char b[384];
+    char b[512];
     if (is_host()) {
         size_t known = 0;
         for (auto& [g, ks] : g_known)
@@ -827,10 +849,10 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u\n",
+                 "deaths_played=%u kill_held=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
-                 g_strays_removed, g_hatch_helped, g_deaths_played);
+                 g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size());
     }
     return b + game::destroy_deferred_status() + "\n";
 }

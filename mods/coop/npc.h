@@ -49,7 +49,9 @@ std::string list();                                  // debug: mirrored NPCs
 std::string creatures(bool untuned_only, uint32_t species); // debug: creatures (+0xE84 = archetype tuning)
 std::string herds(bool all = false);                 // debug: herd objects
 void set_strays(bool on);                            // tests: removal of creatures like ours from saves
-void set_hatch_help(bool on);                        // tests: a waiting hatchling grows up without its family
+void set_hatch_help(bool on);
+void set_kill_clear(bool on);                        // tests: off = keep the guest's kill list across skipped frames (BUG-0082)
+void debug_kill_hold();                              // tests: put the avatar into the guest's kill list                        // tests: a waiting hatchling grows up without its family
 // host: aggressive NPCs see a partner's puppet as a target like the host's avatar (on by default)
 void set_partner_targets(bool on);
 bool debug_attack_msg(uint16_t id);                  // tests: the game's attack message on host NPC `id`
