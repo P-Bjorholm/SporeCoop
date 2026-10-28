@@ -119,7 +119,12 @@ static uint32_t g_gifts;
 struct HV {
     uint16_t id;
     uint8_t owner;
+    uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
 };
+// test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
+static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
+static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
+static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
 static uint16_t g_next_id = 1;
@@ -647,6 +652,8 @@ static void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
     // the defenders: vehicles of the other players within reach go 50% faster for 20 s
     net::Vec3 cp = city_pos(city);
     for (auto& [v, h] : g_hv) {
+        if (g_fix_boost && !exists(v)) // g_hv is rebuilt every 0.1 s: a vehicle freed meanwhile
+            continue;
         if (h.owner == owner || net::dist(veh_pos(v), cp) > 600.f)
             continue;
         auto& b = g_boost[v];
@@ -660,7 +667,9 @@ static void boost_tick(double now)
 {
     for (auto it = g_boost.begin(); it != g_boost.end();) {
         void* v = it->first;
-        bool alive = g_hv.count(v) && game::object_alive(v);
+        // BUG-0040: object_alive reads the vehicle's own memory and cannot tell a freed one: only a
+        // vehicle in the game's own list is written to
+        bool alive = g_fix_boost ? g_hv.count(v) && exists(v) : g_hv.count(v) && game::object_alive(v);
         if (!alive) {
             it = g_boost.erase(it);
             continue;
@@ -962,7 +971,9 @@ static void host_tick(double now)
     auto vehicles = all_vehicles();
     std::unordered_set<void*> alive(vehicles.begin(), vehicles.end());
     for (auto it = g_hv.begin(); it != g_hv.end();) {
-        if (!alive.count(it->first)) {
+        // a vehicle of another world (or another nation) at an address we knew: assigned anew
+        bool other = g_fix_world && pol_of(it->first) != it->second.pol;
+        if (!alive.count(it->first) || other) {
             g_hv_by_id.erase(it->second.id);
             it = g_hv.erase(it);
         } else
@@ -983,7 +994,7 @@ static void host_tick(double now)
         uint16_t id = g_next_id++;
         if (!g_next_id)
             g_next_id = 1;
-        g_hv[v] = {id, owner};
+        g_hv[v] = {id, owner, pol_of(v)};
         g_hv_by_id[id] = v;
     }
     g_cycle++;
@@ -1231,7 +1242,7 @@ static void host_command(uint8_t from, net::Reader& r)
         void* v = host_buy(city, loco);
         if (v && !g_hv.count(v)) {
             uint16_t id = g_next_id++;
-            g_hv[v] = {id, from};
+            g_hv[v] = {id, from, pol_of(v)};
             g_hv_by_id[id] = v;
         }
         g_pending_owner = -1;
@@ -1630,8 +1641,27 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
 }
 
+// the tables keyed by game pointers that only the co-op mechanics use (BUG-0040, BUG-0059): a new
+// session or world must not inherit them (a city or vehicle at a reused address)
+static void clear_coop_tables(bool restore_speed)
+{
+    if (restore_speed && g_ok && game::mode_id() == modes::kCiv && nm())
+        for (auto& [v, b] : g_boost)
+            if (exists(v))
+                F<float>(v, 0x218) = b.orig;
+    g_boost.clear();
+    g_alarm_at.clear();
+    g_siege.clear();
+    g_joint_told.clear();
+    g_city_gifted.clear();
+    g_bfix_seen.clear();
+    g_ui_city = nullptr;
+}
+
 void on_session_end()
 {
+    if (g_fix_boost)
+        clear_coop_tables(true);
     g_hv.clear();
     g_hv_by_id.clear();
     g_gv.clear();
@@ -1639,6 +1669,27 @@ void on_session_end()
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
+}
+
+// a load (or a stage change): every vehicle and city of the old world is freed. Before BUG-0059 civ
+// had no such reset: the host kept the old vehicle table (a new vehicle at a reused address kept an
+// old id and a player owner, even an NPC nation's one) and the guest the old host-city table.
+void on_world_change()
+{
+    if (!g_fix_world)
+        return;
+    // the vehicle / building editors have no co-op adapter either (coop.cpp sees "no local" as a
+    // world change): the world stays, and the owners must not be lost with it
+    uint32_t m = game::mode_id();
+    if (m == modes::kEdit || m == modes::kEditor)
+        return;
+    g_world_resets++;
+    clear_coop_tables(false); // nothing to restore: the vehicles are gone
+    on_session_end();
+    g_rx_cycle = 0xFFFF;
+    g_cycle_ids.clear();
+    g_cycle_chunks.clear();
+    g_exist_frame = ~0ull;
 }
 
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)
@@ -1766,6 +1817,27 @@ static void* local_vehicle(uint16_t id)
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() >= 3 && a[0] == "fix") { // fix boost|world 0|1: the code before BUG-0040 / BUG-0059 (tests)
+        bool on = atoi(a[2].c_str()) != 0;
+        if (a[1] == "boost")
+            g_fix_boost = on;
+        else if (a[1] == "world")
+            g_fix_world = on;
+        else
+            return "usage: coop.civ fix boost|world 0|1";
+        return "fix " + a[1] + " " + (on ? "on" : "off");
+    }
+    if (!a.empty() && a[0] == "tables") { // sizes of the pointer tables (tests: BUG-0040, BUG-0059)
+        char b[320];
+        snprintf(b, sizeof b,
+                 "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
+                 "gv=%u world_resets=%u fix_boost=%d fix_world=%d next_id=%u\n",
+                 (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
+                 (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
+                 (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
+                 (int)g_fix_boost, (int)g_fix_world, (unsigned)g_next_id);
+        return b;
+    }
     // tests of the co-op mechanics through the game's own functions (host)
     if (a.size() >= 3 && a[0] == "siege" && is_host()) { // siege <city> <player>: capture damage by that player
         size_t ci = (size_t)atoi(a[1].c_str());

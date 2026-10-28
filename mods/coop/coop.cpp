@@ -1143,6 +1143,7 @@ void on_frame(void*, int, void*)
             forget_puppets();
             npc::on_world_change();
             tribe::on_world_change();
+            civ::on_world_change(); // BUG-0059
         }
         g_last_avatar = g_local;
     }
