@@ -11,6 +11,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 namespace cellsync {
@@ -1224,8 +1225,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (type == net::MSG_CELL_KO) {
         uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
-        if (!r.ok())
-            return;
+        if (!r.ok() || (is_host() && id != from))
+            return; // a guest tells only about its own cell
         if (is_host() && from != 0) { // relay to the other guests
             net::Writer w;
             w.u8(id); w.u8(state); w.u8(left); w.u8(hold);
@@ -1241,7 +1242,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
         uint8_t* c = modes::cell_at(idx);
-        if (!r.ok() || !c || F<uint8_t>(c, kDying))
+        // a bite lands on an NPC of our pool: never on a player's cell (ours or a puppet)
+        if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c))
             return;
         g_hits_in++;
         // the NPC and its kind turn on the guest who bit it, as DamageCell does for the host's bites
@@ -1289,7 +1291,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (food <= -1000 || food >= 1000)
             food = 0;
         uint8_t* c = modes::cell_at(idx);
-        if (c && modes::cell_is_puppet(c))
+        if (c && (modes::cell_is_puppet(c) || c == avatar()))
             c = nullptr;
         uint8_t* pc = puppet_cell(from);
         if (kind == ACT_GONE) {

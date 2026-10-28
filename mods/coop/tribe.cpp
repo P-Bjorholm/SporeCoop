@@ -12,6 +12,7 @@
 #include "modes.h"
 #include "npc.h"
 #include "net/interp.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 using skg::thiscall;
@@ -517,9 +518,19 @@ static void host_command(uint8_t from, net::Reader& r)
     if (!r.ok())
         return;
     if (kind == CMD_GIVE) {
-        give_on_host(from, (uint8_t)action, ids);
+        if (action >= 0 && action <= 0xFF && net::is_player(*C.sess, (uint8_t)action))
+            give_on_host(from, (uint8_t)action, ids);
+        else
+            g_cmds_rejected++;
         return;
     }
+    // CitizenAction values of the game's own orders are 0..28 (docs/re/tribe.md 2)
+    if (kind == CMD_ACTION && (action < 0 || action > 28)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (kind != CMD_ACTION && kind != CMD_WALK)
+        return;
     void* pt = player_tribe();
     void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
     char b[160];
@@ -579,6 +590,8 @@ static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
+    if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
+        return;
     std::vector<std::pair<net::Vec3, bool>> htribes;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
@@ -610,7 +623,6 @@ static void guest_state(net::Reader& r)
         g_cycle_ids.clear();
         g_cycle_chunks.clear();
     }
-    g_cycle_chunks.insert(chunk);
     double now = H->time_seconds();
     uint8_t n = r.u8();
     for (int i = 0; i < n && r.ok(); i++) {
@@ -658,6 +670,9 @@ static void guest_state(net::Reader& r)
         g.c = c;
         g_gid_of[c] = id;
     }
+    if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
+        return;
+    g_cycle_chunks.insert(chunk);
     if (chunk + 1 < chunks)
         return;
     if (g_cycle_chunks.size() < chunks) { // a chunk of this cycle was lost or comes late: keep everything

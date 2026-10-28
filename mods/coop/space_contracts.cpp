@@ -426,7 +426,9 @@ bool read_state(net::Reader& r, Contract& c, double t)
     for (int i = 0; i < n && r.ok(); i++)
         c.crew.push_back(r.u8());
     n = r.u8();
-    for (int i = 0; i < n && i < 16 && r.ok(); i++) {
+    if (n > 16)
+        return false;
+    for (int i = 0; i < n && r.ok(); i++) {
         Target tg;
         tg.star = r.u32();
         tg.done = r.u8();
@@ -437,6 +439,9 @@ bool read_state(net::Reader& r, Contract& c, double t)
     c.waves = r.u8();
     c.left = r.u8();
     c.up = r.u8();
+    // an armada needs its target planet (title, rows, the raid all read targets[0])
+    if (c.type > T_SURVEY || (c.type == T_ARMADA && c.targets.empty()))
+        return false;
     return r.ok();
 }
 
@@ -749,7 +754,7 @@ bool armada_ship(void* u)
         return false;
     void* planet = F<void*>(m, 0x1E8);
     void* rec = planet && !IsBadReadPtr(planet, 0x140) ? F<void*>(planet, 0x13C) : nullptr;
-    return rec && !IsBadReadPtr(rec, 0x188) && F<uint32_t>(rec, 0x184) == g.targets[0].planet;
+    return rec && !IsBadReadPtr(rec, 0x188) && !g.targets.empty() && F<uint32_t>(rec, 0x184) == g.targets[0].planet;
 }
 
 // the game's raid starter (the `raid -start` cheat's routine 0x0100E620, the same address in both
@@ -758,7 +763,7 @@ bool armada_ship(void* u)
 // (bombers type 4, 4 raiders type 2 each) come while the raided empire's player is on the planet.
 bool start_raid(int bombers)
 {
-    void* rec = planet_record(g.targets[0].planet);
+    void* rec = g.targets.empty() ? nullptr : planet_record(g.targets[0].planet);
     if (!rec || !a_StartRaid)
         return false;
     thiscall<bool>(a_StartRaid, (void*)nullptr, 0, rec, bombers);
@@ -1071,7 +1076,7 @@ std::vector<spaceext::Row> rows()
         }
         r2.text = tr("Reward each: ", "Награда каждому: ") + reward_text(g) + ", " + mmss(g.deadline - t) +
                   tr(" to accept", " на ответ");
-        if (g.type == T_ARMADA)
+        if (g.type == T_ARMADA && !g.targets.empty())
             jump_row(r2, g.targets[0].star);
         v.push_back(std::move(r1));
         v.push_back(std::move(r2));
@@ -1080,7 +1085,7 @@ std::vector<spaceext::Row> rows()
     // active
     spaceext::Row r1;
     r1.color = 0xFFFFD040;
-    if (g.type == T_ARMADA) {
+    if (g.type == T_ARMADA && !g.targets.empty()) {
         uint32_t s = g.targets[0].star;
         if (g.up)
             snprintf(b, sizeof b, tr(": wave %d/%d, %d ships, ", ": волна %d/%d, кораблей %d, "), g.wave, g.waves, g.left);

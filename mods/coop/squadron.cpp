@@ -10,6 +10,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/validate.h"
 #include "space_rivalry.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
@@ -391,6 +392,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_hid_rev.find(id);
         if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
+        dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
+        if (!net::finite3(dir))
+            dir[0] = dir[1] = dir[2] = 0;
         void* puppet = C.puppet_of ? C.puppet_of(from) : nullptr;
         g_applying = true;
         o_TakeDamage((uint8_t*)it->second + kCombat, dmg, skg::cdecl_call<uint32_t>(a_PlayerEmpireID), t, dir,

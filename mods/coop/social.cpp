@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "game.h"
+#include "net/validate.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
 
@@ -576,7 +577,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         k.instance = r.u32(); k.type = r.u32(); k.group = r.u32();
         int outcome = r.u8();
         float dna = r.f32();
-        if (r.ok() && dna > 0 && dna < 10000 && game::avatar() && host_goal_pay(k, outcome)) {
+        // a card pays when its species became allied (6) or extinct (5): the host's own table (the
+        // one every guest follows) must say so too
+        if (r.ok() && std::isfinite(dna) && dna > 0 && dna < 10000 && (outcome == 5 || outcome == 6) &&
+            goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
             game::dna_add_raw(dna);
             if (C.feed)
                 C.feed(std::string(outcome == 6 ? "A species became our ally" : "A goal was reached") + ": +" +

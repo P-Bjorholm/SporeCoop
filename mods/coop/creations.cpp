@@ -10,6 +10,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 namespace creations {
@@ -59,13 +60,8 @@ struct Bundle {
 static std::map<std::pair<uint8_t, uint8_t>, std::vector<uint8_t>> g_store; // host: (owner, kind) -> bundle
 static uint32_t g_sent_id[kKinds];                                             // what we sent of our own
 static double g_last_check;
-struct Rx {
-    uint32_t id = 0, total = 0;
-    std::vector<uint8_t> data;
-    std::vector<bool> got;
-    uint32_t have = 0;
-};
-static std::map<std::pair<uint8_t, uint8_t>, Rx> g_rx;
+static std::map<std::pair<uint8_t, uint8_t>, net::ChunkRx> g_rx;
+static unsigned g_rx_dropped; // pieces that did not fit the creation they belong to
 struct Applied {
     uint32_t id = 0;
     Key key;  // usable here (remapped instance)
@@ -294,11 +290,11 @@ static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
         dbpf::Record rec;
         rec.key.type = r.u32(); rec.key.group = r.u32(); rec.key.instance = r.u32();
         uint32_t sz = r.u32();
-        if (!r.ok() || sz > (4u << 20))
+        if (!r.ok() || sz > (4u << 20) || sz > r.left())
             return false;
         rec.data.resize(sz);
-        for (uint32_t j = 0; j < sz && r.ok(); j++)
-            rec.data[j] = r.u8();
+        if (sz)
+            r.raw(rec.data.data(), sz);
         b.recs.push_back(std::move(rec));
     }
     return r.ok();
@@ -942,22 +938,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     if (is_host() && owner != from)
         return; // a guest only sends its own
+    if (r.left() < n)
+        return; // a cut piece: not a part of the creation
     auto& rx = g_rx[{owner, kind}];
-    if (rx.id != id) {
-        rx = Rx{};
-        rx.id = id;
-        rx.total = total;
-        rx.data.assign(total, 0);
-        rx.got.assign((total + kChunk - 1) / kChunk + 1, false);
+    net::Chunk got = net::chunk_add(rx, id, total, off, r.cur(), n, kChunk, 8u << 20);
+    if (got == net::Chunk::Drop) {
+        g_rx_dropped++;
+        return;
     }
-    size_t ci = off / kChunk;
-    if (ci < rx.got.size() && !rx.got[ci]) {
-        for (uint16_t i = 0; i < n && r.ok(); i++)
-            rx.data[off + i] = r.u8();
-        rx.got[ci] = true;
-        rx.have += n;
-    }
-    if (rx.have < rx.total && rx.total > 0)
+    if (got == net::Chunk::Partial)
         return;
     std::vector<uint8_t> data = std::move(rx.data);
     g_rx.erase({owner, kind});
@@ -1057,9 +1046,9 @@ std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "creations: in=%u out=%u registered=%u avatar_swaps=%u waits_on_disk=%u unusable=%u world_swaps=%u "
-             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u%s%s\n",
+             "species asked=%u got=%u sent=%u missing=%u own_out=%u own_in=%u rx_dropped=%u%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
-             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+             g_species_asked, g_species_got, g_species_sent, g_species_missing, g_own_out, g_own_in, g_rx_dropped, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

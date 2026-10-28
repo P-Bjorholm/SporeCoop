@@ -378,6 +378,8 @@ static void on_roster(uint8_t origin, net::Reader& rd)
         pd.r.id = origin;
         pd.r.version = version;
     }
+    if (pd.got.count(part))
+        return; // this part again: its colonies are in already
     if (part == 0)
         get_head(rd, pd.r);
     uint8_t n = rd.u8();

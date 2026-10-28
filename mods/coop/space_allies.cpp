@@ -894,6 +894,8 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
             if (r.ok())
                 raids[p] = b;
         }
+        if (!r.ok())
+            return; // a cut list: keep the raids we know
         for (auto& [nm, m] : g_m)
             if (m.online && m.id == origin) {
                 for (auto& [p, b] : raids)
