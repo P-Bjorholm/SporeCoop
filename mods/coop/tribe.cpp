@@ -721,11 +721,36 @@ static void guest_state(net::Reader& r)
                 }
 }
 
+// BUG-0173: a member knocked out on the host (health 0, the game's dead flag +0xB5E, behaviour
+// node 0x05CA7FA7, it stays in the tribe until it respawns: the chieftain, NPC tribes) stood on the
+// guest with its last health. The mirror's behaviour tree does not run on a guest, so the mod plays
+// the death itself (Die + the death animation, game::play_death). When the host's member has health
+// again, the dead mirror is replaced by a fresh one (the next snapshot binds or spawns it).
+// `coop.tribe fix ko 0`: the code before (tests).
+static bool g_fix_ko = true;
+static uint32_t g_ko_shown, g_ko_replaced;
+
 static void guest_tick(double now)
 {
     for (auto& [id, g] : g_gm) {
         if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
             continue;
+        if (g_fix_ko && g.hp <= 0) {
+            if (!game::is_dead(g.c)) {
+                game::set_health(g.c, 0);
+                game::play_death(g.c);
+                g_ko_shown++;
+            }
+            drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
+            continue;
+        }
+        if (g_fix_ko && game::is_dead(g.c)) { // back on its feet on the host
+            g_gid_of.erase(g.c);
+            remove_member(g.c);
+            g.c = nullptr;
+            g_ko_replaced++;
+            continue;
+        }
         drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
@@ -1290,9 +1315,9 @@ std::string status()
     }
     snprintf(b, sizeof b,
              "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
-             "fix_gameover=%d chief_scale=%s\n",
+             "fix_gameover=%d knocked_out=%u ko_replaced=%u chief_scale=%s\n",
              g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
-             scales.c_str());
+             g_ko_shown, g_ko_replaced, scales.c_str());
     return out + b;
 }
 
@@ -1330,8 +1355,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_chiefs = on;
         else if (a[1] == "gameover")
             g_fix_gameover = on;
+        else if (a[1] == "ko")
+            g_fix_ko = on;
         else
-            return "usage: coop.tribe fix chiefs|gameover 0|1";
+            return "usage: coop.tribe fix chiefs|gameover|ko 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
@@ -1465,10 +1492,17 @@ std::string debug(const std::vector<std::string>& a)
     return "usage: coop.tribe select <id> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
 }
 
+// the citizen's current behaviour-tree node (ai = c+0xB4C, node id at ai+0x1D8; docs/re/tribe.md B)
+static uint32_t bt_node(void* c)
+{
+    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+    return ai && skg::readable(ai + 0x1D8, 4) ? *(uint32_t*)(ai + 0x1D8) : 0;
+}
+
 std::string list()
 {
     std::string out;
-    char b[200];
+    char b[240];
     void* pt = player_tribe();
     auto tribes = all_tribes();
     for (size_t ti = 0; ti < tribes.size(); ti++) {
@@ -1498,9 +1532,10 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f\n", id,
-                     c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
-                     game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv));
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X\n",
+                     id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
+                     game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
+                     bt_node(c));
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,

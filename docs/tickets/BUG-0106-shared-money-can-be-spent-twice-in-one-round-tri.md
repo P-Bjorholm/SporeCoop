@@ -1,19 +1,19 @@
 ---
 id: BUG-0106
 title: shared money can be spent twice in one round trip, and Civ/Space money goes negative
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#85
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-civ
+commits: caae221, 5fb37c8
+tests: tests/net_tests.cpp test_shared_ledger (make test); tools/tests/coop_civ_shared.py (suite civ_shared)
 signature:
-docs:
+docs: docs/re/civ.md#civ-shared-pool-sessions
 related: #85
 ---
 
@@ -65,14 +65,24 @@ Food (Tribe), both players at 20 food:
 Confirmed by reading the code; the in-game run above was not done in this review. A second reviewer verified the trace (severity low to medium: the window is about one round trip plus up to 0.25 s).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed 2026-10-28 (fix/w2-civ, mods/coop/shared.cpp, mods/coop/net/shared_ledger.h):
+- The host floors a guest's change at 0 (`net::shared_add`), and the Civ / Space money setters clamp to 0..99 999 999 like the game's AddMoney. When two spends cross, the part the shared total cannot cover is lost (the purchases themselves already happened in the games; refusing them would need an undo of the game's purchase, not done).
+- A guest numbers its reported changes (`MSG_RES_ADD` gets a trailing u32 sequence); the host echoes the last counted sequence of every guest after its total (`MSG_RES`: trailing `u8 n, n x (u8 id, u32 seq)`). The guest shows `total + changes not counted yet + unsent change`, so a total that left before the host counted a spend no longer gives the money back for a round trip (case B). Older peers ignore the trailing fields; with an older host the guest behaves as before.
+- After applying a host total the guest takes what the game really holds as its base, so a food bundle floored at 0 is not reported as an earning on the next tick (food from nothing).
+Switch: `coop.res fix floor 0` restores the code before (tests).
+
+Suggested in the review:
 
 - Host: `double nv = cur + v; if (nv < 0) { nv = 0; /* tell the guest: MSG_RES_REFUSED with the uncovered part */ }`, and floor the totals in `s_civ`/`s_space` (or go through AddMoney, which clamps).
 - Guest: keep the changes it has sent but the host has not counted yet (`in_flight`, with a sequence number). The host echoes the last sequence it applied in `MSG_RES`, and the guest shows `v + in_flight_not_yet_counted + pending` instead of `v + pending`. This removes the jump back up in case B.
 - Food: when `s_food` cannot spend all of `d`, record the shortfall instead of letting the next tick report it as an earning.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+- Unit test `test_shared_ledger` in tests/net_tests.cpp (`make test`): a crossing total with the spend still in flight shows 50, not 150; two in-flight spends with one counted; the floor. Built with `-DSPORECOOP_TEST_NOFIX=1` (the old behaviour) it FAILS 3 checks, with the fix it passes.
+- Two-game test `tools/tests/coop_civ_shared.py` (civ fixture, part 1): the shared money set to 150, host and guest spend 100 in the same step. FAIL with `--nofix` (out/lab/w2civ-manual/shared_nofix.log: `host -50.0 guest -50.0`), PASS with the fix (out/lab/w2civ-manual/shared_fix1.log and lab run out/lab/20261027-225434: both 0.0, never below 0).
+Not run: the Space variant (allies mode); it uses the same code path (`s_space` clamps the same way).
+
+Planned in the review:
 
 `tools/tests/coop_shared_race.py` on `twoinst.start`, Space and Civ fixtures:
 1. Set the shared money to 150 on the host.
@@ -87,3 +97,4 @@ On main the test FAILS with -50. With the fix it PASSES with 50, and one of the 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #85.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-civ (floor on the host and in the setters, in-flight changes with sequence numbers; unit and two-game tests FAIL without, PASS with).

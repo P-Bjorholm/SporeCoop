@@ -18,6 +18,8 @@
 #include "net/fixes.h"
 #include "net/ids.h"
 #include "net/interp.h"
+#include "net/lobby.h"
+#include "net/shared_ledger.h"
 #include "net/session.h"
 
 using namespace net;
@@ -876,6 +878,85 @@ static int fakepeer_host()
     return 0;
 }
 
+// `net_tests --nofix` (or a build with -DSPORECOOP_TEST_NOFIX=1) runs the logic before the fixes
+#ifndef SPORECOOP_TEST_NOFIX
+#define SPORECOOP_TEST_NOFIX 0
+#endif
+
+static void test_lobby_roles()
+{
+    printf("lobby roles keep their ids after an id was reused (BUG-0079)\n");
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
+    // guests 1 and 2 joined, 1 left, a newcomer got id 1: the host's list is in join order 0, 2, 1
+    std::vector<LobbyEntry> pl(3);
+    pl[0].id = 0; pl[0].role = 3;
+    pl[1].id = 2; pl[1].role = 1; pl[1].ready = true; pl[1].rtt = 40;
+    pl[2].id = 1; pl[2].role = 0; pl[2].rtt = 70;
+    auto role_of = [](const std::vector<LobbyEntry>& t, uint8_t id) {
+        for (auto& e : t)
+            if (e.id == id)
+                return (int)e.role;
+        return -1;
+    };
+    for (int wfix = 0; wfix < 2; wfix++)
+        for (int rfix = 0; rfix < 2; rfix++) {
+            if (!kFix && (wfix || rfix))
+                continue;
+            if (kFix && !wfix && !rfix)
+                continue; // old host and old guest: the bug itself
+            Writer w;
+            write_lobby(w, pl, wfix);
+            Reader r(w.data.data(), w.size());
+            std::vector<LobbyEntry> t;
+            bool has_roles = false;
+            CHECK(read_lobby(r, t, has_roles, rfix));
+            CHECK(has_roles && t.size() == 3);
+            CHECK(role_of(t, 2) == 1);
+            CHECK(role_of(t, 1) == 0);
+            CHECK(role_of(t, 0) == 3);
+            for (auto& e : t)
+                if (e.id == 2)
+                    CHECK(e.ready && e.rtt == 40);
+        }
+    // an older host without roles
+    Writer w;
+    w.u8(1); w.u8(0); w.u8(1); w.u16(0);
+    Reader r(w.data.data(), w.size());
+    std::vector<LobbyEntry> t;
+    bool has_roles = true;
+    CHECK(read_lobby(r, t, has_roles, true) && !has_roles && t.size() == 1 && t[0].ready);
+}
+
+static void test_shared_ledger()
+{
+    printf("shared resources: a crossing host total does not undo a spend (BUG-0106)\n");
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
+    SharedLedger g;
+    g.pending = -100; // the guest buys for 100 out of 150
+    uint32_t s1 = g.send();
+    // a host total that left before the host counted the spend (it echoes no count of ours yet)
+    double v = g.shown(150, kFix, s1 - 1);
+    CHECK(std::fabs(v - 50) < 1e-9); // before the fix: 150, the money jumped back up
+    // the host counted it
+    v = g.shown(50, kFix, s1);
+    CHECK(std::fabs(v - 50) < 1e-9);
+    CHECK(g.in_flight.empty());
+    // two spends in flight, the host counted the first one only
+    g.pending = -10;
+    uint32_t a = g.send();
+    g.pending = -20;
+    g.send();
+    g.pending = -5; // not sent yet
+    v = g.shown(40, kFix, a);
+    CHECK(std::fabs(v - 15) < 1e-9);
+    // an older host that echoes nothing: everything sent counts as counted (the old behaviour)
+    v = g.shown(20, false, 0);
+    CHECK(std::fabs(v - 15) < 1e-9 && g.in_flight.empty());
+    // both players spend 100 out of 150 at once: the host floors the total at 0
+    CHECK(shared_add(50, -100, kFix) == 0);
+    CHECK(shared_add(150, -100, kFix) == 50);
+}
+
 // ---- wave 2 netcode fixes (each FAILS with `net_tests --nofix`, the code before the fix) ----
 
 // BUG-0034: a reliable message bigger than one packet (a long `coop say`, the species table of a
@@ -1139,6 +1220,8 @@ int main(int argc, char** argv)
     test_interp();
     test_interp_gap();
     test_discovery();
+    test_lobby_roles();
+    test_shared_ledger();
     test_big_reliable();
     test_state_after_leave();
     test_velocity_jitter();

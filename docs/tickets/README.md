@@ -59,7 +59,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0046](BUG-0046-armada-contract-starts-a-second-raid-when-the-ho.md) | open | bug | Space | 2026-10-27 |  | armada contract starts a second raid when the host comes back, and the old raid decides the wave |
 | [BUG-0047](BUG-0047-refpack-decoder-reads-one-byte-past-a-5-byte-com.md) | open | bug | All | 2026-10-27 |  | RefPack decoder reads one byte past a 5-byte compressed record |
 | [BUG-0048](BUG-0048-lab-py-branch-can-test-another-branch-s-worktree.md) | open | tooling | All | 2026-10-27 |  | lab.py --branch can test another branch's worktree (prefix match) |
-| [BUG-0049](BUG-0049-money-or-food-changed-while-offline-is-added-to.md) | open | bug | All | 2026-10-27 |  | money or food changed while offline is added to the next host's shared pool |
+| [BUG-0049](BUG-0049-money-or-food-changed-while-offline-is-added-to.md) | fixed | bug | All | 2026-10-27 | unreleased | money or food changed while offline is added to the next host's shared pool |
 | [BUG-0050](BUG-0050-stack-dump-stack-hangdump-watchdog-can-freeze-th.md) | fixed | freeze | All | 2026-10-27 | unreleased | stack dump (stack, hangdump, watchdog) can freeze the game for good |
 | [BUG-0051](BUG-0051-the-guest-s-food-total-can-briefly-drop-below-a.md) | fixed | desync | Cell | 2026-10-27 | unreleased | the guest's food total can briefly drop below a level line, so it levels down and up again |
 | [BUG-0052](BUG-0052-a-lab-test-timeout-kills-only-bin-sh-the-test-ke.md) | open | tooling | All | 2026-10-27 |  | a lab test timeout kills only /bin/sh, the test keeps driving the lane |
@@ -74,7 +74,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0061](BUG-0061-a-partner-can-stay-shown-as-knocked-out-for-good.md) | fixed | desync | Cell | 2026-10-27 | unreleased | a partner can stay shown as knocked out for good (translucent, frozen "KO" label) |
 | [BUG-0062](BUG-0062-tickets-py-new-private-in-a-worktree-writes-to-t.md) | open | tooling | All | 2026-10-27 |  | tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost |
 | [BUG-0063](BUG-0063-flying-to-a-partner-who-is-in-the-galaxy-view-co.md) | open | bug | Space | 2026-10-27 |  | flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled |
-| [BUG-0064](BUG-0064-a-new-player-inherits-the-civilization-role-of-t.md) | open | bug | Civ | 2026-10-27 |  | a new player inherits the civilization role of the player who had their id before |
+| [BUG-0064](BUG-0064-a-new-player-inherits-the-civilization-role-of-t.md) | fixed | bug | Civ | 2026-10-27 | unreleased | a new player inherits the civilization role of the player who had their id before |
 | [BUG-0065](BUG-0065-sk-shot-sk-wait-frames-in-the-cheat-console-free.md) | fixed | freeze | All | 2026-10-27 | unreleased | `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good) |
 | [BUG-0066](BUG-0066-a-puppet-or-proxy-removed-during-a-cinematic-get.md) | fixed | bug | Creature | 2026-10-27 | unreleased | a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC |
 | [BUG-0067](BUG-0067-chiefs-stay-1-3x-big-after-the-session-ends-and.md) | open | bug | Tribe | 2026-10-27 |  | chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load |
@@ -89,7 +89,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0076](BUG-0076-a-new-player-is-shown-with-the-creature-or-ship.md) | fixed | desync | All | 2026-10-27 | unreleased | a new player is shown with the creature or ship of the player who had their id before |
 | [BUG-0077](BUG-0077-clicking-install-before-the-github-check-returns.md) | open | bug | Installer | 2026-10-27 |  | clicking Install before the GitHub check returns races on the release data |
 | [BUG-0078](BUG-0078-the-guest-s-bites-skip-the-game-s-won-t-attack-t.md) | open | bug | Cell | 2026-10-27 |  | the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments) |
-| [BUG-0079](BUG-0079-guests-can-see-other-players-civilization-roles.md) | open | desync | Civ | 2026-10-27 |  | guests can see other players' civilization roles swapped after someone rejoins |
+| [BUG-0079](BUG-0079-guests-can-see-other-players-civilization-roles.md) | fixed | desync | Civ | 2026-10-27 | unreleased | guests can see other players' civilization roles swapped after someone rejoins |
 | [BUG-0080](BUG-0080-install-bat-overwrites-the-player-s-coop-ini-nam.md) | open | bug | Installer | 2026-10-27 |  | install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall |
 | [BUG-0081](BUG-0081-restoring-a-former-chief-s-size-can-call-into-a.md) | fixed | crash | Tribe | 2026-10-27 | unreleased | restoring a former chief's size can call into a freed citizen |
 | [BUG-0082](BUG-0082-the-guest-keeps-creature-pointers-while-the-host.md) | fixed | crash | Creature | 2026-10-27 | unreleased | the guest keeps creature pointers while the host is away and destroys them minutes later |
@@ -116,7 +116,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0103](BUG-0103-more-places-that-can-kill-the-owner-s-own-spore.md) | open | tooling | All | 2026-10-27 |  | more places that can kill the owner's own Spore on lane 1 (BUG-0025) |
 | [BUG-0104](BUG-0104-the-co-op-window-keeps-showing-connecting-to-for.md) | open | bug | All | 2026-10-27 |  | the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line |
 | [BUG-0105](BUG-0105-a-received-world-is-loaded-even-when-writing-its.md) | fixed | bug | All | 2026-10-27 | unreleased | a received world is loaded even when writing its files failed (disk full, locked or read-only file) |
-| [BUG-0106](BUG-0106-shared-money-can-be-spent-twice-in-one-round-tri.md) | open | bug | All | 2026-10-27 |  | shared money can be spent twice in one round trip, and Civ/Space money goes negative |
+| [BUG-0106](BUG-0106-shared-money-can-be-spent-twice-in-one-round-tri.md) | fixed | bug | All | 2026-10-27 | unreleased | shared money can be spent twice in one round trip, and Civ/Space money goes negative |
 | [BUG-0107](BUG-0107-the-keepalive-std-thread-can-abort-the-game-at-e.md) | fixed | crash | All | 2026-10-27 | unreleased | the keepalive std::thread can abort the game at exit when Shutdown did not run |
 | [BUG-0108](BUG-0108-0-7-x-is-called-the-gog-2016-release-but-the-0-7.md) | open | bug | All | 2026-10-27 |  | 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016 |
 | [BUG-0109](BUG-0109-with-3-players-a-departed-player-s-last-state-ar.md) | fixed | desync | All | 2026-10-27 | unreleased | with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner |
@@ -130,7 +130,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0117](BUG-0117-a-second-superweapon-request-changes-the-weapon.md) | open | bug | Civ | 2026-10-27 |  | a second superweapon request changes the weapon and target of the vote already running |
 | [BUG-0118](BUG-0118-the-selection-guard-clears-0xb58-bit-0x1-but-the.md) | not-reproduced | crash | Creature | 2026-10-27 |  | the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash) |
 | [BUG-0119](BUG-0119-after-a-load-the-guest-may-keep-the-host-s-speci.md) | open | bug | Creature | 2026-10-27 |  | after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity) |
-| [BUG-0120](BUG-0120-an-npc-city-founded-while-a-guest-joins-or-loads.md) | open | desync | Civ | 2026-10-27 |  | an NPC city founded while a guest joins or loads never appears on that guest |
+| [BUG-0120](BUG-0120-an-npc-city-founded-while-a-guest-joins-or-loads.md) | fixed | desync | Civ | 2026-10-27 | unreleased | an NPC city founded while a guest joins or loads never appears on that guest |
 | [BUG-0121](BUG-0121-every-co-op-epic-creature-leaves-a-mod-made-herd.md) | open | bug | Tribe | 2026-10-27 |  | every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save |
 | [BUG-0122](BUG-0122-host-ships-and-civ-vehicles-jump-ahead-by-up-to.md) | fixed | desync | All | 2026-10-27 | unreleased | host ships and civ vehicles jump ahead by up to 40 m on the guest after one late packet |
 | [BUG-0123](BUG-0123-planet-seeding-flags-are-shared-by-all-threads-s.md) | open | bug | Space | 2026-10-27 |  | planet seeding flags are shared by all threads, so another thread can switch the seeding off |
@@ -183,7 +183,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | not-reproduced | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
 | [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | not-reproduced | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
 | [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
-| [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | open | desync | Tribe | 2026-10-23 |  | Tribe: knocked-out members stand on the guest |
+| [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | fixed | desync | Tribe | 2026-10-23 | unreleased | Tribe: knocked-out members stand on the guest |
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
 | [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | open | test | Civ | 2026-10-23 |  | coop_civ_play: the guest's "I'm ready" click was lost twice |
@@ -198,7 +198,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0185](BUG-0185-space-an-unvisited-star-s-planets-can-still-diff.md) | open | desync | Space | 2026-10-23 |  | Space: an unvisited star's planets can still differ between the two games |
 | [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | open | desync | Civ | 2026-10-27 |  | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | open | bug | Civ | 2026-10-27 |  | Civilization: the host's capture caption stops everybody's game |
-| [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | open | desync | Civ | 2026-10-27 |  | Civilization: the NPC AI still spawns vehicles on guests |
+| [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | unreleased | Civilization: the NPC AI still spawns vehicles on guests |
 | [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
 | [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | open | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |

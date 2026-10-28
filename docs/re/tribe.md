@@ -653,3 +653,16 @@ New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 cit
   chaos_tribe runs without the freeze, lab run 20261027-183142; 14 tribe_play runs before).
 * `coop.status` line `tribe lifetime:` (chief_restores, chief_gone, chief_bad_calls,
   spawns_blocked, chief_scale = game scale / own scale of every chief).
+
+## Knocked-out members (2026-10-28, fix/w2-civ)
+<a id="tribe-knocked-out-members"></a>
+
+* A tribe member hit to 0 health on the host (NPC tribe member, `coop.tribe pincer <id> <own id>
+  1000`) has the dead flag +0xB5E = 1 and behaviour node `ai[+0x1D8]` = **0x05CA7FA7**, and stays in
+  its tribe's member list (still there 60 s later; it was moved once, ~6 s after the hit). ✔
+* The guest's mirror runs no behaviour tree (h_BTTick skips citizen mirrors), so it never gets
+  there by itself; the mod now calls `game::play_death` (Die vt 0x8C + death animation) when the
+  host's health is 0 (BUG-0173). ✔ (dead flag on the guest, lane 7)
+* `coop.tribe` lists `dead=` and `bt=` (the behaviour node) per member; `tribe lifetime` counts
+  `knocked_out` / `ko_replaced`; switch `coop.tribe fix ko 0`.
+* ? How the member gets up again (same citizen revived or a new one) was not seen within 60 s.

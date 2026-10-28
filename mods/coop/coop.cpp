@@ -41,6 +41,7 @@
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/interp.h"
+#include "net/lobby.h"
 #include "net/session.h"
 #include "creations.h"
 #include "notify.h"
@@ -131,6 +132,9 @@ void feed(const std::string& s)
 std::deque<std::string> g_chat;
 std::map<uint8_t, bool> g_ready;   // by player id (the host keeps the truth)
 std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host keeps the truth)
+// roles end with their player and session, the lobby table keeps them with their ids (BUG-0064,
+// BUG-0079); `coop.role fix 0` = the code before (tests)
+bool g_role_fix = true;
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
 bool g_lobby_dirty = false;
 double g_last_lobby = 0;
@@ -973,15 +977,16 @@ void send_lobby()
 {
     net::Writer w;
     auto pl = g_sess.players();
-    w.u8((uint8_t)pl.size());
+    std::vector<net::LobbyEntry> t;
     for (auto& p : pl) {
-        w.u8(p.id);
-        w.u8(g_ready[p.id] ? 1 : 0);
-        int rtt = p.id == 0 ? 0 : g_sess.rtt_of(p.id);
-        w.u16((uint16_t)(rtt < 0 ? 0xFFFF : rtt));
+        net::LobbyEntry e;
+        e.id = p.id;
+        e.ready = g_ready[p.id];
+        e.rtt = p.id == 0 ? 0 : g_sess.rtt_of(p.id);
+        e.role = g_roles[p.id];
+        t.push_back(e);
     }
-    for (auto& p : pl) // roles after the main table (older guests stop reading before them)
-        w.u8(g_roles[p.id]);
+    net::write_lobby(w, t, g_role_fix);
     for (auto& p : pl)
         if (p.id != 0)
             g_sess.send_reliable_to(p.id, net::MSG_LOBBY, w);
@@ -1672,6 +1677,7 @@ void end_session_modules(bool cell)
     if (g_vote_scope_fix)
         drop_vote("the session ended");
     world::reset_shares();
+    shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
 }
@@ -1824,24 +1830,25 @@ void setup_callbacks()
             return;
         }
         if (type == net::MSG_LOBBY && g_sess.role() == net::Role::Client) {
-            uint8_t n = r.u8();
-            std::map<uint8_t, bool> ready;
-            std::map<uint8_t, int> rtt;
-            for (int i = 0; i < n && r.ok(); i++) {
-                uint8_t id = r.u8();
-                ready[id] = r.u8() != 0;
-                uint16_t t = r.u16();
-                rtt[id] = t == 0xFFFF ? -1 : t;
-            }
-            if (r.ok()) {
+            std::vector<net::LobbyEntry> t;
+            bool has_roles = false;
+            if (net::read_lobby(r, t, has_roles, g_role_fix)) {
+                std::map<uint8_t, bool> ready;
+                std::map<uint8_t, int> rtt;
+                for (auto& e : t) {
+                    ready[e.id] = e.ready;
+                    rtt[e.id] = e.rtt;
+                }
                 bool mine = g_ready[g_sess.my_id()];
                 g_ready = ready;
                 g_ready[g_sess.my_id()] = mine; // our own flag is ours until the host confirms it
                 g_lobby_rtt = rtt;
-                if (r.left() >= ready.size()) {
+                if (has_roles) {
                     uint8_t my_role = g_roles[g_sess.my_id()];
-                    for (auto& [id, on] : ready)
-                        g_roles[id] = r.u8();
+                    if (g_role_fix)
+                        g_roles.clear(); // players that left are gone from the table
+                    for (auto& e : t)
+                        g_roles[e.id] = e.role;
                     g_roles[g_sess.my_id()] = my_role;
                 }
             }
@@ -1906,6 +1913,9 @@ void setup_callbacks()
             world::on_message(type, r, g_sess.name_of(0));
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t) {
+        if (g_role_fix)
+            g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
+        shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
@@ -1936,6 +1946,8 @@ uint16_t default_port() { return (uint16_t)(net::kDefaultPort + H->instance_id()
 
 void reset_lobby()
 {
+    if (g_role_fix)
+        g_roles.clear(); // a new session starts with no roles (BUG-0064)
     g_ready.clear();
     g_lobby_rtt.clear();
     g_chat.clear();
@@ -2204,6 +2216,10 @@ int c_echo(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_res(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc >= 3 && !strcmp(argv[1], "fix")) {
+        SAY("%s", shared::fix(argv[2], argc >= 4 ? atoi(argv[3]) : -1).c_str());
+        return 0;
+    }
     if (argc >= 4 && !strcmp(argv[1], "add")) {
         std::string err;
         if (!shared::debug_add(argv[2], atof(argv[3]), err)) {
@@ -3041,7 +3057,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.npc", "coop.npc [on|off|list|herds|hit <id> <dmg>|hosthit <id> <dmg>|recruit <id>|spawn <hex>|cinedefer on|off] - host-authoritative NPC sync", c_npc, nullptr, MT);
-    H->command_add(M, "coop.res", "coop.res [add <food|money> <n>] - shared resources", c_res, nullptr, MT);
+    H->command_add(M, "coop.res", "coop.res [add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id] - (re)send the host world (save) to guests", c_share,
@@ -3122,8 +3138,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         key[0] = k.instance; key[1] = k.type; key[2] = k.group;
         return k.instance != 0;
     };
-    H->command_add(M, "coop.role", "coop.role [0-3] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
+    H->command_add(M, "coop.role", "coop.role [0-3 | fix 0|1] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "fix")) { // tests: 0 = before BUG-0064 / BUG-0079
+                           g_role_fix = atoi(argv[2]) != 0;
+                           SAY("role fix %s\n", g_role_fix ? "on" : "off");
+                           return 0;
+                       }
                        if (argc > 1)
                            set_role((uint8_t)(atoi(argv[1]) & 3));
                        for (auto& p : g_sess.players())

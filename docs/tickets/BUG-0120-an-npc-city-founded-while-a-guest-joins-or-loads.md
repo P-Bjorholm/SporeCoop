@@ -1,19 +1,19 @@
 ---
 id: BUG-0120
 title: an NPC city founded while a guest joins or loads never appears on that guest
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#99
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-civ
+commits: afdcc31
+tests: tools/tests/coop_civ_city_join.py (suite civ_city_join)
 signature:
-docs:
+docs: docs/re/civ.md#civ-city-catch-up
 related: #99
 ---
 
@@ -61,7 +61,9 @@ Not traced: the political id the replayed city gets on the guest (the docs say i
 CONFIRMED by reading the full path; verified independently by a second reviewer (low to medium). The main window is between the host's share save and the end of the guest's load; a guest leaving Civ for a loading screen mid-stage is a second, rarer window. Not run in the game. The political id consequences are not traced (see above).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed 2026-10-28 (fix/w2-civ, mods/coop/civ.cpp `city_catch_up`): the founding is now also a state. On every first chunk of a `MSG_CIV_STATE` the guest compares the host's city count with its own (`all_cities()`); when it stays short for 6 s and no founding ran here for 15 s, the guest replays `SpawnNextCity(ex, 0, 0)` once (the game founds the free site with the lowest order, the same one the host took). It never founds more cities than the host has. The event path stays for the normal case. Switch: `coop.civ fix cities 0` (tests). Counter: `cities_caught_up` in the guest's `coop.civ` line.
+
+Suggested in the review:
 
 Make the founding state, not an event:
 - the host adds a "cities founded so far" counter (or the city count) to `MSG_CIV_STATE`;
@@ -70,7 +72,12 @@ Make the founding state, not an event:
 A second option: the host resends `kNextCitySite` events to a guest once it reports the Civ mode.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `tools/tests/coop_civ_city_join.py` (civ_npc): the guest leaves and joins again; while its window shows "receiving world" the host founds the next NPC city through the hooked SpawnNextCity (`call Simulator::cCivExpansion::SpawnNextCity thiscall <ex> 0 0`). Then every host city must have a guest city within 60 m.
+- FAIL with `--nofix` (lane 7, out/lab/w2civ-manual/city_nofix.log): host 5 cities, guest 4, the city at (-337, -307, -219) missing. The guest had received the event (`cities_in=1`) in its old copy of the world, just before it loaded the host's save, which did not have the city yet.
+- PASS with the fix (out/lab/w2civ-manual/city_fix1.log: 5 / 5, `cities_caught_up=1`).
+Not checked: that the caught-up city gets the same political id as on the host (the snapshot's ChangeOwner corrects a different one).
+
+Planned in the review:
 
 `coop_civ_*` on two lanes:
 1. The host founds a city (`AppearNextCity`, instant) while the guest is loading the world.
@@ -84,3 +91,4 @@ It FAILS on main (one city missing) and PASSES with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #99.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-civ (the guest catches up with the host's city count; coop_civ_city_join FAIL without, PASS with).
