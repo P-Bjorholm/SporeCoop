@@ -45,3 +45,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w3-space: not reached (budget spent on the 10 other Space tickets). Runtime note from the wave 3 tests on lane 6 (GOG 2024): right after `start('space')` the page's "Land" button (`coop.space land`, LandOnActivePlanet) landed both ships at once in coop_space_armada_return.py (4 runs), so a test that needs an early landing can use it; the wheel zoom-in delay itself was not investigated.
