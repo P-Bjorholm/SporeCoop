@@ -1,19 +1,19 @@
 ---
 id: BUG-0130
 title: a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#109
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: 7e2173d
+tests: tools/tests/coop_join_other_world.py (suite join_other_world)
 signature:
-docs:
+docs: 
 related: #109
 ---
 
@@ -71,14 +71,34 @@ A guest whose own state (latest host `PlayerState` mode and world) does not matc
 CONFIRMED by reading. A second reviewer verified it independently. Not checked in a game: that the quit message's save writes exactly these changes (the save itself is ✔ in docs/re/space.md 8.2).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (7e2173d). coop.cpp `host_elsewhere()`: the host's latest state is in the
+guest's stage mode but another world. Then the guest drops the host's world messages at the
+dispatch (`MSG_DNA`, `MSG_WORLD_TIME`, every cell message incl. food, tribe state/commands,
+species table and social); the DNA total is kept and applied once the guest plays the host's world
+(`host_here()`), also when it arrived before the host's first state. npc's `host_away` is true
+while the host is elsewhere (also before its first state): the guest's own NPCs are not removed.
+The host sends NPCs only to players in its place (npc `Ctx::in_place`, the RTS branch too): a
+guest that leaves the place gets its proxies despawned and receives them again when it is back.
+Old behaviour: `coop.corefix same_place 0`.
+
+Not covered: a host table of relations received while the guest was in the host's world is still
+enforced by `social::enforce_table` if the guest then loads a world of its own while connected
+(case b); civ, space and the shared money are other modules' (not in this ticket's list).
+
+The review suggested:
 
 - Add a `host_here()`-like check (`same_place(latest host state)` and `PF_IN_WORLD`) to the context of npc, tribe, cellsync and social, and gate every guest-side apply on it: snapshots, `update_filter`, `MSG_CELL_FOOD`, `MSG_CELL_HIT`, `MSG_DNA`, `MSG_WORLD_TIME`, `enforce_table`.
 - On the host, make `player_pos` return false unless `same_place(guest state)`, as `with_host` does for squadron. The rts branch should also skip guests that are not in the host's place.
 - Keep the old behaviour behind `coop.fix same_place off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `coop_join_other_world.py` (Creature fixture): the guest leaves, loads a world of its
+own (the fixture planet copied as Otherworld.spo: another world id, its own NPCs), keeps it
+(`coop.worldfix autoload 0`) and joins; the host earns 50 DNA. FAIL with `--without-fix`: the
+guest's DNA went 0 -> 50 and 22 of its own NPCs were removed; PASS (lab run 20261027-231952 and the
+smoke run): DNA stays 0, no NPC removed, still in Otherworld.
+
+The planned test was:
 
 `coop_join_from_own_game.py` (two instances, Cell and Creature fixtures with two different saves, guest `auto_load_world=0`):
 - Guest loads its own save. Record its game food total (Cell: the game's food total, +0x1C of the object cellsync reads with `S()`) and DNA (Creature: `GetEvolutionPoints`), and count its own NPCs from the game's object list.
@@ -93,3 +113,4 @@ It fails on main (food and DNA equal the host's, NPC count 0) and with `coop.fix
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #109.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: a guest in another world of the stage applies nothing of the host's world (coop_join_other_world).

@@ -923,3 +923,35 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   known caught fault at 0x11ECE4F on both games after a cold start, and its retry once in the survey
   ("both at Kaver: surveyed (0/2)": the guest's page still listed Kaver while the host was at Rebel);
   two cold runs right after passed (out/lab/20261027-195928). Treat a single survey failure as flaky.
+
+## World sharing and updater files (2026-10-28, fix/w2-world)
+<a id="testing-world-sharing"></a>
+
+* `win_unit` (`tools/tests/win_unit.py`, ~10 s, no game): `make test-win` builds
+  `build/win_tests.exe` (tests/win_tests.cpp + mods/coop/slotfs.cpp + the updater) and runs it
+  under Wine in the lane's bottle (`bottles-cli run` of `cmd /c ... > file`: bottles-cli does not
+  return the program's output); it works in `%TEMP%\sporecoop-win-tests` of the bottle. Real Win32
+  file calls: where a received world goes and how it is written (BUG-0035, BUG-0087, BUG-0105),
+  the updater's backups, pending list and duplicate paths (BUG-0114, BUG-0150, BUG-0089).
+  `win_unit.py --old` switches every fix off and must FAIL. Wine enforces share modes on a file
+  rename (a file opened without sharing cannot be moved: the pending test relies on it) but moves a
+  folder that has a file open inside (Windows refuses), so the "file in use" case of a slot write
+  only fails on Windows.
+* `coop.worldfix [<name> 0|1 | all 0|1 | queue <id>... | autoload 0|1]`: the world sharing fix
+  switches `busy_slot`, `slot_match`, `write_check`, `world_reset`, `share_drop_peer`,
+  `share_one_save`, `load_in_editor`; `queue` queues shares with a save for those player ids in one
+  frame (id 0 = the host itself, a stand-in for a second guest); `autoload` sets
+  auto_load_world at runtime. `coop.status` prints "world saves posted N, for shares M, shares
+  dropped, loads dropped, loads held" and whether a load is queued.
+* `coop.corefix same_place 0|1` (BUG-0130); `coop.status` prints "host elsewhere=0|1, its world's
+  messages dropped N, dna pending X".
+* `coop_world_queue.py` (two games, ~2.5 min, `--without <names>|all`): one save for two shares,
+  a share for a player who is gone, a load queued inside the editor, Leave while the host's world
+  waits on the editor. The load-in-editor part without its fix loads from the editor and the
+  guest logs ~170 caught faults: run `--without load_in_editor` alone.
+* `coop_join_other_world.py` (two games, ~1.5 min, `--without-fix`): a second Creature world for
+  the guest is the fixture slot copied with the planet renamed (`Otherworld.spo`): the game loads it
+  under that name (another world id, same creatures). Only one fixture per stage exists otherwise.
+* The test games' logs from a worktree: `twoinst.Monitor.game_log` derives the game folder from the
+  repository root and points into the worktree's parent in a worktree; use the git common dir
+  (`coop_rejoin_net.py`, `coop_world_queue.py`).

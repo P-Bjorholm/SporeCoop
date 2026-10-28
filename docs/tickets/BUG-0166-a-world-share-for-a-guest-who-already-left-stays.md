@@ -1,19 +1,19 @@
 ---
 id: BUG-0166
 title: a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#145
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9, 75b7383
+tests: tools/tests/coop_world_queue.py (suite world_queue)
 signature:
-docs:
+docs: 
 related: #145
 ---
 
@@ -53,14 +53,23 @@ A guest that leaves takes its pending shares and transfers with it. No save, mes
 CONFIRMED by reading. A second reviewer found it while verifying related findings. Not run in a game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). `world::tick` (host) drops every pending share and marks every
+transfer done whose player is no longer in `s.players()` (logged, counted as "shares dropped"), so
+no save, no editor hold (`share_save_due`) and no slot read stay for a player who left. Old
+behaviour: `coop.worldfix share_drop_peer 0`.
+
+The review suggested:
 
 - In `player_leave` (host), call a new `world::drop_peer(id)` that erases `g_pending` entries and marks `g_out` transfers of that id done.
 - In `world::tick`, also skip entries whose peer is no longer in `s.players()`.
 - Keep the old behaviour behind `coop.fix share_drop_peer off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_world_queue.py` part 2 forces the state: `coop.worldfix queue 9` queues a share with a save for
+a player id that is not in the session (as a guest that left before its save). FAIL without the
+fix: a save of the host's game is posted for it; PASS: dropped at once, no save. Lane 3, 2026-10-28, PASS: lab runs 20261027-230646 and the branch's smoke run. FAIL runs: `coop_world_queue.py --without share_one_save,share_drop_peer,world_reset` and `--without load_in_editor` (outputs kept in the wave's scratch folder, named in the branch report).
+
+The planned test was:
 
 `coop_join_leave_share.py` (two instances, Space fixture, host on a planet):
 - The guest joins and leaves within 2 s.
@@ -75,3 +84,4 @@ It fails on main (about 15 s, and a new save) and with `coop.fix share_drop_peer
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #145.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: shares of players who left are dropped (coop_world_queue).

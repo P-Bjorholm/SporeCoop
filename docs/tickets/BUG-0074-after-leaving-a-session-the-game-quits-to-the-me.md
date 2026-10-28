@@ -1,19 +1,19 @@
 ---
 id: BUG-0074
 title: after leaving a session, the game quits to the menu and loads the old host world once the editor closes
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#52
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9, 75b7383
+tests: tools/tests/coop_world_queue.py (suite world_queue)
 signature:
-docs:
+docs: 
 related: #52
 ---
 
@@ -53,12 +53,24 @@ When the session ends, pending world loads and transfers are dropped. A player w
 CONFIRMED by reading the full path (`finish` -> `g_deferred` -> `deferred_tick` -> `load_slot` -> `via_menu_tick`, and no reset on either session-end path). Not run in the harness.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). `world::on_session_end()` (called by `end_session_modules`, so by
+every session end: Leave, disconnect, a new host/join, unload) drops the guest's load of a
+received world that waits for the editor (`g_deferred` with a host) or for the galaxy menu
+(`g_via_menu` marked as a share), and a half-received transfer (`g_in`). The player's own
+`coop.load` stays. The host's shares were already dropped by BUG-0140. Old behaviour:
+`coop.worldfix world_reset 0`.
+
+The review suggested:
 
 Add `world::on_session_end()` that resets `g_deferred`, `g_via_menu` (only one this mod queued for a received world, not a `coop.load` the player asked for), `g_in` and the host's `g_pending` / `g_out`. Call it from the `disconnected` callback, `do_leave` and `on_unload`. Old behaviour behind `coop.fix world_reset off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_world_queue.py` part 4: the host leaves its editor first, its world waits on the guest ("load
+after the editor"), the guest presses Leave and then "done". FAIL without the fix: the guest's game
+went GalaxyGameEntry -> LoadGame (the host's world loaded after the session ended); PASS: the guest
+stays in its Creature game for 20 s. Lane 3, 2026-10-28, PASS: lab runs 20261027-230646 and the branch's smoke run. FAIL runs: `coop_world_queue.py --without share_one_save,share_drop_peer,world_reset` and `--without load_in_editor` (outputs kept in the wave's scratch folder, named in the branch report).
+
+The planned test was:
 
 `tools/tests/coop_leave_in_editor.py` on two instances: get a world deferred on the guest while it is in the creature editor (as in `coop_editor_desync.py`), then the guest leaves the session and closes the editor. Assert with the game's own state that the guest stays in the Creature stage (mode 0x1654C01, the same avatar) for 15 s and the game's `CurrentGameName` (`SporeCoop::CurrentGameName`) does not change. It fails on main (the game goes to the galaxy menu and loads) and passes with the fix.
 
@@ -69,3 +81,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #52.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: the session end drops the guest's queued world loads (coop_world_queue).

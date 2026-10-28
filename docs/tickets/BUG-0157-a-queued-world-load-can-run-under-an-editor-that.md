@@ -1,19 +1,19 @@
 ---
 id: BUG-0157
 title: a queued world load can run under an editor that opened after the world arrived
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#136
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9, 75b7383
+tests: tools/tests/coop_world_queue.py (suite world_queue)
 signature:
-docs:
+docs: 
 related: #136
 ---
 
@@ -56,14 +56,24 @@ A queued load never runs inside an editor. It waits until the player is back in 
 PLAUSIBLE. The code path was confirmed by reading and by a second reviewer. The timing window and the crash itself were not reproduced (the crash is the one described in the comment in `finish`).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). `via_menu_tick` treats an editor (kEditor/kEdit) like `finish`
+does: the queued load moves to `g_deferred` (loaded 2 s after the editor is left) instead of
+`load_now` from the editor ("loads held" in `coop.status`). `own_editor_tick` and its outside-frame
+task wait while `world::load_queued()`. Old behaviour: `coop.worldfix load_in_editor 0`.
+
+The review suggested:
 
 - In `via_menu_tick`, treat kEditor/kEdit like `g_deferred`: move the request to `g_deferred` (load 2 s after the editor is left) instead of loading from it.
 - Make `own_editor_tick` (and its outside-frame task) skip while `g_via_menu.on || g_deferred.on`.
 - Keep the old behaviour behind `coop.fix load_in_editor off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_world_queue.py` part 3: both players in their editors after an evolution vote, the guest
+queues a load (`coop.load` of its received slot, the same queue a received world uses). FAIL without
+the fix: "loading from Editor", the game left the editor and the guest logged 174 caught faults; PASS:
+the guest stays in its editor, the load waits (and is replaced by the host's world). Lane 3, 2026-10-28, PASS: lab runs 20261027-230646 and the branch's smoke run. FAIL runs: `coop_world_queue.py --without share_one_save,share_drop_peer,world_reset` and `--without load_in_editor` (outputs kept in the wave's scratch folder, named in the branch report).
+
+The planned test was:
 
 `coop_world_during_editor.py` (two instances, Creature fixture):
 - Host `coop.share`.
@@ -78,3 +88,4 @@ It fails on main when the window is hit (repeat 10 times) and with `coop.fix loa
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #136.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: a queued load waits for the editor to close; the own editor waits for a queued load (coop_world_queue).
