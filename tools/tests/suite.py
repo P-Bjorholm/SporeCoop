@@ -21,6 +21,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
 
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1)
+add('win_unit', P + 'win_unit.py', minutes=1)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)
 add('tribe', P + 'coop_mode.py --fixture tribe', minutes=3)

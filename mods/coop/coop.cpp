@@ -1161,7 +1161,8 @@ void own_editor_tick(double now)
         g_own_editor_due = 0;
         return;
     }
-    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending()) {
+    if (!av || !g_local || now - g_settle_since < 15.0 || world::cinematic_playing() || mode_switch_pending() ||
+        world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
     }
@@ -1173,7 +1174,7 @@ void own_editor_tick(double now)
             if (!id)
                 return;
             // the player may have left the stage since (pause menu "Exit to Main Menu")
-            if (game::mode_id() != modes::kCreature || mode_switch_pending())
+            if (game::mode_id() != modes::kCreature || mode_switch_pending() || world::load_queued())
                 return; // own_editor_tick decides again
             // an editor opened under the pause menu or its "save your game?" boxes: a click on
             // "Don't Save" right after left the guest in a black editor for good
@@ -1631,6 +1632,7 @@ void end_session_modules(bool cell)
     if (g_vote_scope_fix)
         drop_vote("the session ended");
     world::reset_shares();
+    world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
 }
 
 void setup_callbacks()
