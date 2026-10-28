@@ -1,19 +1,19 @@
 ---
 id: BUG-0042
 title: six suite tests (smoke creature included) pass with faults and check only mod bookkeeping
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#20
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #20
 ---
 
@@ -66,14 +66,18 @@ A test with a non-zero fault count, or a freeze/dead console while it ran, fails
 CONFIRMED by running (lab side, fake test) and CONFIRMED by reading (the scripts).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Lab safety net: a log line `<name> faults: total faults: N` with N > 0 fails the test. coop_two_instances.py, coop_mode.py and coop_phase.py now start `twoinst.watch()` once both games are in the world and end with `Checks.faults()` (faults, freezes, dead consoles). Assertions on what the other machine shows: creature: the guest walked > 0.5 m after its click and the host shows its puppet nearer the new place than the start; coop_mode: the host moved > 0.3 m and the guest shows it nearer the new place than the old one. Left as is (listed): coop_two_instances still checks NPC damage by the mod's `hits_applied` counter with the `hp1 is None` escape, and DNA by `coop.dna`; coop_phase checks the mode.
+
+Suggested in the review:
 
 - In the three scripts use `twoinst.Checks` and call `ck.faults(host=host, guest=guest)` before `result()`; start `twoinst.watch(HOST, GUEST)` after the games are up so the monitor runs.
 - In `coop_mode.py` assert `moved > 1.0` (or similar) before comparing positions; in `coop_two_instances.py` assert the guest's avatar position changed after the click and drop the `hp1 is None` escape or replace it with the game's health.
 - As a safety net in `lab.py`: `ok = ok and not faults` (a line `<name> faults: total faults: N` with N > 0 fails the test).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): case faults. `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733). creature in that smoke run: "the guest walked 2.9 m; the host shows it 0.2 m off (2.8 m from the start)". cell/tribe/civ/space/phase: out/lab/20261028-032023: tribe (host moved 29.7 m, the guest shows it 0.0 m off), civ (14.3 / 0.3), space (53.8 / 0.1), phase OK; cell FAILed there: the host's click moved its cell only 0.1 m, so the old cell test never checked a move. With a held button (bb7154e): out/lab/20261028-032907 cell 2/2 OK (0.8 m and 0.5 m moved, 0.1 / 0.0 m off).
+
+Planned in the review:
 
 Lab self-test with the fake `faults` test above: FAIL with the fix, OK today. For the scripts: run `creature` once with a deliberate fault (a `call 0x1 cdecl` on a worker thread, as in `diag_check.py`) and see it fail.
 
@@ -83,3 +87,4 @@ CLAUDE.md section 3 ("Check what the other player sees, not our bookkeeping", "A
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #20.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
