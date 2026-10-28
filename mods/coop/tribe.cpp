@@ -721,11 +721,36 @@ static void guest_state(net::Reader& r)
                 }
 }
 
+// BUG-0173: a member knocked out on the host (health 0, the game's dead flag +0xB5E, behaviour
+// node 0x05CA7FA7, it stays in the tribe until it respawns: the chieftain, NPC tribes) stood on the
+// guest with its last health. The mirror's behaviour tree does not run on a guest, so the mod plays
+// the death itself (Die + the death animation, game::play_death). When the host's member has health
+// again, the dead mirror is replaced by a fresh one (the next snapshot binds or spawns it).
+// `coop.tribe fix ko 0`: the code before (tests).
+static bool g_fix_ko = true;
+static uint32_t g_ko_shown, g_ko_replaced;
+
 static void guest_tick(double now)
 {
     for (auto& [id, g] : g_gm) {
         if (!g.c || !game::object_alive(g.c) || now - g.seen > 3.0)
             continue;
+        if (g_fix_ko && g.hp <= 0) {
+            if (!game::is_dead(g.c)) {
+                game::set_health(g.c, 0);
+                game::play_death(g.c);
+                g_ko_shown++;
+            }
+            drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
+            continue;
+        }
+        if (g_fix_ko && game::is_dead(g.c)) { // back on its feet on the host
+            g_gid_of.erase(g.c);
+            remove_member(g.c);
+            g.c = nullptr;
+            g_ko_replaced++;
+            continue;
+        }
         drive::step(g.c, g.pos, g.rot, g.vel, g.ds, now, now - g.seen, true);
         float hp = game::health(g.c);
         if (std::fabs(hp - g.hp) > 0.01f && g.hp > 0)
@@ -1290,9 +1315,9 @@ std::string status()
     }
     snprintf(b, sizeof b,
              "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
-             "fix_gameover=%d chief_scale=%s\n",
+             "fix_gameover=%d knocked_out=%u ko_replaced=%u chief_scale=%s\n",
              g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
-             scales.c_str());
+             g_ko_shown, g_ko_replaced, scales.c_str());
     return out + b;
 }
 
@@ -1330,8 +1355,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_chiefs = on;
         else if (a[1] == "gameover")
             g_fix_gameover = on;
+        else if (a[1] == "ko")
+            g_fix_ko = on;
         else
-            return "usage: coop.tribe fix chiefs|gameover 0|1";
+            return "usage: coop.tribe fix chiefs|gameover|ko 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
