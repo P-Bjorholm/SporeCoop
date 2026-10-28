@@ -1158,3 +1158,36 @@ tickets. Each needs ~1.5-3 min on a warm lane.
 * A capture for tests: `coop.civ capture <city index>` (the game's Capture, plays the caption).
 * `glyph_lint.py` (in `make test`): every non-ASCII character in a string literal of mods/coop must
   be in the overlay font (Arial / WGL4 subset, BUG-0161).
+## One switch command for every fix: coop.fix (2026-10-28, fix/w4-registry)
+<a id="testing-fix-registry"></a>
+
+A bug fix's test must FAIL without the fix (CLAUDE.md 3). Every fix switch of coop.dll is in one
+registry (`mods/coop/fixes.h`, BUG-0116):
+
+* `coop.fix` or `coop.fix list`: `N fixes (M off)`, then one line per switch:
+  `<area>.<switch> on|off BUG-NNNN  what the fix does`.
+* `coop.fix <name> on|off` (also `1|0`; without a state it shows the one line), `coop.fix all
+  on|off`. Off = the code before the fix. A switch is not saved: a restart has every fix on.
+* A module registers its bool with one line next to its definition:
+  `COOP_FIX("pool.purge", "BUG-0032", g_fix_purge, "cell: ...");`. The registry only points at the
+  bools: the old per-module commands (`coop.pool fix`, `coop.npc strays|cinedefer|...`,
+  `coop.civ fix`, `coop.tribe fix`, `coop.res fix`, `coop.worldfix`, `coop.corefix`,
+  `coop.sessionfix`, `coop.framefix`, `coop.savestrip`, `coop.fleet|space ... <x>fix`, `coop.role
+  fix`, `coop.give fix`) keep working on the same bools. The area of a name is the old command's.
+* SporeKit's own fixes stay under `kit.fix` (sporekit.dll has its own table).
+* `SPORE_FIX_OFF=<name>[,<name>...]` (tools/tests/twoinst.py): any two-game test switches these
+  off on both games right after `twoinst.start()` (after the join: a fix that acts while the guest
+  joins is still on then). Example: `SPORE_LANE=6 SPORE_FIX_OFF=npc.play_death python3
+  tools/tests/coop_creature_kills.py` must FAIL.
+* Switches added for 0.7.2.x fixes that had none: `game.adapter_key` (BUG-0012, Alt+Shift+Enter;
+  `coop_alt_enter.py --without-fix` faults at 0x7777BE), `pool.forget` (BUG-0006),
+  `npc.stale_proxy` and `npc.world_despawn` (BUG-0009), `npc.play_death` (BUG-0015),
+  `creations.own_species` (BUG-0017). No switch (too large or no single branch): BUG-0002 (cell
+  meat), BUG-0003 (join the played planet), BUG-0010 (species request).
+* `tests/fixes_tests.cpp` (in `make test`): the registry and the command, and a scan of
+  mods/coop: every `COOP_FIX` has a unique `<area>.<switch>` name and a BUG-NNNN ticket, and every
+  bool named like a fix switch (`g_fix_x`, `g_x_fix`, `x_fix`, `g_fix`) defined `= true` has a
+  `COOP_FIX`. A new fix bool without one fails `make test`.
+* `coop_fix_registry.py` (suite `fix_registry`, one game, ~20 s): `coop.fix list` names every
+  `COOP_FIX` of the sources, all on; `all off` / `all on` round-trips; the old commands see the
+  same bools both ways; an unknown name is refused.

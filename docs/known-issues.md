@@ -643,7 +643,6 @@ keeps the history).
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
-* BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
