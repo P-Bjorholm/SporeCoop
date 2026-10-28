@@ -10,7 +10,7 @@ role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: fd28d1c, 927a4c5
+commits: fad94f0, 066df15
 tests: tools/tests/coop_leave_during_share.py (suite leave_during_share)
 signature:
 docs:
@@ -57,7 +57,7 @@ Leaving the session drops the shares that were waiting for it, and `save_busy()`
 CONFIRMED by reading. A second reviewer verified it independently. Not run in a game. That the pause menu's own exit uses 0x4715068 is inferred from docs/re/space.md 8.2 ("the native way out"); `coop.menu` and the world loads use it for sure.
 
 ## Fix
-Fixed on fix/w1-core (fd28d1c, 927a4c5). `world::reset_shares()` clears the pending shares and the
+Fixed on fix/w1-core (fad94f0, 066df15). `world::reset_shares()` clears the pending shares and the
 outgoing transfers; `end_session_modules()` calls it, so every session end (Leave, Join elsewhere,
 host gone, re-host, unload) drops them. `save_busy()` also counts a written-but-unshared entry only
 up to 5 s after its `latest`. `coop.status` lists pending shares ("share for N waits for its save" /

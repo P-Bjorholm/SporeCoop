@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: 927a4c5
+commits: 066df15
 tests: tools/tests/coop_exit_thread.py (suite exit_thread)
 signature:
 docs:
@@ -56,7 +56,7 @@ The game ends with its own exit code. No abort, no extra crash dialog.
 A second reviewer checked the destructor and CRT detach behaviour. Severity: low.
 
 ## Fix
-Fixed on fix/w1-core (927a4c5). The keepalive thread is a `std::thread*` created with `new`;
+Fixed on fix/w1-core (066df15). The keepalive thread is a `std::thread*` created with `new`;
 `keepalive_stop` joins and deletes it (hot reload, Shutdown). At an exit without Shutdown nothing is
 destroyed, so `~thread()` never sees a joinable thread. Old behaviour: `coop.exittest old` (starts
 the old global `std::thread` and exits).

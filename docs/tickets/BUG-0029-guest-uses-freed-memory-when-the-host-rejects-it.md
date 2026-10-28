@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: 695160b
+commits: a702d15
 tests: tests/net_tests.cpp test_session_end_in_delivery, make test-asan (in make test)
 signature:
 docs:
@@ -100,7 +100,7 @@ The host side is not affected: on the host, `MSG_BYE` only sets `p.bye`, and the
 CONFIRMED by harness (ASan, both paths). Not verified: whether the 32-bit Windows build actually crashes on players' PCs today. The freed block is usually still intact, so it may only corrupt the heap now and then.
 
 ## Fix
-Fixed on fix/w1-core (695160b). `Session::leave()` asked for while a Connection parses a packet
+Fixed on fix/w1-core (a702d15). `Session::leave()` asked for while a Connection parses a packet
 (`delivering_`, set around `on_packet` in `handle_packet`) only records the reason; `handle_packet`
 runs the leave and then `cb.disconnected` after `on_packet` has returned. The REJECT and BYE handlers
 store the disconnect text instead of calling the callback themselves. A `cb.custom` callback that

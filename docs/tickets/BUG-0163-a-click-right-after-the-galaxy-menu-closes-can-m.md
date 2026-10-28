@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: 51ad070, 94b79e2
+commits: dcce3fb, ad62745
 tests: tools/tests/coop_ui_menu_leave.py (suite ui_menu_leave)
 signature:
 docs:
@@ -48,7 +48,7 @@ No access to a menu window after the game left the menu: the item pointer is dro
 PLAUSIBLE. Confirmed by reading; a second reviewer agreed. Not checked: exactly when the game frees the menu window after the mode switch.
 
 ## Fix
-Fixed on fix/w1-core (51ad070, 94b79e2). `coop_ui::tick` drops `g_menu_btn` / `g_menu_parent`
+Fixed on fix/w1-core (dcce3fb, ad62745). `coop_ui::tick` drops `g_menu_btn` / `g_menu_parent`
 as soon as the mode is not the galaxy menu, and checks `world::menu_intro_playing()` before any
 call on the item. `shutdown()` and `debug_state()` do not touch the item outside the menu.
 `coop.uistate` shows `in_menu=0|1`. Old behaviour: `coop.corefix menu_drop 0`.

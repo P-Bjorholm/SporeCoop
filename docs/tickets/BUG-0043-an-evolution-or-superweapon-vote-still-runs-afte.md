@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: 927a4c5
+commits: 066df15
 tests: tools/tests/coop_vote_stale.py (suite vote_stale)
 signature:
 docs:
@@ -69,7 +69,7 @@ Guest side: a guest that disconnects during a vote keeps `g_vote.active`. On the
 CONFIRMED by reading the full path for both cases. Not verified: whether `cCivilization` is freed on "Exit to main menu" (very likely, as the planet is unloaded), and what the game does with an EditorRequest of a species not in the loaded save.
 
 ## Fix
-Fixed on fix/w1-core (927a4c5). `Vote` keeps the mode and world it was started in. `vote_tick`
+Fixed on fix/w1-core (066df15). `Vote` keeps the mode and world it was started in. `vote_tick`
 ends a vote whose stage or world is gone ("cancelled (the stage was left)") through `drop_vote`:
 the editor request is released (`vcall(req, 2)`), the action is not run, the co-op window closes if
 the vote opened it. `end_session_modules()` (every session end) calls `drop_vote` too, so a new

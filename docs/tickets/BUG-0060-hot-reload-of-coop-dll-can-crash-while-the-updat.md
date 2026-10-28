@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w1-core
-commits: cb65cfa, 927a4c5, ec3c204
+commits: 2bb6835, 066df15, 5bbb466
 tests: tools/tests/coop_reload_update.py (suite reload_update)
 signature:
 docs:
@@ -51,7 +51,7 @@ Every load of coop.dll starts a background update-check thread (WinHTTP to the G
 CONFIRMED by reading the full path (no join, no cancel, no state check at the thread's end). The crash itself is not reproduced here; it needs the timing above.
 
 ## Fix
-Fixed on fix/w1-core (cb65cfa, ec3c204).
+Fixed on fix/w1-core (2bb6835, 5bbb466).
 - autoupdate: every thread takes a reference to its own module (`GetModuleHandleExW(FROM_ADDRESS)`)
   and ends with `FreeLibraryAndExitThread`, so the old image stays mapped until the thread is done;
   `autoupdate::shutdown()` (from `on_unload`) keeps an old thread quiet (no log, no feed).
