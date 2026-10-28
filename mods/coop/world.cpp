@@ -360,6 +360,7 @@ struct PendingShare {
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
 };
 static std::vector<PendingShare> g_pending;
+extern bool g_share_reset_fix;
 
 bool share_with(uint8_t peer, std::string& err, bool save_first)
 {
@@ -382,11 +383,28 @@ bool share_with(uint8_t peer, std::string& err, bool save_first)
 
 bool save_busy()
 {
-    for (auto& p : g_pending)
-        if (!p.need_save)
-            return true; // saved for a share, not written completely yet
     uint64_t now = GetTickCount64();
+    for (auto& p : g_pending)
+        if (!p.need_save && (!g_share_reset_fix || !p.latest || now < p.latest + 5000))
+            return true; // saved for a share, not written completely yet (at most 15 s: BUG-0140)
     return g_saved_at && now < g_saved_at + 10000 && g_box_seen_at < g_saved_at;
+}
+
+// BUG-0140: a host that left the session within the 10 s after a share save kept the entry for
+// good (only tick(), which runs while hosting, removed it): save_busy() stayed true and coop.cpp
+// re-posted every quit message, so the host could not leave the stage. The session end drops the
+// shares and transfers that were for its players.
+bool g_share_reset_fix = true;
+
+void reset_shares()
+{
+    if (!g_share_reset_fix)
+        return;
+    if (!g_pending.empty() || !g_out.empty())
+        H->log(M, SK_INFO, "world: the session ended: %u share(s) and %u transfer(s) dropped",
+               (unsigned)g_pending.size(), (unsigned)g_out.size());
+    g_pending.clear();
+    g_out.clear();
 }
 
 bool save_pending()
@@ -1112,6 +1130,10 @@ std::string status()
     char b[200];
     for (auto& o : g_out) {
         snprintf(b, sizeof b, "sending world to %u: file %u/%u\n", o.peer, (unsigned)o.fi, (unsigned)o.files.size());
+        s += b;
+    }
+    for (auto& p : g_pending) { // tests (BUG-0140): a share waiting for its save, or for the save to be written
+        snprintf(b, sizeof b, "share for %u %s\n", p.peer, p.need_save ? "waits for its save" : "saved, being written");
         s += b;
     }
     if (g_in.active) {

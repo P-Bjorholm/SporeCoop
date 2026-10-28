@@ -23,6 +23,9 @@ void set_save_blocker(const char* (*probe)());
 bool save_busy();
 // host: a share waits for its save (not posted yet)
 bool save_pending();
+// the session ended: drop the shares and transfers queued for its players (BUG-0140)
+void reset_shares();
+extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
 void guest_tick(); // guests: load a world that arrived while in an editor
