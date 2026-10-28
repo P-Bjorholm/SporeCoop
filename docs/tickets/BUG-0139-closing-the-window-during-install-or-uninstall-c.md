@@ -1,19 +1,19 @@
 ---
 id: BUG-0139
 title: closing the window during Install or Uninstall can leave the game half installed
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#118
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-installer
+commits: eaf0a7c, 52be656
+tests: win_unit (tests/win_tests.cpp test_setup_close)
 signature:
-docs:
+docs: docs/06-testing.md#testing-installer-w4
 related: #118
 ---
 
@@ -51,16 +51,28 @@ Killing it during the download, or while the `.new` files are written, is harmle
 CONFIRMED by reading: the Close button and the X are enabled during a job, nothing waits for the job thread, and ExitProcess kills it. A second reviewer verified it. Severity: low, because the window is short and re-running the setup repairs it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w4-installer (eaf0a7c). While a job runs:
 
-- While `g_busy`: disable the Close button, and in `WM_CLOSE` refuse or ask ("Installing, please wait").
-- Or keep the job thread handle and wait for it in `WM_DESTROY` before `PostQuitMessage`.
-- Optionally make the swap repairable: `apply_pending` at the next setup start already handles leftover `.new` files listed in `sporecoop.pending`. Listing every step there before swapping would let the loader finish an interrupted install.
+* `WM_CLOSE` (the X, Alt+F4) is refused: the status says "Please wait: SporeCoop's files are being
+  changed. The window closes after that." and the setup beeps.
+* The Close button is disabled and sends `WM_CLOSE` instead of `DestroyWindow`.
+* The job thread's handle is kept (`g_job`); `wWinMain` waits for it before returning, so the CRT's
+  `ExitProcess` never runs under a running job.
+
+`/oldfix` (tests) brings back the old behaviour. For the test the setup reads
+`SPORECOOP_SETUP_TEST_DELAY=<ms>`: `upd::apply_pack` and the uninstall wait that long between a
+file's two moves (`upd::g_swap_delay_ms`).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `win_unit` (tests/win_tests.cpp `test_setup_close`, under Wine): 0.9.0 is installed into a fake
+game folder; the real `build/SporeCoopSetup.exe` starts with a hidden window, `/pack:` a 0.11.0 pack,
+offline, `SPORECOOP_SETUP_TEST_DELAY=1500`. The test clicks Install (WM_COMMAND to the button),
+800 ms later sends WM_CLOSE and Close, waits for the job, closes, and checks every file.
 
-Silent mode cannot close a window. Run the GUI setup under Wine in the lab, use the delay switch, send `WM_CLOSE` during the swap, then assert that `steam_api.dll`, `sporekit.dll` and `coop.dll` all exist and have one version. It should FAIL on main and PASS with the fix.
+* FAIL without the fix (`--old`, the setup with `/oldfix`): `closed during the job: yes`,
+  `steam_api.dll` is missing (renamed to .sporecoop-old, the new one never placed).
+* PASS with the fix: `closed during the job: no (refused)`, the window closes after the job, every
+  file is 0.11.0.
 
 ### Related
 #55 (Install before the GitHub check returns races on the release data), #67 (duplicate file in a pack loses the original on rollback), #72 (offline Reinstall can downgrade).
@@ -68,3 +80,4 @@ Silent mode cannot close a window. Run the GUI setup under Wine in the lab, use 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #118.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-installer (wave 4): no close while a job runs, the process waits for the job; GUI test under Wine.

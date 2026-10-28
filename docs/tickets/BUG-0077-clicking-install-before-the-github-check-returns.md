@@ -1,19 +1,19 @@
 ---
 id: BUG-0077
 title: clicking Install before the GitHub check returns races on the release data
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#55
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-installer
+commits: eaf0a7c
+tests: make test-tsan (tests/release_tsan.cpp, in make test)
 signature:
-docs:
+docs: docs/06-testing.md#testing-installer-w4
 related: #55
 ---
 
@@ -52,16 +52,26 @@ The release data is read and written under one lock, or the install job never to
 CONFIRMED by reading the full path (both threads write `g_rel` without synchronisation, the UI thread reads it). PLAUSIBLE that it crashes in practice: the window is the time the release check needs.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-* Give `do_install` its own `upd::Release rel` (copied from `g_rel` under a mutex when `g_rel_ok`, else fetched into the local copy), and pass `rel` to `download_pack`.
-* Protect `g_rel`, `g_rel_ok` and `g_rel_err` with a `std::mutex` (or a critical section) in `check_thread` and `refresh()`; make `g_rel_ok` and `g_busy` `std::atomic<bool>`.
-* Alternatively disable the Install button until the check has finished or failed (it already shows "checking GitHub...").
+Fixed on fix/w4-installer (eaf0a7c). The release state is an `upd::ReleaseBox` (updater/pack.h): `get()`
+returns a copy and `set()` replaces it, both under one `std::mutex`. The check thread fills it,
+`refresh()` reads a copy, and the install job (`inst::do_install`, installer/install.cpp) works on
+its own copy: when the check has no result yet it asks GitHub into that copy and then stores it
+in the box. Nothing writes a shared `std::string` without the lock any more. `g_busy` is a
+`std::atomic<bool>`. `upd::g_release_lock_fix = false` brings back the unlocked access (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: ThreadSanitizer, `make test-tsan` (part of `make test`): `tests/release_tsan.cpp` runs two
+writer threads (20 000 `set()` each with different releases) and a reader (20 000 `get()`) on one
+`ReleaseBox`.
 
-The race itself is hard to hit in a test. Make it testable: move the release state into a small portable struct (`ReleaseState` with `get()` / `set()` under a mutex) in updater/, and add a host test in tests/net_tests.cpp, built with `-fsanitize=thread` in a new `make test-tsan` target, where two threads call `set()` 10 000 times with different `Release` values and a third calls `get()`. With today's plain assignment of a global (the test variant without the mutex), ThreadSanitizer reports a data race (FAIL); with the mutex it is clean (PASS). Plus a smoke check in `tools/tests/update_check.py`: run the setup silently with a delayed local `/api:` server and assert exit code 0.
+* FAIL without the fix: `build/host/release_tsan --old` (no lock, as the old global):
+  `WARNING: ThreadSanitizer: data race ... in upd::Release::operator=`, exit code 66.
+* PASS with the fix: `ALL OK`, no report (make test, several runs).
+
+The race in the window itself is not forced in a GUI test: the box is the only path the setup has
+to the release data now (setup.cpp has no other global for it), which the review asked for. The
+GUI paths around it run in `win_unit` (test_setup_close: the real SporeCoopSetup.exe, check thread
+and install job at the same time).
 
 ### Related
 None known.
@@ -69,3 +79,4 @@ None known.
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #55.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-installer (wave 4): ReleaseBox under a mutex, the job uses its own copy; TSAN test.

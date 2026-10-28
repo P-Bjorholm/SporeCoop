@@ -1,19 +1,19 @@
 ---
 id: BUG-0204
 title: joining by host name resolves DNS on the game's main thread: a slow name server freezes the game
-status: open
+status: fixed
 kind: freeze
 stage: Menu
 reported: 2026-10-28
 source: split from BUG-0138 (fix/w3-net)
 role: guest
 versions: 0.7.2.4 and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-installer
+commits: cded566
+tests: coop_join_name.py (suite join_name), net_tests test_join_by_name
 signature:
-docs:
+docs: docs/06-testing.md#testing-installer-w4
 related: BUG-0138
 ---
 
@@ -32,11 +32,29 @@ fix/w3-net a numeric address is parsed with `AI_NUMERICHOST` first and never wai
 still block. Inferred from the code, not run with a dead name server.
 
 ## Fix
-Not fixed. Suggested: resolve names on a worker thread and finish the join from the main loop (the
-window shows "Resolving <name>..."), or accept numeric addresses only with a clear message.
+Fixed on fix/w4-installer (cded566). `Session::join` parses the address without a lookup
+(`Endpoint::parse_numeric`); a host name is looked up on a worker thread (`Endpoint::resolve_name`
+behind `net::g_lookup`) and `join` returns at once. `Session::update` polls the lookup: on success it
+sends HELLO (the 10 s join timeout starts then), on failure it leaves and calls
+`cb.disconnected("cannot resolve <name>")`, which the window shows; a lookup that has not ended
+after 20 s gives up. `leave()` drops the session's reference; the worker owns its own reference and
+ends alone. In coop.dll the worker is started by `spawn_pinned` (coop.cpp): it holds a reference to
+coop.dll and leaves through `FreeLibraryAndExitThread`, so a hot reload during a slow lookup does
+not unmap its code (as BUG-0060). Switch: `coop.corefix async_resolve 0` (and
+`net::g_fix.async_resolve`) brings back the lookup inside the click. Test helper: `coop.slowdns <ms>`
+makes every lookup wait.
 
 ## Verification
-<!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
+Tests:
+
+* `net_tests` `test_join_by_name` (make test, fake lookup of 1.5 s): `join("slowhost:port")` returns
+  in 0 ms and connects; an unknown name ends with "cannot resolve nohost"; a leave during the lookup
+  is clean. FAIL with `net_tests --old`: `join() returned after 1500 ms`.
+* `coop_join_name.py` (two games, creature, lane 4), `coop.slowdns 4000`, join `localhost:<port>`:
+  * FAIL `--without-fix`: `frames 1539 -> 1540 -> 1540; the join command took 4.0 s`, "0 frames in 2 s".
+  * PASS: `frames 1294 -> 1327 -> 1458; the join command took 0.0 s`, the guest is in the host world,
+    an unknown name ends with "cannot resolve".
 
 ## History
 - 2026-10-28: opened.
+- 2026-10-28: fixed on fix/w4-installer (wave 4): name lookup on a pinned worker thread, the join goes on in update(); unit and two-game tests.

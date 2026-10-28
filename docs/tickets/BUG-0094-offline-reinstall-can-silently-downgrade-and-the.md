@@ -1,19 +1,19 @@
 ---
 id: BUG-0094
 title: offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#72
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-installer
+commits: eaf0a7c, 52be656
+tests: net_tests test_pick_pack; win_unit (tests/win_tests.cpp test_setup_packs)
 signature:
-docs:
+docs: docs/06-testing.md#testing-installer-w4, docs/INSTALL.md
 related: #72
 ---
 
@@ -56,17 +56,29 @@ When GitHub cannot be reached, SporeCoopSetup.exe installs the update pack found
 CONFIRMED by reading the full path (`local_pack` -> `do_install` -> `apply_pack`, no version check against the installed one). Not run on Windows.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w4-installer (eaf0a7c). The install steps moved to installer/install.cpp
+(`inst::local_pack`, `inst::do_install`, `inst::do_uninstall`) so the Windows tests call them.
 
-* Move the choice into portable code: `std::string upd::pick_pack(const std::vector<std::string>& names)` in updater/pack.cpp, returning the name with the highest version parsed from `SporeCoop-<version>.pack`; `local_pack()` enumerates all matches and uses it.
-* In `do_install`, compare `pack.version` with `upd::installed_version(root)`: when lower, return a clear message in silent mode (unless `/downgrade`), and in the window show it in the button text and ask before installing.
-* Compute the button label from the pack that will actually be installed.
+* `upd::pack_version_of` / `upd::pick_pack` (updater/pack.cpp, portable): of all
+  `SporeCoop-<version>.pack` next to the setup the one with the highest version is used.
+* `inst::do_install` compares the pack's version with `upd::installed_version(root)`; when it is
+  older and `Options::downgrade` is not set it changes nothing and returns `Result::Older`. The window
+  then asks ("SporeCoop X is installed. This setup has the older version Y ... Install Y anyway?",
+  default No) and installs only on Yes; silent mode exits 1 with that message unless `/downgrade`.
+* The button names what it installs: "Update to X", "Reinstall", or "Install older X", computed from
+  the local pack and GitHub's release the same way do_install chooses.
+* `/oldfix` (tests) brings back the first pack listed and no downgrade check.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Tests:
 
-* Host test in tests/net_tests.cpp for the new helper: `CHECK(upd::pick_pack({"SporeCoop-0.10.0.pack", "SporeCoop-0.11.0.pack", "SporeCoop-0.9.0.pack"}) == "SporeCoop-0.11.0.pack")`. Implemented the way `local_pack()` works today (first name in listing order) it returns `SporeCoop-0.10.0.pack` (FAIL); with the fix it returns the newest (PASS).
-* In `tools/tests/update_check.py`: install the current pack into the lane, then run the setup silently with `/pack:` an older pack built by `tools/mkpack.py` with a lower version and `/api:` an address that does not answer; assert a non-zero exit code and that `sporecoop.version` still holds the newer version. On main the setup exits 0 and the version file shows the older version (FAIL); with the fix it refuses (PASS).
+* `net_tests` `test_pick_pack` (make test): `pick_pack({0.10.0, 0.11.0, 0.9.0})` is 0.11.0. FAIL with
+  `net_tests --old` (first listed: 0.10.0), PASS with the fix.
+* `win_unit` (tests/win_tests.cpp `test_setup_packs`, under Wine): three packs next to a fake setup
+  folder, offline (`/api:` 127.0.0.1:9): local_pack picks 0.11.0 and installs it; then the 0.9.0 pack
+  returns `Result::Older` and every file stays 0.11.0; with `downgrade` 0.9.0 is installed and the
+  player's coop.ini stays. FAIL with `--old`: `local pack: ...SporeCoop-0.10.0.pack` (Wine listed it
+  first) and `older pack: SporeCoop 0.9.0 is installed`, three CHECKs fail. PASS with the fix.
 
 ### Related
 The in-game updater's downgrade guard in mods/coop/autoupdate.cpp (`the release pack is not newer`).
@@ -74,3 +86,4 @@ The in-game updater's downgrade guard in mods/coop/autoupdate.cpp (`the release 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #72.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-installer (wave 4): newest pack, downgrade refused unless confirmed or /downgrade; host and Wine tests.

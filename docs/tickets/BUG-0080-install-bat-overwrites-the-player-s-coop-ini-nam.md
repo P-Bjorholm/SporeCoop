@@ -1,19 +1,19 @@
 ---
 id: BUG-0080
 title: install.bat overwrites the player's coop.ini (name, update opt-out) on a reinstall
-status: open
+status: fixed
 kind: bug
 stage: Installer
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#58
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-installer
+commits: 52be656
+tests: win_unit (tests/win_tests.cpp test_install_bat)
 signature:
-docs:
+docs: docs/06-testing.md#testing-installer-w4, docs/INSTALL.md
 related: #58
 ---
 
@@ -54,21 +54,30 @@ xcopy /e /i /y /q SporeCoop\mods mods >nul
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Copy everything but the inis with `xcopy`, then the inis only when missing:
+Fixed on fix/w4-installer (52be656). install.bat and uninstall.bat are files now
+(`installer/install.bat`, `installer/uninstall.bat`; tools/package.sh copies them). install.bat copies
+`SporeCoop\mods` with `xcopy /exclude:SporeCoop\ini.exclude` (the file holds `.ini`, shipped in
+the zip) and then each `SporeCoop\mods\*.ini` only when `mods\<name>` is missing:
 
 ```bat
 xcopy /e /i /y /q /exclude:SporeCoop\ini.exclude SporeCoop\mods mods >nul
 for %%f in (SporeCoop\mods\*.ini) do if not exist "mods\%%~nxf" copy /y "%%f" "mods\%%~nxf" >nul
 ```
 
-(with `ini.exclude` containing `.ini`), or move the default inis out of `SporeCoop\mods` into `SporeCoop\defaults` in the zip so `xcopy` never sees them.
+Under Wine `xcopy /exclude:` with a missing exclude file copies nothing at all: the zip always has
+it next to the mods folder.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `win_unit` (tests/win_tests.cpp `test_install_bat`, under Wine in the lane's bottle): a fake
+`SporebinEP1` with a dummy SporeApp.exe and a `SporeCoop` folder; install.bat runs (`cmd /c
+install.bat < NUL`), `mods\coop.ini` is changed to a name and `[update] check=0`,
+`mods\sporekit.ini` is deleted, the dlls and symbols in `SporeCoop` change, install.bat runs again.
 
-A Wine (or Windows) check: stage the zip with `tools/package.sh`, run `install.bat` in a fake `SporebinEP1` (an empty `SporeApp.exe` file is enough for its existence check), change `mods\coop.ini`, run `install.bat` again: the change must survive. It is lost today.
+* FAIL without the fix (`win_unit.py --old`: the install.bat of 7874654, from tools/package.sh):
+  `coop.ini after the reinstall: replaced`, `FAIL ... get(bin + L"\\mods\\coop.ini") == mine`
+  (lane 4, see the run below).
+* PASS with the fix: `coop.ini after the reinstall: kept`, the missing sporekit.ini is back, the new
+  dlls and symbols are in place; `ALL OK`.
 
 ### Related
 `tools/mkpack.py` comment "the player's settings stay"; docs/INSTALL.md section 8.
@@ -76,3 +85,4 @@ A Wine (or Windows) check: stage the zip with `tools/package.sh`, run `install.b
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #58.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-installer (wave 4): install.bat keeps the .ini files; Wine test test_install_bat.
