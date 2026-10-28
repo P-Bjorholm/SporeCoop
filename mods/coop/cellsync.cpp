@@ -169,7 +169,7 @@ static net::Vec3 g_down_pos;
 static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
 static float g_body_size = 0; // the target size we wrote, to notice the game resizing the avatar
 
-static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr);
+static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr, bool helper = false);
 
 
 // "right next to": the cells (almost) touch
@@ -218,16 +218,16 @@ struct Ko {
 };
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
 
-// the nearest partner who can help: rescue (a lethal hit becomes a knockout), revive, the spot to
-// respawn at. A knocked-out partner (held at hp 1, never flagged dead) cannot (BUG-0131: two cells
+// the nearest partner; `helper`: one who can help: rescue (a lethal hit becomes a knockout), revive,
+// the spot to respawn at. A knocked-out partner (held at hp 1, never flagged dead) cannot (BUG-0131: two cells
 // knocked out side by side revived each other). Old (`fix rescue 0`): any partner.
-static std::string nearest_partner(float max_dist, net::Vec3* where, float* dist)
+static std::string nearest_partner(float max_dist, net::Vec3* where, float* dist, bool helper)
 {
     uint8_t* a = avatar();
     if (!a || !C.partners)
         return {};
     std::unordered_set<std::string> out;
-    if (g_fix_rescue && C.sess)
+    if (helper && g_fix_rescue && C.sess)
         for (auto& [id, k] : g_ko)
             if (k.state == KO_OUT)
                 out.insert(C.sess->name_of((uint8_t)id));
@@ -331,7 +331,7 @@ static bool go_down(uint8_t* c)
     if (!c || c != avatar() || !C.sess || !C.sess->connected())
         return false;
     if (!g_downed) {
-        if (nearest_partner(1e9f).empty())
+        if (nearest_partner(1e9f, nullptr, nullptr, true).empty())
             return false; // alone in the pool: the vanilla death
         g_downed = true;
         g_down_since = H->time_seconds();
@@ -362,7 +362,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     F<float>(a, kOpacity) = kKoOpacity;
     stop_at(a, g_down_pos);
     float d = 0;
-    std::string helper = nearest_partner(revive_dist(a), nullptr, &d);
+    std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
     g_hold = helper.empty() ? 0 : g_hold + dt;
     if (now - g_ko_sent > 0.25)
         send_ko(KO_OUT, (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold));
@@ -383,7 +383,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     // nobody came: respawn next to the partner, small again
     g_downed = false;
     net::Vec3 at = g_down_pos;
-    std::string partner = nearest_partner(1e9f, &at);
+    std::string partner = nearest_partner(1e9f, &at, nullptr, true);
     stop_at(a, partner.empty() ? at : net::Vec3{at.x + 2.f, at.y + 1.f, 0.f});
     F<uint8_t>(a, 0x04) = 1; // idle
     F<int>(a, kHp) = 6;

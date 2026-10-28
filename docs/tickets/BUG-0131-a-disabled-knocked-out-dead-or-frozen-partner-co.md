@@ -75,7 +75,7 @@ revive hold grew from the knocked-out host); a disabled guest made the host's sh
 the repair timer of both running.
 
 ## Fix
-- Cell: `nearest_partner` (go_down, downed_tick's revive and respawn spot, the HUD) skips partners
+- Cell: `nearest_partner(.., helper = true)` (go_down, downed_tick's revive and respawn spot) skips partners
   whose knockout state is KO_OUT. Old: `coop.pool fix rescue 0`.
 - Space: `Partner` carries `playing` (a state under 3 s old, PF_IN_WORLD, not PF_DEAD), filled in
   coop.cpp; `helpers_here()` (partners_here without partners that do not play or are disabled,
