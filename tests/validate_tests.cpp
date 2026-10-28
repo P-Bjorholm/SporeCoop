@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "net/buffer.h"
+#include "net/give_target.h"
 #include "net/validate.h"
 
 using namespace net;
@@ -152,6 +153,27 @@ static void test_players()
     CHECK(!is_player(s, 1) && !is_player(s, 0xFF));
 }
 
+static void test_give_target()
+{
+    printf("gift recipient (BUG-0075)\n");
+    // three players, guest 2 picks guest 1: the gift goes to 1, not to the host
+    CHECK(give_target({0, 1, 2}, 2, 1) == 1);
+    CHECK(give_target({0, 1, 2}, 2, 1, false) == 0); // the old behaviour: always the first other player
+    // nothing picked yet, or the pick left, or the pick is me: the first other player
+    CHECK(give_target({0, 1, 2}, 2, kNoGiveTarget) == 0);
+    CHECK(give_target({0, 2}, 2, 1) == 0);
+    CHECK(give_target({0, 1, 2}, 0, 0) == 1);
+    CHECK(give_target({2, 0, 1}, 0, kNoGiveTarget) == 1);
+    CHECK(give_target({1}, 1, 0) == kNoGiveTarget); // alone
+    // cycling goes through every other player and wraps
+    CHECK(give_target_next({0, 1, 2, 3}, 1, kNoGiveTarget) == 2);
+    CHECK(give_target_next({0, 1, 2, 3}, 1, 2) == 3);
+    CHECK(give_target_next({0, 1, 2, 3}, 1, 3) == 0);
+    CHECK(give_target_next({0, 1, 2, 3}, 1, 0) == 2);
+    CHECK(give_target_next({0, 1}, 1, 0) == 0);
+    CHECK(give_target_next({1}, 1, 0) == kNoGiveTarget);
+}
+
 int main()
 {
     test_chunks();
@@ -159,6 +181,7 @@ int main()
     test_space_origin();
     test_numbers();
     test_players();
+    test_give_target();
     if (g_fail) {
         printf("%d FAILED\n", g_fail);
         return 1;

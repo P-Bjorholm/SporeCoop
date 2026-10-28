@@ -40,6 +40,7 @@
 #include "world.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
+#include "net/give_target.h"
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
@@ -2632,13 +2633,19 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
 }
 
 // the stage action of the co-op window: give the selected own units to a partner
-uint8_t give_target()
+// BUG-0075: the player picks the recipient among the other players (the co-op window's ">" next to
+// Give, `coop.give next`); before, it was always the first other player. `coop.give fix 0`: the old one.
+uint8_t g_give_pick = net::kNoGiveTarget;
+bool g_give_pick_fix = true;
+static std::vector<uint8_t> player_ids()
 {
+    std::vector<uint8_t> ids;
     for (auto& p : g_sess.players())
-        if (p.id != g_sess.my_id())
-            return p.id;
-    return 0xFF;
+        ids.push_back(p.id);
+    return ids;
 }
+uint8_t give_target() { return net::give_target(player_ids(), g_sess.my_id(), g_give_pick, g_give_pick_fix); }
+void give_target_cycle() { g_give_pick = net::give_target_next(player_ids(), g_sess.my_id(), g_give_pick); }
 
 int give_selected_to(uint8_t to)
 {
@@ -2819,6 +2826,8 @@ void init_ui()
             nullptr);
     };
     a.give_do = [] { give_selected_to(give_target()); };
+    a.give_cycle = [] { give_target_cycle(); };
+    a.give_choices = [] { return (int)g_sess.players().size() - 1; };
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
@@ -3152,8 +3161,22 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.give", "coop.give [player id] - give the selected own tribe members / vehicles (or the opened city)",
+    H->command_add(M, "coop.give", "coop.give [player id | next | target | fix 0|1] - give the selected own tribe members / vehicles (or the opened city); next: the next recipient",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "next")) { // the co-op window's ">" (BUG-0075)
+                           give_target_cycle();
+                           SAY("give target: %u %s", give_target(), g_sess.name_of(give_target()).c_str());
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "fix")) {
+                           g_give_pick_fix = atoi(argv[2]) != 0;
+                           SAY("give pick fix %d", (int)g_give_pick_fix);
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "target")) {
+                           SAY("give target: %u %s", give_target(), g_sess.name_of(give_target()).c_str());
+                           return 0;
+                       }
                        uint8_t to = argc > 1 ? (uint8_t)atoi(argv[1]) : give_target();
                        SAY("given: %d", give_selected_to(to));
                        return 0;

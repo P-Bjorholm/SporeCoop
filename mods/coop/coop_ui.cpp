@@ -206,7 +206,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
-    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, jump_btn = nullptr;
+    Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // Space page: the rows of the space features (space_ext.h)
     std::vector<Win> page_space;
@@ -479,6 +479,12 @@ static void build_dialog()
             A.give_do();
         g_dirty = true;
     });
+    // 3 or 4 players: ">" picks the next other player as the recipient (BUG-0075)
+    D.give_next = add_button(L, "givenext", {520, 404, 560, 434}, ">", [] {
+        if (A.give_cycle)
+            A.give_cycle();
+        g_dirty = true;
+    });
     D.creation_next = add_button(L, "cnext", {650, 404, 720, 434}, ">", [] {
         if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
             A.civ_role_cycle(1);
@@ -663,6 +669,7 @@ static void refresh_lobby()
     }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
+    show(D.give_next, giving && gn > 0 && !space && A.give_choices && A.give_choices() > 1);
     text(D.give_btn, space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto);
     std::string jto;
     bool jump = A.jump && A.jump(jto);
