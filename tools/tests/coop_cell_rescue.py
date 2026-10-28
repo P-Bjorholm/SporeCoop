@@ -6,7 +6,7 @@ A knocked-out cell is held at hp 1 and never flagged dead, so it counted as that
 players knocked out side by side revived each other, and a lethal hit became a knockout although
 nobody could help.
 
-1. The guest swims 30 m away and is knocked out (a lethal bite from the host's side).
+1. The guest is knocked out (a lethal bite from the host's side).
 2. The host takes a lethal bite itself (`coop.pool selfhit`): its only partner is knocked out, so
    the game's own death runs (the avatar dying, +0x113), not a knockout (hp held at 1).
 3. On the guest's machine the host is not shown knocked out (no `ko[0]=1`).
@@ -51,7 +51,7 @@ def main():
         guest.call('coop.pool tp 30 0')
         time.sleep(1.5)
         host.call('coop.pool hurt 1 50')
-        ck(wait(lambda: num(pool(guest), 'downed') == 1, 5), 'the guest is knocked out (30 m from the host)')
+        ck(wait(lambda: num(pool(guest), 'downed') == 1, 5), 'the guest is knocked out')
         ck(wait(lambda: re.search(r'^ko\[1\]=1', pool(host), re.MULTILINE), 3), 'the host sees the guest knocked out')
         r = host.call('coop.pool selfhit 250')['out']
         print('  host:', r)
