@@ -14,8 +14,7 @@ import threading
 import time
 
 import lane
-from sporectl import Console
-from twoinst import Checks, start, wait_guest_in
+from twoinst import Checks, Console, start, wait_guest_in
 
 DELAY_MS = 4000
 

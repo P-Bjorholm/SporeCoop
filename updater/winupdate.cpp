@@ -11,6 +11,7 @@
 namespace upd {
 
 bool g_old_fix = true;
+int g_swap_delay_ms = 0;
 
 std::wstring widen(const std::string& s)
 {
@@ -270,6 +271,8 @@ bool apply_pack(const std::wstring& root, const Pack& p, std::string& err, int* 
                 goto rollback;
             }
             s.moved_old = true;
+            if (g_swap_delay_ms > 0) // tests (BUG-0139): the target is gone until the next move
+                Sleep((DWORD)g_swap_delay_ms);
         }
         if (!MoveFileExW(s.fresh.c_str(), s.target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             err = why("cannot install", s.target);

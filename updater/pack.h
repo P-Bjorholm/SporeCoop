@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,48 @@ struct Release {
     std::string setup_url, page_url;   // SporeCoopSetup.exe, the release page
 };
 bool parse_release(const std::string& json, Release& out);
+
+// BUG-0094: the version in an update pack's file name ("SporeCoop-0.11.0.pack" -> "0.11.0", case
+// ignored, a folder in front is fine), "" when the name is not one; pick_pack: the name with the
+// highest version (the first of equal ones), "" if none. g_pick_fix false = the old choice: the
+// first name in the listing (tests).
+std::string pack_version_of(const std::string& name);
+std::string pick_pack(const std::vector<std::string>& names);
+extern bool g_pick_fix;
+
+// BUG-0077: the newest release as the setup's check thread found it, read by the window and the
+// install job. Every access copies under one lock; g_release_lock_fix false = the old unlocked
+// access (tests: ThreadSanitizer must report it).
+struct ReleaseInfo {
+    Release rel;
+    bool ok = false;   // rel is valid
+    bool done = false; // the check has finished (ok or not)
+    std::string err;
+};
+extern bool g_release_lock_fix;
+class ReleaseBox {
+public:
+    ReleaseInfo get() const
+    {
+        if (!g_release_lock_fix)
+            return info_;
+        std::lock_guard<std::mutex> l(mu_);
+        return info_;
+    }
+    void set(const ReleaseInfo& i)
+    {
+        if (!g_release_lock_fix) {
+            info_ = i;
+            return;
+        }
+        std::lock_guard<std::mutex> l(mu_);
+        info_ = i;
+    }
+
+private:
+    mutable std::mutex mu_;
+    ReleaseInfo info_;
+};
 
 // the hash of `file` in a SHA256SUMS.txt ("<hex>  <name>" lines), "" if absent
 std::string sums_lookup(const std::string& sums, const std::string& file);

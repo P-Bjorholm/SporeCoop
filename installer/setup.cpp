@@ -5,16 +5,19 @@
 //
 // Silent mode for scripts and tests:
 //   SporeCoopSetup.exe /S [/dir:<game folder>] [/pack:<file.pack>] [/api:<releases/latest url>]
-//                      [/uninstall] [/log:<file>]       exit code 0 = done
+//                      [/uninstall] [/downgrade] [/log:<file>]       exit code 0 = done
+// (/downgrade: install the setup's pack also when it is older than the installed SporeCoop)
 #include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
 
+#include <atomic>
 #include <string>
 #include <vector>
 
 #include "../updater/sha256.h"
+#include "install.h"
 #include "../updater/winupdate.h"
 
 #ifndef SETUP_VERSION
@@ -33,19 +36,19 @@ constexpr UINT WM_DONE = WM_APP + 1, WM_INFO = WM_APP + 2;
 
 struct Options {
     bool silent = false, uninstall = false;
-    std::wstring dir, pack, log;
-    std::string api = upd::kLatestUrl;
+    std::wstring dir, log;
+    inst::Options inst;
 } g_opt;
 
-HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_status, g_install, g_remove;
+HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_status, g_install, g_remove, g_close;
 HFONT g_font, g_bold;
-upd::Release g_rel;
-bool g_rel_ok;
-std::string g_rel_err;
-volatile bool g_busy;
+// BUG-0077: the release check's result, shared by the check thread, the window and the install job
+// (each copies it under the box's lock; the job never writes a global the others read)
+upd::ReleaseBox g_rel;
+std::atomic<bool> g_busy{false};
+HANDLE g_job; // BUG-0139: the running job's thread (waited for before the setup ends)
 
-bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
-bool is_game(const std::wstring& root) { return !root.empty() && exists(root + L"\\SporebinEP1\\SporeApp.exe"); }
+using inst::is_game;
 
 std::wstring trim_slash(std::wstring p)
 {
@@ -178,90 +181,11 @@ void log(const std::string& s)
     CloseHandle(f);
 }
 
-// the pack next to the setup (the zip ships one): used when it is as new as GitHub's
-std::wstring local_pack()
+std::wstring self_dir()
 {
-    if (!g_opt.pack.empty())
-        return g_opt.pack;
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
-    std::wstring dir = parent(self);
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((dir + L"\\SporeCoop-*.pack").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE)
-        return {};
-    std::wstring p = dir + L"\\" + fd.cFileName;
-    FindClose(h);
-    return p;
-}
-
-bool do_install(const std::wstring& root, std::string& msg)
-{
-    if (!is_game(root)) {
-        msg = "SporeApp.exe is not in " + upd::narrow(root) + "\\SporebinEP1";
-        return false;
-    }
-    upd::apply_pending(root); // an in-game update left files for the next start
-    upd::Pack pack;
-    std::string err;
-    std::wstring lp = local_pack();
-    bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
-    if (!have_local || (g_rel_ok && upd::compare_versions(g_rel.version, pack.version) > 0)) {
-        if (!g_rel_ok && !upd::latest_release(g_opt.api, g_rel, err)) {
-            msg = "cannot get SporeCoop from GitHub: " + err;
-            return false;
-        }
-        g_rel_ok = true;
-        if (!upd::download_pack(g_rel, pack, err, [](uint64_t got, uint64_t total) {
-                if (g_status && total) {
-                    wchar_t b[96];
-                    swprintf(b, 96, L"Downloading SporeCoop... %u %%", (unsigned)(got * 100 / total));
-                    SetWindowTextW(g_status, b);
-                }
-            })) {
-            msg = "download failed: " + err;
-            return false;
-        }
-    }
-    if (!upd::apply_pack(root, pack, err)) {
-        msg = err;
-        return false;
-    }
-    upd::cleanup_old(root);
-    msg = "SporeCoop " + pack.version + " is installed. Start Spore: the galaxy menu has a Co-op item.";
-    return true;
-}
-
-bool do_uninstall(const std::wstring& root, std::string& msg)
-{
-    upd::apply_pending(root);
-    std::wstring bin = root + L"\\SporebinEP1";
-    std::wstring sa = bin + L"\\steam_api.dll", orig = bin + L"\\steam_api_orig.dll";
-    if (exists(orig) && upd::is_loader(sa)) {
-        std::wstring old = sa + SC_OLD_SUFFIX;
-        DeleteFileW(old.c_str());
-        if (!MoveFileExW(sa.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING) ||
-            !MoveFileExW(orig.c_str(), sa.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-            msg = "cannot restore steam_api.dll (run as administrator? is Spore closed?)";
-            return false;
-        }
-    }
-    for (const wchar_t* f : {L"\\sporekit.dll", L"\\mods\\coop.dll", L"\\mods\\sporecoop.version"})
-        if (exists(bin + f) && !DeleteFileW((bin + f).c_str()))
-            MoveFileExW((bin + f).c_str(), (bin + f + SC_OLD_SUFFIX).c_str(), MOVEFILE_REPLACE_EXISTING); // in use
-    WIN32_FIND_DATAW fd;
-    std::wstring sym = bin + L"\\mods\\sporekit\\symbols";
-    HANDLE h = FindFirstFileW((sym + L"\\*.sym").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do
-            DeleteFileW((sym + L"\\" + fd.cFileName).c_str());
-        while (FindNextFileW(h, &fd));
-        FindClose(h);
-    }
-    DeleteFileW((root + L"\\Data\\SporeCoop.package").c_str());
-    upd::cleanup_old(root);
-    msg = "SporeCoop is removed (your settings and logs in SporebinEP1\\mods are kept).";
-    return true;
+    return parent(self);
 }
 
 // ---------------- window ----------------
@@ -294,25 +218,39 @@ void refresh()
     SetWindowTextW(g_game, game.c_str());
     std::string v = is_game(root) ? upd::installed_version(root) : "";
     SetWindowTextW(g_inst, upd::widen("Installed: " + (v.empty() ? std::string("not installed") : "SporeCoop " + v)).c_str());
-    std::string latest = g_rel_ok ? "Newest release: SporeCoop " + g_rel.version
-                         : g_rel_err.empty() ? "Newest release: checking GitHub..."
-                                             : "Newest release: GitHub not reachable (" + g_rel_err + ")";
+    upd::ReleaseInfo ri = g_rel.get();
+    std::string latest = ri.ok ? "Newest release: SporeCoop " + ri.rel.version
+                         : !ri.done ? "Newest release: checking GitHub..."
+                                    : "Newest release: GitHub not reachable (" + ri.err + ")";
     SetWindowTextW(g_latest, upd::widen(latest).c_str());
-    std::string btn = v.empty() ? "Install" : g_rel_ok && upd::compare_versions(g_rel.version, v) > 0 ? "Update to " + g_rel.version : "Reinstall";
+    // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
+    // setup, or GitHub's release when that is newer
+    std::string next = upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
+    if (ri.ok && (next.empty() || upd::compare_versions(ri.rel.version, next) > 0))
+        next = ri.rel.version;
+    if (!inst::g_fix) // the old label: GitHub's release only
+        next = ri.ok ? ri.rel.version : "";
+    int cmp = next.empty() || v.empty() ? 0 : upd::compare_versions(next, v);
+    std::string btn = v.empty() ? "Install"
+                      : cmp > 0 ? "Update to " + next
+                      : cmp < 0 && inst::g_fix ? "Install older " + next
+                                               : "Reinstall";
     SetWindowTextW(g_install, upd::widen(btn).c_str());
     EnableWindow(g_install, is_game(root) && !g_busy);
     EnableWindow(g_remove, !v.empty() && !g_busy);
+    if (g_close && inst::g_fix) // BUG-0139: no closing while files are swapped
+        EnableWindow(g_close, !g_busy);
 }
 
 DWORD WINAPI check_thread(void*)
 {
-    upd::Release r;
-    std::string err;
-    bool ok = upd::latest_release(g_opt.api, r, err);
-    if (ok)
-        g_rel = r;
-    g_rel_ok = ok;
-    g_rel_err = ok ? "" : err;
+    upd::ReleaseInfo ri;
+    ri.ok = upd::latest_release(g_opt.inst.api, ri.rel, ri.err);
+    ri.done = true;
+    if (ri.ok)
+        ri.err.clear();
+    if (!g_rel.get().ok || ri.ok) // an install job may have fetched it already
+        g_rel.set(ri);
     PostMessageW(g_wnd, WM_INFO, 0, 0);
     return 0;
 }
@@ -320,29 +258,50 @@ DWORD WINAPI check_thread(void*)
 struct Job {
     bool uninstall;
     std::wstring root;
+    inst::Options opt;
     std::string msg;
     bool ok;
+    inst::Result res = inst::Result::Failed;
+    std::string older, installed; // res == Older
 };
 
 DWORD WINAPI job_thread(void* p)
 {
     auto* j = (Job*)p;
-    j->ok = j->uninstall ? do_uninstall(j->root, j->msg) : do_install(j->root, j->msg);
+    if (j->uninstall)
+        j->ok = inst::do_uninstall(j->root, j->msg);
+    else {
+        j->res = inst::do_install(j->root, j->opt, g_rel, j->msg, [](uint64_t got, uint64_t total) {
+            if (g_status && total) {
+                wchar_t b[96];
+                swprintf(b, 96, L"Downloading SporeCoop... %u %%", (unsigned)(got * 100 / total));
+                SetWindowTextW(g_status, b);
+            }
+        }, &j->older, &j->installed);
+        j->ok = j->res == inst::Result::Ok;
+    }
     PostMessageW(g_wnd, WM_DONE, 0, (LPARAM)j);
     return 0;
 }
 
-void start_job(bool uninstall)
+bool g_test_mode; // SPORECOOP_SETUP_TEST_DELAY set: no "Spore is running" question (tests)
+
+void start_job(bool uninstall, bool downgrade = false)
 {
-    if (game_running() &&
+    if (g_busy)
+        return;
+    if (!g_test_mode && game_running() &&
         MessageBoxW(g_wnd, L"Spore is running. Close it first for a clean install.\n\nContinue anyway?",
                     L"SporeCoop Setup", MB_YESNO | MB_ICONWARNING) != IDYES)
         return;
     g_busy = true;
     SetWindowTextW(g_status, uninstall ? L"Removing SporeCoop..." : L"Installing SporeCoop...");
     refresh();
-    auto* j = new Job{uninstall, dir_text(), {}, false};
-    CloseHandle(CreateThread(nullptr, 0, job_thread, j, 0, nullptr));
+    auto* j = new Job{uninstall, dir_text(), g_opt.inst, {}, false};
+    j->opt.downgrade = j->opt.downgrade || downgrade;
+    if (g_job)
+        CloseHandle(g_job);
+    g_job = CreateThread(nullptr, 0, job_thread, j, 0, nullptr);
 }
 
 void elevate()
@@ -387,7 +346,7 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_latest = add(L"STATIC", L"", 0, 20, 178, 520, 18);
         g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 214, 170, 32, ID_INSTALL);
         g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 214, 120, 32, ID_REMOVE);
-        add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 214, 100, 32, ID_CLOSE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 214, 100, 32, ID_CLOSE);
         g_status = add(L"STATIC", L"", 0, 20, 258, 520, 36);
         add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
             300, 520, 18);
@@ -426,6 +385,10 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             start_job(true);
             return 0;
         case ID_CLOSE:
+            if (inst::g_fix) {
+                SendMessageW(w, WM_CLOSE, 0, 0);
+                return 0;
+            }
             DestroyWindow(w);
             return 0;
         }
@@ -439,12 +402,32 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         SetWindowTextW(g_status, upd::widen(j->msg).c_str());
         bool denied = !j->ok && j->msg.find("administrator") != std::string::npos;
         refresh();
+        if (j->res == inst::Result::Older && !g_opt.silent) {
+            // BUG-0094: the setup only has an older version than the installed one
+            std::wstring q = upd::widen("SporeCoop " + j->installed + " is installed. This setup has the older version " +
+                                        j->older + ".\n\nEvery player needs the same version. Install " + j->older +
+                                        " anyway?");
+            bool yes = MessageBoxW(w, q.c_str(), L"SporeCoop Setup", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+            delete j;
+            if (yes)
+                start_job(false, true);
+            return 0;
+        }
         if (denied && MessageBoxW(w, L"Windows does not let normal programs change this folder.\n\nRestart the setup as "
                                      L"administrator?", L"SporeCoop Setup", MB_YESNO | MB_ICONQUESTION) == IDYES)
             elevate();
         delete j;
         return 0;
     }
+    case WM_CLOSE:
+        if (g_busy && inst::g_fix) {
+            // BUG-0139: closing now killed the job between two file moves (a missing steam_api.dll)
+            SetWindowTextW(g_status, L"Please wait: SporeCoop's files are being changed. The window closes after that.");
+            MessageBeep(MB_ICONWARNING);
+            return 0;
+        }
+        DestroyWindow(w);
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -468,10 +451,14 @@ void parse_args()
             g_opt.uninstall = true;
         else if (!val(L"/dir:").empty())
             g_opt.dir = trim_slash(val(L"/dir:"));
+        else if (s == L"/downgrade")
+            g_opt.inst.downgrade = true;
+        else if (s == L"/oldfix") // tests: the behaviour before BUG-0094 and BUG-0139
+            inst::g_fix = false;
         else if (!val(L"/pack:").empty())
-            g_opt.pack = val(L"/pack:");
+            g_opt.inst.pack = val(L"/pack:");
         else if (!val(L"/api:").empty())
-            g_opt.api = upd::narrow(val(L"/api:"));
+            g_opt.inst.api = upd::narrow(val(L"/api:"));
         else if (!val(L"/log:").empty())
             g_opt.log = val(L"/log:");
     }
@@ -483,10 +470,17 @@ void parse_args()
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
 {
     parse_args();
+    g_opt.inst.pack_dir = self_dir();
+    wchar_t delay[16] = {};
+    if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
+        upd::g_swap_delay_ms = _wtoi(delay);
+        g_test_mode = true;
+    }
     if (g_opt.silent) {
         std::wstring root = g_opt.dir.empty() ? find_game() : g_opt.dir;
         std::string msg;
-        bool ok = g_opt.uninstall ? do_uninstall(root, msg) : do_install(root, msg);
+        bool ok = g_opt.uninstall ? inst::do_uninstall(root, msg)
+                                  : inst::do_install(root, g_opt.inst, g_rel, msg) == inst::Result::Ok;
         log(std::string(ok ? "OK: " : "FAILED: ") + msg);
         return ok ? 0 : 1;
     }
@@ -515,5 +509,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
             DispatchMessageW(&msg);
         }
     }
+    if (g_job && inst::g_fix) // BUG-0139: never end the process under a running job
+        WaitForSingleObject(g_job, INFINITE);
     return 0;
 }

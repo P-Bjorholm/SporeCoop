@@ -20,7 +20,7 @@ KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildcard updater/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: test-win test-asan all loader sporekit coop res setup clean test
+.PHONY: test-win test-asan test-tsan all loader sporekit coop res setup clean test
 all: loader sporekit coop res setup
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
@@ -62,8 +62,8 @@ $(B)/setup.ico: data/ui/coop_icon.png tools/make_ico.py
 $(B)/obj/installer/setup_rc.o: installer/setup.rc installer/setup.manifest $(B)/setup.ico
 	@mkdir -p $(dir $@)
 	$(WINDRES) -i installer/setup.rc -o $@ --include-dir installer
-$(B)/SporeCoopSetup.exe: installer/setup.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
-	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $^ \
+$(B)/SporeCoopSetup.exe: installer/setup.cpp installer/install.cpp installer/install.h updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp $(B)/obj/installer/setup_rc.o
+	$(CXX) $(CXXFLAGS) -DSETUP_VERSION='"$(COOP_VERSION)"' -municode -mwindows -static -o $@ $(filter-out %.h,$^) \
 		-lwinhttp -lcomctl32 -lshell32 -lole32 -ladvapi32 -luser32 -lgdi32
 
 # native Linux unit tests for portable netcode
@@ -73,6 +73,7 @@ test:
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	$(MAKE) --no-print-directory test-asan
+	$(MAKE) --no-print-directory test-tsan
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
@@ -94,12 +95,18 @@ test-asan:
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
 
+# the setup's shared release state under ThreadSanitizer (BUG-0077; `release_tsan --old` must fail)
+test-tsan:
+	@mkdir -p $(B)/host
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=thread -o $(B)/host/release_tsan tests/release_tsan.cpp updater/pack.cpp updater/sha256.cpp
+	TSAN_OPTIONS=halt_on_error=1 $(B)/host/release_tsan
+
 # Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
 # a lane's bottle by tools/tests/win_unit.py (lab test win_unit)
-test-win: $(B)/win_tests.exe
-$(B)/win_tests.exe: tests/win_tests.cpp mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
+test-win: $(B)/win_tests.exe $(B)/SporeCoopSetup.exe
+$(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.h mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
 	@mkdir -p $(B)
-	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp
+	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp installer/install.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp
 
 clean:
 	rm -rf $(B)

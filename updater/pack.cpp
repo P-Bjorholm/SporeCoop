@@ -192,6 +192,42 @@ std::vector<uint8_t> write_pack(const Pack& p)
     return o;
 }
 
+bool g_pick_fix = true;
+bool g_release_lock_fix = true;
+
+std::string pack_version_of(const std::string& path)
+{
+    size_t slash = path.find_last_of("\\/");
+    std::string n = slash == std::string::npos ? path : path.substr(slash + 1);
+    for (auto& c : n)
+        c = (char)tolower((unsigned char)c);
+    const std::string pre = "sporecoop-", suf = ".pack";
+    if (n.size() <= pre.size() + suf.size() || n.compare(0, pre.size(), pre) != 0 ||
+        n.compare(n.size() - suf.size(), suf.size(), suf) != 0)
+        return {};
+    std::string v = n.substr(pre.size(), n.size() - pre.size() - suf.size());
+    if (v.empty() || !isdigit((unsigned char)(v[0] == 'v' ? (v.size() > 1 ? v[1] : 'x') : v[0])))
+        return {};
+    return v;
+}
+
+std::string pick_pack(const std::vector<std::string>& names)
+{
+    std::string best, best_v;
+    for (auto& n : names) {
+        std::string v = pack_version_of(n);
+        if (v.empty())
+            continue;
+        if (!g_pick_fix) // the old choice: the first one listed
+            return n;
+        if (best.empty() || compare_versions(v, best_v) > 0) {
+            best = n;
+            best_v = v;
+        }
+    }
+    return best;
+}
+
 int compare_versions(const std::string& a, const std::string& b)
 {
     auto parts = [](std::string s) {

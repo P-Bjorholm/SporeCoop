@@ -1384,6 +1384,22 @@ static void test_join_by_name()
     g_lookup = saved;
 }
 
+// BUG-0094: the setup used the first SporeCoop-*.pack the file system listed (NTFS: by name, so
+// 0.10.0 before 0.11.0 and 0.9.0)
+static void test_pick_pack()
+{
+    printf("setup: the newest local pack (BUG-0094)\n");
+    CHECK(upd::pack_version_of("SporeCoop-0.11.0.pack") == "0.11.0");
+    CHECK(upd::pack_version_of("C:\\x\\sporecoop-0.7.2.4.PACK") == "0.7.2.4");
+    CHECK(upd::pack_version_of("SporeCoop-.pack").empty());
+    CHECK(upd::pack_version_of("SporeCoop-beta.pack").empty());
+    CHECK(upd::pick_pack({"SporeCoop-0.10.0.pack", "SporeCoop-0.11.0.pack", "SporeCoop-0.9.0.pack"}) ==
+          "SporeCoop-0.11.0.pack");
+    CHECK(upd::pick_pack({"SporeCoop-x.pack", "SporeCoop-0.8.1.pack", "SporeCoop-0.8.0.10.pack"}) ==
+          "SporeCoop-0.8.1.pack");
+    CHECK(upd::pick_pack({}).empty());
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -1393,6 +1409,7 @@ int main(int argc, char** argv)
         g_fix = Fixes{false, false, false, false, false, false, false, false, false};
         g_nofix = true;
         upd::g_dup_fix = false;
+        upd::g_pick_fix = false;
         printf("netcode fixes OFF\n");
     }
     test_buffer();
@@ -1428,6 +1445,7 @@ int main(int argc, char** argv)
     test_discovery_prune();
     test_address_parse();
     test_join_by_name();
+    test_pick_pack();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }
