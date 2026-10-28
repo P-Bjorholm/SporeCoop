@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w3-cell
-commits:
+commits: 8f749d0, 70cca8c, 153ec67
 tests: cell_rescue, space_helper
 signature:
 docs:

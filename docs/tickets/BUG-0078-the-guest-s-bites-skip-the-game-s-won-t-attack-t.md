@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w3-cell
-commits:
+commits: 0af9c83, 9413801, 82eeb38
 tests: cell_guest_bite
 signature:
 docs: docs/re/cell.md#cell-damage-gate

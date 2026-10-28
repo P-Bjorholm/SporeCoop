@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w3-cell
-commits:
+commits: 2bc60b9
 tests: unit (tests/cell_tests.cpp numerics)
 signature:
 docs:

@@ -106,7 +106,10 @@ def main():
     planet = (st.get('planet') or 'Game0/Scalinus').split('/')[1]
     sp = wait_puppet(host)
     ck(sp is not None, f'the host has the guest\'s puppet (species {sp})')
+    # a save as before BUG-0020 (the puppet and its herd in it): what older saves hold
+    host.call('coop.savestrip 0')
     out = host.call('coop.save')['out']
+    host.call('coop.savestrip 1')
     close_boxes(host, 12)
     ck('saved' in out, f'the host saved with the puppet in the world ({slot}/{planet}: {out.strip()})')
 
