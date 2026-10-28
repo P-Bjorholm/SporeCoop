@@ -182,3 +182,38 @@ For bug reports of players, who send a file, not a debugger session:
 * Tests: `tools/tests/diag_check.py [--crash]` (suite `diag`); `crash.test thread|main` makes the game
   crash (thread: an unhandled fault; main: one the game's handler swallows).
 
+
+## Crash reports in hard cases, old reports, Unicode settings, parked hooks (2026-10-28, fix/w3-sys)
+<a id="modkit-crash-hard-cases"></a>
+
+* **Stack overflow (BUG-0056).** The faulting thread has about one page of stack left: the
+  exception logger only copies the record and context into statics (no lock, allocation or log),
+  and the unhandled filter only signals a thread made at boot (`so_report_thread`) and waits for
+  it: that thread writes the short report, the log line, the full report, the archive and the
+  minidump on its own stack. The game's main thread asks for 64 KB of stack guarantee at boot
+  (`SetThreadStackGuarantee`; Windows). Under Wine a worker thread's overflow kills only that thread
+  and the game goes on; the report is written all the same. `crash.test stackoverflow`,
+  `kit.fix stackov 0` = the old path (no report under Wine).
+* **Out of memory (BUG-0127).** Every step of a crash, hang or exit report (`report_step`) catches
+  its own failure (`std::bad_alloc` left the report thread before: `std::terminate`, no minidump,
+  no `last-problem.txt`). The mark names the crash `.txt` first, then the archive once it exists;
+  the minidump is written even when the archive failed. `crash.test oom` makes every archive fail;
+  `kit.fix crashsafe 0` = the old order without catches.
+* **Old reports (BUG-0137).** After every archive and at boot, `mods\logs` keeps the newest 5
+  `crash-*.txt`, 5 `crash-*.dmp`, 5 `report-*.txt` and 3 `SporeCoop-report-*.zip` (names carry the
+  time); files that `last-problem.txt` (or the previous run's mark) names stay. `kit.fix logprune 0`.
+* **Settings in Unicode (BUG-0142, `sporekit/inifile.cpp`).** The profile API reads and writes a
+  file without a BOM in the ANSI codepage ("Вася" was saved as "????", a UTF-8 file edited by hand
+  read as "JÃ¶rg"). A `mods\*.ini` with text that is not ASCII, or getting such a value, is
+  rewritten once as UTF-16LE with a BOM (from UTF-8 when it is valid UTF-8, else from the ANSI
+  codepage; a temp file and a rename). ASCII-only files stay as they are (tools edit them with sed;
+  `tools/spore.sh` edits only sporekit.ini). Report archives convert UTF-16 settings to UTF-8.
+  `kit.fix iniutf 0`.
+* **Parked hooks (BUG-0202).** MinHook writes a 5-byte jmp over the target without stopping other
+  threads (its freeze deadlocked under Wine): a thread in the first bytes continued inside the jmp.
+  Every hook now jumps to a SporeKit stub `jmp [cur]`; making (after the first time), enabling,
+  disabling and removing a hook only switch `cur` (an aligned dword). A removed hook is parked
+  (`cur` = the trampoline, the original code) and the same target hooked again (a hot reload)
+  takes it over: the game's code is written once per process. The first hook of a target is still
+  a plain write (at boot, before the game's threads call it). `kit.fix hookpark 0` = MinHook's
+  create / remove each time.
