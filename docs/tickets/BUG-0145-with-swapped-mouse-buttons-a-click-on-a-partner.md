@@ -78,3 +78,4 @@ FAILS on main, PASSES with the fix.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #124.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w3-space (66d7a30): primary click from WM_LBUTTONDOWN; space_map_input FAIL without / PASS with.
+- 2026-10-28: fix/w3-space lab runs on lane 6: 20261028-010933 (14/14: the four new wave 3 Space tests and space_map, space_stale, space_fleet, space_puppet, space_rivalry, space_contracts, space_jump, space_guest_ui, space_allies, space_diplomacy), smoke 20261028-013951 (13/13; `ui` skipped: exclusive, needs a lane 1-5).
