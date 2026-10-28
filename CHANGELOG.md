@@ -3,6 +3,29 @@
 ## [Unreleased]
 
 ### Fixed
+- **Host in the main menu (Tribe, Civilization)**: guests now really play on alone: their tribe
+  members and vehicles move and follow their orders until the host is back (before, everything
+  stood still). DNA a guest earns while the host is in an editor, on a loading screen or in the
+  menu now reaches the shared pool, also from goal cards (BUG-0151). Tests: `coop_tribe_away.py`,
+  `coop_civ_away.py`, `coop_dna_away.py`.
+- **Tribe epic creature**: an NPC tribe's villager hitting it no longer counts as a second player
+  (30 food, not 80, for one player alone); the epic no longer leaves a new herd in the world each
+  time and is not written into the host's saves; it ends with the session, and the next session's
+  first epic comes after 8 minutes again (BUG-0146, BUG-0121, BUG-0067). Test: `coop_tribe_epic.py`.
+- **Civilization: vehicles of a player who left** go to a player who is still there (the owner of
+  the nearest city, else the host) instead of staying locked; a captured city never goes to an
+  absent player (BUG-0031). Test: `coop_civ_leave.py`.
+- **Civilization superweapon vote**: a second request during a running vote no longer changes the
+  weapon and target of that vote; its sender is told to ask again later (BUG-0117). Test:
+  `coop_civ_sw_vote.py`.
+- **Civilization capture caption**: with guests in the session the host's caption closes by itself
+  after 8 seconds, so a host who is away from the keyboard no longer stops everybody's game
+  (BUG-0187). Test: `coop_civ_caption.py`.
+- **Civilization city alarms** show symbols the overlay font has ("×" under attack, "†" being
+  converted) instead of an empty box (BUG-0161).
+- **Gifts with 3 or 4 players**: a ">" next to the co-op window's Give button picks which player
+  receives the selected units (`coop.give next` in the console); before, a guest could only give to
+  the host (BUG-0075).
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

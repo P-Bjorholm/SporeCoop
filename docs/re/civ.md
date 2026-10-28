@@ -693,3 +693,24 @@ GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`)
   civ_npc without new cities: none. ✔
 * Diagnostics: `coop.civ spawns` (the guest's spawns by caller, refused ones), switch
   `coop.civ fix aispawn 0`.
+
+## Leavers' vehicles, superweapon votes, captions, host away (2026-10-28, fix/w3-civ)
+<a id="civ-wave3"></a>
+
+* Co-op (BUG-0031): when the player set changes the host gives every vehicle of an absent owner
+  to the owner of the nearest player city (after the new city split; shared capital: the host);
+  `h_Capture` never picks a vehicle of an absent owner. `coop.civ fix orphans 0`.
+* Co-op (BUG-0117): the superweapon vote captures civ, type and target by value; a request during
+  another vote is refused with a notice to its sender. `coop.civ sw` shows the last request and the
+  type the last guest vote fired. `coop.civ fix sw_vote 0`.
+* ✔ `cCinematicManager::EndCinematic` (0xADFF50, GOG 2024) ends a capture caption cleanly: called
+  8 s into the caption of a capture made through `Capture` (`coop.civ capture <city>`, return 6), the
+  cinematic state +0x2C went to 0, the HUD came back without the caption, the city belonged to the
+  player civ on host and guest, and the vehicles drove again (lane 7). Co-op (BUG-0187): with 2+
+  players the host ends its cinematic after 8 s. `coop.civ movie`, `coop.civ fix caption 0`.
+* ✔ Guest vehicle mirrors get StopMovement + Teleport every frame for 3 s after the last state
+  (`guest_tick`): an order given in that time is cancelled. Co-op (BUG-0151): while the host is in
+  the main menu the guest skips `guest_tick`, runs the vehicles' behaviour trees and keeps its
+  orders local (`SetOrder`, `SetMoveOrder`); a vehicle the guest's game created as a mirror of a
+  bought one drives too (39.7 m in 10 s). The same in Tribe (`DoActionForObjects`,
+  `WalkSelectedTo`). `coop.civ fix away 0`, `coop.tribe fix away 0`.

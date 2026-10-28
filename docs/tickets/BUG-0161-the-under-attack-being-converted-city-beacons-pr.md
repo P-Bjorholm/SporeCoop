@@ -1,19 +1,19 @@
 ---
 id: BUG-0161
 title: the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#140
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 9023266
+tests: make test (glyph_lint)
 signature:
-docs:
+docs: 
 related: #140
 ---
 
@@ -43,14 +43,15 @@ The beacon reads "[box] Bob's city is under attack" on players' screens (Windows
 PLAUSIBLE, low severity. The two code points are not in Arial (WGL4). A second reviewer verified that, and narrowed the issue to these two glyphs. Not verified on a screenshot. Whether D3DX falls back to another font for CJK player names is also unverified and not part of this issue.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Use glyphs Arial has, for example "► " for attack and "+ " (or "† ", U+2020, in WGL4) for conversion. Alternatively, create the overlay font with a face that has them (Segoe UI Symbol) when it exists.
+Fixed on fix/w3-civ (9023266): the beacons read "× Bob's city is under attack" (U+00D7) and
+"† Bob's city is being converted" (U+2020), both in Arial. `tools/glyph_lint.py` (in `make test`)
+checks every non-ASCII character of a string literal in mods/coop against the overlay font's set.
+Confirmed with a cmap reader: U+2694 and U+271D are in neither arial.ttf nor Liberation Sans; every
+character the lint allows is in both.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Unit-style check in tools (Python, fontTools): every non-ASCII code point used in overlay strings in mods/coop/*.cpp is present in the Arial cmap (Liberation Sans in the lab). Ship it as a lint in `make test`. FAILS on main (U+2694, U+271D missing), PASSES with the fix.
+`python3 tools/glyph_lint.py`: FAIL on main (civ.cpp U+271D, U+2694), PASS with the fix. Not
+checked on a screenshot.
 
 ### Related
 None of the existing issues.
@@ -58,3 +59,4 @@ None of the existing issues.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #140.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ (9023266), glyph_lint in make test.

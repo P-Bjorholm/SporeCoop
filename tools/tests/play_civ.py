@@ -733,6 +733,10 @@ def audit(game, hc, gc, final=False):
                 if e > 10:  # an outlier: which vehicle, where, when
                     game.outliers.append(f'{time.strftime("%H:%M:%S")} {k} {e:.1f} m host {tuple(round(x) for x in h1[k][0])} '
                                          f'guest {tuple(round(x) for x in gp)}')
+                    # what the vehicle does on both machines (BUG-0186: a standing vehicle with an offset)
+                    for nm, con in (('host', hc), ('guest', gc)):
+                        ln = [x.strip() for x in con.call('coop.civ')['out'].splitlines() if f'veh #{k[1:]} ' in x]
+                        print(f'    outlier {k} {e:.1f} m {nm}: {ln[0] if ln else "-"}', flush=True)
     hn = nodes(hc)
     gn = nodes(gc)
     for p, pol in hn:

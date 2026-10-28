@@ -1045,3 +1045,24 @@ Each runs on the Space fixture in ~1-3 min (warm) and has `--without-fix`, which
   into a plain empire of that galaxy (no contact, no alliance); `diplomacy mirrorfix 0` (BUG-0071).
 * BUG-0141 (unique names) is a unit test in `make test`; `coop.corefix unique_names 0` switches it
   off in game.
+
+## Tribe and Civ tests of wave 3 (2026-10-28, fix/w3-civ)
+<a id="testing-civ-tribe-wave3"></a>
+
+All take `--nofix` (the fix switches off) and must FAIL with it; FAIL and PASS runs are in the
+tickets. Each needs ~1.5-3 min on a warm lane.
+
+| Test | Fixture | What it checks |
+|---|---|---|
+| `coop_tribe_epic.py` (`tribe_epic`) | tribe | NPC tribe hit + one player: 30 food; one epic herd for three epics; no co-op epic after a real save; chiefs back to their size after both leave (BUG-0146, BUG-0121, BUG-0067) |
+| `coop_civ_leave.py` (`civ_leave`) | civ | a leaver's vehicle is the host's, stays selected, drives (BUG-0031) |
+| `coop_civ_sw_vote.py` (`civ_sw_vote`) | civ | a second superweapon request during the vote: the vote fires its own type, the sender is told (BUG-0117) |
+| `coop_civ_caption.py` (`civ_caption`) | civ_npc | a capture caption nobody confirms ends after 8 s, the world moves (BUG-0187) |
+| `coop_tribe_away.py`, `coop_civ_away.py` (`tribe_away`, `civ_away`) | tribe, civ | host in the main menu: the guest's member walks / vehicle drives (BUG-0151) |
+| `coop_dna_away.py` (`dna_away`) | creature | DNA sent while the host has no creature and while it is away reaches the host's total (BUG-0151) |
+
+* The host's chief size is still 1.3x while the host hosts alone after the guest left (its session
+  goes on): `coop_tribe_epic.py` ends the host's session too before checking the host.
+* A capture for tests: `coop.civ capture <city index>` (the game's Capture, plays the caption).
+* `glyph_lint.py` (in `make test`): every non-ASCII character in a string literal of mods/coop must
+  be in the overlay font (Arial / WGL4 subset, BUG-0161).

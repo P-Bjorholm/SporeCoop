@@ -1,19 +1,19 @@
 ---
 id: BUG-0117
 title: a second superweapon request changes the weapon and target of the vote already running
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#96
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 7f066e4
+tests: civ_sw_vote
 signature:
-docs:
+docs: docs/re/civ.md#civ-wave3
 related: #96
 ---
 
@@ -50,17 +50,17 @@ The same happens on the host alone. If the host triggers the superweapon twice d
 CONFIRMED by reading. Verified by a second reviewer: low-medium severity. With 2 players it only happens when the same player requests twice during its own vote; with 3+ players two guests are enough.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Write the statics only after `C.vote(...)` returned true. Better, capture type, target and civ by value in the lambda (`[type, pos = std::array<float,3>{...}, pc]`) and drop the statics. Tell the sender when its request is refused (MSG_NOTICE to `from`). Keep the old behaviour behind `coop.fix sw_vote_capture off`.
+Fixed on fix/w3-civ (7f066e4): the vote's action captures the civilization, weapon type and target
+by value (host's own request and a guest's); a request made while another vote runs changes nothing
+and its sender is told ("superweapon: another vote is running"). `coop.civ fix sw_vote 0`: the old
+statics (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A 3-player test on top of `twoinst.start` plus `coop_multi.start_extra` with a civ fixture that has superweapons.
-- B runs `coop.civ super <type A>`, then C runs `coop.civ super <type B>` during the vote; then `coop.vote go` on the host.
-- Assert the game's own result on the guests' machines (the effect of the fired superweapon: the target city's state or the superweapon cooldown of type A, not a mod counter): type A fired at B's target, and C got a refusal notice.
-- It must FAIL on main (type B fired) and PASS with the fix.
+`coop_civ_sw_vote.py` (suite `civ_sw_vote`, 2 instances: the same requester twice reproduces it):
+the guest asks for type 3, then type 9 during the vote, the host passes it. Checked: the weapon type
+the host hands to the game's FireSuperweapon (`coop.civ sw`, recorded at the call) and the guest's
+notice. FAIL with `--nofix` (fired 9, no notice), PASS with the fix (fired 3, notice), lane 7. Not
+checked: the superweapon's effect in the world (the fixture's civ has none unlocked).
 
 ### Related
 #21 (a vote still runs after its stage or session is gone): related vote lifetime problem, not a duplicate.
@@ -68,3 +68,4 @@ A 3-player test on top of `twoinst.start` plus `coop_multi.start_extra` with a c
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #96.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ (7f066e4), test civ_sw_vote (FAIL with --nofix, PASS with the fix).

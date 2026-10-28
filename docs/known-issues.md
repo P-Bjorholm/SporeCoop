@@ -350,15 +350,6 @@ anchor so other docs can link to it:
   different cause, open (details in the ticket).
 * Ticket: BUG-0186.
 
-## Civilization: the host's capture caption stops everybody's game
-
-* A captured city plays a cinematic whose caption waits for the host's OK; until then the host's
-  world (and so every guest's vehicles) stands still. Everybody is told now ("... watches a
-  cinematic: the world waits for the OK"), but a host who is away stops the game for all.
-  Reproduce: capture a city (`play_civ.py`), do not press Enter on the host. Fix idea: close the
-  caption on the host after a few seconds when guests are connected (EndCinematic 0xADFF20).
-* Ticket: BUG-0187.
-
 ## Civilization: no building placement through the city planner in tests
 
 * In `civ_npc` (a new game) the planner's house / factory / entertainment have no design yet; a
@@ -678,7 +669,7 @@ keeps the history).
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
-* BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
+* BUG-0205 (bug): host in an editor or a loading screen: Creature proxies and Cell mirrors freeze, a goal reward reaching a host without a creature is lost (the rest of BUG-0151).
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
 * BUG-0155 (#134, bug): at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications.
@@ -699,22 +690,6 @@ keeps the history).
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
 * BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.
-
-**Tribe**
-
-* BUG-0067 (#45, bug): chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load.
-* BUG-0121 (#100, bug): every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save.
-* BUG-0146 (#125, bug): a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30)
-
-**Tribe, Civ**
-
-* BUG-0075 (#53, bug): gifts can go to a player who is not there, and with 3+ players the Give button only reaches one player.
-
-**Civ**
-
-* BUG-0031 (#9, bug): vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them.
-* BUG-0117 (#96, bug): a second superweapon request changes the weapon and target of the vote already running.
-* BUG-0161 (#140, bug): the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol.
 
 **Space**
 

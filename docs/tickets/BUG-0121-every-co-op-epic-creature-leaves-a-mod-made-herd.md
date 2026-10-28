@@ -1,19 +1,19 @@
 ---
 id: BUG-0121
 title: every co-op epic creature leaves a mod-made herd in the world, and a live epic can go into the host's save
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#100
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 421bfe0
+tests: tribe_epic
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-epic-lifetime
 related: #100
 ---
 
@@ -49,18 +49,24 @@ Neither the epic's herd nor the epic itself is in the player's save. Each herd i
 PLAUSIBLE, severity low. It is CONFIRMED by reading that the herd is never removed and that nothing happens around a save. That the Tribe save serializes these herds and the epic is inferred from the Creature stage (docs/re/creature.md section 12, BUG-0020) and not checked in the game. A second reviewer verified the reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Keep the herd pointer with `g_epic`. When the epic dies, the session ends or the world changes, destroy the herd through the deferred path (as `game::destroy_creature` does for creatures), checking it is still alive first.
-- Hook the save (`cGamePersistenceManager_SaveGame`, as `space_allies.cpp` does) and remove a live epic and its herd before the save, then spawn a new one afterwards; or end the epic event before a save.
+Fixed on fix/w3-civ (421bfe0):
+- `spawn_epic` reuses an epic herd of ours of the same species (epic archetype 0xFC811218, no nest,
+  not the avatar's, target size 0; found in the game's object list, so also one a save brought
+  back) instead of a new herd per epic; the herd's target size is set to 0 right after the epic is
+  created and the herd is disabled when the epic is gone (the game enables it again within seconds,
+  target 0 holds: it spawns nothing).
+- A live co-op epic is destroyed (`game::destroy_creature`) before every game save
+  (`tribe::before_save`, called from the one SaveGame hook through the new `spaceext::on_save`
+  observer list) and at the end of the session; the next epic comes a minute after a save.
+- `coop.tribe fix epic_herd 0`: the old behaviour (tests).
+Not done: a game herd cannot be destroyed (no known function, docs/re/creature.md 12), so one quiet
+epic herd per species stays in the world and in saves; saves made before the fix keep their herds.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_tribe_epic_save.py` on two instances, with the old behaviour behind `coop.fix epic_herd off`:
-- Spawn an epic (`coop.tribe epic`), kill it, spawn a second, then save on the host.
-- Load that save in a fresh host game without a session, and count the game's herds with the epic archetype and the epic creatures near the village (the game's own object lists, not a mod counter).
-- FAILS on main (herds and the epic come back). PASSES with the fix (none).
+`coop_tribe_epic.py` (suite `tribe_epic`), part 2: three epics spawned and killed, then one alive
+at a real save (`coop.save`); counted in the game's object list (`coop.tribe epic herds`). FAIL with
+`--nofix` (3 herds, enabled, the epic still in the world after the save), PASS with the fix (1 herd,
+the planet's own epic only after the save), lane 7, 2 of 2.
 
 ### Related
 - #45 (chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load)
@@ -69,3 +75,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #100.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ (421bfe0), test tribe_epic (FAIL with --nofix, PASS with the fix). The fixture planet has one epic of its own: the test counts relative to it.

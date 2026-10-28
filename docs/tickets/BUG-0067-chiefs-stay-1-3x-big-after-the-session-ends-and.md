@@ -1,19 +1,19 @@
 ---
 id: BUG-0067
 title: chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#45
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: ba9dc46, 421bfe0
+tests: tribe_epic, tribe_chief_removed
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-lifetime, docs/re/tribe.md#tribe-epic-lifetime
 related: #45
 ---
 
@@ -67,20 +67,19 @@ The general "one session-end helper that every leave path calls" is filed separa
 - Not run on the lab.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `tribe::on_session_end`, for each entry of `g_chief_scale` whose citizen is still a member of the player tribe (`members(player_tribe())`, not `object_alive`), call `SetScale(orig)`. Then clear `g_chief`, `g_chief_scale` and `g_chief_saved`. On a world change, only clear them (the citizens are gone).
-- Reset `g_epic = nullptr`, `g_epic_hitters`, `g_epic_next = 0`, `g_pincer` and `g_pincer_told` in both functions.
-- Call `tribe::on_session_end` and `civ::on_session_end` from `do_leave` (or through the core review's session-end helper).
-- Keep the old behaviour behind `coop.fix tribe_session_reset off`.
+Mostly fixed already by BUG-0081 (fix/w1-tribe-civ, ba9dc46): `tribe::on_session_end` restores the
+chiefs' size and clears the chief, pincer and epic tables; `on_world_change` clears them;
+`end_session_modules` (BUG-0033) runs it on every way a session ends, `coop.leave` included.
+Left over and fixed on fix/w3-civ (421bfe0): `g_epic_next` is reset (the first epic of the next
+session comes after 8 minutes again), and the live co-op epic is destroyed at the session end
+(BUG-0121) instead of staying in the solo game.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_tribe_leave.py` on 2 instances:
-
-- Part 1: wait for both chiefs, the guest runs `coop.leave`, wait 2 s. On both machines, assert that the game's spatial scale of the former chiefs equals their desired scale (vt 0x80), read through a `coop.tribe` debug read of the game object, not a mod counter. Fails on main (ratio 1.3), passes with the fix.
-- Part 2: `coop.tribe epic`, reload the fixture while connected, wait 10 s. Assert that the player tribe's food in the game (cTribe food field) did not change and that a later `coop.tribe epic` spawns a new epic. Fails on main when the freed flag is kept, passes with the fix.
+`coop_tribe_epic.py` (suite `tribe_epic`), part 3: both chiefs are 1.3x in the game (spatial scale /
+the citizen's desired scale, `coop.tribe scales`); the guest leaves, then the host ends its session.
+FAIL with `--nofix` (`coop.tribe fix chiefs 0`: ratio 1.30 on both after the leave), PASS with the fix
+(no member above 1.15), lane 7, 2 of 2. Note: the host keeps its chief while it hosts alone (its
+session goes on), which is right.
 
 ### Related
 - docs/re/tribe.md, section "Co-op features (pincer, duet, healers, chief, epic)".
@@ -91,3 +90,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #45.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: re-checked on fix/w3-civ: the chief part was fixed by BUG-0081 (ba9dc46); epic timer and the live epic at the session end fixed (421bfe0), test tribe_epic.

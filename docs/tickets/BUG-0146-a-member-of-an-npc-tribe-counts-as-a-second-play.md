@@ -1,19 +1,19 @@
 ---
 id: BUG-0146
 title: a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#125
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 421bfe0
+tests: tribe_epic
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-epic-lifetime
 related: #125
 ---
 
@@ -52,17 +52,15 @@ The same set can never miss a real second player, so the bug only overpays. It i
 - The trigger is PLAUSIBLE: it depends on NPC tribe members attacking the epic. Low severity.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `note_animal_hit`, insert the owner only when `owner < 0xFE`. Keep the old behaviour behind `coop.fix epic_players_only off` if the lab wants to check the test.
+Fixed on fix/w3-civ (421bfe0): `note_animal_hit` adds the attacker's owner only when it is below
+0xFE and a player of the session (`net::is_player`). `coop.tribe fix epic_players 0` restores the old
+set (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-On top of `twoinst.start` (`tribe` fixture):
-- Spawn the epic, let only an NPC tribe member and the host's members hit it, then kill it.
-- Assert the player tribe's food on both machines (the game's food bundles, `coop.res`) grew by 30, not 80.
-- It must FAIL on main and PASS with the fix.
+`coop_tribe_epic.py` (suite `tribe_epic`), part 1: the host spawns the epic, an NPC tribe's member
+(owner 254) hits it once (`coop.tribe epic hit`), the host's member kills it. The game's food
+(`coop.res`) and the notice: FAIL with `--nofix` (15 -> 95, "+80"), PASS with the fix (15 -> 45,
+"+30"), lane 7, 2 of 2.
 
 ### Related
 #45 (epic creature state survives a leave or a load). Not a duplicate.
@@ -70,3 +68,4 @@ On top of `twoinst.start` (`tribe` fixture):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #125.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ (421bfe0), test tribe_epic (FAIL with --nofix, PASS with the fix).

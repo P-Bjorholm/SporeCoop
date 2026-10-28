@@ -1,19 +1,19 @@
 ---
 id: BUG-0075
 title: gifts can go to a player who is not there, and with 3+ players the Give button only reaches one player
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#53
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 4c70be2
+tests: make test (validate_tests: gift recipient)
 signature:
-docs:
+docs: 
 related: #53
 ---
 
@@ -58,20 +58,18 @@ The host refuses a gift to an id that is not a present player (and tells the sen
 CONFIRMED by reading the full path (sender, host handler, selection filters, UI). Not run on the lab.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `tribe::host_command` (`CMD_GIVE`) and in `civ::host_command` (`CMD_GIVE`), return early (counting a rejected command and sending `MSG_NOTICE` "no such player") unless `to` is in `C.sess->players()` and `to != from`.
-- In coop.cpp, keep a selected gift target that cycles through the other players (a click on the target name, or a hotkey). `give_target()` returns it if that player is still present, else the first other player.
-- No twin switch is needed for the validation (it only refuses invalid input).
+The unvalidated recipient was fixed already by the network message hardening (BUG-0201): both
+`tribe::host_command` and `civ::host_command` refuse a `CMD_GIVE` whose target is not a player of
+the session (`net::is_player`).
+The co-op window part is fixed on fix/w3-civ (4c70be2): the recipient is picked among the other
+present players (`net/give_target.h`): a ">" button next to Give (shown with 3 or 4 players) and
+`coop.give next` go to the next one; a pick that left falls back to the first other player.
+`coop.give fix 0` restores the old "first other player".
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_give_target.py` on 3 instances:
-
-- A guest runs `coop.give 7` on selected members. Assert on the host and on the other guest that the members' owner (as `coop.tribe` lists it from the host's table) is still the sender. Assert that the other guest cannot select them: the game's selected flag `+0x12C` stays 0 after `coop.tribe select`. On main the owner becomes 7, so the test fails.
-- Same for a vehicle in Civ.
-- UI part: guest B uses the co-op window's Give (game bot) with target A selected. Assert that A's `coop.tribe` / `coop.civ` shows the unit owned by A and that A can select it (game selected flag). Fails on main (it goes to the host).
+Unit test in `make test` (tests/validate_tests.cpp, "gift recipient"): with players {0,1,2}, guest 2
+picking 1 gives to 1 (the old logic, `fix=false`, gives to 0), fallbacks and the cycle. Not run in
+the game with 3 players (the button only calls the same function).
 
 ### Related
 - Vehicles of a player who left stay theirs (separate issue; same root of owners never pointing to present players).
@@ -80,3 +78,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #53.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: recipient validation found fixed by BUG-0201; the recipient choice fixed on fix/w3-civ (4c70be2), unit test.
