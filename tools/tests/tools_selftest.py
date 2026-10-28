@@ -7,6 +7,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             a half-dead game of the lane is ended (BUG-0025, BUG-0101, BUG-0103)
   fixture   spore.sh fixture restore|slot into the player's own profile ("-") is refused and deletes
             nothing (BUG-0102), with HOME pointed at a fake bottle
+  headless  headless.sh down with a stale pgid file (the shell is gone, the number now belongs to
+            another process group of the user) leaves that group alone
   tickets   tickets.py new: ids used on a branch without a worktree are not given out again
             (BUG-0057); a private ticket made in a worktree is seen from the main checkout and
             survives the worktree's removal (BUG-0062)
@@ -31,6 +33,7 @@ SPORE = os.environ.get('SELFTEST_SPORE', os.path.join(ROOT, 'tools', 'spore.sh')
 TICKETS = os.environ.get('SELFTEST_TICKETS', os.path.join(ROOT, 'tools', 'tickets.py'))
 RELINT = os.environ.get('SELFTEST_RELINT', os.path.join(ROOT, 'tools', 're_lint.py'))
 RELEASE = os.environ.get('SELFTEST_RELEASE', os.path.join(ROOT, 'tools', 'release_check.sh'))
+HEADLESS = os.environ.get('SELFTEST_HEADLESS', os.path.join(ROOT, 'tools', 'headless.sh'))
 fails = []
 
 
@@ -156,6 +159,24 @@ def test_fixture():
           'restore into a test profile still works')
 
 
+# ---------------------------------------------------------------- headless
+def test_headless():
+    print('headless: down with a stale pgid file')
+    rt_parent = os.path.join(TMP, 'run')
+    rt = os.path.join(rt_parent, 'sporecoop-headless')
+    os.makedirs(rt)
+    # a process group of "the user" (its own session) that is not our shell
+    other = subprocess.Popen([sys.executable, '-c', SLEEP], start_new_session=True)
+    open(os.path.join(rt, 'pgid'), 'w').write(f'{other.pid}\n')
+    subprocess.run(['bash', HEADLESS, 'down'], env=dict(os.environ, XDG_RUNTIME_DIR=rt_parent),
+                   capture_output=True, timeout=30)
+    time.sleep(0.3)
+    check(alive(other), 'headless.sh down leaves a process group that is not its shell alone')
+    if alive(other):
+        other.kill()
+    other.wait()
+
+
 # ---------------------------------------------------------------- tickets
 def git(cwd, *a):
     return subprocess.run(['git', '-C', cwd, *a], capture_output=True, text=True, check=True).stdout
@@ -254,7 +275,7 @@ def test_release():
     check(rc != 0, 'a version without a CHANGELOG section fails')
 
 
-CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'tickets': test_tickets, 'relint': test_relint,
+CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets, 'relint': test_relint,
           'release': test_release}
 
 if __name__ == '__main__':
