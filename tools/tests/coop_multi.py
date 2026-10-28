@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Three or four players in one session, for minutes (docs/stability-report.md): the host and the
-first guest from lane A (SPORE_LANE), one or two more guests from lane B (SPORE_LANE_B, default A+1:
-its own bottle and profiles). The chaos bot plays all of them (real input, rejoins), and every
-minute the session is checked:
+first guest from lane A (SPORE_LANE), one or two more guests either in the same lane (default, how
+the lab runs it: instances 20+N and 30+N in lane N's bottle, own console and co-op ports that no
+lane uses) or from another lane B (SPORE_LANE_B=B: its own bottle and profiles). The chaos bot plays
+all of them (real input, rejoins), and every minute the session is checked:
 
   together   the host sees every guest in its world
   desync     every guest's copy of every synchronized object vs the host's (90th percentile of
@@ -11,6 +12,7 @@ minute the session is checked:
   shared     food / money the same on every machine
   health     no freeze, no crash, no caught fault (twoinst monitors, exc)
 
+  SPORE_LANE=5 python3 tools/tests/coop_multi.py --fixture tribe --players 3 --minutes 3
   SPORE_LANE=1 SPORE_LANE_B=8 python3 tools/tests/coop_multi.py --fixture tribe --players 4 --minutes 8
 """
 import argparse
@@ -31,9 +33,19 @@ NAMES = ['Carol', 'Dave']
 
 
 def lane_b():
-    b = int(os.environ.get('SPORE_LANE_B', str(lane.LANE + 1)))
+    """the lane of the extra guests: this one unless SPORE_LANE_B names another (the lab gives a test
+    one lane: the next lane belongs to other work)"""
+    b = int(os.environ.get('SPORE_LANE_B') or lane.LANE)
     env = dict(os.environ, SPORE_LANE=str(b))
     return b, env
+
+
+def extra_instances(b, n):
+    """instance numbers of n extra guests: the other lane's two, or 20+N / 30+N in this lane (console
+    ports 47820..47839 and co-op ports 47830..47849 are no lane's: lanes 1..10 use instances 1..20)"""
+    if b == lane.LANE:
+        return [20 + b, 30 + b][:n]
+    return [2 * b - 1, 2 * b][:n]
 
 
 def sample(con):
@@ -61,11 +73,12 @@ def start_extra(n):
     """n more guests from lane B, joined to lane A's host; {name: console}"""
     b, env = lane_b()
     sh = lambda *a: subprocess.run([lane.SPORE, *a], env=env, capture_output=True)  # noqa: E731
-    sh('lane', 'create', str(b)) if b > 1 else None
-    sh('kill')
-    sh('deploy')
+    if b != lane.LANE:  # another lane: a clean start there (in this lane the host and guest run already)
+        sh('lane', 'create', str(b)) if b > 1 else None
+        sh('kill')
+        sh('deploy')
     out = {}
-    insts = [2 * b - 1, 2 * b][:n]
+    insts = extra_instances(b, n)
     for i, inst in enumerate(insts):
         prof = f'mp{i + 1}'
         # an empty profile: the host's world arrives

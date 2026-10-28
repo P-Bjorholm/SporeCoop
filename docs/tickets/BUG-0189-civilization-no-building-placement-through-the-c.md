@@ -36,3 +36,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests (wave 4): not reached: needs a civ fixture with building designs (or a bot that makes one in the building editor). A fixture task. Left open.

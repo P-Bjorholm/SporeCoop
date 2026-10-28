@@ -1,19 +1,19 @@
 ---
 id: BUG-0135
 title: coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#114
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tests
+commits: d0b3f81
+tests: team
 signature:
-docs:
+docs: docs/06-testing.md#testing-w4-tests
 related: #114
 ---
 
@@ -64,21 +64,19 @@ All of these pass this check. The NPC's health is available on the host (`coop.n
 Confirmed by reading. A second reviewer verified it, and corrected an earlier draft: the rescue health check at line 83 is valid (`coop.npc hurt` does damage through the filter and `MSG_DAMAGE`; the rescue leaves 40 %), so only the counter-based checks are in question.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-1. Read the NPC's `hp=` from the host's `coop.npc list` before and after a lone hit by one player (expect a drop of `d`).
-2. Then a hit by the other player within 6 s (expect about `1.25 d`).
-3. Keep the counter as a diagnostic print only.
-4. Optionally assert the rescue health window (`0 < h1 <= 0.45 * mx`) instead of the counter.
+Fixed on fix/w4-tests (test only). `coop_team.py` reads the NPC's health in the host's game
+(`hp=` of `coop.npc list`, now printed with two decimals) around a lone hit of the guest of size d
+(d = 30 % of its health) and the host's hit of the same size right after: the lone hit must take
+d (10 %), the joint one 1.15-1.35x the lone one; the guest's mirror must show the same health
+(0.1). The `joint hits` counter is only printed. `--seed-nobonus` turns teamplay off on the host.
+The rescue checks stay as they were (the health check after the lethal hit is the game's state).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-With the bonus disabled (`coop.team off`, or the change above) the new check must FAIL; with it on it must pass.
-
-### Related
-#20 (suite tests that check only mod bookkeeping), #77 (the joint-hunt hit table).
+- FAIL seeded (`coop_team.py --seed-nobonus`, lane 5, twice): "joint hunt bonus in the host's game:
+  the second player's hit takes 1.0x a lone hit (1.25)" (hp 6.0 -> 4.2 -> 2.4).
+- PASS: out/lab/20261028-025535 (hp 6.0 -> 4.2 -> 1.95 for a hit of 1.8: 1.25x; mirror 1.95).
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #114.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fix/w4-tests: the bonus is measured on the NPC's health on both machines; seeded FAIL with teamplay off, PASS in the lab.

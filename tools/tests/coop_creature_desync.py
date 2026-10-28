@@ -13,10 +13,15 @@ and after the reload:
   companion  the guest builds the host's companion (before: "unknown species", never shown)
   ghosts     every NPC the guest mirrors is one the host has (before: after the host's editor the
              guest kept the old NPCs, a living copy of each next to the new one)
-  kill       an NPC the host kills dies on the guest, and no living copy of it stays there
+  kill       an NPC the host kills dies in the guest's game (the game's death flag +0xB5E of the
+             mirror, `coop.npc creatures`; not the " DEAD" of the guest's `coop.npc list`, which is
+             only the mod's bookkeeping, BUG-0148), and no living copy of it stays there
   species    the host shows the guest with the guest's edited creature
 
-  coop_creature_desync.py [--no-crash]
+  coop_creature_desync.py [--no-crash] [--seed-nodeath]
+
+  --seed-nodeath  the guest's mirrors do not play the game's death (`coop.npc deathfix off`, the
+                  bug BUG-0015 fixed): the kill check must FAIL
 """
 import re
 import subprocess
@@ -57,6 +62,20 @@ def npcs(con):
         st = 'dead' if m.group(4) or ' DEAD ' in line else (m.group(3) or 'alive ').strip()
         d[int(m.group(1))] = (m.group(2), st, ' pack' in line)
     return d
+
+
+def mirror_ptr(con, nid):
+    """guest: the game object of the mirror of NPC nid"""
+    m = re.search(r'#%d species=\S+ spawned .* ptr=([0-9A-Fa-fx]+)' % nid, con.call('coop.npc list')['out'])
+    return int(m.group(1), 16) if m else None
+
+
+def game_dead(con, ptr, species):
+    """the game's own death flag of a creature (as coop_creature_kills.py): None = no such object"""
+    for line in con.call(f'coop.npc creatures {species}')['out'].splitlines():
+        if f'creature {ptr:08X} ' in line:
+            return ' DEAD' in line
+    return None
 
 
 def drag(con, x1, y1, x2, y2):
@@ -104,9 +123,15 @@ def checks(ck, host, guest, tag, edited=True):
     ck(cand, f'{tag}: an NPC to kill ({len(cand)} candidates)')
     if cand:
         nid = cand[0]
+        sp = hn[nid][0]
+        ptr = mirror_ptr(guest, nid)
         host.call(f'coop.npc hosthit {nid} 100000')
-        dead = wait(lambda: npcs(guest).get(nid, ('', ''))[1] == 'dead', 10, 0.5)
-        ck(dead, f'{tag}: n{nid} the host killed is dead on the guest ({npcs(guest).get(nid)})')
+        booked = wait(lambda: npcs(guest).get(nid, ('', ''))[1] == 'dead', 10, 0.5)
+        # the game's death of the guest's mirror (BUG-0148): the mod's " DEAD" is set before and
+        # apart from the death the game plays
+        dead = ptr and wait(lambda: game_dead(guest, ptr, sp), 10, 0.5)
+        ck(dead, f'{tag}: n{nid} the host killed is dead in the guest\'s game (mirror {ptr and hex(ptr)}: '
+                 f'game dead {ptr and game_dead(guest, ptr, sp)}, mod flag {bool(booked)})')
 
     # species: the host shows the guest with its own (edited) creature
     def shown():
@@ -169,6 +194,8 @@ def main():
     ck = Checks()
     for c in (host, guest):
         c.call('coop.team hp 1000')
+    if '--seed-nodeath' in sys.argv:
+        print(' ', guest.call('coop.npc deathfix off')['out'].strip())
 
     # the host's companion: an NPC of a species only the host's profile has, in its pack. It is
     # spawned by console in a herd without an archetype, so it has no tuning (+0xE84) and looks

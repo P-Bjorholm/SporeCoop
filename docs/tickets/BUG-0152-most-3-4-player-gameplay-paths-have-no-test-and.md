@@ -9,7 +9,7 @@ source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#131
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in:
-branch:
+branch: fix/w4-tests
 commits:
 tests:
 signature:
@@ -90,3 +90,4 @@ This issue is about tests: done when the suite above exists and its tests fail o
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #131.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fix/w4-tests: partly done: coop_multi (3 players, creature, 3 min) and coop_npc_multi (3 players) run in the lab now (suite extended, in nightly; out/lab/20261028-030927 passed), a third player runs in the test's own lane (instances 20+N). Left: one focused 3-player test per feature that asserts the game state on the other guest's machine (the paths of #91 BUG-0112, #96 BUG-0117, #110 and #120), 4 players, and the Enter press in coop_multi.wait_all that can hide a stuck save box. Stays open.

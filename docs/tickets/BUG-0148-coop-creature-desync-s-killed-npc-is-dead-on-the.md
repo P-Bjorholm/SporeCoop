@@ -1,19 +1,19 @@
 ---
 id: BUG-0148
 title: coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#127
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tests
+commits: 1e2136a
+tests: creature_desync
 signature:
-docs:
+docs: docs/06-testing.md#testing-w4-tests
 related: #127
 ---
 
@@ -60,19 +60,22 @@ On the guest, `npc::list()` prints `px.killed ? " DEAD" : ""`. `px.killed = true
 Confirmed by reading. A second reviewer verified it, and noted that BUG-0009 is still caught by the ghost check at line 98.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `checks()`, after the host's kill, read the mirror's pointer (`ptr=` in the guest's `coop.npc list`) and use `coop.npc creatures <species>`, as `coop_creature_kills.game_dead()` does.
-- In npc.cpp, print `killed` for the mod flag and keep " DEAD" for the game's flag on both roles.
+Fixed on fix/w4-tests (test only, plus a seed switch). `checks()` in `coop_creature_desync.py`
+reads the mirror's game object (`ptr=` of the guest's `coop.npc list`) before the host's kill and
+waits for the game's death flag of that object (`coop.npc creatures <species>`, " DEAD" from
+`game::is_dead`, as `coop_creature_kills.game_dead()`). The mod's flag is only printed next to it.
+`coop.npc deathfix off` (npc.cpp `set_death_fix`) skips `game::play_death` on a killed proxy: the
+BUG-0015 state, to show the check catches it (`coop_creature_desync.py --seed-nodeath`).
+The guest's `coop.npc list` keeps printing " DEAD" for the mod flag (other tests parse it).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-With `play_death` disabled the changed check must FAIL. With the fix it must pass after the editors and after the reload.
-
-### Related
-#20 (suite tests that check only mod bookkeeping).
+- FAIL seeded (`--seed-nodeath --no-crash`, lane 5, log in the wave scratch dir): "start: n20 the
+  host killed is dead in the guest's game (mirror 0x1fc831f0: game dead False, mod flag True)" and
+  the same after the editors. The old check passed on exactly this state (mod flag True).
+- PASS: out/lab/20261028-025535 (creature_desync: start, after the editors, after the reload: game
+  dead True).
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #127.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fix/w4-tests: the kill check reads the game's death flag of the guest's mirror; seeded FAIL with coop.npc deathfix off, PASS in the lab.

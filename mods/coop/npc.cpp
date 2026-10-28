@@ -58,6 +58,10 @@ static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use 
 // NPC reports as its speed (coop.npc stallfix off: the old driving)
 static bool g_stall_fix = true;
 void set_stall_fix(bool on) { g_stall_fix = on; }
+// a killed proxy plays the game's death (BUG-0015); coop.npc deathfix off: it does not (tests: seeds
+// the 0-health mirror that stands alive, BUG-0148)
+static bool g_death_fix = true;
+void set_death_fix(bool on) { g_death_fix = on; }
 static uint32_t g_reused = 0;   // host: creature objects that became another NPC (new id)
 void set_reuse_fix(bool on) { g_reuse_fix = on; }
 void set_id_fix(bool on) { g_id_fix = on; }
@@ -521,8 +525,10 @@ static void guest_tick(double now)
             // the death itself is the behaviour tree's (0xD85B80): a proxy has no AI and stood on
             // with 0 health, alive for the game (not edible, "still alive" for the guest; player
             // report 2026-10-25, docs/re/creature.md 14)
-            game::play_death(px.c);
-            g_deaths_played++;
+            if (g_death_fix) {
+                game::play_death(px.c);
+                g_deaths_played++;
+            }
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
@@ -959,7 +965,7 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.1f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s body=%08X\n", hn.id,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f)%s%s body=%08X\n", hn.id,
                      c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
                      p.x, p.y, p.z, game::pack_member(c) ? " pack" : "", g_ai_target.count(c) ? " on_partner" : "",
                      body_print(c));
@@ -976,7 +982,7 @@ std::string list()
             net::PlayerState st;
             bool have = px.buf.sample(now, st);
             float err = px.c && have ? net::dist(game::position(px.c), st.pos) : -1.f;
-            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.1f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p body=%08X\n",
+            snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) puppet=%d ptr=%p herd=%p body=%08X\n",
                      id, px.key.instance, px.c ? "spawned" : "pending", px.c ? game::health(px.c) : 0.f,
                      px.c ? net::dist(game::position(px.c), ap) : -1.f, err, px.buf.age(now),
                      px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, px.c ? (int)game::is_puppet(px.c) : -1, px.c, px.c ? game::herd_of(px.c) : nullptr, body_print(px.c));

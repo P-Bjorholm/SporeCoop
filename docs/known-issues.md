@@ -211,15 +211,6 @@ anchor so other docs can link to it:
   rates; the 2024 guest's paused seconds after a load are not explained (planet still loading?).
 * Ticket: BUG-0175.
 
-## coop_civ_play: the guest's "I'm ready" click was lost twice
-
-* Two of seven cold runs of `coop_civ_play.py` on lane 5 (2026-10-23, fixture `civ_npc`) failed at
-  "it fires when everybody is ready": the vote stayed at "ready 1/2" although the test clicked the
-  guest's visible "I'm ready" button (the lobby had just opened for the vote); a click by hand a few
-  seconds later worked. The two failures came while the shared headless display was being
-  restarted, the five runs after it passed, so the cause is not settled.
-* Ticket: BUG-0176.
-
 ## Creature: the mating call did not lead to the editor in the bot
 
 * Backspace (Mating Call) at the nest with DNA shows "Mate: Locate your Mate!" and a thought bubble,
@@ -640,25 +631,26 @@ keeps the history).
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
 * BUG-0135 (#114, test): coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC.
+* BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
 * BUG-0137 (#116, bug): crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed.
 * BUG-0142 (#121, bug): a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled.
 * BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
-* BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
 * BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
-* BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
 * BUG-0205 (bug): host in an editor or a loading screen: Creature proxies and Cell mirrors freeze, a goal reward reaching a host without a creature is lost (the rest of BUG-0151).
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
+* BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
+* BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
+* BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 
 **Creature**
 
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
-* BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.
 
 **Tribe**
 

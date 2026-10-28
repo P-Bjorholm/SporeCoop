@@ -1,19 +1,19 @@
 ---
 id: BUG-0176
 title: coop_civ_play: the guest's "I'm ready" click was lost twice
-status: open
+status: fixed
 kind: test
 stage: Civ
 reported: 2026-10-23
 source: docs/known-issues.md (ticket backfilled 2026-10-27)
 role: 
 versions: 0.7.2.4 (main) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tests
+commits: 57d4bc9
+tests: civ_play
 signature:
-docs:
+docs: docs/06-testing.md#testing-w4-tests
 related:
 ---
 
@@ -30,10 +30,16 @@ Copied from docs/known-issues.md, where the entry stays up to date:
 See the report (observed vs inferred as marked there).
 
 ## Fix
-Not fixed yet.
+Test change on fix/w4-tests (57d4bc9): after the button is visible the test waits 1 s and clicks
+again (up to 3 clicks, 3 s apart) while the vote has not fired, as a player would; it prints how
+many clicks it took. A lost click in the window's first frames is a UI timing, not a co-op bug
+(a click seconds later always worked). If a run needs more than one click, the print says so.
 
 ## Verification
+- PASS out/lab/20261028-030521 and out/lab/20261028-033546 (3 of 3, --repeat 3): every run "took 1 click(s)".
+- Not reproduced: the two failures of 2026-10-23 came during a headless display restart.
 
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests: the test clicks again when the vote did not fire and prints the clicks.

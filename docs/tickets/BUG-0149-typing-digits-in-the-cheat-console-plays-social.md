@@ -1,19 +1,19 @@
 ---
 id: BUG-0149
 title: typing digits in the cheat console plays social abilities while a guest is socializing
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#128
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch: fix/w3-creature
-commits: 4096536
-tests:
+fixed_in: unreleased
+branch: fix/w3-creature, fix/w4-tests
+commits: 4096536, e1eda78
+tests: social_console
 signature:
-docs:
+docs: docs/re/creature.md#creature-cheat-console-flag, docs/06-testing.md#testing-w4-tests
 related: #128
 ---
 
@@ -62,19 +62,19 @@ Not done: other UTFWin text fields than the console; the game's own ability key 
 there would be the clean fix).
 
 ## Verification
-Not verified. Test `tools/tests/coop_social_console.py` (not in suite.py): it engages a Kook and
-types 1/2/1 with the console open. The console could not be opened reliably on the lanes:
-injected Ctrl+Shift+C opened it once and then never again in 6 tries (also on a fresh game), the
-cheat manager's vt 0x44(1) did not open it either. `AppShortcuts_OnKeyDown` (0x814180) opens it
-only when vk 0x43 comes with modifiers exactly 3 and `IWindowManager` (0x67CA60, global 0x15FCC4C)
-vt 0x84 (returns +0x82C, a window: a full-screen window id 0xFFFFFFFF on the lane games) is null;
-clearing +0x82C did not make it open either. The runs with the console closed (lane 5, 2026-10-28)
-showed only the expected acts (1 per key press after cooldown).
-
-Next: find what +0x82C is and how the console opens (or open it through its own layout), then
-run the test without and with `coop.social textfix off`.
+Two-game test `tools/tests/coop_social_console.py` (suite `social_console`, warm, creature fixture).
+Why the console did not open on the lanes (fix/w4-tests, docs/re/creature.md#creature-cheat-console-flag):
+the cheat manager's byte +0x64 (vt 0x4C, `func4Ch`, sets it) was 0, so vt 0x44 (0x67E730) returned
+at once although AppShortcuts_OnKeyDown got (0x43, 3) and called it (probes). The flag is set by the
+galaxy menu's UI code; the lanes load by command. The test sets it first, then opens the console with
+injected Ctrl+Shift+C (control 0x014A4606 in the UI tree) and closes it with Esc.
+- FAIL with `--without-fix` (`coop.social textfix off`, lane 5): "host acts_in while the console was
+  open: 0.0 -> 1.0", "digits typed in the cheat console play no social ability" FAIL.
+- PASS: out/lab/20261028-030521 (0 -> 0 while open, 0 -> 1 after it was closed).
+Not covered: other UTFWin text fields than the console.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #128.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fix/w3-creature: console window check and the bit-0 change made; the test cannot open the console on the lanes yet, so it stays open.
+- 2026-10-28: fix/w4-tests: the console opens on the lanes once the cheat manager's flag +0x64 is set; the test FAILs with textfix off and PASSes with it; in suite.py.

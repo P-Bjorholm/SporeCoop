@@ -52,3 +52,4 @@ Not fixed yet.
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests (wave 4): not reached. The test-side cause is handled since 2026-10-23 (coop_sync waits for unpaused games); what is left is mod behaviour (drive.h's per-frame nudge, the 2024 guest's paused seconds), not a test change. Left open.

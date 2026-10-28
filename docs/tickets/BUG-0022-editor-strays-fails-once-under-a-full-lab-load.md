@@ -32,3 +32,4 @@ None.
 ## History
 - 2026-10-25: reported (lab run 20261025-145956).
 - 2026-10-25: ticket written from the CHANGELOG, commits and reports (backfill).
+- 2026-10-28: fix/w4-tests (wave 4): not reproduced alone; a full-load reproduction needs 6 busy lanes, which a wave agent with one lane cannot make. Left open.

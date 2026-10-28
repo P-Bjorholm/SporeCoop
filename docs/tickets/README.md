@@ -106,7 +106,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0093](BUG-0093-coop-cell-spawn-reads-outside-the-cell-pool-for.md) | fixed | tooling | All | 2026-10-27 | unreleased | coop.cell spawn reads outside the cell pool for a slot number that does not exist |
 | [BUG-0094](BUG-0094-offline-reinstall-can-silently-downgrade-and-the.md) | fixed | bug | Installer | 2026-10-27 | unreleased | offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily |
 | [BUG-0095](BUG-0095-after-a-failed-co-op-jump-the-next-real-zoom-out.md) | fixed | bug | Space | 2026-10-27 | unreleased | after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler |
-| [BUG-0096](BUG-0096-coop-vote-editor-submits-the-editor-request-insi.md) | open | test | All | 2026-10-27 |  | coop.vote editor submits the editor request inside Present, a path the real game never takes |
+| [BUG-0096](BUG-0096-coop-vote-editor-submits-the-editor-request-insi.md) | fixed | test | All | 2026-10-27 | unreleased | coop.vote editor submits the editor request inside Present, a path the real game never takes |
 | [BUG-0097](BUG-0097-release-job-does-not-check-tag-against-coop-vers.md) | fixed | tooling | All | 2026-10-27 | unreleased | release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section |
 | [BUG-0098](BUG-0098-ending-the-ship-disabled-state-writes-to-the-pla.md) | fixed | bug | Space | 2026-10-27 | unreleased | ending the "ship disabled" state writes to the player's ship even after Space was left |
 | [BUG-0099](BUG-0099-the-joint-hunt-hit-table-grows-without-bound-and.md) | fixed | bug | Creature | 2026-10-27 | unreleased | the joint-hunt hit table grows without bound and keys hits by reusable creature addresses |
@@ -145,7 +145,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0132](BUG-0132-hooks-that-game-worker-threads-run-are-removed-w.md) | fixed | crash | All | 2026-10-27 | unreleased | hooks that game worker threads run are removed without stopping those threads |
 | [BUG-0133](BUG-0133-after-the-latency-rises-partners-and-npcs-move-i.md) | fixed | desync | All | 2026-10-27 | unreleased | after the latency rises, partners and NPCs move in steps for about 50 s |
 | [BUG-0134](BUG-0134-new-stage-game-py-npc-cities-uses-gog-2016-only.md) | fixed | tooling | All | 2026-10-27 | unreleased | new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures |
-| [BUG-0135](BUG-0135-coop-team-py-checks-the-joint-hunt-bonus-only-by.md) | open | test | All | 2026-10-27 |  | coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC |
+| [BUG-0135](BUG-0135-coop-team-py-checks-the-joint-hunt-bonus-only-by.md) | fixed | test | All | 2026-10-27 | unreleased | coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC |
 | [BUG-0136](BUG-0136-a-won-raid-on-a-partner-s-colony-can-count-as-ab.md) | fixed | bug | Space | 2026-10-27 | unreleased | a won raid on a partner's colony can count as aborted, so the owner's raid is never completed |
 | [BUG-0137](BUG-0137-crash-dumps-reports-and-report-zips-up-to-24-mb.md) | fixed | bug | All | 2026-10-27 | unreleased | crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed |
 | [BUG-0138](BUG-0138-a-pasted-host-address-with-a-leading-space-fails.md) | fixed | bug | All | 2026-10-27 | unreleased | a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted |
@@ -158,8 +158,8 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0145](BUG-0145-with-swapped-mouse-buttons-a-click-on-a-partner.md) | fixed | bug | Space | 2026-10-27 | unreleased | with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship |
 | [BUG-0146](BUG-0146-a-member-of-an-npc-tribe-counts-as-a-second-play.md) | fixed | bug | Tribe | 2026-10-27 | unreleased | a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30) |
 | [BUG-0147](BUG-0147-from-the-second-time-a-ship-is-disabled-on-its-r.md) | fixed | bug | Space | 2026-10-27 | unreleased | from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %) |
-| [BUG-0148](BUG-0148-coop-creature-desync-s-killed-npc-is-dead-on-the.md) | open | test | All | 2026-10-27 |  | coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death |
-| [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | open | bug | Creature | 2026-10-27 |  | typing digits in the cheat console plays social abilities while a guest is socializing |
+| [BUG-0148](BUG-0148-coop-creature-desync-s-killed-npc-is-dead-on-the.md) | fixed | test | All | 2026-10-27 | unreleased | coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death |
+| [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | fixed | bug | Creature | 2026-10-27 | unreleased | typing digits in the cheat console plays social abilities while a guest is socializing |
 | [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | fixed | bug | All | 2026-10-27 | unreleased | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |
 | [BUG-0151](BUG-0151-while-the-host-is-in-the-menu-an-editor-or-a-loa.md) | fixed | bug | All | 2026-10-27 | unreleased | while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost |
 | [BUG-0152](BUG-0152-most-3-4-player-gameplay-paths-have-no-test-and.md) | open | test | All | 2026-10-27 |  | most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite |
@@ -172,7 +172,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0159](BUG-0159-name-tags-and-hud-lines-with-cyrillic-or-other-n.md) | fixed | bug | All | 2026-10-27 | unreleased | name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre |
 | [BUG-0160](BUG-0160-small-numeric-edge-cases-non-unit-quaternion-fro.md) | fixed | bug | Cell | 2026-10-27 | unreleased | small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int) |
 | [BUG-0161](BUG-0161-the-under-attack-being-converted-city-beacons-pr.md) | fixed | bug | Civ | 2026-10-27 | unreleased | the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol |
-| [BUG-0162](BUG-0162-hot-reload-and-every-3-4-player-test-are-outside.md) | open | test | All | 2026-10-27 |  | hot reload and every 3-4 player test are outside the lab suites, so they never run |
+| [BUG-0162](BUG-0162-hot-reload-and-every-3-4-player-test-are-outside.md) | fixed | test | All | 2026-10-27 | unreleased | hot reload and every 3-4 player test are outside the lab suites, so they never run |
 | [BUG-0163](BUG-0163-a-click-right-after-the-galaxy-menu-closes-can-m.md) | fixed | crash | All | 2026-10-27 | unreleased | a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button |
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | fixed | bug | All | 2026-10-27 | unreleased | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | fixed | bug | All | 2026-10-27 | unreleased | INSTALL check line, README latest version and stability-report lane count are out of date |
@@ -186,7 +186,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | fixed | desync | Tribe | 2026-10-23 | unreleased | Tribe: knocked-out members stand on the guest |
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
-| [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | open | test | Civ | 2026-10-23 |  | coop_civ_play: the guest's "I'm ready" click was lost twice |
+| [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | fixed | test | Civ | 2026-10-23 | unreleased | coop_civ_play: the guest's "I'm ready" click was lost twice |
 | [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
 | [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | open | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
 | [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | open | feature | Creature | 2026-10-23 |  | Creature (guest): the social game is simplified |
