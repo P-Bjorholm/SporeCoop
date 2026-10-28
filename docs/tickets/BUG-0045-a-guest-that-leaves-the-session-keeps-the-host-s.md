@@ -61,7 +61,7 @@ Suggested in the review:
 Call `squadron::on_session_end()` in `do_leave`, before `g_remotes` is cleared. A shared session-end helper for `do_leave` and the disconnected callback is filed separately by the core review; this issue is about the Space part. Keep the old path behind `coop.fix leavefleet off` for the lab.
 
 ## Verification
-Covered by `coop_leave_cleanup.py` (suite `leave_cleanup`, BUG-0033): Space fixture, the guest presses Leave and the host's mirror ships must be gone from its game; FAILS with `coop.sessionfix 0`, passes with the fix (runs in BUG-0033). Re-run on fix/w2-space in the lab run below.
+Covered by `coop_leave_cleanup.py` (suite `leave_cleanup`, BUG-0033): Space fixture, the guest presses Leave and the host's mirror ships must be gone from its game; FAILS with `coop.sessionfix 0`, passes with the fix (runs in BUG-0033). Re-run on fix/w2-space in lab run out/lab/20261027-233002 on fix/w2-space (23/23 with smoke).
 
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
