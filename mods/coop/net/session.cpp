@@ -1,8 +1,10 @@
 #include "session.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <thread>
 
 #include "fixes.h"
 
@@ -46,11 +48,46 @@ bool Session::host(uint16_t port, const std::string& name, std::string& err)
     return true;
 }
 
+struct Session::Lookup {
+    std::string host;
+    std::atomic<bool> done{false};
+    bool ok = false;
+    uint32_t ip = 0;
+    std::string err;
+};
+
+static bool spawn_std_thread(void (*fn)(void*), void* arg)
+{
+    try {
+        std::thread(fn, arg).detach();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+SpawnFn g_spawn_thread = spawn_std_thread;
+
+// the worker: owns one reference to the lookup; the session may have dropped its own already
+static void lookup_main(void* arg)
+{
+    auto* ref = static_cast<std::shared_ptr<Session::Lookup>*>(arg);
+    Session::Lookup& l = **ref;
+    l.ok = Endpoint::resolve_name(l.host, l.ip, l.err);
+    l.done.store(true, std::memory_order_release);
+    delete ref;
+}
+
 bool Session::join(const std::string& addr, const std::string& name, std::string& err)
 {
     leave("restart");
     Endpoint ep;
-    if (!Endpoint::parse(addr, kDefaultPort, ep, err))
+    std::string host_name;
+    if (g_fix.async_resolve) {
+        // BUG-0204: a numeric address is parsed here; a name is looked up on a worker thread and
+        // the join goes on in update(), so a slow name server does not stop the game's frames
+        if (!Endpoint::parse_numeric(addr, kDefaultPort, ep, err, &host_name) && host_name.empty())
+            return false;
+    } else if (!Endpoint::parse(addr, kDefaultPort, ep, err)) // the old way: blocks in the click
         return false;
     if (!sock_.open(0, &err))
         return false;
@@ -58,6 +95,29 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     my_name_ = name;
     welcomed_ = false;
     join_started_ = now_ms();
+    if (!host_name.empty()) {
+        auto l = std::make_shared<Lookup>();
+        l->host = host_name;
+        auto* ref = new std::shared_ptr<Lookup>(l);
+        if (!g_spawn_thread(lookup_main, ref)) {
+            delete ref;
+            leave("lookup thread");
+            err = "cannot start the name lookup";
+            return false;
+        }
+        lookup_ = l;
+        lookup_port_ = ep.port;
+        lookup_started_ = join_started_;
+        logf(cb, "looking up %s ...", host_name.c_str());
+        return true;
+    }
+    start_hello(ep, join_started_);
+    return true;
+}
+
+void Session::start_hello(const Endpoint& ep, uint32_t now)
+{
+    join_started_ = now;
     auto p = std::make_unique<Peer>();
     p->id = 0;
     p->conn.remote = ep;
@@ -65,12 +125,36 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     p->conn.created_ms = p->conn.last_recv_ms = join_started_;
     Hello h;
     h.build = build;
-    h.name = name;
+    h.name = my_name_;
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
     peers_.push_back(std::move(p));
     logf(cb, "joining %s ...", ep.str().c_str());
+}
+
+bool Session::poll_lookup(uint32_t now)
+{
+    if (!lookup_->done.load(std::memory_order_acquire)) {
+        if (now - lookup_started_ > kLookupTimeoutMs) {
+            std::string host = lookup_->host;
+            leave("lookup timeout");
+            if (cb.disconnected)
+                cb.disconnected("cannot resolve " + host + " (the name server does not answer)");
+        }
+        return false;
+    }
+    std::shared_ptr<Lookup> l = std::move(lookup_);
+    if (!l->ok) {
+        leave("lookup failed");
+        if (cb.disconnected)
+            cb.disconnected(l->err);
+        return false;
+    }
+    Endpoint ep;
+    ep.ip = l->ip;
+    ep.port = lookup_port_;
+    start_hello(ep, now);
     return true;
 }
 
@@ -87,6 +171,7 @@ void Session::leave(const char* why)
         return;
     }
     leave_pending_ = false;
+    lookup_.reset(); // a lookup still running ends on its own (the worker holds its own reference)
     uint32_t now = now_ms();
     for (auto& p : peers_) {
         // unreliable, in three packets: a reliable BYE waited behind any earlier lost message (and
@@ -541,6 +626,8 @@ void Session::update()
     if (role_ == Role::None)
         return;
     uint32_t now = now_ms();
+    if (lookup_ && !poll_lookup(now))
+        return;
     uint8_t buf[2048];
     for (int i = 0; i < 256; i++) {
         Endpoint from;

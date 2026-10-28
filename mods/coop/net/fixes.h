@@ -14,6 +14,8 @@ struct Fixes {
     bool time_wrap = true;  // BUG-0053: snapshot order survives the sender's 32-bit millisecond wrap
     bool lan_prune = true;  // BUG-0039: the LAN game list forgets silent hosts and has a cap
     bool addr_check = true; // BUG-0138: host addresses trimmed, the port checked (1..65535)
+    // wave 4
+    bool async_resolve = true; // BUG-0204: a host name is looked up on a worker thread, not in the click
 };
 inline Fixes g_fix;
 

@@ -1789,8 +1789,52 @@ void end_session_modules(bool cell)
     g_dna_owed = 0;
 }
 
+// BUG-0204: the host name lookup of a join runs on a thread that holds a reference to coop.dll,
+// so a hot reload during a slow lookup does not unmap the code under it (as BUG-0060)
+struct PinnedStart {
+    void (*fn)(void*);
+    void* arg;
+    HMODULE self;
+};
+
+DWORD WINAPI pinned_main(void* p)
+{
+    PinnedStart s = *static_cast<PinnedStart*>(p);
+    delete static_cast<PinnedStart*>(p);
+    s.fn(s.arg);
+    FreeLibraryAndExitThread(s.self, 0);
+}
+
+bool spawn_pinned(void (*fn)(void*), void* arg)
+{
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)(void*)&spawn_pinned, &self))
+        return false;
+    auto* s = new PinnedStart{fn, arg, self};
+    HANDLE h = CreateThread(nullptr, 0, pinned_main, s, 0, nullptr);
+    if (!h) {
+        delete s;
+        FreeLibrary(self);
+        return false;
+    }
+    CloseHandle(h);
+    return true;
+}
+
+// coop.slowdns (tests, BUG-0204): a name server that answers late
+std::atomic<int> g_slow_dns_ms{0};
+net::LookupFn g_real_lookup = nullptr;
+
+bool slow_lookup(const std::string& host, uint32_t& ip)
+{
+    if (int ms = g_slow_dns_ms.load())
+        Sleep((DWORD)ms);
+    return g_real_lookup(host, ip);
+}
+
 void setup_callbacks()
 {
+    net::g_spawn_thread = spawn_pinned;
     g_sess.build = build_id();
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
     g_sess.cb.connected = [] {
@@ -3096,6 +3140,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
                 {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
                 {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
+                {"async_resolve", &net::g_fix.async_resolve},
                 {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
                 {"lan_pages", &coop_ui::g_lan_pages_fix},
                 {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
@@ -3218,6 +3263,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        g_lan_fake_until = net::now_ms() + (uint32_t)(argc > 2 ? atoi(argv[2]) : 60) * 1000u;
                        SAY("fake games %d, listed %zu, kept %zu\n", g_lan_fake_n, g_disc.games(net::now_ms()).size(),
                            g_disc.stored());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.slowdns", "coop.slowdns <ms> - every host name lookup waits ms first, like a slow name server (tests, BUG-0204)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       g_slow_dns_ms = argc > 1 ? std::clamp(atoi(argv[1]), 0, 60000) : 0;
+                       if (net::g_lookup != slow_lookup) {
+                           g_real_lookup = net::g_lookup;
+                           net::g_lookup = slow_lookup;
+                       }
+                       SAY("name lookups wait %d ms\n", g_slow_dns_ms.load());
                        return 0;
                    },
                    nullptr, MT);

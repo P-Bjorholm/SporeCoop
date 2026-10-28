@@ -75,6 +75,20 @@ std::string Endpoint::clean(const std::string& s)
 
 bool Endpoint::parse(const std::string& in, uint16_t default_port, Endpoint& out, std::string& err)
 {
+    std::string name;
+    if (parse_numeric(in, default_port, out, err, &name))
+        return true;
+    if (name.empty())
+        return false;
+    // a name resolves on this thread: Session::join looks names up on a worker (BUG-0204)
+    return resolve_name(name, out.ip, err);
+}
+
+bool Endpoint::parse_numeric(const std::string& in, uint16_t default_port, Endpoint& out, std::string& err,
+                             std::string* name)
+{
+    if (name)
+        name->clear();
     bool check = g_fix.addr_check;
     std::string s = check ? clean(in) : in;
     std::string host = s;
@@ -105,21 +119,43 @@ bool Endpoint::parse(const std::string& in, uint16_t default_port, Endpoint& out
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     addrinfo* res = nullptr;
-    // a numeric address never waits for a name server; a name still resolves on this thread
-    // (a slow DNS server holds the caller: BUG-0138 notes, numeric addresses are the common case)
+    // a numeric address never waits for a name server
     hints.ai_flags = AI_NUMERICHOST;
     if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) {
-        res = nullptr;
-        hints.ai_flags = 0;
-        if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) {
-            err = "cannot resolve " + (check ? host : s);
-            return false;
-        }
+        out.port = port;
+        err = "cannot resolve " + (check ? host : s);
+        if (name)
+            *name = host;
+        return false;
     }
     out.ip = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr.s_addr;
     out.port = port;
     freeaddrinfo(res);
     return true;
+}
+
+static bool system_lookup(const std::string& host, uint32_t& ip)
+{
+    net_init();
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    addrinfo* res = nullptr;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res)
+        return false;
+    ip = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr.s_addr;
+    freeaddrinfo(res);
+    return true;
+}
+
+LookupFn g_lookup = system_lookup;
+
+bool Endpoint::resolve_name(const std::string& host, uint32_t& ip, std::string& err)
+{
+    if (g_lookup(host, ip))
+        return true;
+    err = "cannot resolve " + host;
+    return false;
 }
 
 UdpSocket::~UdpSocket() { close(); }

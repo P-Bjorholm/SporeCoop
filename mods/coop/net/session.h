@@ -13,6 +13,11 @@ namespace net {
 
 enum class Role { None, Host, Client };
 
+// BUG-0204: how Session starts the thread that looks a host name up. The default is a detached
+// std::thread; coop.dll sets one that keeps the DLL loaded until the thread is done (hot reload).
+using SpawnFn = bool (*)(void (*fn)(void*), void* arg);
+extern SpawnFn g_spawn_thread;
+
 struct Peer {
     uint8_t id = 0xFF; // player id (host side: guest id; client side: 0 = host)
     std::string name;
@@ -67,6 +72,9 @@ public:
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
     std::string host_address() const; // guest: "ip:port" of the host
+    bool resolving() const { return lookup_ != nullptr; } // guest: the host name is being looked up
+    struct Lookup; // a name lookup on a worker thread (BUG-0204)
+    static constexpr uint32_t kLookupTimeoutMs = 20000;
 
 private:
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);
@@ -76,6 +84,12 @@ private:
     void drop_peer(size_t idx, uint8_t reason);
     uint8_t alloc_id() const;
     bool retired(uint32_t conn) const;
+    void start_hello(const Endpoint& ep, uint32_t now);
+    bool poll_lookup(uint32_t now); // false = the session ended or still waits
+
+    std::shared_ptr<Lookup> lookup_;
+    uint16_t lookup_port_ = 0;
+    uint32_t lookup_started_ = 0;
 
     Role role_ = Role::None;
     UdpSocket sock_;

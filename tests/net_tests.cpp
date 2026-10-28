@@ -13,6 +13,7 @@
 #include <random>
 #include <chrono>
 #include <thread>
+#include <arpa/inet.h>
 
 #include "net/connection.h"
 #include "net/discovery.h"
@@ -1325,13 +1326,71 @@ static void test_address_parse()
     }
 }
 
+// BUG-0204: joining by host name looked the name up inside the click (the game's main thread): a
+// slow name server stopped the frames. The fake lookup takes 1.5 s like a name server that hangs.
+static bool slow_lookup(const std::string& host, uint32_t& ip)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    if (host != "slowhost")
+        return false;
+    ip = htonl(0x7F000001);
+    return true;
+}
+
+static void test_join_by_name()
+{
+    printf("join by host name does not wait for the name server (BUG-0204)\n");
+    LookupFn saved = g_lookup;
+    g_lookup = slow_lookup;
+    Session host, cli;
+    host.build = cli.build = 0x922af7c7;
+    bool connected = false;
+    std::string disc;
+    cli.cb.connected = [&] { connected = true; };
+    cli.cb.disconnected = [&](const std::string& w) { disc = w; };
+    std::string err;
+    CHECK(host.host(0, "host-alice", err));
+    auto t0 = std::chrono::steady_clock::now();
+    CHECK(cli.join("slowhost:" + std::to_string(host.port()), "guest-bob", err));
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    printf("  join() returned after %lld ms\n", (long long)ms);
+    CHECK(ms < 300); // the frame is not held
+    for (int i = 0; i < 80 && !connected; i++)
+        pump(host, cli, 50);
+    CHECK(connected);
+    CHECK(cli.host_address() == "127.0.0.1:" + std::to_string(host.port()));
+    // a name that does not resolve: the error arrives through disconnected, the frame never waits
+    Session bad;
+    t0 = std::chrono::steady_clock::now();
+    bool started = bad.join("nohost:47810", "x", err);
+    ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(ms < 300);
+    if (started) {
+        bad.cb.disconnected = [&](const std::string& w) { disc = w; };
+        for (int i = 0; i < 80 && bad.role() != Role::None; i++) {
+            bad.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+    } else
+        disc = err;
+    CHECK(bad.role() == Role::None);
+    CHECK(disc.find("cannot resolve nohost") != std::string::npos);
+    // leaving while the lookup still runs: the worker finishes alone
+    Session gone;
+    CHECK(gone.join("slowhost:47810", "y", err));
+    gone.leave("user");
+    CHECK(!gone.resolving());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1700));
+    g_lookup = saved;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
     if (argc == 2 && (std::string(argv[1]) == "--nofix" || std::string(argv[1]) == "--old")) {
         // the code before the wave 2 fixes (tests must fail)
-        g_fix = Fixes{false, false, false, false, false, false, false, false};
+        g_fix = Fixes{false, false, false, false, false, false, false, false, false};
         g_nofix = true;
         upd::g_dup_fix = false;
         printf("netcode fixes OFF\n");
@@ -1368,6 +1427,7 @@ int main(int argc, char** argv)
     test_refpack_short();
     test_discovery_prune();
     test_address_parse();
+    test_join_by_name();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
 }
