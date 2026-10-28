@@ -43,6 +43,7 @@
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
+#include "net/utf8.h"
 #include "creations.h"
 #include "notify.h"
 #include "syncdbg.h"
@@ -119,14 +120,17 @@ float g_echo_offset = 6.f;
 double g_echo_delay = 0.0;
 std::deque<std::pair<double, net::PlayerState>> g_echo_q;
 
-void feed(const std::string& s)
+// kind: the panel kind ("chat", "join", "leave", ...); null: guessed from a system text (BUG-0129)
+void feed_kind(const std::string& s, const char* kind)
 {
     g_feed.emplace_back(H->time_seconds(), s);
     while (g_feed.size() > 8)
         g_feed.pop_front();
     LOG("%s", s.c_str());
-    notify::show(s); // a notification panel; the full history is in the co-op window
+    notify::show(s, kind); // a notification panel; the full history is in the co-op window
 }
+
+void feed(const std::string& s) { feed_kind(s, nullptr); }
 
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
@@ -1362,7 +1366,9 @@ void on_frame(void*, int, void*)
     }
 }
 
-int text_width(const std::string& s) { return (int)s.size() * 9; } // Arial 18 bold, approx.
+// Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
+// its width, every arrow label moved by its 3-byte arrow)
+int text_width(const std::string& s) { return utf8::overlay_width(s); }
 
 // world marks: "look here" pings and beacons of the stage modules (a city under attack, a
 // partner's ship ...): a label at the world point, an arrow on the screen edge when it is off screen
@@ -1709,7 +1715,7 @@ void setup_callbacks()
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
-        feed(p.name + " joined the pack");
+        feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
         chat_log("* " + p.name + " joined");
         g_lobby_dirty = true;
         bool own_worlds = g_adapter && g_adapter->own_worlds;
@@ -1920,7 +1926,7 @@ void setup_callbacks()
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
-        feed(it->second.name + " left");
+        feed_kind(it->second.name + " left", "leave");
         chat_log("* " + it->second.name + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
@@ -1936,7 +1942,7 @@ void setup_callbacks()
         r.buf.push(s, H->time_seconds());
     };
     g_sess.cb.chat = [](uint8_t id, const std::string& t) {
-        feed("<" + g_sess.name_of(id) + "> " + t);
+        feed_kind("<" + g_sess.name_of(id) + "> " + t, "chat"); // never guessed from the words (BUG-0129)
         chat_log(g_sess.name_of(id) + ": " + t);
     };
 }
@@ -2055,7 +2061,7 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
 {
     uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : default_port();
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_host(port, err)) {
         SAY("host failed: %s", err.c_str());
@@ -2072,7 +2078,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
         return 1;
     }
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_join(argv[1], err)) {
         SAY("join failed: %s", err.c_str());
@@ -2144,10 +2150,16 @@ int c_status(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// BUG-0164: capped like the co-op window (24 characters); in a session the others keep the name the
+// session started with, so a change is refused there (`coop.ui` / the window: before host / join)
 int c_name(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && g_sess.role() != net::Role::None) {
+        SAY("name: %s (cannot change it in a session; leave first)", g_name.c_str());
+        return 1;
+    }
     if (argc > 1)
-        g_name = argv[1];
+        g_name = utf8::player_name(argv[1]);
     SAY("name: %s", g_name.c_str());
     return 0;
 }
@@ -2768,7 +2780,7 @@ void init_ui()
 {
     coop_ui::Api a;
     a.name = [] { return g_name; };
-    a.set_name = [](const std::string& n) { g_name = n; };
+    a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = do_join;
     a.host = do_host;
     a.leave = do_leave;
@@ -2961,7 +2973,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     }
     char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
-    g_name = nm;
+    g_name = utf8::player_name(nm);
+    if (g_name.empty())
+        g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);

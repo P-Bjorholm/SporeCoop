@@ -516,7 +516,7 @@ static int c_stack_here(void*, int argc, const char* const* argv, SkOut* o)
                 wchar_t name[MAX_PATH] = L"?";
                 GetModuleFileNameW((HMODULE)mbi.AllocationBase, name, MAX_PATH);
                 const wchar_t* b = wcsrchr(name, L'\\');
-                outf(o, "  [%p] 0x%08X %ls+0x%X\n", (void*)p, v, b ? b + 1 : name,
+                outf(o, "  [%p] 0x%08X %s+0x%X\n", (void*)p, v, narrow(b ? b + 1 : name).c_str(),
                      (unsigned)(v - (uintptr_t)mbi.AllocationBase));
                 found++;
             }

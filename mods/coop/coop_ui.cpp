@@ -9,6 +9,7 @@
 #include <map>
 
 #include "modes.h"
+#include "notify_text.h"
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
@@ -57,6 +58,8 @@ struct Cache {
     Rect box;
 };
 static std::map<Win, Cache> g_cache;
+static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
+constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
 // width of a text in the dialog font (average glyph width, measured at 1080p)
 static float text_width(const std::string& t)
@@ -206,6 +209,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
+    Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, jump_btn = nullptr;
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // Space page: the rows of the space features (space_ext.h)
@@ -460,6 +464,9 @@ static void build_dialog()
     D.world = add_label(L, {40, 284, 720, 310}, "", kYellow);
     for (int i = 0; i < 4; i++)
         D.chat_lines[i] = add_label(L, {40, 316.f + i * 23, 720, 338.f + i * 23}, "", kWhite);
+    std::vector<Win> arrows; // shown by refresh_lobby only when there is more to see
+    D.chat_up = add_button(arrows, "chatup", {722, 316, 756, 346}, "^", [] { g_chat_scroll++; g_dirty = true; });
+    D.chat_down = add_button(arrows, "chatdown", {722, 376, 756, 406}, "v", [] { g_chat_scroll--; g_dirty = true; });
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 408, 560, 434}, "", kGold);
     D.creation_prev = add_button(L, "cprev", {570, 404, 640, 434}, "<", [] {
@@ -627,10 +634,17 @@ static void refresh_lobby()
     }
     std::string wl = A.world_line ? A.world_line() : "";
     text(D.world, wl.empty() ? g_status : wl);
-    auto chat = A.chat ? A.chat() : std::vector<std::string>{};
-    size_t first = chat.size() > 4 ? chat.size() - 4 : 0;
+    // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
+    std::vector<std::string> chat;
+    for (auto& l : A.chat ? A.chat() : std::vector<std::string>{})
+        for (auto& w : notify_text::wrap(l, kChatCols))
+            chat.push_back(w);
+    g_chat_scroll = std::max(0, std::min(g_chat_scroll, (int)chat.size() - 4));
+    size_t first = chat.size() > 4 ? chat.size() - 4 - (size_t)g_chat_scroll : 0;
     for (int i = 0; i < 4; i++)
         text(D.chat_lines[i], first + i < chat.size() ? chat[first + i] : "");
+    show(D.chat_up, first > 0);
+    show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;
     std::string cname, cl;
     if (A.creation && A.creation(ck, cname, cown)) {
@@ -745,6 +759,10 @@ static void refresh()
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
     show(D.space_btn, space && !g_space_page);
+    if (!lobby || g_space_page) {
+        show(D.chat_up, false);
+        show(D.chat_down, false);
+    }
     text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
                      : lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
     if (A.version_line)

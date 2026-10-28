@@ -10,6 +10,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "slotfs.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 
@@ -154,7 +155,9 @@ static bool find_paths()
             g_choice[k] = inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{};
         }
     }
-    H->log(M, SK_INFO, "creations: My Creations %ls", g_es_path.c_str());
+    // UTF-8, not %ls: the C library converts %ls in the "C" locale and cut the line at the first
+    // letter that is not ASCII (a Cyrillic Windows user name, BUG-0164)
+    H->log(M, SK_INFO, "creations: My Creations %s", slotfs::narrow(g_es_path).c_str());
     return true;
 }
 
