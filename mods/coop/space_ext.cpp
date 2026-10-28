@@ -1,4 +1,5 @@
 #include "space_ext.h"
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 
@@ -35,7 +36,18 @@ std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "
 bool in_space() { return game::mode_id() == modes::kSpace; }
 bool russian() { return coop_ui::russian(); }
 static uint32_t g_saves;
-void note_save() { g_saves++; }
+static std::vector<void (*)()> g_save_fns;
+void on_save(void (*fn)())
+{
+    if (std::find(g_save_fns.begin(), g_save_fns.end(), fn) == g_save_fns.end())
+        g_save_fns.push_back(fn);
+}
+void note_save()
+{
+    g_saves++;
+    for (auto fn : g_save_fns)
+        fn();
+}
 uint32_t saves() { return g_saves; }
 
 static bool g_rivals;

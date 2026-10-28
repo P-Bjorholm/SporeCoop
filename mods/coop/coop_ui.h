@@ -50,6 +50,8 @@ struct Api {
     // the partner they would go to; give_do gives them
     std::function<int(std::string& what, std::string& to)> give;
     std::function<void()> give_do;
+    std::function<void()> give_cycle;  // the next other player as the recipient (BUG-0075)
+    std::function<int()> give_choices; // how many players a gift can go to
     // space: travel to a partner's star system (false = not possible now, else whose)
     std::function<bool(std::string& to)> jump;
     std::function<void()> jump_do;

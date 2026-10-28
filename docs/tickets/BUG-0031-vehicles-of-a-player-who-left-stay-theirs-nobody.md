@@ -1,19 +1,19 @@
 ---
 id: BUG-0031
 title: vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#9
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 7f066e4
+tests: civ_leave
 signature:
-docs:
+docs: docs/re/civ.md#civ-wave3
 related: #9
 ---
 
@@ -62,22 +62,17 @@ When a player leaves, their vehicles go to the remaining players (for example, t
 CONFIRMED by reading the full path: owner writes, selection filter, command check and id reuse. Not run on the lab.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `host_tick`, when `players != g_split_for`, give every `g_hv` entry whose owner is not in `players` (and is not `0xFE`) to the owner of the nearest player city (`nearest_player_city`, with `kShared`/`0xFF` mapped to 0).
-- In `h_Capture`, skip vehicles whose owner is not in `C.sess->players()`.
-- Keep the old behaviour behind `coop.fix civ_orphan_vehicles off`.
+Fixed on fix/w3-civ (7f066e4): when the player set changes, the host gives every vehicle whose
+owner is not a present player (and not 0xFE) to the owner of the nearest player city after the new
+city split (the shared capital or none: the host). `h_Capture` skips vehicles of absent owners.
+`coop.civ fix orphans 0`: the old behaviour (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_civ_leave.py` on 3 instances (host, guest A, guest B), fixture `civ_npc`:
-
-- Guest A buys a vehicle and leaves.
-- Assert on guest B that the vehicle's owner, as the host sends it, is a present player, and that B or the host can really select and order it. Check the game's selected flag `+0xA0` on the host after `coop.civ select`, then a move order that changes the vehicle's position on B's machine.
-- Second part: capture a city next to the leaver's vehicle and assert that the owner shown in the city menu is a present player.
-
-The test fails on main (the selection flag stays 0, the vehicle does not move) and passes with the fix.
+`coop_civ_leave.py` (suite `civ_leave`, 2 instances): the guest buys a vehicle and leaves; on the
+host the vehicle's owner, the game's selected flag 1.5 s after `coop.civ select` and a move order.
+FAIL with `--nofix` (owner 1, selection dropped), PASS with the fix (owner 0, stays selected, drives
+39.7 m), lane 7. The capture part is covered by the same owner check (no vehicle with an absent
+owner is left for `h_Capture` to pick).
 
 ### Related
 - Same pattern for gifts: the gift target is not validated (separate issue).
@@ -86,3 +81,4 @@ The test fails on main (the selection flag stays 0, the vehicle does not move) a
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #9.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ (7f066e4), test civ_leave (FAIL with --nofix, PASS with the fix).

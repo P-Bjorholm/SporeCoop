@@ -24,6 +24,7 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
+    std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
     std::function<uint8_t(uint8_t player)> role_of;  // 0 none, 1 military, 2 economic, 3 religious
     // host: a vote of all players; `action` runs when it passes (false: another vote is running)
     std::function<bool(const std::string& text, const std::string& done, std::function<void()> action)> vote;

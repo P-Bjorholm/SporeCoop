@@ -44,6 +44,7 @@
 #include "world.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
+#include "net/give_target.h"
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
@@ -99,8 +100,19 @@ uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 // DNA earned locally: the host's total is authoritative
 extern bool g_host_away;
 extern float g_solo_dna;
+// BUG-0151: a goal card's reward a guest earns while the host is away is kept like any other DNA
+// (social::goal_dna sent it to a host that drops it); the host keeps a guest's MSG_DNA_ADD that
+// arrives while it has no creature (editor, load) and pays it when it has one again.
+// `coop.corefix away_dna 0`: the old behaviour (tests).
+bool g_away_dna_fix = true;
+float g_dna_owed = 0;     // host: guests' DNA that arrived without an avatar
+uint32_t g_dna_owed_paid; // tests
 bool on_dna(float delta)
 {
+    if (g_away_dna_fix && g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
+        g_solo_dna += delta; // nobody to send it to: kept here, given to the pack on the host's return
+        return true;
+    }
     if (social::goal_dna(delta))
         return false; // a goal card's reward: the host pays it into the shared pool once
     if (g_sess.role() == net::Role::Client && g_sess.connected() && delta > 0 && g_host_away) {
@@ -437,6 +449,12 @@ static bool world_state_msg(uint8_t type)
 
 void host_away_tick(double now)
 {
+    if (g_dna_owed > 0 && g_sess.role() == net::Role::Host && game::avatar() && stage_mode(g_mode)) {
+        game::dna_add_raw(g_dna_owed);
+        feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
+        g_dna_owed = 0;
+        g_dna_owed_paid++;
+    }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
         if (d != 0)
@@ -1768,6 +1786,7 @@ void end_session_modules(bool cell)
         g_host_away_since = -1;
         g_solo_dna = 0;
     }
+    g_dna_owed = 0;
 }
 
 void setup_callbacks()
@@ -1855,7 +1874,8 @@ void setup_callbacks()
             if (r.ok() && d > 0 && d < 10000 && game::avatar()) {
                 game::dna_add_raw(d);
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
-            }
+            } else if (r.ok() && d > 0 && d < 10000 && g_away_dna_fix && g_dna_owed < 100000)
+                g_dna_owed += d; // in an editor or a load: paid when our creature is back
             return;
         }
         if (type == net::MSG_WORLD_TIME && g_sess.role() == net::Role::Client) {
@@ -2198,7 +2218,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", squadron::status().c_str());
     SAY("%s", spacecoop::status().c_str());
     SAY("%s", gamefixes::status().c_str());
-    SAY("dna=%.1f (rx %u totals, forwarded %u gains)\n", game::dna(), g_dna_rx, g_dna_fwd);
+    SAY("dna=%.1f (rx %u totals, forwarded %u gains) solo=%.1f owed=%.1f owed_paid=%u away=%d\n", game::dna(), g_dna_rx,
+        g_dna_fwd, g_solo_dna, g_dna_owed, g_dna_owed_paid, (int)g_host_away);
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;
@@ -2767,13 +2788,19 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
 }
 
 // the stage action of the co-op window: give the selected own units to a partner
-uint8_t give_target()
+// BUG-0075: the player picks the recipient among the other players (the co-op window's ">" next to
+// Give, `coop.give next`); before, it was always the first other player. `coop.give fix 0`: the old one.
+uint8_t g_give_pick = net::kNoGiveTarget;
+bool g_give_pick_fix = true;
+static std::vector<uint8_t> player_ids()
 {
+    std::vector<uint8_t> ids;
     for (auto& p : g_sess.players())
-        if (p.id != g_sess.my_id())
-            return p.id;
-    return 0xFF;
+        ids.push_back(p.id);
+    return ids;
 }
+uint8_t give_target() { return net::give_target(player_ids(), g_sess.my_id(), g_give_pick, g_give_pick_fix); }
+void give_target_cycle() { g_give_pick = net::give_target_next(player_ids(), g_sess.my_id(), g_give_pick); }
 
 int give_selected_to(uint8_t to)
 {
@@ -2954,6 +2981,8 @@ void init_ui()
             nullptr);
     };
     a.give_do = [] { give_selected_to(give_target()); };
+    a.give_cycle = [] { give_target_cycle(); };
+    a.give_choices = [] { return (int)g_sess.players().size() - 1; };
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
@@ -3070,7 +3099,8 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
                 {"lan_pages", &coop_ui::g_lan_pages_fix},
                 {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
-                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix}};
+                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix},
+                {"away_dna", &g_away_dna_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -3273,6 +3303,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.sess = &g_sess;
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
+    trc.host_away = [] { return g_host_away; };
     tribe::init(H, M, std::move(trc));
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
@@ -3306,8 +3337,22 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.give", "coop.give [player id] - give the selected own tribe members / vehicles (or the opened city)",
+    H->command_add(M, "coop.give", "coop.give [player id | next | target | fix 0|1] - give the selected own tribe members / vehicles (or the opened city); next: the next recipient",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "next")) { // the co-op window's ">" (BUG-0075)
+                           give_target_cycle();
+                           SAY("give target: %u %s", give_target(), g_sess.name_of(give_target()).c_str());
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "fix")) {
+                           g_give_pick_fix = atoi(argv[2]) != 0;
+                           SAY("give pick fix %d", (int)g_give_pick_fix);
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "target")) {
+                           SAY("give target: %u %s", give_target(), g_sess.name_of(give_target()).c_str());
+                           return 0;
+                       }
                        uint8_t to = argc > 1 ? (uint8_t)atoi(argv[1]) : give_target();
                        SAY("given: %d", give_selected_to(to));
                        return 0;
@@ -3390,6 +3435,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return start_action_vote(t, d, std::move(a));
     };
     cvc.beacon = add_beacon;
+    cvc.host_away = [] { return g_host_away; };
     civ::init(H, M, std::move(cvc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;

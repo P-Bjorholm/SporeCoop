@@ -1,19 +1,19 @@
 ---
 id: BUG-0151
 title: while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#130
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-civ
+commits: 22b7839
+tests: tribe_away, civ_away, dna_away
 signature:
-docs:
+docs: docs/re/civ.md#civ-wave3
 related: #130
 ---
 
@@ -77,24 +77,28 @@ The same for a goal card completed while the host is in the menu.
 CONFIRMED by reading. A second reviewer verified it independently. Not run in a game: the frozen tribe and civ follow directly from the hooks; the DNA loss from `game::avatar()` being null outside Creature and Adventure.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Make "host away" one state: the host is not in our place (`!host_here()` for more than about 1 s, mode and world), not only the menu. Pass it to tribe, civ and cellsync:
-  - no behaviour-tree skip while away;
-  - orders through the original function;
-  - mirrors released (AI unlocked).
-- Keep DNA (and `K_GOAL` rewards) earned while the host is not playing in the guest's `g_solo_dna` instead of sending it.
-- On the host, queue `MSG_DNA_ADD` and `K_GOAL` that arrive without an avatar instead of dropping them.
-- Keep the old behaviour behind `coop.fix host_away off`.
+Fixed on fix/w3-civ (22b7839) for Tribe, Civ and DNA; the rest is BUG-0205:
+- Tribe and Civ get the host's "away" state (`Ctx::host_away`, the same `g_host_away` as npc: the
+  host in the main menu). While it is set, a guest runs the behaviour trees of its members /
+  vehicles, its orders go to its own game (`DoActionForObjects`, `WalkSelectedTo`, `SetOrder`,
+  `SetMoveOrder`), and `guest_tick` no longer holds them at the last states (the vehicles got
+  StopMovement every frame for 3 s). When the host is back its states take over again.
+  `coop.tribe fix away 0` / `coop.civ fix away 0`: the old frozen game (tests).
+- DNA: a guest's gain while the host is away is kept (`g_solo_dna`) before a goal card's reward is
+  sent as K_GOAL; the host keeps a guest's MSG_DNA_ADD that arrives while it has no creature
+  (`g_dna_owed`) and pays it when it has one again in a stage. `coop.corefix away_dna 0`.
+Not done (BUG-0205): "away" still means only the main menu (an editor or a loading screen of the
+host freezes the Creature proxies and Cell mirrors), and a K_GOAL that reaches a host without a
+creature is still dropped.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`coop_host_away_stages.py` (two instances):
-- Tribe fixture: the host goes to the galaxy menu. The guest orders a member to walk 20 m. Assert on the guest that the game's citizen position moved by more than 10 m.
-- Creature fixture: the host opens its editor. The guest gains DNA through the game (a kill or `coop.res`-like debug add through the game function). The host returns. Assert the host's game DNA total (`GetEvolutionPoints`) includes the gain.
-
-Both fail on main and with `coop.fix host_away off`, and pass with the fix.
+- `coop_tribe_away.py` (suite `tribe_away`): host in the menu, the guest orders a member to walk.
+  FAIL with `--nofix` (0.0 m, `ai_skipped` = every tick), PASS with the fix (88.7 m, 86.5 m), lane 7.
+- `coop_civ_away.py` (suite `civ_away`): the guest's bought vehicle, host in the menu, a move order.
+  FAIL with `--nofix` (0.0 m), PASS with the fix (39.7 m), lane 7.
+- `coop_dna_away.py` (suite `dna_away`, creature fixture): 7 DNA sent while the host has no creature,
+  11 while it is away; the host's game total after its reload. FAIL with `--nofix` (0 -> 11), PASS
+  with the fix (0 -> 18, the guest the same), lane 7.
 
 ### Related
 #63 (the "host is back" message after a disconnect), #60 (creature pointers kept while the host is away), #27 (offline changes to shared resources), #21 (votes after the stage is gone).
@@ -102,3 +106,4 @@ Both fail on main and with `coop.fix host_away off`, and pass with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #130.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-civ for Tribe, Civ and DNA (22b7839), tests tribe_away, civ_away, dna_away (each FAIL with --nofix, PASS with the fix); the editor/load part and K_GOAL without a host creature moved to BUG-0205.

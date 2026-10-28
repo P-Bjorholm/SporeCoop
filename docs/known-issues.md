@@ -346,15 +346,6 @@ anchor so other docs can link to it:
   different cause, open (details in the ticket).
 * Ticket: BUG-0186.
 
-## Civilization: the host's capture caption stops everybody's game
-
-* A captured city plays a cinematic whose caption waits for the host's OK; until then the host's
-  world (and so every guest's vehicles) stands still. Everybody is told now ("... watches a
-  cinematic: the world waits for the OK"), but a host who is away stops the game for all.
-  Reproduce: capture a city (`play_civ.py`), do not press Enter on the host. Fix idea: close the
-  caption on the host after a few seconds when guests are connected (EndCinematic 0xADFF20).
-* Ticket: BUG-0187.
-
 ## Civilization: no building placement through the city planner in tests
 
 * In `civ_npc` (a new game) the planner's house / factory / entertainment have no design yet; a
@@ -668,6 +659,7 @@ keeps the history).
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
+* BUG-0205 (bug): host in an editor or a loading screen: Creature proxies and Cell mirrors freeze, a goal reward reaching a host without a creature is lost (the rest of BUG-0151).
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)

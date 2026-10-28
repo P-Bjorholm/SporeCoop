@@ -21,6 +21,7 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
+    std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
@@ -32,6 +33,7 @@ void tick(double now);                               // every frame
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
+void before_save(); // host: the co-op epic leaves before the game saves (BUG-0121)
 std::string status();
 std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();

@@ -666,3 +666,28 @@ New NPC tribes form during play: Cohrach had 2 tribes at the start and 5 (33 cit
 * `coop.tribe` lists `dead=` and `bt=` (the behaviour node) per member; `tribe lifetime` counts
   `knocked_out` / `ko_replaced`; switch `coop.tribe fix ko 0`.
 * ? How the member gets up again (same citizen revived or a new one) was not seen within 60 s.
+
+## The co-op epic: herd, saves, hitters (2026-10-28, fix/w3-civ)
+<a id="tribe-epic-lifetime"></a>
+
+* ✔ The fixture planet (tribe) has an epic of its own (IsEpic 0xC0C240 true, alive): counts of
+  "live epics" must be relative to it. Its herd is not one with archetype 0xFC811218 (0 such herds
+  before the first co-op epic).
+* ✔ A herd made by `CreateHerd(.., 0, false, 0, false)` and given the epic archetype keeps
+  `+0xF4` (target size) at whatever we write; `SetEnabled(false)` right when its epic died does not
+  stick: the herd reads enabled (+0x218 = 1) again within seconds (lane 7, three kills). Disabled
+  later (`coop.tribe epic quiet`, seconds after) it stayed disabled. Target size 0 is what keeps it
+  from spawning.
+* Co-op (BUG-0121): one epic herd of ours per species is reused (archetype 0xFC811218, no nest
+  +0x160, not avatar-owned +0x84, target 0: "ours"; found in the object list, so also after a load);
+  three epics leave 1 herd instead of 3. A live co-op epic is destroyed before every save
+  (`tribe::before_save` through `spaceext::on_save`, the one hook on
+  `cGamePersistenceManager_SaveGame`; a second MinHook on the same address fails) and at the end of
+  the session. No function to destroy a herd is known: the quiet herd stays in saves.
+* Co-op (BUG-0146): only players' members (owner < 0xFE, present) count as epic hitters.
+* Chiefs: the size the game shows grows and shrinks over a few seconds after SetScale (ratio
+  scale / desired 1.62 seen once right after a new chief, 1.27 4 s after the restore, 1.00 later):
+  tests wait for it (`coop.tribe scales`).
+* Diagnostics: `coop.tribe epic herds` (the game's epic herds, ours, enabled, live epics),
+  `coop.tribe epic save` (as if the game saved), `coop.tribe scales`, switches
+  `coop.tribe fix epic_players|epic_herd|away 0`.

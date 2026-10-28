@@ -1,6 +1,7 @@
 #include "civ.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -52,6 +53,12 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
+// BUG-0151: while the host is away (main menu) the guest's vehicles run their own AI and the guest's
+// orders go to its own game (the host sends no states and drops orders outside Civ).
+// `coop.civ fix away 0`: the old frozen vehicles (tests).
+static bool g_fix_away = true;
+static uint32_t g_away_orders;
+static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
 
 static void* nm() { return game::noun_manager(); }
@@ -137,6 +144,10 @@ static uint32_t g_cmds_done, g_cmds_rejected, g_builds_sent, g_unselected, g_buy
 static int g_build_from = -1; // guest whose build is being executed (not echoed back to it)
 static int g_pending_owner = -1; // owner of the vehicle the host is about to spawn for a guest
 static std::vector<uint8_t> g_split_for;
+// BUG-0031: vehicles of a player who left get a present owner; a capture never names an absent
+// player. `coop.civ fix orphans 0`: the old behaviour (tests).
+static bool g_fix_orphans = true;
+static uint32_t g_orphans_given;
 
 // ---------------- guest ----------------
 struct GV {
@@ -208,7 +219,7 @@ static BT_t o_BT;
 static int SK_CDECL h_BT(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t agent, uint32_t a5, uint32_t a6,
                          uint32_t a7, uint32_t a8)
 {
-    if (agent && is_guest() && game::mode_id() == modes::kCiv && !IsBadReadPtr((void*)agent, 4) &&
+    if (agent && is_guest() && game::mode_id() == modes::kCiv && !local_play() && !IsBadReadPtr((void*)agent, 4) &&
         *(uintptr_t*)agent == a_VehicleVt)
         return 0;
     return o_BT(a0, a1, a2, a3, agent, a5, a6, a7, a8);
@@ -282,7 +293,9 @@ using SetOrder_t = int(SK_THISCALL*)(void*, void*, int, int);
 static SetOrder_t o_SetOrder;
 static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (local_play() && !g_applying)
+        g_away_orders++;
+    else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
             // a mirror of another player's or nation's vehicle: the guest's own civ AI orders the
@@ -308,7 +321,9 @@ using SetMoveOrder_t = int(SK_THISCALL*)(void*, float, float, float, int);
 static SetMoveOrder_t o_SetMoveOrder;
 static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int flag)
 {
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+    if (local_play() && !g_applying)
+        g_away_orders++;
+    else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
         auto it = g_gv_of.find(v);
         if (it != g_gv_of.end()) {
             if (g_gv[it->second].owner != C.sess->my_id()) {
@@ -525,8 +540,8 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
             uint8_t owner = 0;
             float bd = 1e18f;
             for (auto& [v, hv] : g_hv) {
-                if (hv.owner == 0xFE)
-                    continue;
+                if (hv.owner == 0xFE || (g_fix_orphans && !net::is_player(*C.sess, hv.owner)))
+                    continue; // BUG-0031: never a player who is not here
                 float d = net::dist(veh_pos(v), city_pos(city));
                 if (d < bd) {
                     bd = d;
@@ -659,7 +674,7 @@ static void show_alarm(void* city, uint8_t kind, uint8_t owner)
     if (!city || !C.beacon)
         return;
     std::string who = owner == kShared ? "the capital" : C.sess->name_of(owner) + "'s city";
-    C.beacon(city_pos(city), (kind ? "✝ " : "⚔ ") + who + (kind ? " is being converted" : " is under attack"),
+    C.beacon(city_pos(city), (kind ? "† " : "× ") + who + (kind ? " is being converted" : " is under attack"),
              20.0, 0xFFFF4040);
 }
 
@@ -728,6 +743,11 @@ static void boost_tick(double now)
 using FireSW_t = bool(SK_THISCALL*)(void*, int, const float*);
 static FireSW_t o_FireSW;
 static bool g_sw_bypass;
+// BUG-0117: the vote's weapon and target are its own (captured), not statics a second request
+// overwrote. `coop.civ fix sw_vote 0`: the old statics (tests).
+static bool g_fix_sw_vote = true;
+static uint32_t g_sw_refused;
+static int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
 static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
 {
     if (g_sw_bypass || !active() || C.sess->players().size() < 2)
@@ -739,6 +759,24 @@ static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
         w.u32((uint32_t)type);
         w.f32(pos[0]); w.f32(pos[1]); w.f32(pos[2]);
         send_cmd(w);
+        return false;
+    }
+    if (g_fix_sw_vote) {
+        // BUG-0117: the vote fires what was asked in it; a request during another vote changes nothing
+        std::array<float, 3> p{pos[0], pos[1], pos[2]};
+        bool has_target = target != nullptr;
+        if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
+                             [civ, type, p, has_target] {
+                                 g_sw_bypass = true;
+                                 o_FireSW(civ, type, has_target ? p.data() : nullptr);
+                                 g_sw_bypass = false;
+                             }))
+            g_votes++;
+        else {
+            g_sw_refused++;
+            if (C.feed)
+                C.feed("superweapon: another vote is running, ask again when it is over");
+        }
         return false;
     }
     static void* s_civ;
@@ -765,6 +803,24 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     // the game's superweapon types are 0..11 (GetSuperweaponCost, docs/re/civ.md)
     if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
         return;
+    g_sw_last_req = type;
+    if (g_fix_sw_vote) {
+        std::array<float, 3> p{pos[0], pos[1], pos[2]};
+        if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p] {
+                g_sw_bypass = true;
+                g_sw_fired = type;
+                o_FireSW(pc, type, p.data());
+                g_sw_bypass = false;
+            }))
+            g_votes++;
+        else { // tell the sender its request was not taken
+            g_sw_refused++;
+            net::Writer nw;
+            nw.str8("superweapon: another vote is running, ask again when it is over");
+            C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+        }
+        return;
+    }
     static int s_type;
     static float s_pos[3];
     static void* s_civ;
@@ -772,6 +828,7 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     memcpy(s_pos, pos, sizeof s_pos);
     if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [] {
             g_sw_bypass = true;
+            g_sw_fired = s_type;
             o_FireSW(s_civ, s_type, s_pos);
             g_sw_bypass = false;
         }))
@@ -988,14 +1045,39 @@ static bool movie_playing()
     void* cm = a_CinematicMgr ? skg::cdecl_call<void*>(a_CinematicMgr) : nullptr;
     return cm && F<uint32_t>(cm, 0x2C) != 0;
 }
+// BUG-0187: with guests in the session the host's caption closes itself after kCaptionWait seconds
+// (the game's EndCinematic, as Enter does), so a host who is away does not stop everybody's game.
+// `coop.civ fix caption 0`: the old wait for the host's OK (tests).
+static bool g_fix_caption = true;
+static double g_caption_wait = 8.0, g_movie_since;
+static uint32_t g_captions_closed;
 static void movie_tick()
 {
     bool on = movie_playing();
+    double now = H->time_seconds();
+    if (on && g_movie && g_fix_caption && g_movie_since > 0 && now - g_movie_since > g_caption_wait &&
+        C.sess->players().size() >= 2) {
+        g_movie_since = -1; // once per cinematic
+        H->run_outside_frame(
+            [](void*) {
+                uintptr_t end = H->sym("SporeCoop::cCinematicManager_EndCinematic");
+                void* cm = a_CinematicMgr ? skg::cdecl_call<void*>(a_CinematicMgr) : nullptr;
+                if (!end || !cm || !F<uint32_t>(cm, 0x2C) || game::mode_id() != modes::kCiv)
+                    return;
+                thiscall<void>(end, cm);
+                g_captions_closed++;
+                if (C.notice)
+                    C.notice("the caption closed by itself: the world goes on");
+            },
+            nullptr);
+    }
     if (on == g_movie)
         return;
     g_movie = on;
+    g_movie_since = on ? now : 0;
     if (on && C.notice)
-        C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK");
+        C.notice(C.sess->name_of(C.sess->my_id()) + " watches a cinematic: the world waits for the OK" +
+                 (g_fix_caption && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
 }
 
 static void host_tick(double now)
@@ -1011,7 +1093,22 @@ static void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
+    bool roster_changed = players != g_split_for;
     host_assign_cities(players);
+    // BUG-0031: the vehicles of a player who left go to the owner of the nearest player city (the
+    // cities were split anew just now); before, nobody could order them, they took slots of the
+    // vehicle cap and the next joiner under the reused id inherited them
+    if (roster_changed && g_fix_orphans)
+        for (auto& [v, hv] : g_hv) {
+            if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
+                continue;
+            uint8_t owner = 0;
+            nearest_player_city(veh_pos(v), &owner);
+            if (owner == 0xFF || owner == kShared || !std::binary_search(players.begin(), players.end(), owner))
+                owner = 0;
+            hv.owner = owner;
+            g_orphans_given++;
+        }
     void* pc = player_civ();
     uint32_t ppol = pc ? pol_of(pc) : 0;
     g_host_cities = all_cities();
@@ -1636,6 +1733,8 @@ static void guest_tick(double now)
         last_sel = now;
         drop_foreign_selection();
     }
+    if (local_play())
+        return; // the last states would stop every order for 3 s (StopMovement below)
     for (auto& [id, g] : g_gv) {
         if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
             continue;
@@ -1798,7 +1897,7 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
 
 std::string status()
 {
-    char b[512];
+    char b[768];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
@@ -1812,10 +1911,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play());
     return b;
 }
 
@@ -1913,8 +2012,16 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_cities = on;
         else if (a[1] == "aispawn")
             g_fix_aispawn = on;
+        else if (a[1] == "sw_vote")
+            g_fix_sw_vote = on;
+        else if (a[1] == "orphans")
+            g_fix_orphans = on;
+        else if (a[1] == "caption")
+            g_fix_caption = on;
+        else if (a[1] == "away")
+            g_fix_away = on;
         else
-            return "usage: coop.civ fix boost|world|cities|aispawn 0|1";
+            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans|caption|away 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (!a.empty() && a[0] == "spawns") { // spawns: the game's own vehicle spawns on this guest by caller
@@ -1964,6 +2071,27 @@ std::string debug(const std::vector<std::string>& a)
         g_alarm_at.erase(city);
         h_OnAttacked(city, 0, 0x0BADF00D);
         return "alarm raised";
+    }
+    if (a.size() >= 2 && a[0] == "capture" && is_host()) { // capture <city>: the player civ takes it (tests, BUG-0187)
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* pc = player_civ();
+        if (!city || !pc)
+            return "no such city / civ";
+        int r = h_Capture(city, pol_of(pc), a.size() > 2 ? atoi(a[2].c_str()) : 0, 0, 0, 0);
+        return "capture -> " + std::to_string(r);
+    }
+    if (!a.empty() && a[0] == "movie") { // the host's cinematic / caption (BUG-0187)
+        char b[96];
+        snprintf(b, sizeof b, "movie playing=%d closed=%u fix=%d wait=%.0f", (int)movie_playing(), g_captions_closed,
+                 (int)g_fix_caption, g_caption_wait);
+        return b;
+    }
+    if (!a.empty() && a[0] == "sw") { // the superweapon votes (host, BUG-0117)
+        char b[128];
+        snprintf(b, sizeof b, "sw last_request=%d fired=%d refused=%u fix=%d orphans_given=%u", g_sw_last_req, g_sw_fired,
+                 g_sw_refused, (int)g_fix_sw_vote, g_orphans_given);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "super") { // super <type>: fire a superweapon (through the vote)
         void* pc = player_civ();
