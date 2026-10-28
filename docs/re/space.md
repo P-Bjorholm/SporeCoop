@@ -1676,3 +1676,37 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   cEmpire pointer (`GetPlayerEmpire`) does change with a load, so the mod uses it to tell a reload.
 * ✔ `cStarManager::GetEmpire` does not return an unapplied mirror's cEmpire after `allies drop`
   (the "no empire" answer); `allies detach` (tests) keeps the empire with its star instead.
+
+## Trips, clicks, Defenders, seeding threads, armada waves (2026-10-28, fix/w3-space)
+<a id="space-w3-trips-clicks-defenders"></a>
+
+Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
+
+* ✔ `cRelationshipManager::ApplyRelationship` called as `void` leaves its ST0 result on the x87
+  stack: three `coop.space empire contact` calls moved TOP from 0 to 5 while the tag word still
+  read FFFF ("empty"). A check of the x87 state has to look at TOP (`coop.space fpu`), not only the
+  tag word (BUG-0126).
+* ~ `SpaceTeleportTo` in the galaxy view to the star next to a partner did not spend energy or
+  damage the ship with energy 0 (energy 0 -> 0, HP unchanged): the cost of section 7.3's
+  TravelToStar was not seen on this short path. The co-op teleport (`spacecoop::teleport_in_galaxy`)
+  still refunds as `travel_to` does, and refuses a disabled ship (BUG-0063).
+* ✔ Clicks: SporeKit's background mode (on for test runs) hooks GetForegroundWindow / GetActiveWindow
+  / GetFocus to return the game window, so a focus check in the mod proves nothing in the lab. The
+  mod takes primary clicks from the game window's WM_LBUTTONDOWN through a thread message hook
+  (WH_GETMESSAGE on the main thread, `mods/coop/mouse.cpp`): the logical primary button (swapped
+  mice), only for clicks on the game window; the tests' `click` posts the same message
+  (BUG-0090, BUG-0145).
+* ✔ A Defender the guest's own game makes (SpawnUFO type 6 with the player's political id, as a
+  colony's defence) in the host's place is now removed like the other local NPC ships. Our puppets
+  are told apart by what space_spawn gave them: model key +0x780, mbInvincible (combatant +0x80 =
+  ufo +0x588) = 1, no owner mission +0x800 (`modes::space_puppet_ok`, BUG-0111).
+* ✔ The planet generation's RNG redirection is per thread (`thread_local`, native TLS in the
+  llvm-mingw DLL works under Wine). With the old shared state, another thread "inside
+  GenerateRandomName" made the guest generate 5 planets of 00460024 where the host made 6, and 4 of
+  0046002F against 1 (BUG-0123). No off-main-thread call of GenerateRandomName or
+  RequirePlanetsForStar was logged in these runs; the mod warns once if it sees one.
+* ✔ Armada: the game keeps a raid active (state 3) while nobody is on the planet; a host who left
+  for the system view and landed again got a second raid on the same colony (the old wave start),
+  30 ships counted for the wave. The wave now keeps its mission and resumes it (`contracts raids`,
+  `resumed=`). During a wave the mouse wheel at the ship did not take the host off the planet
+  (`coop.space takeoff` in the test) (BUG-0046).

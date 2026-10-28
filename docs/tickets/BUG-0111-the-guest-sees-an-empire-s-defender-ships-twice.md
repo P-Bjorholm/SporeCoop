@@ -1,19 +1,19 @@
 ---
 id: BUG-0111
 title: the guest sees an empire's defender ships twice, because any UfoType 6 ship counts as "our puppet"
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#90
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: eb7541e, 3984987, 4c74ae4
+tests: space_defenders
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #90
 ---
 
@@ -61,7 +61,9 @@ Part 2 (address reuse):
 - A second reviewer verified both readings.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (eb7541e, 3984987). Part 1: the guest's squadron keeps only the real puppets (`puppet_owner(u) >= 0`) instead of every type 6, so its own game's Defenders in the host's place go like its other NPC ships. Part 2: `modes::space_puppet_ok` (used by `space_alive`, squadron's hit attacker check and both rivalry checks) needs, besides listed + alive + type 6, the model key space_spawn gave the puppet (+0x780, remembered per pointer), mbInvincible = 1 and no owner mission (+0x800). A ship that fails is forgotten (and unregistered), never destroyed. `coop.fleet typefix 0`: the old checks (tests). Test commands: `coop.fleet puppet <p>`, `coop.fleet impostor <p>`.
+
+Suggested in the review:
 
 - Squadron guest: skip only our real puppets (`C.puppet_owner(u) >= 0`) instead of every type 6, so the guest's own defenders in the host's place are removed like its other NPC ships.
 - Puppet identity: remember at spawn what makes the puppet ours, and check all of it in `space_alive`:
@@ -73,7 +75,9 @@ Not fixed yet. Suggested in the review:
   Better still: forget a puppet for good in the first frame it is missing from the UFO list, and check that every frame before any other module uses it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_defenders.py` (suite `space_defenders`). Part 1: the guest's game spawns a Defender of its own empire next to it (`coop.fleet spawn 6 own`), the host one too. `--without-fix` FAILS: the guest keeps its Defender, 3 type-6 ships on the guest against 2 on the host (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/defenders_nofix.log); with the fix PASS: removed, 2 and 2 (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/defenders_pass2.log). Part 2 (address reuse cannot be forced): the guest's puppet on the host is made vulnerable as a game Defender is (`coop.fleet impostor 1`). `--without-fix` FAILS: the host keeps driving the same pointer; with the fix a new puppet is spawned and the old ship stays listed. An earlier variant of the impostor that changed the model key to an invalid one cost the guest's mirror of that ship a caught fault in cPlanetGfx_Create+0x8F0 (the known invalid-key fault of docs/re/space.md 10.2), so the test changes the invincible flag instead.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 Two-instance test in the `space` fixture, in a system with NPC empire defenders. Assert the guest's type-6 count against the host's in the host's place (the game's own UFO list, not mod counters).
 
@@ -90,3 +94,4 @@ This came from an inventory of about 90 game-object pointers the mod keeps acros
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #90.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (eb7541e): guest keeps only real puppets, puppet identity by model key / invincible / no mission; space_defenders FAIL without / PASS with.

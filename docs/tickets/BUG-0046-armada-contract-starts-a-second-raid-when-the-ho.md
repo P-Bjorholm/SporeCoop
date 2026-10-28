@@ -1,19 +1,19 @@
 ---
 id: BUG-0046
 title: armada contract starts a second raid when the host comes back, and the old raid decides the wave
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#24
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 9f9fd90, 4c74ae4
+tests: space_armada_return
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #24
 ---
 
@@ -54,7 +54,9 @@ One raid per wave. When the host comes back, the wave continues with the raid th
 CONFIRMED by reading the full path: no mission identity is kept; the listener and `armada_ship` filter only by place and mission id; a new raid starts after a return. PLAUSIBLE: that the game really keeps the first raid active off-screen and lets a second raid start on the same planet. The code comment at L778-L779 says it does, but this was not run.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (9f9fd90): `start_raid` notes the raid missions on the colony before and after the game's raid starter and keeps the new one as the wave's mission. `armada_ship` and the raid listener (which now gets the mission: `spacecoop::set_raid_listener(fn(mission, place, state))`) take only that mission. When the crew is back on the colony and that mission is still in the game's mission list in state 2 or 3, the wave resumes it instead of starting a raid. HP is raised once per ship of the wave's mission (a set kept over the return). The mission list comes from space_allies (`spaceext::game_missions`). `coop.space contracts wavefix 0`: the old way; `coop.space contracts raids` lists the raids on the colony (tests); `coop.space takeoff` (tests) leaves the planet.
+
+Suggested in the review:
 
 - After `start_raid`, find the new cMission in the mission list (as `space_allies.cpp` `active_raids` does) and keep its pointer for the wave. Filter the listener and `armada_ship` by that mission (`ufo +0x800 == wave mission`), and check the pointer is still in the list before using it.
 - On a return, if the wave's mission is still active (state 2 or 3), resume the wave on it instead of calling `start_raid`.
@@ -62,7 +64,9 @@ Not fixed yet. Suggested in the review:
 - Put the old behaviour behind `coop.fix armada_wave_mission off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_armada_return.py` (suite `space_armada_return`): armada accepted, both land, wave 1 comes, the host takes off to the system view for 6 s and lands again. `--without-fix` FAILS: two active raids on the colony after the return, 30 ships taken for the wave (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/armada_nofix2.log); with the fix PASS: one raid, `resumed=1` (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/armada_pass2.log). The game does keep the first raid active (state 3) while nobody is on the planet (confirms the PLAUSIBLE part of the root cause). Runtime finding: during the wave the mouse wheel did not take the host off the planet (the test uses `coop.space takeoff`). Not run: the old raid ending with 6 while a second runs (no longer possible with the fix: there is no second raid).
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_contracts.py`, new step "host leaves mid-wave":
 1. Two lanes. Start an armada contract and wave 1 as the existing test does.
@@ -80,3 +84,4 @@ This must FAIL on main and with `coop.fix armada_wave_mission off`, and PASS wit
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #24.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (9f9fd90): the wave keeps and resumes its own raid; space_armada_return FAIL without / PASS with.

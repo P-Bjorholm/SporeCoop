@@ -1,19 +1,19 @@
 ---
 id: BUG-0123
 title: planet seeding flags are shared by all threads, so another thread can switch the seeding off
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#102
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_seed_thread
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #102
 ---
 
@@ -53,13 +53,17 @@ The racing sides are thread A (the generating thread, in `h_RequirePlanets` and 
 PLAUSIBLE. The globals are non-atomic and shared (checked by reading). It is not verified that `GenerateRandomName` or `RequirePlanetsForStar` are ever called off the main thread. This is a candidate cause of the open known issue "Space: an unvisited star's planets can still differ between the two games" (docs/known-issues.md: once the host made 10 planets of 0046101B and the guest 6). Not proven. A second reviewer verified the reading. Severity: low to medium.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): the generation state (seed, generating, name counter) is `thread_local` (native TLS of the llvm-mingw build), so only the generating thread's own state decides; a nested RequirePlanetsForStar on the same thread still runs unseeded as before. The hooks log once when they run off the main thread (`space: ... runs on thread N, not on the main thread`). `coop.space seedfix 0`: the old shared state (tests). `coop.space namesheld <ms>`: another thread inside the name hook's bookkeeping (tests).
+
+Suggested in the review:
 
 - Make `g_generating`, `g_in_names`, `g_planet_rng` and `g_gen_thread` `thread_local`, or keep them in a per-thread struct. Then `generator_draw` needs no thread-id comparison.
 - Log a warning (once) when one of the hooks runs on a thread other than the main thread, so the docs can record whether it happens.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_seed_thread.py` (suite `space_seed_thread`): another thread holds the name counter while the guest jumps into two stars nobody generated, the host follows, the PlanetIDs of both games are compared. `--without-fix` FAILS: 6 and 5 planets of 00460024, 1 and 4 of 0046002F (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/seed_nofix.log); with the fix PASS: 6 and 6, 1 and 1, the same ids (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/seed_pass1.log). Whether the game itself ever calls GenerateRandomName or RequirePlanetsForStar off the main thread is still not known: no off-main warning was logged in these runs; the warning stays to find out.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 `coop_space_jump.py` already compares planets. Add a variant that runs the second-thread name loop described above during the jump, and assert the same planet count and PlanetIDs on both games. It should fail on main if the race is real and pass with thread-local state.
 
@@ -69,3 +73,4 @@ The known issue in docs/known-issues.md ("an unvisited star's planets can still 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #102.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): thread-local seeding state; space_seed_thread FAIL without / PASS with (forced second thread).

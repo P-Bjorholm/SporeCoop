@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Fixed
+- **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
+  players a partner in your own system made every press fail), and the notice names that partner
+  (BUG-0072). Flying to a partner in the galaxy view is refused while your ship is disabled
+  (BUG-0063).
+- **Space: galaxy map name tags react only to clicks on the game**: a click in another window over
+  the game no longer starts a trip, and with swapped mouse buttons the primary button works, the
+  secondary one (camera drags) no longer flies the ship (BUG-0090, BUG-0145).
+- **Space: the guest no longer sees defender ships twice** in the host's system, and a game ship
+  can no longer be taken for a partner's ship (BUG-0111).
+- **Space: an armada contract wave goes on with its own raid when the host leaves the colony and
+  comes back**, instead of starting a second raid whose end decided the wave (BUG-0046). A won raid
+  on a partner's colony is no longer taken for an aborted one (BUG-0136).
+- **Space: unvisited stars get the same planets on both games** even when another thread names
+  things during the generation (BUG-0123); `coop.space empire contact` no longer breaks the game's
+  float maths after 8 calls (BUG-0126).
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

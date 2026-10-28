@@ -1045,3 +1045,27 @@ Each runs on the Space fixture in ~1-3 min (warm) and has `--without-fix`, which
   into a plain empire of that galaxy (no contact, no alliance); `diplomacy mirrorfix 0` (BUG-0071).
 * BUG-0141 (unique names) is a unit test in `make test`; `coop.corefix unique_names 0` switches it
   off in game.
+
+## Space wave 3 tests and their switches (2026-10-28, fix/w3-space)
+<a id="testing-space-w3"></a>
+
+Each test takes `--without-fix` (switches the fixes off, must FAIL) and runs on the `space` fixture
+(~3-6 min each on lane 6, GOG 2024):
+
+* `coop_space_map_input.py` (`space_map_input`): `coop.space fpu` after 3 empire contacts
+  (BUG-0126, switch `coop.space fpufix`), the jump notice (BUG-0072, `jumpfix`), `coop.space map go`
+  while disabled (BUG-0063, `map teleportfix`; `coop.space disable 0|1`, `coop.space energy [v]`),
+  the physical left button over a tag without a window message (`key 0x01 down/up`: `key 1` is the
+  '1' key) and the message alone (`coop.space map postclick x y`) (BUG-0090, BUG-0145, `map clickfix`).
+* `coop_space_seed_thread.py` (`space_seed_thread`): `coop.space namesheld <ms>` holds the name
+  counter on another thread during the guest's generation (BUG-0123, `seedfix`). Stars from
+  `empire near` with `visited=0 planets=0` only.
+* `coop_space_defenders.py` (`space_defenders`): `coop.fleet spawn 6 own` on the guest,
+  `coop.fleet impostor 1` / `puppet 1` on the host (BUG-0111, `coop.fleet typefix`). Do not give a
+  ship an invalid model key in a test: every mirror of it costs a caught fault in
+  cPlanetGfx_Create+0x8F0.
+* `coop_space_armada_return.py` (`space_armada_return`): `coop.space takeoff` leaves the colony
+  during the wave (the wheel did nothing then), `coop.space contracts raids` lists the raid
+  missions on it (BUG-0046, `contracts wavefix`).
+* Unit tests (`make test`, tests/space_tests.cpp): the jump target with 3 players (BUG-0072) and
+  the aborted-raid set (BUG-0136, `coop.space allies abortedfix`).
