@@ -32,6 +32,7 @@
 #include "space_logic.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -102,6 +103,7 @@ static std::string g_last;
 static std::string hex(uint32_t v);
 static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
 static bool g_aborted_fix = true;  // coop.space allies abortedfix 0: the set is never pruned (BUG-0136, tests)
+COOP_FIX("allies.aborted", "BUG-0136", g_aborted_fix, "space: a won raid on a partner's colony does not count as aborted");
 static bool g_end_pending;        // the session ended while I was on a mirror planet
 static void end_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
@@ -306,6 +308,7 @@ static std::string empire_name(const Mirror& m)
 // release the old galaxy's records): one cEmpire leaks per reload. `coop.space allies reloadfix 0`
 // restores the old reuse (tests).
 static bool g_reload_fix = true;
+COOP_FIX("allies.reload", "BUG-0038", g_reload_fix, "space: the allies mirror starts over with a new cEmpire after a reload");
 static uint32_t g_reload_resets;
 static void reset_empire(Mirror& m)
 {

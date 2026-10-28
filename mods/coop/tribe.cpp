@@ -16,6 +16,7 @@
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -51,6 +52,7 @@ bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() 
 // host sends no states and drops orders outside Tribe): the guest's own game runs their AI and its
 // orders until the host is back. `coop.tribe fix away 0`: the old frozen tribe (tests).
 static bool g_fix_away = true;
+COOP_FIX("tribe.away", "BUG-0151", g_fix_away, "tribe: while the host is away the guest's own game runs its members");
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 
@@ -587,6 +589,7 @@ static void host_command(uint8_t from, net::Reader& r)
 // (+0xB20, +0xB54) and the OK (bounce back) faulted at 0xC0DAE3 on it, then the game froze
 // (BUG-0172). No member is added to the player tribe then. `coop.tribe fix gameover 0`: the old way.
 static bool g_fix_gameover = true;
+COOP_FIX("tribe.gameover", "BUG-0172", g_fix_gameover, "tribe: no member is added during the game-over caption");
 static uint32_t g_spawns_blocked;
 static bool player_tribe_out(void* t)
 {
@@ -743,6 +746,7 @@ static void guest_state(net::Reader& r)
 // again, the dead mirror is replaced by a fresh one (the next snapshot binds or spawns it).
 // `coop.tribe fix ko 0`: the code before (tests).
 static bool g_fix_ko = true;
+COOP_FIX("tribe.ko", "BUG-0173", g_fix_ko, "tribe: a guest's mirror of a member without health plays the death");
 static uint32_t g_ko_shown, g_ko_replaced;
 
 static void guest_tick(double now)
@@ -798,6 +802,8 @@ static std::unordered_set<uint8_t> g_epic_hitters;
 // BUG-0121: the epic's herd is reused and quieted, a live epic never goes into a save.
 // `coop.tribe fix epic_players|epic_herd 0`: the old behaviour (tests).
 static bool g_fix_epic_players = true, g_fix_epic_herd = true;
+COOP_FIX("tribe.epic_players", "BUG-0146", g_fix_epic_players, "tribe: only players' members count as epic hitters");
+COOP_FIX("tribe.epic_herd", "BUG-0121", g_fix_epic_herd, "tribe: the epic's herd is reused and quieted, a live epic is not saved");
 static uint32_t g_epic_herd_reused, g_epic_saved_out;
 constexpr uint32_t kEpicArchetype = 0xFC811218u;
 static double g_epic_next, g_last_duet, g_duet_told;
@@ -862,6 +868,7 @@ static float host_health(void* c)
 // mirror removed by guest_state, a load): the call went through a vtable read from freed memory.
 // keep: the chiefs that stay (nullptr: none, the session ends). `coop.tribe fix chiefs 0`: the old check.
 static bool g_fix_chiefs = true;
+COOP_FIX("tribe.chiefs", "BUG-0081", g_fix_chiefs, "tribe: chiefs checked against the player tribe's own list, not freed memory");
 static uint32_t g_chief_restores, g_chief_gone, g_chief_bad_calls;
 static void restore_chief_scales(const std::unordered_map<uint8_t, void*>* keep)
 {

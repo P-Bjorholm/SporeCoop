@@ -14,6 +14,7 @@
 #include "space_ext.h"
 #include "space_logic.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -52,6 +53,8 @@ static double g_down_until, g_repair_t, g_last_down;
 static bool g_down, g_down_fresh; // fresh: disabled since the last down_tick (BUG-0147)
 static bool g_helper_fix = true;   // coop.space helperfix 0: any partner here rescues, also a disabled or frozen one (BUG-0131)
 static bool g_repair_fix = true;   // coop.space repairfix 0: the old head start of up to 0.5 s (tests)
+COOP_FIX("space.helper", "BUG-0131", g_helper_fix, "space: a disabled or frozen partner does not count as a rescuer");
+COOP_FIX("space.repair", "BUG-0147", g_repair_fix, "space: a new disable starts its repair from 0");
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
@@ -288,6 +291,7 @@ static std::string travel_to(uint32_t star, bool force = false);
 // one with any known star, so a partner in my system made every press fail with 3 players), and
 // the notice names that partner (it named player 0). `coop.space jumpfix 0`: the old pick (tests).
 static bool g_jump_fix = true;
+COOP_FIX("space.jump", "BUG-0072", g_jump_fix, "space: Jump to picks a partner whose star is not mine, the notice names it");
 static bool pick_jump_target(uint8_t to, uint8_t& id, uint32_t& star, bool skip_mine)
 {
     std::vector<spacelogic::JumpPartner> v;
@@ -380,6 +384,7 @@ std::string teleport_in_galaxy(uint32_t star)
 // BUG-0092: the index is checked against the sector's end (+4) before the array is read; an id from
 // the network may name an index past it (`coop.space starfix 0`: the old read, for the tests).
 static bool g_star_fix = true;
+COOP_FIX("space.star", "BUG-0092", g_star_fix, "space: a star id's index is checked against its table");
 static uint32_t g_star_oob; // lookups whose index was past the sector's end (read or refused)
 static uint32_t g_star_oob_read; // ... and read anyway (the old path)
 void* star_record(uint32_t id)
@@ -562,6 +567,7 @@ static thread_local GenState t_gen;
 static GenState g_gen_shared; // the old state (seedfix 0)
 static DWORD g_gen_thread_shared;
 static bool g_seed_fix = true;
+COOP_FIX("space.seed", "BUG-0123", g_seed_fix, "space: planet seeding state is per thread");
 static DWORD g_main_tid;                     // set by tick (the main thread)
 static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
 static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
@@ -1203,6 +1209,7 @@ std::string status()
 //   coop.space empire colony <PlanetID> [spice] the record-level colony of docs/re/space.md 5.3
 //   coop.space empire contact <StarID>          the first contact with the empire of that star
 static bool g_fpu_fix = true; // coop.space fpufix 0: ApplyRelationship called as void (BUG-0126, tests)
+COOP_FIX("space.fpu", "BUG-0126", g_fpu_fix, "space: ApplyRelationship is called with its float result popped");
 
 // The x87 register stack: TOP (0 = empty, each value left on it lowers TOP by one) and the tag word
 // (0xFFFF = all registers empty). Read from a command handler, between frames: any value there

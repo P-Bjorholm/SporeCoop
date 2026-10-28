@@ -29,6 +29,7 @@
 
 #include "space_ext.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -100,6 +101,7 @@ static bool is_empire(uint32_t pol) { return (pol & 0x80000000u) && pol != 0xFFF
 // and the partner was allied with / contacted an NPC it never met. Now it is neither sent nor
 // applied onto. `coop.space diplomacy mirrorfix 0` restores that (tests).
 static bool g_mirror_fix = true;
+COOP_FIX("diplomacy.mirror", "BUG-0071", g_mirror_fix, "space: the allies mirror empire's record is neither sent nor applied");
 static uint32_t g_mirror_skipped;
 static bool local_mirror(uint32_t pol)
 {

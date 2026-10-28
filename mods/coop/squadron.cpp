@@ -15,6 +15,7 @@
 #include "space_rivalry.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -96,6 +97,7 @@ static bool g_rx_done;        // the removal pass of g_rx_cycle ran
 // chunk even when an earlier chunk of the cycle was lost or late, and a late chunk of an older
 // cycle reset the cycle. `coop.fleet chunkfix 0` restores that (tests).
 static bool g_chunk_fix = true;
+COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass runs only on a complete cycle of ship chunks");
 // BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
 // `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
 static bool g_keep_posse = true;
@@ -271,6 +273,7 @@ static bool live(void* u)
 // messages run before squadron::tick drops the freed pointers) passed a freed object, which the
 // game reads and AddRefs (AddHostileUnit). `coop.fleet hitfix 0` restores the old unchecked path.
 static bool g_hit_fix = true;
+COOP_FIX("fleet.hit", "BUG-0054", g_hit_fix, "space: a hit message never passes a freed ship to TakeDamage");
 static uint16_t g_hold_mirror = 0xFFFF; // tests (coop.fleet freemirror): this freed mirror stays listed
 static void* g_stale_puppet;            // tests (coop.fleet freepuppet): the next MSG_UFO_HIT's attacker
 static uint32_t g_att_dropped, g_att_freed;

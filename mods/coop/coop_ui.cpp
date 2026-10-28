@@ -16,6 +16,7 @@
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
+#include "fixes.h"
 
 namespace coop_ui {
 
@@ -35,6 +36,7 @@ static std::string g_status;
 static uint32_t g_status_color = 0xFFFFD866;
 static double g_status_until; // the status goes away then (0 = stays until the next session event)
 bool g_status_fix = true;     // BUG-0104 (`coop.corefix ui_status 0`: the status of the last button stays)
+COOP_FIX("core.ui_status", "BUG-0104", g_status_fix, "ui: the co-op window shows the session's status, not the last button's");
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
@@ -53,6 +55,7 @@ constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
 static int g_lan_first;   // the first game on the network listed (pages of three, BUG-0183)
 bool g_lan_pages_fix = true; // `coop.corefix lan_pages 0`: only the first three games, no "More" (BUG-0183)
+COOP_FIX("core.lan_pages", "BUG-0183", g_lan_pages_fix, "ui: every network game is listed, with More pages");
 static int g_space_first; // the first row shown (pages of kSpaceRows rows)
 
 static const char* T(const char* en, const char* ru) { return g_ru ? ru : en; }
@@ -126,6 +129,8 @@ static Win g_menu_btn, g_menu_parent;
 // `coop.corefix menu_drop 0` = the old behaviour (tests).
 bool g_menu_drop_fix = true;
 bool g_recenter_fix = true;
+COOP_FIX("core.menu_drop", "BUG-0163", g_menu_drop_fix, "ui: the galaxy menu's Co-op item pointer goes with the menu");
+COOP_FIX("core.window_recenter", "BUG-0113", g_recenter_fix, "ui: the co-op window is placed again after a resolution change");
 
 // The window is centred on the screen it opens on (BUG-0113: it is kept for the whole run, and was
 // centred once; after a smaller resolution in the options its bottom row was off the screen).

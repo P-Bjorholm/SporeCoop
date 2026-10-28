@@ -20,6 +20,7 @@
 #include "npc_ids.h"
 #include "world.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 namespace npc {
 
@@ -57,6 +58,14 @@ static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use 
 // BUG-0169: a proxy that stays more than 2.5 m off for 3 s is put in place whatever the host's
 // NPC reports as its speed (coop.npc stallfix off: the old driving)
 static bool g_stall_fix = true;
+COOP_FIX("npc.reuse", "BUG-0044", g_reuse_fix, "creature: a reused creature object gets a new NPC id");
+COOP_FIX("npc.id", "BUG-0023", g_id_fix, "creature: NPC ids never wrap over ids in use");
+COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 3 s is put in place");
+// 0.7.2.x fixes kept for the tests (off: the code before them)
+static bool g_stale_fix = true, g_world_despawn_fix = true, g_death_fix = true;
+COOP_FIX("npc.stale_proxy", "BUG-0009", g_stale_fix, "creature: a guest drops a proxy the host stopped sending states for");
+COOP_FIX("npc.world_despawn", "BUG-0009", g_world_despawn_fix, "creature: the host despawns its NPCs of a world it left at the guests");
+COOP_FIX("npc.play_death", "BUG-0015", g_death_fix, "creature: a guest's proxy of a killed NPC plays the death");
 void set_stall_fix(bool on) { g_stall_fix = on; }
 static uint32_t g_reused = 0;   // host: creature objects that became another NPC (new id)
 void set_reuse_fix(bool on) { g_reuse_fix = on; }
@@ -100,6 +109,7 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 
 bool is_proxy(void* c) { return g_proxy_of.count(c) != 0; }
 static bool g_strays_on = true; // tests: remove_saved_strays on/off
+COOP_FIX("npc.strays", "BUG-0008", g_strays_on, "creature: creatures without tuning in herds like ours (saved puppets) are removed");
 void set_strays(bool on) { g_strays_on = on; }
 void set_enabled(bool on) { g_enabled = on; }
 bool enabled() { return g_enabled; }
@@ -127,6 +137,7 @@ static bool update_filter(void* c)
 // with that partner's puppet as the player; its attacks on the puppet go to the partner through the
 // damage filter (MSG_DAMAGE), like any NPC hit on a puppet.
 static bool g_partner_targets = true;
+COOP_FIX("npc.partners", "BUG-0016", g_partner_targets, "creature: the host's NPCs notice, chase and attack a partner's puppet");
 static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it
 static std::unordered_map<void*, void*> g_ai_target; // host: NPC -> the puppet it treats as the player
 static uint32_t g_ai_partner_picks = 0;
@@ -453,7 +464,7 @@ static void guest_tick(double now)
     // host renumbered its NPCs after its editor or a load without a despawn, and the guest kept
     // the old ones for good: a second, living copy of every NPC, a kill of the host's left it
     // standing). A host that stands still (pause menu) sends no states at all: nothing is dropped.
-    if (now - g_last_states_rx < 0.5) {
+    if (g_stale_fix && now - g_last_states_rx < 0.5) {
         std::vector<uint16_t> stale;
         for (auto& [id, px] : g_proxies)
             if (now - px.last_rx > 5.0)
@@ -521,8 +532,10 @@ static void guest_tick(double now)
             // the death itself is the behaviour tree's (0xD85B80): a proxy has no AI and stood on
             // with 0 health, alive for the game (not edible, "still alive" for the guest; player
             // report 2026-10-25, docs/re/creature.md 14)
-            game::play_death(px.c);
-            g_deaths_played++;
+            if (g_death_fix) {
+                game::play_death(px.c);
+                g_deaths_played++;
+            }
         } else if (!px.killed && s.health > 0)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
@@ -586,6 +599,7 @@ static void remove_saved_strays(double now)
 // when its own family did not come for much longer than it takes (~13 s), e.g. when the greeter
 // picked was a partner's puppet (puppets run no AI either).
 static bool g_hatch_on = true; // tests: hatch help on/off
+COOP_FIX("npc.hatch", "BUG-0014", g_hatch_on, "creature: a waiting hatchling grows up without its family's greeting");
 static double g_hatch_wait = 0, g_hatch_last = 0;
 static uint32_t g_hatch_helped = 0;
 void set_hatch_help(bool on) { g_hatch_on = on; }
@@ -654,6 +668,7 @@ static void tick_frame(double now)
 // wait, possibly minutes, until the host was back, and guest_tick then destroyed objects the game
 // had freed or reused meanwhile. `coop.npc killfix off` keeps the old behaviour (tests).
 static bool g_kill_clear = true;
+COOP_FIX("npc.kill", "BUG-0082", g_kill_clear, "creature: the guest's kill list is cleared every frame (coop.npc killfix)");
 void set_kill_clear(bool on) { g_kill_clear = on; }
 
 void tick(double now)
@@ -676,7 +691,7 @@ void on_world_change()
     // the host's NPCs of the old world are gone and the new ones get new ids: the guests drop the
     // old ones (they mirrored them for good before 2026-10-25: a living copy of every NPC next to
     // the new one after each editor or load of the host)
-    if (is_host())
+    if (is_host() && g_world_despawn_fix)
         for (auto& [g, ks] : g_known)
             for (uint16_t id : ks)
                 send_despawn(g, id);
@@ -702,6 +717,7 @@ void on_world_change()
 // BUG-0125: host_tick forgets what a guest mirrors only while the simulation runs; a guest that
 // left and joined again (the same id) while the host was paused kept the old set and got no spawns
 static bool g_known_fix = true;
+COOP_FIX("npc.known", "BUG-0125", g_known_fix, "creature: a guest that left forgets its known NPCs while the host is paused too");
 void set_known_fix(bool on) { g_known_fix = on; }
 void on_player_leave(uint8_t id)
 {

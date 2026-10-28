@@ -31,6 +31,7 @@
 #include "space_ext.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 
 using skg::cdecl_call;
@@ -111,6 +112,7 @@ struct Owed {
 };
 static std::vector<Owed> g_owed;
 static bool g_refund_fix = true;
+COOP_FIX("trade.refund", "BUG-0058", g_refund_fix, "space: gifts that come back outside Space wait until Space");
 static bool g_away;        // tests: the feature acts as outside Space (no inventory), BUG-0058
 static bool g_hold;        // tests: do not answer gifts (the answer is still on its way)
 static uint32_t g_owed_paid, g_owed_dropped;

@@ -55,6 +55,7 @@
 #include "syncdbg.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 static const SkHost* H;
 static SkMod* M;
@@ -105,6 +106,7 @@ extern float g_solo_dna;
 // arrives while it has no creature (editor, load) and pays it when it has one again.
 // `coop.corefix away_dna 0`: the old behaviour (tests).
 bool g_away_dna_fix = true;
+COOP_FIX("core.away_dna", "BUG-0151", g_away_dna_fix, "core: DNA a guest earns while the host is away is kept");
 float g_dna_owed = 0;     // host: guests' DNA that arrived without an avatar
 uint32_t g_dna_owed_paid; // tests
 bool on_dna(float delta)
@@ -156,6 +158,7 @@ std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host
 // roles end with their player and session, the lobby table keeps them with their ids (BUG-0064,
 // BUG-0079); `coop.role fix 0` = the code before (tests)
 bool g_role_fix = true;
+COOP_FIX("role.fix", "BUG-0064 BUG-0079", g_role_fix, "civ: roles end with their player and session (coop.role fix)");
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
 bool g_lobby_dirty = false;
 double g_last_lobby = 0;
@@ -254,6 +257,7 @@ uint32_t build_id()
 // only touch a creature puppet that is still in the game's object list. `coop.framefix 0` restores
 // the old order and the unchecked calls (tests).
 bool g_frame_fix = true;
+COOP_FIX("core.frame", "BUG-0091", g_frame_fix, "core: animations and despawns only touch a puppet the game still lists (coop.framefix)");
 // calls that met a puppet the game no longer lists: dropped (fix on) / made anyway (framefix 0)
 uint32_t g_anims_dropped = 0, g_anims_unlisted = 0, g_despawns_dropped = 0, g_despawns_unlisted = 0;
 bool creature_puppet(const modes::Adapter* a)
@@ -401,6 +405,7 @@ double g_host_away_since = -1;
 float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
 bool g_host_away_fix = true; // BUG-0085: the away state ends with the session, without a "host is back"
+COOP_FIX("core.host_away_reset", "BUG-0085", g_host_away_fix, "core: the away state ends with the session");
 
 bool host_in_menu()
 {
@@ -424,6 +429,7 @@ bool host_here() // the host plays in our world again (not loading it any more)
 // it (DNA, food, cells, tribe, relations, time of day, NPCs), its game would save the changes.
 // `coop.corefix same_place 0` = the old behaviour (tests).
 bool g_place_fix = true;
+COOP_FIX("core.same_place", "BUG-0130", g_place_fix, "core: nothing of the host's world is applied to a guest in another world");
 uint32_t g_place_dropped = 0;
 float g_dna_pending = -1; // the host's DNA total that arrived while we were elsewhere
 // unknown: what to say before the host's first state arrived (just joined)
@@ -526,6 +532,7 @@ Vote g_vote;
 // dropped, not run later on a freed civilization or in another save). `coop.corefix vote_scope 0`
 // restores the old behaviour (tests).
 bool g_vote_scope_fix = true;
+COOP_FIX("core.vote_scope", "BUG-0043", g_vote_scope_fix, "core: a vote ends with its stage, world and session");
 unsigned g_vote_actions_run; // tests: action votes whose action ran
 unsigned g_votes_dropped;    // tests: votes ended without running their result
 bool g_vote_bypass = false;
@@ -937,6 +944,7 @@ void vote_tick(double now)
 // grows up nor migrates. Such a share waits until the cinematic had 3 s to start and none plays (at
 // most 120 s). `coop.npc sharecine off`: at once, as before (tests).
 bool g_share_cine_fix = true;
+COOP_FIX("npc.sharecine", "BUG-0019", g_share_cine_fix, "world: a share waits for the evolution cinematic to end");
 double g_share_cine_since = 0, g_share_due_at = 0;
 
 void on_mode_change(uint32_t from, uint32_t to)
@@ -1099,6 +1107,7 @@ std::atomic<bool> g_keepalive_run{false}, g_keepalive_queued{false};
 // after a join; at process exit nothing is destroyed. `coop.corefix keepalive_ptr 0`: the old
 // global object (tests: coop.exittest then aborts).
 bool g_keepalive_ptr_fix = true;
+COOP_FIX("core.keepalive_ptr", "BUG-0107", g_keepalive_ptr_fix, "core: the keepalive thread cannot abort the game at exit");
 std::thread* g_keepalive = nullptr;
 std::thread g_keepalive_old; // the old way, only with the fix off
 
@@ -1562,6 +1571,7 @@ std::atomic<bool> g_menu_up{false};
 constexpr uint32_t kCheatConsoleId = 0x014A4606;
 std::atomic<bool> g_text_up{false};
 bool g_text_fix = true; // coop.social textfix off: the old key poll (tests)
+COOP_FIX("social.text", "BUG-0149", g_text_fix, "creature: ability keys are not taken while the cheat console is open");
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
@@ -1617,6 +1627,7 @@ void menu_tick(double now)
 }
 
 bool g_status_block_fix = true;   // BUG-0155
+COOP_FIX("core.status_block", "BUG-0155", g_status_block_fix, "ui: the status text and notifications start below the co-op window");
 std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
 
 void on_overlay(void*, int, void*)
@@ -1761,6 +1772,19 @@ void on_remote_anim(const net::AnimEvent& ev)
 // remotes. `coop.sessionfix 0` restores the old per-path lists (tests).
 bool g_session_end_fix = true;
 bool g_id_reuse_fix = true; // coop.corefix id_reuse 0: a joining player inherits an old entry of its id
+COOP_FIX("session.end", "BUG-0033", g_session_end_fix, "core: every session end runs the same cleanup (coop.sessionfix)");
+COOP_FIX("core.id_reuse", "BUG-0076", g_id_reuse_fix, "core: a joining player does not inherit an old entry of its id");
+COOP_FIX("core.unique_names", "BUG-0141", g_sess.unique_names, "net: players with the same name get unique names");
+COOP_FIX("net.big_reliable", "BUG-0034", net::g_fix.big_reliable, "net: reliable messages above one packet are split, not stuck");
+COOP_FIX("net.state_roster", "BUG-0109", net::g_fix.state_roster, "net: a guest ignores the state of a player not in its roster");
+COOP_FIX("net.offset_window", "BUG-0133", net::g_fix.offset_window, "net: the clock offset forgets an old minimum within seconds");
+COOP_FIX("net.sender_time", "BUG-0122", net::g_fix.sender_time, "net: ship / vehicle velocity over the host's time, not arrival");
+COOP_FIX("net.first_ack", "BUG-0030", net::g_fix.first_ack, "net: packet seq starts at 1, an ack 0 acks nothing");
+COOP_FIX("net.time_wrap", "BUG-0053", net::g_fix.time_wrap, "net: snapshot order survives the sender's millisecond wrap");
+COOP_FIX("net.lan_prune", "BUG-0039", net::g_fix.lan_prune, "net: the LAN game list forgets silent hosts and has a cap");
+COOP_FIX("net.addr_check", "BUG-0138", net::g_fix.addr_check, "net: host addresses trimmed, the port checked");
+COOP_FIX("core.text_utf8", "BUG-0164", utf8::g_cut_fix, "net: texts are cut between characters, not bytes");
+COOP_FIX("core.notify_text", "BUG-0129", notify_text::g_fix, "ui: notification lines wrap by characters, the panel kind is not guessed");
 void end_session_modules(bool cell)
 {
     npc::on_session_end();
@@ -2792,6 +2816,7 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
 // Give, `coop.give next`); before, it was always the first other player. `coop.give fix 0`: the old one.
 uint8_t g_give_pick = net::kNoGiveTarget;
 bool g_give_pick_fix = true;
+COOP_FIX("give.pick", "BUG-0075", g_give_pick_fix, "civ: the player picks the recipient of Give (coop.give fix)");
 static std::vector<uint8_t> player_ids()
 {
     std::vector<uint8_t> ids;
@@ -3109,6 +3134,21 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// coop.fix: every fix switch of the mod in one place (fixes.h, BUG-0116)
+int c_fix(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool ok;
+    std::string r = fix::command(std::vector<std::string>(argv + 1, argv + argc), &ok);
+    if (ok && argc > 2)
+        H->log(M, SK_WARN, "coop.fix %s %s", argv[1], argv[2]);
+    for (size_t a = 0, b; a < r.size(); a = b + 1) { // a line per call: out_printf takes 8 KB at most
+        b = r.find('\n', a);
+        b = b == std::string::npos ? r.size() : b;
+        SAY("%s\n", r.substr(a, b - a).c_str());
+    }
+    return ok ? 0 : 1;
+}
+
 int c_sessionfix(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 1)
@@ -3223,6 +3263,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    nullptr, MT);
     H->command_add(M, "coop.corefix", "coop.corefix [name 0|1] - the core's fix switches (tests: 0 = the old behaviour)",
                    c_corefix, nullptr, MT);
+    H->command_add(M, "coop.fix", "coop.fix [list] | <name> [on|off] | all on|off - every fix switch (tests: off = the code before the fix)",
+                   c_fix, nullptr, MT);
     H->command_add(M, "coop.exittest", "coop.exittest [old] - end the game with ExitProcess(0) without Shutdown (tests, BUG-0107)",
                    c_exittest, nullptr, MT);
     H->command_add(M, "coop.targets",
