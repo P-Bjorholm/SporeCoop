@@ -11,6 +11,7 @@
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
+#include "space_ext.h"
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
@@ -775,7 +776,14 @@ static std::unordered_map<void*, float> g_chief_scale;                          
 static std::unordered_map<void*, double> g_chief_saved;                         // chief -> last rescue
 static uint32_t g_pincer_hits, g_aura_hits, g_chief_rescues, g_duet_ticks, g_heals, g_epics, g_epic_kills;
 static void* g_epic;
+static void* g_epic_herd; // the herd g_epic lives in (ours: quieted when the epic is gone)
 static std::unordered_set<uint8_t> g_epic_hitters;
+// BUG-0146: only the players' members count as hitters (an NPC tribe's member is owner 0xFE).
+// BUG-0121: the epic's herd is reused and quieted, a live epic never goes into a save.
+// `coop.tribe fix epic_players|epic_herd 0`: the old behaviour (tests).
+static bool g_fix_epic_players = true, g_fix_epic_herd = true;
+static uint32_t g_epic_herd_reused, g_epic_saved_out;
+constexpr uint32_t kEpicArchetype = 0xFC811218u;
 static double g_epic_next, g_last_duet, g_duet_told;
 
 static uint16_t member_id(void* c)
@@ -1044,6 +1052,61 @@ static void duet_tick(double now)
     }
 }
 
+// a herd of ours for epics: the epic archetype, no nest, not the avatar's, target size 0 (the
+// game's own herds have a target size). prof: of this species (null: any). Checked in the object list.
+static bool is_epic_herd_of_ours(void* o)
+{
+    return game::object_alive(o) && skg::readable(o, 0x21C) && F<uint32_t>(o, 0x88) == kEpicArchetype &&
+           !game::herd_nest(o) && !F<uint8_t>(o, 0x84) && F<int32_t>(o, 0xF4) == 0;
+}
+
+static void* epic_herd_find(void* prof)
+{
+    struct Q {
+        void* prof;
+        void* found = nullptr;
+    } q{prof};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (noun != game::kHerdNoun || !is_epic_herd_of_ours(o) || (q->prof && game::herd_species(o) != q->prof))
+                return true;
+            q->found = o;
+            return false;
+        },
+        &q);
+    return q.found;
+}
+
+static bool herd_listed(void* h)
+{
+    struct Q {
+        void* want;
+        bool found = false;
+    } q{h};
+    if (!h)
+        return false;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto* q = (Q*)u;
+            if (o == q->want && noun == game::kHerdNoun)
+                q->found = true;
+            return !q->found;
+        },
+        &q);
+    return q.found;
+}
+
+// the epic is gone (killed, removed before a save, the session ended): its herd spawns nothing.
+// Target size 0 holds; the game enables the herd again after its member died (lane 7: disabled at
+// the kill, enabled again within seconds; a disable later stayed), so `enabled` is best effort.
+static void epic_herd_release()
+{
+    if (g_fix_epic_herd && g_epic_herd && herd_listed(g_epic_herd))
+        game::herd_quiet(g_epic_herd);
+    g_epic_herd = nullptr;
+}
+
 // epic: a giant of a species on the planet comes to the village (host)
 static bool spawn_epic()
 {
@@ -1082,16 +1145,30 @@ static bool spawn_epic()
     net::Vec3 p{tp.x + side.x / sl * 60.f, tp.y + side.y / sl * 60.f, tp.z + side.z / sl * 60.f};
     float pp[3] = {p.x, p.y, p.z};
     void* nmgr = game::noun_manager();
-    void* herd = nmgr ? thiscall<void*>(a_CreateHerd, nmgr, pp, prof, 0, false, 0, false) : nullptr;
+    // BUG-0121: one quiet epic herd of the species is reused (also one a save brought back), not a
+    // new herd per epic that stayed in the world and in every save
+    void* herd = g_fix_epic_herd ? epic_herd_find(prof) : nullptr;
+    if (herd)
+        g_epic_herd_reused++;
+    else
+        herd = nmgr ? thiscall<void*>(a_CreateHerd, nmgr, pp, prof, 0, false, 0, false) : nullptr;
     if (!herd)
         return false;
-    F<uint32_t>(herd, 0x88) = 0xFC811218u; // an archetype with isEpic = 1
+    F<uint32_t>(herd, 0x88) = kEpicArchetype; // an archetype with isEpic = 1
     F<uint32_t>(herd, 0xF0) = 0;
+    if (g_fix_epic_herd)
+        F<float>(herd, 0x34) = pp[0], F<float>(herd, 0x38) = pp[1], F<float>(herd, 0x3C) = pp[2]; // its home
     thiscall<void>(a_HerdEnable, herd, true);
     void* c = skg::cdecl_call<void*>(a_CreatureCreate, pp, prof, 1, herd, false, false);
-    if (!c)
+    if (g_fix_epic_herd)
+        F<int32_t>(herd, 0xF4) = 0; // mTargetHerdSize: the game adds no more epics to it
+    if (!c) {
+        if (g_fix_epic_herd)
+            game::herd_quiet(herd);
         return false;
+    }
     g_epic = c;
+    g_epic_herd = herd;
     g_epic_hitters.clear();
     g_epics++;
     if (C.notice)
@@ -1129,6 +1206,7 @@ static void epic_tick(double now)
         if (C.notice)
             C.notice(std::string("epic creature down: +") + std::to_string(food) + " food");
         g_epic = nullptr;
+        epic_herd_release();
         g_epic_next = now + 600;
     }
     if (!g_epic_next)
@@ -1142,8 +1220,11 @@ static void epic_tick(double now)
 // the epic's hitters (animals go through the game's creature damage filter)
 void note_animal_hit(void* animal, void* attacker_creature)
 {
-    if (animal && animal == g_epic && attacker_creature && g_hm.count(attacker_creature))
-        g_epic_hitters.insert(g_hm[attacker_creature].owner);
+    if (animal && animal == g_epic && attacker_creature && g_hm.count(attacker_creature)) {
+        uint8_t o = g_hm[attacker_creature].owner;
+        if (!g_fix_epic_players || (o < 0xFE && net::is_player(*C.sess, o)))
+            g_epic_hitters.insert(o);
+    }
 }
 
 static void coop_tick(double now)
@@ -1166,6 +1247,7 @@ static void coop_init()
     a_CreateHerd = H->sym("Simulator::cGameNounManager::CreateHerd");
     a_HerdEnable = H->sym("Simulator::cHerd::SetEnabled");
     a_CreatureCreate = H->sym("Simulator::cCreatureAnimal::Create");
+    spaceext::on_save(before_save); // space_allies' save hook (the one hook on SaveGame)
     if (a_CitizenTD)
         H->hook_create(M, (void*)a_CitizenTD, (void*)h_CitizenTD, (void**)&o_CitizenTD);
     if (a_HealTick && a_PatientOf)
@@ -1235,8 +1317,37 @@ static void clear_coop_tables(bool restore)
     g_chief_saved.clear();
     g_pincer.clear();
     g_pincer_told.clear();
+    // the co-op epic ends with the session (BUG-0121: not left in the solo game and its saves);
+    // after a world change (restore false) the old world's objects are gone: only forgotten
+    if (restore && g_fix_epic_herd && g_epic && game::mode_id() == modes::kTribe && epic_listed())
+        game::destroy_creature(g_epic);
+    g_epic = nullptr;
+    if (restore)
+        epic_herd_release();
+    g_epic_herd = nullptr;
+    g_epic_hitters.clear();
+    if (g_fix_epic_herd)
+        g_epic_next = 0; // BUG-0067: the first epic of the next session comes after 8 minutes again
+}
+
+// BUG-0121: the host saves (pause menu, quit, the world sent to a joining guest): a live co-op epic
+// and its herd's spawning must not go into the save, where a load brought it back as an untracked
+// epic. The epic leaves without a reward; the next one comes a minute later.
+void before_save()
+{
+    if (!g_ok || !g_fix_epic_herd || !g_epic || game::mode_id() != modes::kTribe)
+        return;
+    if (epic_listed())
+        game::destroy_creature(g_epic);
     g_epic = nullptr;
     g_epic_hitters.clear();
+    epic_herd_release();
+    g_epic_saved_out++;
+    double now = H->time_seconds();
+    if (g_epic_next < now + 60)
+        g_epic_next = now + 60;
+    if (C.notice && is_host())
+        C.notice("the epic creature went away");
 }
 
 void on_session_end()
@@ -1280,7 +1391,7 @@ void for_each_owned(void (*fn)(void* citizen, uint8_t owner, void* user), void* 
 
 std::string status()
 {
-    char b[256];
+    char b[384];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
@@ -1315,9 +1426,9 @@ std::string status()
     }
     snprintf(b, sizeof b,
              "tribe lifetime: chief_restores=%u chief_gone=%u chief_bad_calls=%u spawns_blocked=%u fix_chiefs=%d "
-             "fix_gameover=%d knocked_out=%u ko_replaced=%u chief_scale=%s\n",
+             "fix_gameover=%d knocked_out=%u ko_replaced=%u epic_herd_reused=%u epic_saved_out=%u chief_scale=%s\n",
              g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, (int)g_fix_chiefs, (int)g_fix_gameover,
-             g_ko_shown, g_ko_replaced, scales.c_str());
+             g_ko_shown, g_ko_replaced, g_epic_herd_reused, g_epic_saved_out, scales.c_str());
     return out + b;
 }
 
@@ -1357,8 +1468,12 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_gameover = on;
         else if (a[1] == "ko")
             g_fix_ko = on;
+        else if (a[1] == "epic_players")
+            g_fix_epic_players = on;
+        else if (a[1] == "epic_herd")
+            g_fix_epic_herd = on;
         else
-            return "usage: coop.tribe fix chiefs|gameover|ko 0|1";
+            return "usage: coop.tribe fix chiefs|gameover|ko|epic_players|epic_herd 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (a.size() >= 2 && a[0] == "drop_chief") { // drop_chief <owner>: the chief leaves the tribe at once
@@ -1392,6 +1507,67 @@ std::string debug(const std::vector<std::string>& a)
         if (!v || !at)
             return "no such member";
         return hit(v, at, (float)atof(a[3].c_str()));
+    }
+    if (!a.empty() && a[0] == "scales") { // the player tribe's members: size in the game / own size (BUG-0067)
+        void* pt = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
+        int n = 0, big = 0;
+        float mx = 0;
+        for (void* c : pt ? members(pt) : std::vector<void*>{}) {
+            float own = vcall<float>(c, 0x80 / 4, 0); // GetDesiredScale(int)
+            if (own <= 0.01f || own > 10.f)
+                continue;
+            float r = game::scale(c) / own;
+            n++;
+            big += r > 1.15f;
+            mx = std::max(mx, r);
+        }
+        char b[96];
+        snprintf(b, sizeof b, "scales members=%d big=%d max_ratio=%.2f", n, big, mx);
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "epic" && a[1] == "herds") { // the game's epic herds and epic creatures (BUG-0121)
+        struct Cnt {
+            uintptr_t is_epic;
+            int herds = 0, ours = 0, enabled = 0, epics = 0;
+        } n{H->sym("SporeCoop::cCreatureAnimal_IsEpic")};
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                auto* n = (Cnt*)u;
+                if (!game::object_alive(o))
+                    return true;
+                if (noun == game::kHerdNoun && skg::readable(o, 0x21C) && F<uint32_t>(o, 0x88) == kEpicArchetype) {
+                    n->herds++;
+                    n->ours += is_epic_herd_of_ours(o);
+                    n->enabled += F<uint8_t>(o, 0x218) != 0;
+                } else if (noun == 0x18EB45E && n->is_epic && !game::is_dead(o) && thiscall<bool>(n->is_epic, o))
+                    n->epics++;
+                return true;
+            },
+            &n);
+        char b[128];
+        snprintf(b, sizeof b, "epic herds=%d quiet_ours=%d enabled=%d live_epics=%d tracked=%p", n.herds, n.ours,
+                 n.enabled, n.epics, g_epic);
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "epic" && a[1] == "quiet") { // RE: quiet every epic herd of ours now
+        std::string out;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* u) {
+                if (noun == game::kHerdNoun && is_epic_herd_of_ours(o)) {
+                    char b[96];
+                    uint8_t e0 = F<uint8_t>(o, 0x218);
+                    game::herd_quiet(o);
+                    snprintf(b, sizeof b, "herd %p enabled %d -> %d (ours %p)\n", o, e0, F<uint8_t>(o, 0x218), g_epic_herd);
+                    *(std::string*)u += b;
+                }
+                return true;
+            },
+            &out);
+        return out.empty() ? "no herd of ours" : out;
+    }
+    if (a.size() >= 2 && a[0] == "epic" && a[1] == "save") { // as if the game saved now (BUG-0121)
+        before_save();
+        return "before_save done";
     }
     if (!a.empty() && a[0] == "epic" && is_host()) {
         if (a.size() >= 3 && a[1] == "hit") { // epic hit <attacker id> <dmg>

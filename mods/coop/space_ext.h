@@ -68,6 +68,9 @@ bool in_space();          // the Space stage is running
 // the game's saves made while the mod runs (space_allies' save hook counts them; 0 without it)
 void note_save();
 uint32_t saves();
+// another module's work before every game save of any stage (called by the same hook before the
+// game writes; BUG-0121: the Tribe co-op epic leaves first)
+void on_save(void (*fn)());
 bool russian();           // the co-op window speaks Russian
 inline const char* tr(const char* en, const char* ru) { return russian() ? ru : en; }
 void notice(const std::string& text); // a local toast + chat log line
