@@ -82,6 +82,12 @@ private:
     std::vector<std::unique_ptr<Peer>> peers_;
     std::vector<PlayerInfo> roster_; // client: known players (incl. host)
     std::vector<uint32_t> retired_;  // host: conn ids of dropped peers (their late packets are ignored)
+    // BUG-0029: a leave() asked for while a Connection is parsing a packet (REJECT, BYE, a callback)
+    // waits until on_packet has returned: leave() frees the peers and with them that Connection
+    bool delivering_ = false;
+    bool leave_pending_ = false;
+    std::string pending_why_;  // leave() reason
+    std::string pending_disc_; // cb.disconnected text after the deferred leave ("" = none)
 };
 
 } // namespace net

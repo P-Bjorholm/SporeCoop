@@ -309,6 +309,47 @@ static void test_session()
     CHECK(bad.join("127.0.0.1:" + std::to_string(port), "x", err));
     pump(host, bad, 300);
     CHECK(why.find("build") != std::string::npos);
+    CHECK(bad.role() == Role::None);
+}
+
+// BUG-0029: a guest that gets REJECT or BYE must not free its connection while that connection is
+// still parsing the packet (heap use-after-free, visible under -fsanitize=address: `make test-asan`)
+static void test_session_end_in_delivery()
+{
+    printf("guest leaves after REJECT / BYE without touching the freed connection\n");
+    std::string err;
+    Session host, cli;
+    host.build = cli.build = 0x922af7c7;
+    int disc = 0;
+    std::string why;
+    cli.cb.disconnected = [&](const std::string& w) { disc++; why = w; };
+    CHECK(host.host(0, "h", err));
+    CHECK(cli.join("127.0.0.1:" + std::to_string(host.port()), "g", err));
+    pump(host, cli, 300);
+    CHECK(cli.connected());
+    // a reliable message still unacknowledged when the host leaves: it rides in the packet after BYE
+    Writer w;
+    w.u32(1);
+    host.broadcast_reliable(MSG_NOTICE, w);
+    host.leave("test");
+    pump(host, cli, 100);
+    CHECK(disc == 1);
+    CHECK(why == "host closed the session");
+    CHECK(cli.role() == Role::None);
+
+    // REJECT (build mismatch): disconnected exactly once, with the reason
+    Session h2, bad;
+    h2.build = 0x922af7c7;
+    bad.build = 0x1234;
+    int bdisc = 0;
+    std::string bwhy;
+    bad.cb.disconnected = [&](const std::string& w2) { bdisc++; bwhy = w2; };
+    CHECK(h2.host(0, "h", err));
+    CHECK(bad.join("127.0.0.1:" + std::to_string(h2.port()), "x", err));
+    pump(h2, bad, 300);
+    CHECK(bdisc == 1);
+    CHECK(bwhy.find("rejected: ") == 0 && bwhy.find("build") != std::string::npos);
+    CHECK(bad.role() == Role::None);
 }
 
 // a UDP relay between guests and the host (like tools/tests/netem.py or a NAT that keeps its mapping):
@@ -778,6 +819,7 @@ int main(int argc, char** argv)
     test_bulk();
     test_bulk_bad_link();
     test_session();
+    test_session_end_in_delivery();
     test_rejoin_same_endpoint();
     test_big_snapshot();
     test_interp();

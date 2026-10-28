@@ -78,6 +78,15 @@ void Session::leave(const char* why)
 {
     if (role_ == Role::None)
         return;
+    if (delivering_) {
+        // inside Connection::on_packet: freeing the peers now frees the Connection that is still
+        // running (BUG-0029); update() leaves as soon as the packet is done
+        if (!leave_pending_)
+            pending_why_ = why ? why : "left";
+        leave_pending_ = true;
+        return;
+    }
+    leave_pending_ = false;
     uint32_t now = now_ms();
     for (auto& p : peers_) {
         // unreliable, in three packets: a reliable BYE waited behind any earlier lost message (and
@@ -420,9 +429,9 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         rej.read(r);
         std::string why = "rejected: " + rej.text;
         logf(cb, "%s", why.c_str());
-        leave("rejected");
-        if (cb.disconnected)
-            cb.disconnected(why);
+        if (!leave_pending_)
+            pending_disc_ = why;
+        leave("rejected"); // deferred until on_packet returns (BUG-0029)
         break;
     }
     case MSG_PLAYER_JOIN: {
@@ -460,9 +469,9 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     }
     case MSG_BYE:
         logf(cb, "host closed the session");
-        leave("host left");
-        if (cb.disconnected)
-            cb.disconnected("host closed the session");
+        if (!leave_pending_)
+            pending_disc_ = "host closed the session";
+        leave("host left"); // deferred until on_packet returns (BUG-0029)
         break;
     default:
         if (cb.custom)
@@ -472,10 +481,21 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
 
 void Session::handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now)
 {
+    delivering_ = true;
     p.conn.on_packet(data, n, now, [&](uint8_t type, Reader& r) {
-        if (role_ != Role::None)
+        if (role_ != Role::None && !leave_pending_)
             handle_msg(p, type, r);
     });
+    delivering_ = false;
+    if (leave_pending_) {
+        // the connection is done with the packet: now it may go
+        std::string why = pending_why_, disc = pending_disc_;
+        pending_why_.clear();
+        pending_disc_.clear();
+        leave(why.c_str());
+        if (!disc.empty() && cb.disconnected)
+            cb.disconnected(disc);
+    }
 }
 
 void Session::flush(uint32_t now)
