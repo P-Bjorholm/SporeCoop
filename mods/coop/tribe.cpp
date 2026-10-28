@@ -1465,10 +1465,17 @@ std::string debug(const std::vector<std::string>& a)
     return "usage: coop.tribe select <id> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
 }
 
+// the citizen's current behaviour-tree node (ai = c+0xB4C, node id at ai+0x1D8; docs/re/tribe.md B)
+static uint32_t bt_node(void* c)
+{
+    uint8_t* ai = F<uint8_t*>(c, 0xB4C);
+    return ai && skg::readable(ai + 0x1D8, 4) ? *(uint32_t*)(ai + 0x1D8) : 0;
+}
+
 std::string list()
 {
     std::string out;
-    char b[200];
+    char b[240];
     void* pt = player_tribe();
     auto tribes = all_tribes();
     for (size_t ti = 0; ti < tribes.size(); ti++) {
@@ -1498,9 +1505,10 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f\n", id,
-                     c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
-                     game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv));
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X\n",
+                     id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
+                     game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
+                     bt_node(c));
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,

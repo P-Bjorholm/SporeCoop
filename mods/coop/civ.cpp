@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -481,6 +482,34 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
     o_AddMoney(civ, amount, difficulty);
 }
 
+// Vehicles the game spawns on a guest by itself (BUG-0188): the other nations' AI (city tick,
+// civilization AI) bought vehicles on every guest, and the next full snapshot killed them again
+// (`removed=` grew). These call sites throw the result away (budget arithmetic only, or a null
+// check: docs/re/civ.md#civ-ai-vehicle-spawns), so on a guest SpawnVehicle returns null for them.
+// Other callers (the cheat message, the Space-only BFBA70, the player's free vehicle) still run.
+// Every guest spawn is counted by its caller (`coop.civ spawns`); `coop.civ fix aispawn 0`: the
+// code before (tests).
+using SpawnVehicle_t = void*(SK_THISCALL*)(void*, int, int, uint32_t, uint32_t, uint32_t, int);
+static SpawnVehicle_t o_SpawnVehicle;
+static std::map<uintptr_t, uint32_t> g_local_spawns;
+static bool g_fix_aispawn = true;
+static uint32_t g_ai_spawns_blocked;
+static uintptr_t g_ai_spawn_ret[6];
+static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint32_t k0, uint32_t k1, uint32_t k2, int space)
+{
+    uintptr_t ret = (uintptr_t)__builtin_return_address(0);
+    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
+        g_local_spawns[ret - H->image_base() + 0x400000]++;
+        if (g_fix_aispawn)
+            for (uintptr_t a : g_ai_spawn_ret)
+                if (a && a == ret) {
+                    g_ai_spawns_blocked++;
+                    return nullptr;
+                }
+    }
+    return o_SpawnVehicle(city, purpose, loco, k0, k1, k2, space);
+}
+
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
 static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, int a5)
@@ -815,6 +844,14 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
+    {
+        static const char* rets[6] = {"SporeCoop::CivAI_CityTick_SpawnVehicle_Ret", "SporeCoop::CivAI_CityOrders_SpawnVehicle_Ret",
+                                      "SporeCoop::CivAI_BF9960_SpawnVehicle_Ret", "SporeCoop::CivAI_BF9FB0_SpawnVehicle_Ret",
+                                      "SporeCoop::CivAI_BFA7A0_SpawnVehicle_Ret", "SporeCoop::CivAI_BFB160_SpawnVehicle_Ret"};
+        for (int i = 0; i < 6; i++)
+            g_ai_spawn_ret[i] = H->sym(rets[i]);
+    }
+    H->hook_create(M, (void*)a_SpawnVehicle, (void*)h_SpawnVehicle, (void**)&o_SpawnVehicle);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1772,10 +1809,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked);
     return b;
 }
 
@@ -1871,9 +1908,21 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_world = on;
         else if (a[1] == "cities")
             g_fix_cities = on;
+        else if (a[1] == "aispawn")
+            g_fix_aispawn = on;
         else
-            return "usage: coop.civ fix boost|world|cities 0|1";
+            return "usage: coop.civ fix boost|world|cities|aispawn 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
+    }
+    if (!a.empty() && a[0] == "spawns") { // spawns: the game's own vehicle spawns on this guest by caller
+        std::string out;
+        char b[64];
+        for (auto& [ra, n] : g_local_spawns) {
+            snprintf(b, sizeof b, "spawn from 0x%08X x%u\n", (unsigned)ra, n);
+            out += b;
+        }
+        snprintf(b, sizeof b, "ai spawns blocked %u\n", g_ai_spawns_blocked);
+        return out + b;
     }
     if (!a.empty() && a[0] == "tables") { // sizes of the pointer tables (tests: BUG-0040, BUG-0059)
         char b[320];
