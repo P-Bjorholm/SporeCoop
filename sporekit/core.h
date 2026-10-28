@@ -244,6 +244,7 @@ extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not
 extern KitFix g_fix_hookkeep;  // BUG-0132: removed hooks keep their trampolines, a grace before FreeLibrary
 extern KitFix g_fix_stackov;   // BUG-0056: a stack overflow is reported by a thread that waits beforehand
 extern KitFix g_fix_crashsafe; // BUG-0127: a failed step of a crash report does not end the game
+extern KitFix g_fix_hookpark;  // BUG-0202: hooks switch a stub, the function's code is written once
 extern KitFix g_fix_iniutf;    // BUG-0142: settings with non-ASCII text are kept in UTF-16
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
@@ -282,7 +283,7 @@ template <class F> void call_lambda(void* f) { (*(F*)f)(); }
 // test commands (kit.test ...): force the conditions of BUG-0050 / 0115 / 0132
 void log_fault_test();
 void exceptions_fault_test();
-void hooks_churn_test(int rounds, int threads, std::string& out);
+void hooks_churn_test(int rounds, int threads, std::string& out, bool nogate = false);
 void* test_fault_page(); // a PAGE_NOACCESS page whose first access is repaired by a test handler
 
 } // namespace sk
