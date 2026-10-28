@@ -137,6 +137,8 @@ static bool g_fix_resend = true;   // BUG-0128: food / DNA totals sent again eve
 static bool g_fix_kostale = true;  // BUG-0061: a remote knockout ends when its owner leaves or stops refreshing it
 static bool g_fix_koreset = true;  // BUG-0070: our knockout ends with the session or the stage
 static bool g_fix_bodylevel = true; // BUG-0041: a level-up during the regrowth gives the level's own size
+static bool g_fix_guestbite = true; // BUG-0078: a guest's bite passes DamageCell's gate (ShouldNotAttack(victim, puppet), +0x17C, +0x111)
+static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
 static cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
@@ -1376,10 +1378,23 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c))
             return;
         g_hits_in++;
+        uint8_t* pc = puppet_cell(from);
+        // BUG-0078: judged as DamageCell judges the host's own bite (0xE7A7C0): nothing happens when
+        // the victim is not damageable (dead, hp 0), ShouldNotAttack(victim, attacker) is true (same
+        // species, friend group, the species' "won't attack the player" flags: through the hook, so
+        // the guest's puppet counts as the player) or the victim has +0x17C / +0x111 set. A mouth's
+        // chunk (type 6) is EatChunk's, which asks none of these. Old (`fix guestbite 0`): the
+        // arguments swapped, no gate.
+        if (g_fix_guestbite && t != 6 &&
+            (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
+             (pc && o_NoAttack && h_NoAttack(c, pc)))) {
+            g_hits_spared++;
+            return;
+        }
         // the NPC and its kind turn on the guest who bit it, as DamageCell does for the host's bites
         // (species alert 0xE71CE0, then the victim's own reaction: only AI type 0x1006 reacts,
         // through 0xE57710 -> 0xE57610), so biting is as risky for the guest as for the host
-        if (uint8_t* pc = puppet_cell(from); pc && a_Alert && o_NoAttack && !o_NoAttack(pc, c)) {
+        if (pc && a_Alert && o_NoAttack && (g_fix_guestbite ? !h_NoAttack(c, pc) : !o_NoAttack(pc, c))) {
             uint32_t pidx = F<uint32_t>(pc, 0);
             skg::cdecl_call<void>(a_Alert, c, pidx);
             if (a_React && ai_type(c) == 0x1006)
@@ -1734,7 +1749,8 @@ std::string debug(const std::vector<std::string>& a)
             bool* on;
         } sw[] = {{"purge", &g_fix_purge},     {"hostof", &g_fix_hostof},   {"foodseq", &g_fix_foodseq},
                   {"resend", &g_fix_resend},   {"kostale", &g_fix_kostale}, {"koreset", &g_fix_koreset},
-                  {"bodylevel", &g_fix_bodylevel}, {"cellat", &modes::cell_at_fix}};
+                  {"bodylevel", &g_fix_bodylevel}, {"cellat", &modes::cell_at_fix},
+                  {"guestbite", &g_fix_guestbite}};
         if (a.size() >= 3) {
             if (a[2] != "0" && a[2] != "1")
                 return "usage: coop.pool fix [<name>|all 0|1]";
@@ -2025,6 +2041,29 @@ std::string debug(const std::vector<std::string>& a)
                  mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f, (int)sc[0], (int)sc[1]);
         return b;
     }
+    if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1 (BUG-0078)
+        // spare: the NPC's species "won't attack the player" (resource data +0x300, all of its kind);
+        // invuln: the NPC's own +0x111. Both make DamageCell skip a bite of the player on it.
+        uint8_t* c = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
+        if (!c || !is_host() || modes::cell_is_puppet(c) || c == av)
+            return "no such NPC (host only)";
+        uint8_t v = a[3] == "1";
+        if (a[2] == "invuln") {
+            F<uint8_t>(c, kInvuln) = v;
+        } else if (a[2] == "spare" && a_GetData && F<void*>(c, kRes)) {
+            void* holder = nullptr;
+            uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+            if (holder)
+                --F<int>(holder, 0xC);
+            if (!res)
+                return "no resource data";
+            F<uint8_t>(res, 0x300) = v;
+        } else
+            return "usage: coop.pool npcflag c<key> spare|invuln 0|1";
+        char b[96];
+        snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";
@@ -2112,8 +2151,8 @@ std::string status()
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_bitten_in,
+        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u hits_spared=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_hits_spared, g_bitten_in,
                  g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped, g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late);
     else
         snprintf(b, sizeof b,
