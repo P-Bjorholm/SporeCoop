@@ -1,19 +1,19 @@
 ---
 id: BUG-0058
 title: gifted tool charges and spice that come back while you are not in Space are lost
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#36
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: fd814d3
+tests: space_trade_refund
 signature:
-docs:
+docs: docs/re/space.md#space-ship-state-chunks
 related: #36
 ---
 
@@ -57,13 +57,17 @@ The same file handles this in two ways: the receiver side checks `in_space()` be
 CONFIRMED by reading the full path: no Space check before the refunds, and the entry is erased first. PLAUSIBLE: the exact outcome outside Space (null inventory, so "lost", versus a stale inventory pointer). Whether `cSimulatorSpaceGame` (global 0x16DD0DC, docs/re/space.md) is cleared when Space is left was not verified.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (fd814d3). `refund` puts what comes back into an owed list when the feature is not in Space or has no inventory; `tick` (which runs in every mode and also after the session ended) pays the list once back in Space. `on_session_end` refunds the pending gifts / sales / offers through the same path instead of dropping them outside Space. A load in between: each `Out` remembers the player's cEmpire and the save count when it was taken (`spaceext::saves()`, counted by the allies save hook); an owed item is paid when the cEmpire is the same or a save was made since, else it is dropped (the load brought back a game from before the take, which still has it). `coop.space trade refundfix 0` restores the old immediate refund. Runtime finding: in the galaxy menu `cSimulatorSpaceGame +0x40` (the inventory) is null (`trade spices` prints "free cargo slots -1"), so the old refund there was "no room, lost".
+
+Suggested in the review:
 
 - Keep a list of owed refunds `{kind, key, n, name}`. `refund` adds to it when `!spaceext::in_space() || !inventory()`; otherwise it refunds as now. `tick` pays the list out once back in Space.
 - `on_session_end` moves the pending `g_out` entries into that list instead of dropping them when not in Space.
 - Keep the old behaviour behind `coop.fix trade_refund_later off`.
 
 ## Verification
+Done (2026-10-28, lane 6): `coop_space_trade_refund.py` (suite `space_trade_refund`). The guest holds its answer (`trade hold 1`), the host gives 5 bomb charges, acts as outside Space (`trade away 1`: the feature sees no inventory, as in the galaxy menu), the guest leaves, the host comes back (`away 0`). `--without-fix` FAILS (7 charges, refunds=1 lost; /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/refund--without-fix3213.log), with the fix PASS twice (12 charges, owed_paid=1, once). The outside-Space state is forced by the switch (a real editor entry in that window cannot be timed); the null inventory it simulates was checked in the real galaxy menu.
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_trade.py`, new step "refund outside Space":
@@ -81,3 +85,4 @@ This must FAIL on main and with `coop.fix trade_refund_later off`, and PASS with
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #36.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (fd814d3): owed refunds paid back in Space; test space_trade_refund FAIL without / PASS with.

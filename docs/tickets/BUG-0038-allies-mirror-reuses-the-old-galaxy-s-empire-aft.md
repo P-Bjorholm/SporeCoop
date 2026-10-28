@@ -1,19 +1,19 @@
 ---
 id: BUG-0038
 title: allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#16
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: d0f6003, f581bf2
+tests: space_allies_reload
 signature:
-docs:
+docs: docs/re/space.md#space-ship-state-chunks
 related: #16
 ---
 
@@ -60,7 +60,9 @@ After a reload the mirror starts fresh in the new galaxy: a new cEmpire with an 
 CONFIRMED by reading the full path: `m.emp` / `m.pol` are kept through `forget`, and `ensure_empire` reinserts them. PLAUSIBLE: the id collision with a real NPC empire. Not verified: whether the save stores the counter at `+0x1D4` or rebuilds it on load, and whether the ally/enemy vectors hold references or raw pointers (raw pointers would make this a crash).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (d0f6003). `reset_empire(m)` drops the kept cEmpire, political id and contact snapshot whenever the galaxy changed: in the three reload branches (`unapply`, `apply`, `tick` outside Space) and in `ensure_empire` when the map no longer holds `m.emp`, in every case only when the player's cEmpire is another object than the one the mirror was made in (`m.galaxy`): a save also takes the unmirrored cEmpire out of the map (the first version, d0f6003, made a new empire after every save and `coop_space_allies.py` failed "after the save the mirror is back", fixed in f581bf2). The last one is the path that mattered at runtime: going to the menu, the game saves and the save hook unmirrors (applied = false), so none of the "applied" reload checks saw the reload and `ensure_empire` put the old object back. Then a new cEmpire with `NextPoliticalID` of the new galaxy is made. The old object is not released (our reference is its last one, its destructor would release the old galaxy's records): one cEmpire leaks per reload. `coop.space allies reloadfix 0` restores the reuse. Not changed: the `g_end_pending` path (session end on a mirror planet, then a new session); after a reload it now also starts with a new empire.
+
+Suggested in the review:
 
 In every "the galaxy was reloaded" branch (`unapply`, `apply`, `tick` outside Space), and in `end_all`, release the kept empire and reset it:
 ```cpp
@@ -70,6 +72,8 @@ m.emp = nullptr; m.pol = 0; m.contact_before = 0; m.rel_on = spaceext::Relation:
 Then `ensure_empire` creates a new empire with `NextPoliticalID` of the new galaxy. Also, in the `g_end_pending` path, run `end_all` before a new session's first apply. Keep the old behaviour behind `coop.fix allies_reload off`.
 
 ## Verification
+Done (2026-10-28, lane 6): `coop_space_allies_reload.py` (suite `space_allies_reload`). The host has a mirror (`allies fake`), goes to the galaxy menu, loads the fixture, the mirror is applied again. `--without-fix` FAILS: the empire map holds the old galaxy's object at the old id 800021CD (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/reload--without-fix29322.log). With the fix PASS twice: a new cEmpire (other pointer) at a new id 800021D0 with its one star, and a second empire gets its own id. The collision with a real NPC empire was not produced: after the menu the counter `cStarManager +0x1D4` was not below the mirror's id (the save on the way to the menu stores it).
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_allies.py`, new step "reload":
@@ -91,3 +95,5 @@ This must FAIL on main and with `coop.fix allies_reload off`, and PASS with the 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #16.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (d0f6003): new cEmpire after a reload (also via ensure_empire); test space_allies_reload FAIL without / PASS with.
+- 2026-10-28: f581bf2: the reset only when the player's cEmpire changed (a save also drops the mirror from the map); space_allies_reload FAIL without / PASS with again.

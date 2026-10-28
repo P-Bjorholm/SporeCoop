@@ -1006,3 +1006,23 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   `--without-fix` = `coop.creations worlddrop off`: FAILS (still the host's bem).
 * `tests/npc_tests.cpp` (`make test`): the id allocator and the hit table, each with its old
   behaviour (`skip_used` false, `legacy`) checked to show the bug.
+## Space wave 2 tests and their switches (2026-10-28, fix/w2-space)
+<a id="testing-space-w2"></a>
+
+Each runs on the Space fixture in ~1-3 min (warm) and has `--without-fix`, which must FAIL:
+
+* `coop_space_fleet.py` (suite `space_fleet`): 25 x `coop.fleet spawn 2` on the host (about 20 stay
+  listed: 2 chunks), `coop.fleet drop 0 5` on the host, the guest's game must keep the same ship
+  objects (BUG-0037, switch `coop.fleet chunkfix 0`); a type 3 ship made on the guest
+  (`coop.fleet spawn 3`, the posse) must stay (BUG-0084, `coop.fleet keepposse 0`). Type 2
+  raiders fly off after ~30 s: keep the checks short after the spawn.
+* `coop_space_trade_refund.py` (suite `space_trade_refund`): `coop.space trade hold 1` (the guest
+  leaves gifts unanswered), `trade away 1` (the feature acts as in the galaxy menu: no inventory),
+  `trade refundfix 0` (BUG-0058).
+* `coop_space_allies_reload.py` (suite `space_allies_reload`, cold, ~5 min): `coop.menu` +
+  `coop.load` of the fixture with an `allies fake` mirror; `allies reloadfix 0` (BUG-0038).
+  `allies empire <pol>` prints the cEmpire pointer (`at=`), `allies nextpol [bump]` the id counter.
+* `coop_space_diplo_mirror.py` (suite `space_diplo_mirror`): `allies detach <name>` turns a mirror
+  into a plain empire of that galaxy (no contact, no alliance); `diplomacy mirrorfix 0` (BUG-0071).
+* BUG-0141 (unique names) is a unit test in `make test`; `coop.corefix unique_names 0` switches it
+  off in game.

@@ -34,6 +34,9 @@ uint8_t my_id() { return C && C->sess ? C->sess->my_id() : 0; }
 std::string name_of(uint8_t id) { return C && C->sess ? C->sess->name_of(id) : "?"; }
 bool in_space() { return game::mode_id() == modes::kSpace; }
 bool russian() { return coop_ui::russian(); }
+static uint32_t g_saves;
+void note_save() { g_saves++; }
+uint32_t saves() { return g_saves; }
 
 static bool g_rivals;
 static std::map<uint16_t, Relation> g_rel; // (low id << 8 | high id) -> relation

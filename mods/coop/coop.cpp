@@ -2912,7 +2912,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}};
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

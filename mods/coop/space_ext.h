@@ -65,12 +65,20 @@ bool is_host();
 uint8_t my_id();
 std::string name_of(uint8_t id);
 bool in_space();          // the Space stage is running
+// the game's saves made while the mod runs (space_allies' save hook counts them; 0 without it)
+void note_save();
+uint32_t saves();
 bool russian();           // the co-op window speaks Russian
 inline const char* tr(const char* en, const char* ru) { return russian() ? ru : en; }
 void notice(const std::string& text); // a local toast + chat log line
 // to everybody (the host relays a guest's message to the other guests); a message for one
 // player carries its id in the payload and the others ignore it
 void send(uint8_t kind, const net::Writer& body);
+
+// ---- allies mirrors (owned by space_allies.cpp) ----
+// a political id of a mirror empire of this copy (a partner's colonies): local to each copy, never
+// shared by pol (BUG-0071)
+bool allies_mirror_pol(uint32_t pol);
 
 // ---- rivals mode (owned by space_rivalry.cpp; other features only read it) ----
 // rivals(): the host's session option "players are rival empires" (own budgets, diplomacy per

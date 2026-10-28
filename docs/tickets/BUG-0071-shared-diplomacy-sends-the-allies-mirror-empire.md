@@ -1,19 +1,19 @@
 ---
 id: BUG-0071
 title: shared diplomacy sends the allies mirror empire, so a guest can be allied with an NPC it never met
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#49
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: 778e3e8
+tests: space_diplo_mirror
 signature:
-docs:
+docs: docs/re/space.md#space-ship-state-chunks
 related: #49
 ---
 
@@ -57,7 +57,9 @@ Mirror empires are local to each copy. Their relationship records and events are
 CONFIRMED by reading: the mirror's record is sent and applied by pol. PLAUSIBLE: the collision with a real NPC empire on the guest. It depends on the guest's game creating an empire with the same id after the join; not run.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (778e3e8). `spaceext::allies_mirror_pol(pol)` (space_allies) tells whether a pol is a mirror of this copy. `space_diplomacy` leaves such pols out of `my_table` (so of the snapshot and of the guest's "ours only" pass), does not send their events, state changes or contacts, and refuses to apply a partner's event / state / contact / table record onto its own mirror. `coop.space diplomacy mirrorfix 0` restores the old sharing. Keying records by the home star instead of the pol (the review's better option) is not done: a larger change of the protocol.
+
+Suggested in the review:
 
 - `space_allies` exports `bool is_mirror_pol(uint32_t pol)` (its `mirror_pol`).
 - `space_diplomacy` skips such pols in `my_table` (and so in `send_snapshot`), in `h_ApplyEv` / `state_hook` / `h_Contact` / `h_Spoken`, and in `reconcile`, where the guest refuses to reconcile onto its own mirror.
@@ -65,6 +67,8 @@ Not fixed yet. Suggested in the review:
 - Keep the old behaviour behind `coop.fix diplo_skip_mirrors off`.
 
 ## Verification
+Done (2026-10-28, lane 6): `coop_space_diplo_mirror.py` (suite `space_diplo_mirror`). The guest gets an empire of its own galaxy it never met (`allies fake` + `allies detach`), the host takes ids up to it (`allies nextpol bump`) and makes an allies mirror with the same id, the guest asks for the host's table. `--without-fix` FAILS: the guest's record of that empire becomes flags 34 (allied, contacted; "host table: 1 empires, 1 fixed"; /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/diplo--without-fix15117.log). With the fix PASS twice: flags 0, the host sends 0 empires.
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_diplomacy.py`, new step "mirror not shared":
@@ -83,3 +87,4 @@ This must FAIL on main and with `coop.fix diplo_skip_mirrors off`, and PASS with
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #49.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (778e3e8): mirror pols are never shared or applied onto; test space_diplo_mirror FAIL without / PASS with.

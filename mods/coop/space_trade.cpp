@@ -97,7 +97,23 @@ struct Out {               // something of ours on its way to a partner
     std::string name;
     double t;
     bool cancel_sent = false;
+    void* emp = nullptr;   // BUG-0058: the player's cEmpire it was taken from (a load makes a new one)
+    uint32_t saves = 0;    // spaceext::saves() when it was taken
 };
+// BUG-0058: what comes back while we are not in Space (an editor, the menu, a load) waits here and
+// is paid once we are back in Space. Before, the refund ran at once (outside Space: "no room, lost",
+// or into an inventory the mod did not know to be valid) and a session end outside Space dropped
+// everything on its way. `coop.space trade refundfix 0` restores that (tests).
+struct Owed {
+    Out o;
+    int n;
+    std::string why;
+};
+static std::vector<Owed> g_owed;
+static bool g_refund_fix = true;
+static bool g_away;        // tests: the feature acts as outside Space (no inventory), BUG-0058
+static bool g_hold;        // tests: do not answer gifts (the answer is still on its way)
+static uint32_t g_owed_paid, g_owed_dropped;
 struct Offer {             // rivals: a partner's offer to us
     uint32_t id;
     uint8_t from;
@@ -120,6 +136,8 @@ static int64_t g_earned, g_paid;
 // ---------------- the game ----------------
 static void* inventory()
 {
+    if (g_away)
+        return nullptr;
     void* sg = a_SpaceGame ? *(void**)a_SpaceGame : nullptr;
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
@@ -547,6 +565,8 @@ static std::string give_tool(const Key& key, int n, uint8_t to)
     if (!take_charges(key, n))
         return "not enough charges";
     Out o{new_id(), K_TOOL, to, key, n, 0, 0, nm, H->time_seconds()};
+    o.emp = empire();
+    o.saves = spaceext::saves();
     g_out.push_back(o);
     net::Writer w;
     w.u8(to);
@@ -575,6 +595,8 @@ static std::string sell(int n_max = kSaleStep)
     bool rivals = spaceext::rivals();
     Out o{new_id(), rivals ? K_OFFER : K_SELL, d.col.owner, d.spice.key, n, d.price, d.col.planet, d.spice.name,
           H->time_seconds()};
+    o.emp = empire();
+    o.saves = spaceext::saves();
     g_out.push_back(o);
     if (!rivals)
         note_demand(d.col.planet, n, o.t);
@@ -595,10 +617,16 @@ static std::string sell(int n_max = kSaleStep)
     return "";
 }
 
+static bool here() { return !g_away && spaceext::in_space() && inventory() && empire(); }
+
 static void refund(const Out& o, int n, const std::string& why)
 {
     if (n <= 0)
         return;
+    if (g_refund_fix && !here()) { // not in Space now: owed until we are back
+        g_owed.push_back({o, n, why});
+        return;
+    }
     bool ok = o.kind == K_TOOL ? [&] { bool is_new; return add_charges(o.key, n, is_new) > 0; }() : add_spice(o.key, n);
     g_refunds++;
     spaceext::notice(std::to_string(n) + " x " + o.name + spaceext::tr(" came back", " вернулось") +
@@ -660,6 +688,25 @@ static void drop(uint32_t id)
     g_out.erase(std::remove_if(g_out.begin(), g_out.end(), [id](const Out& o) { return o.id == id; }), g_out.end());
 }
 
+// back in Space: pay what is owed, once. Taken from this very game (the same cEmpire) or saved
+// since it was taken: it comes back. Else a load brought back a game from before it was taken,
+// which still has it: nothing to pay (it would be doubled).
+static void pay_owed()
+{
+    if (g_owed.empty() || !here())
+        return;
+    auto owed = std::move(g_owed);
+    g_owed.clear();
+    void* emp = empire();
+    for (auto& w : owed) {
+        if (w.o.emp == emp || spaceext::saves() != w.o.saves) {
+            g_owed_paid++;
+            refund(w.o, w.n, w.why);
+        } else
+            g_owed_dropped++;
+    }
+}
+
 static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     uint8_t to = r.u8();
@@ -674,6 +721,8 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         std::string nm = r.str8();
         if (!r.ok() || n <= 0 || n > 999)
             return;
+        if (g_hold)
+            return; // tests: the answer is still on its way
         bool is_new = false;
         int got = spaceext::in_space() ? add_charges(k, n, is_new) : 0;
         g_gifts_got++;
@@ -810,6 +859,8 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 // ---------------- frame ----------------
 static void tick(double now)
 {
+    if (g_refund_fix)
+        pay_owed(); // also after the session ended
     if (!spaceext::connected())
         return;
     // a partner who left before answering: what was on its way comes back
@@ -841,9 +892,9 @@ static void on_session_end()
     // nobody can answer any more: what was on its way comes back (it may have arrived: we can't know)
     auto out = g_out;
     g_out.clear();
-    if (spaceext::in_space())
+    if (g_refund_fix || spaceext::in_space())
         for (auto& o : out)
-            refund(o, o.n, "");
+            refund(o, o.n, ""); // outside Space: owed until we are back
     g_offers.clear();
     g_sel_to = 0xFF;
 }
@@ -976,13 +1027,14 @@ static std::vector<spaceext::Row> rows()
 
 static std::string status()
 {
-    char b[400];
+    char b[480];
     snprintf(b, sizeof b,
              "trade: gifts_sent=%u gifts_got=%u charges_sent=%u charges_got=%u charges_back=%u sales=%u sold=%u "
-             "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u\n",
+             "bought=%u earned=%lld paid=%lld offers_sent=%u offers_got=%u refunds=%u pending=%u offers=%u owed=%u "
+             "owed_paid=%u owed_dropped=%u\n",
              g_gifts_sent, g_gifts_got, g_charges_sent, g_charges_got, g_charges_back, g_sales, g_sold, g_bought,
              (long long)g_earned, (long long)g_paid, g_offers_sent, g_offers_got, g_refunds, (unsigned)g_out.size(),
-             (unsigned)g_offers.size());
+             (unsigned)g_offers.size(), (unsigned)g_owed.size(), g_owed_paid, g_owed_dropped);
     return b;
 }
 
@@ -1080,12 +1132,20 @@ static std::string debug(const std::vector<std::string>& a)
         answer_offer((uint32_t)strtoul(a[1].c_str(), nullptr, 16), a[0] == "accept");
         return "answered\n";
     }
+    if ((a[0] == "refundfix" || a[0] == "away" || a[0] == "hold") && a.size() > 1) {
+        // refundfix 0: refunds at once, wherever we are (before BUG-0058); away 1: act as outside
+        // Space (no inventory); hold 1: leave gifts unanswered (tests)
+        bool on = a[1] != "0";
+        (a[0] == "refundfix" ? g_refund_fix : a[0] == "away" ? g_away : g_hold) = on;
+        return a[0] + (on ? " 1\n" : " 0\n");
+    }
     if (a[0] == "money") {
         snprintf(b, sizeof b, "money %d\n", money());
         return b;
     }
     return "usage: coop.space trade [tools | all | give <inst> <n> [to] | ammo <inst> <n> | spices | spice <i> <n> | "
-           "take <inst> <n> | deal | sell [n] | offers | accept <id> | decline <id> | money]\n";
+           "take <inst> <n> | deal | sell [n] | offers | accept <id> | decline <id> | money | refundfix 0|1 | "
+           "away 0|1 | hold 0|1]\n";
 }
 
 static bool init(const SkHost* h, SkMod* m)

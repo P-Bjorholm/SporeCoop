@@ -62,6 +62,22 @@
   same id kept replacing it until the game was restarted (BUG-0055). Test: `coop_creation_leave.py`.
 - **Joint-hunt bonus**: the hit table no longer grows for the whole session, and a new creature does
   not inherit the hits of a dead one (BUG-0099). Test: `tests/npc_tests.cpp` (`make test`).
+- **Space: a lost network packet no longer blows up the host's ships on the guest**: with more
+  than 18 NPC ships around, one lost ship-state packet made up to 18 of them explode (with loot)
+  and reappear on the guest (BUG-0037). Test: `coop_space_fleet.py` (suite `space_fleet`).
+- **Space: a guest keeps its own escort ships** (posse) while it is with the host (BUG-0084).
+- **Space: tool charges, spice and offers that come back while you are not in Space** (an editor,
+  the menu, a session end there) are given back once you are in Space again instead of being lost
+  (BUG-0058). Test: `coop_space_trade_refund.py`.
+- **Space allies: after a load the partner's mirror empire is made anew** instead of putting the
+  old galaxy's empire back at its old id, where a real empire of the loaded galaxy could live
+  (BUG-0038). Test: `coop_space_allies_reload.py`.
+- **Space diplomacy no longer shares the allies mirror empire**: a guest could become allied with
+  and contacted by an empire of its own galaxy it never met (BUG-0071). Test:
+  `coop_space_diplo_mirror.py`.
+- **Players with the same name are told apart**: the host adds " 2", " 3" to a name already in the
+  session, so two "Player" guests no longer share one allies mirror, rivals relation or budget
+  (BUG-0141). Test: `make test` (net_tests).
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

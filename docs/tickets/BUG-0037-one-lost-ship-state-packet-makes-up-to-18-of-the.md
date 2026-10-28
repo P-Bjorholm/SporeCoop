@@ -1,19 +1,19 @@
 ---
 id: BUG-0037
 title: one lost ship-state packet makes up to 18 of the host's ships explode and respawn on the guest
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#15
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: c5fe0b8
+tests: space_fleet
 signature:
-docs:
+docs: docs/re/space.md#space-ship-state-chunks
 related: #15
 ---
 
@@ -58,13 +58,17 @@ With 1 % loss at 10 Hz and two chunks, this happens about once every 10 s during
 CONFIRMED by reading the full path (`host_tick` -> unreliable send -> `guest_state` removal pass). Not reproduced at runtime: the lab runs on loopback without loss, which is why the tests pass. Whether the guest can pick up the loot of the fake deaths is not verified.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (c5fe0b8). `guest_state` keeps a bitmask of the chunks of the current cycle and runs the removal pass (and the local NPC removal) once, when every chunk of the cycle has arrived, in any order. A chunk of an older cycle (16-bit serial compare, within 100 cycles) is ignored; an older id by more than that counts as a restarted host. The cycle state is reset at the session end. `coop.fleet chunkfix 0` restores the old pass on the last chunk; `coop.fleet drop <chunk> <n>` (host) skips sending a chunk n times. `coop.fleet list` shows `stale_chunks` and `partial_cycles`.
+
+Suggested in the review:
 
 - Track which chunks of the current cycle arrived (a bitmask, `chunks` is at most 15 since `all_ufos` caps at 256). Run the removal pass only when all `chunks` of the cycle are in. Ignore packets of a cycle older than `g_rx_cycle` (16-bit serial compare).
 - Additionally (or instead), remove a mirror only when it has been missing for a while, e.g. `now - m.seen > 0.5`. Remove it without the explosion when it was not marked dead by the host.
 - Keep the old behaviour behind `coop.fix fleetchunks off` so the lab can check the test still catches it.
 
 ## Verification
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_fleet.py` (suite `space_fleet`), 20 host NPC ships (2 chunks), the host drops chunk 0 five times. `--without-fix` (`coop.fleet chunkfix 0`) FAILS: the guest's game replaced 17-18 of the host's ships (created 25 -> 43, removed 0 -> 18; runs /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet_nofix.log, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet2--without-fix.log). With the fix PASS twice: the same ship objects, created/removed unchanged, partial_cycles=5 (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w2-space/fleet2_fix.log and lab run out/lab/20261027-233002 on fix/w2-space (23/23 with smoke)).
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_fleet_loss.py` on `twoinst.start('space')`:
@@ -80,3 +84,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #15.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (c5fe0b8): removal only after a complete cycle, late chunks of older cycles ignored; test space_fleet FAIL without / PASS with.

@@ -95,6 +95,19 @@ static void log_line(const std::string& s)
 
 // ---------------- game state ----------------
 static bool is_empire(uint32_t pol) { return (pol & 0x80000000u) && pol != 0xFFFFFFFFu; }
+// BUG-0071: the allies mirror empire (a partner's colonies) is local to each copy: its id means
+// another empire, or a real NPC, in the partner's galaxy. Its record and events were shared by pol
+// and the partner was allied with / contacted an NPC it never met. Now it is neither sent nor
+// applied onto. `coop.space diplomacy mirrorfix 0` restores that (tests).
+static bool g_mirror_fix = true;
+static uint32_t g_mirror_skipped;
+static bool local_mirror(uint32_t pol)
+{
+    if (!g_mirror_fix || !spaceext::allies_mirror_pol(pol))
+        return false;
+    g_mirror_skipped++;
+    return true;
+}
 static uint32_t my_pol() { return a_PlayerPol ? cdecl_call<uint32_t>(a_PlayerPol) : 0xFFFFFFFFu; }
 static void* my_empire() { return a_PlayerEmpire ? cdecl_call<void*>(a_PlayerEmpire) : nullptr; }
 static void* rel_mgr() { return a_RelGet ? cdecl_call<void*>(a_RelGet) : nullptr; }
@@ -228,7 +241,7 @@ static std::vector<Rec> my_table()
     walk((uint8_t*)mgr + 0x24, [&](void* node) {
         uint32_t a = F<uint32_t>(node, 0x10), b = F<uint32_t>(node, 0x14);
         uint32_t npc = a == me ? b : b == me ? a : 0;
-        if (!npc || !is_empire(npc) || npc == me)
+        if (!npc || !is_empire(npc) || npc == me || local_mirror(npc))
             return;
         auto mf = met.find(npc);
         Rec r{npc, (F<uint32_t>(node, 0x1C) & 3) | (mf == met.end() ? 0 : mf->second), {}};
@@ -327,7 +340,8 @@ static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b,
     if (map == (uint8_t*)mgr + 0x24 && mgr == rel_mgr() && is_empire(a) && is_empire(b) && a != b &&
         (a == me || b == me) && !own_event(ev) && scale != 0.f) {
         uint32_t npc = a == me ? b : a;
-        g_out.push_back({K_EVENT, npc, (uint8_t)(a == me), ev, scale, {}});
+        if (!local_mirror(npc))
+            g_out.push_back({K_EVENT, npc, (uint8_t)(a == me), ev, scale, {}});
     }
     return r;
 }
@@ -353,7 +367,8 @@ static void state_hook(State_t orig, uint8_t what, void* mgr, void* e1, void* e2
     if (flags_with(e1, other) == before)
         return; // nothing changed (war again, peace without a war, ...)
     uint32_t npc = pol_of(e1 == me ? other : e1);
-    g_out.push_back({K_STATE, npc, (uint8_t)(e1 == me), what, 0, {}});
+    if (!local_mirror(npc))
+        g_out.push_back({K_STATE, npc, (uint8_t)(e1 == me), what, 0, {}});
 }
 static void SK_THISCALL h_War(void* m, void* a, void* b) { state_hook(o_War, W_WAR, m, a, b); }
 static void SK_THISCALL h_Ally(void* m, void* a, void* b) { state_hook(o_Ally, W_ALLY, m, a, b); }
@@ -369,7 +384,7 @@ static void SK_THISCALL h_Contact(void* empire, int arg)
     g_depth++;
     o_Contact(empire, arg);
     g_depth--;
-    if (watch && contacted(pol)) {
+    if (watch && contacted(pol) && !local_mirror(pol)) {
         g_out.push_back({K_CONTACT, pol, 0, kMet, 0, {}});
     }
 }
@@ -383,7 +398,7 @@ static void SK_THISCALL h_Spoken(void* empire)
     g_depth++;
     o_Spoken(empire);
     g_depth--;
-    if (watch && (contact_of(pol) & kContacted))
+    if (watch && (contact_of(pol) & kContacted) && !local_mirror(pol))
         g_out.push_back({K_CONTACT, pol, 0, kContacted, 0, {}});
 }
 static bool busy(const Rec& r) { return r.flags || !r.ev.empty(); }
@@ -413,6 +428,8 @@ static void apply_event(uint8_t from, const Out& m)
         log_line("event " + std::to_string(m.ev) + " for an unknown empire");
         return;
     }
+    if (local_mirror(m.npc))
+        return; // our own mirror: the partner meant another empire
     uint32_t a = m.first ? me : m.npc, b = m.first ? m.npc : me;
     thiscall<float>(a_Apply, mgr, a, b, m.ev, m.scale);
     g_got_ev++;
@@ -426,6 +443,8 @@ static void apply_event(uint8_t from, const Out& m)
 static void apply_state(uint8_t from, const Out& m)
 {
     void* e = empire_of(m.npc);
+    if (local_mirror(m.npc))
+        return;
     if (!e || !set_state((uint8_t)m.ev, e, m.first)) {
         g_unknown++;
         log_line("state change for an unknown empire");
@@ -442,6 +461,8 @@ static void apply_state(uint8_t from, const Out& m)
 static void apply_contact(uint8_t from, const Out& m)
 {
     void* e = empire_of(m.npc);
+    if (local_mirror(m.npc))
+        return;
     if (!e) {
         g_unknown++;
         log_line("contact with an unknown empire");
@@ -472,6 +493,8 @@ static bool reconcile(const Rec& h, bool asked)
     void* me = my_empire();
     uint32_t mp = my_pol();
     void* e = empire_of(h.npc);
+    if (local_mirror(h.npc))
+        return false;
     if (!mgr || !me || !e) {
         g_unknown++;
         return false;
@@ -917,6 +940,11 @@ static std::string debug(const std::vector<std::string>& a)
         for (auto& l : g_log)
             out += l + "\n";
         return out.empty() ? "empty\n" : out;
+    }
+    if (a[0] == "mirrorfix" && a.size() > 1) { // BUG-0071: 0 = share the allies mirror's record (tests)
+        g_mirror_fix = a[1] != "0";
+        snprintf(b, sizeof b, "mirrorfix %d skipped=%u\n", (int)g_mirror_fix, g_mirror_skipped);
+        return b;
     }
     if (a[0] == "sync") {
         if (spaceext::is_host())
