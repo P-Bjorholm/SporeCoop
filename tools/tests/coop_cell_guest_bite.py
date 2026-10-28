@@ -54,6 +54,8 @@ def main():
             return ck.result()
 
         def guest_bite(label, expect_hurt):
+            host.call(f'coop.pool swimto {key} tp')  # it fled: both stay next to it (in the host's state area)
+            guest.call(f'coop.pool swimto {key} tp')
             time.sleep(2.0)  # the hurt lock (+0x17C) of the last bite is over
             h0 = hp(host, key)
             r = bite(guest, key)
