@@ -97,7 +97,8 @@ def main():
             print(f'  try {attempt + 1}: guest {after} after its meal, lowest {low}; cell size {lv} -> lowest after the meal {low_lv} -> '
                   f'{top}; totals host {hf} guest {gf}')
             dips.append(low < after)
-            ck(hf == gf == after + 2, f'the totals agree in the end ({hf}, {gf})')
+            # (a cell drifting into a mouth can add a few points meanwhile)
+            ck(hf == gf and hf >= after + 2, f'the totals agree in the end ({hf}, {gf}, at least {after + 2})')
         ck(not any(dips), f'BUG-0051: the guest total never dropped below its meal ({sum(dips)} of {len(dips)} dipped)')
     finally:
         for con in (host, guest):

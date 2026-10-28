@@ -62,6 +62,8 @@ def ko_guest(host, guest):
 
 def rejoin(host, guest):
     guest.call(lane.JOIN)
+    # the guest loads the host's world again (via the galaxy menu): its old cell counts as "in" until then
+    wait(lambda: not guest.call('coop.avatar')['ok'], 40)
     ok = wait_guest_in(host, guest)
     # in the pool together: mirrors on the guest, each player's cell drawn on the other machine
     return ok and wait(lambda: (num(pool(guest), 'mirrors') or 0) and (num(pool(guest), 'partner_dist', float) or -1) >= 0
