@@ -38,6 +38,8 @@ void tick(double now);                        // every frame (also when offline)
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();                        // destroy proxies, restore local NPCs
 void on_world_change();                       // world unloaded: forget (not destroy) proxies
+void on_player_leave(uint8_t id);             // host: the NPCs a player knew are not the next one's (BUG-0125)
+void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage); // host avatar hits host NPC #id

@@ -432,10 +432,14 @@ static void guest_tick(double now)
         return;
     // the first frames of a world: the update filter meets the game's own NPCs and learns their
     // herds (g_local_herds) before the proxies are made
+    // (with the world counter: the avatar of a reloaded world may have the old address, BUG-0119)
     static void* s_av = nullptr;
+    static uint32_t s_epoch = 0;
     static double s_av_t0 = 0;
-    if (av != s_av) {
+    uint32_t epoch = game::world_epoch();
+    if (av != s_av || epoch != s_epoch) {
         s_av = av;
+        s_epoch = epoch;
         s_av_t0 = now;
     }
     if (now - s_av_t0 < 1.0)
@@ -689,6 +693,16 @@ void on_world_change()
     teamplay::reset();
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
+}
+
+// BUG-0125: host_tick forgets what a guest mirrors only while the simulation runs; a guest that
+// left and joined again (the same id) while the host was paused kept the old set and got no spawns
+static bool g_known_fix = true;
+void set_known_fix(bool on) { g_known_fix = on; }
+void on_player_leave(uint8_t id)
+{
+    if (g_known_fix)
+        g_known.erase(id);
 }
 
 void on_session_end()

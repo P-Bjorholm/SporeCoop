@@ -30,6 +30,11 @@ bool init(const SkHost* host, SkMod* mod); // resolve symbols; false = coop disa
 bool ready();                              // symbols ok
 uint32_t mode_id();
 bool in_creature_stage();
+// BUG-0119: a counter of creature worlds (entering the creature stage, another avatar in it; the
+// editors keep it). Identity of a world where the avatar's address is not enough (pooled objects).
+// Call once per frame at least (coop.cpp on_frame); 0 always with set_world_epoch_fix(false) (tests)
+uint32_t world_epoch();
+void set_world_epoch_fix(bool on);
 void* avatar();
 net::Vec3 position(void* c);
 net::Quat orientation(void* c);

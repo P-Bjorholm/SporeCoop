@@ -1257,6 +1257,7 @@ void on_frame(void*, int, void*)
     g_last_frame = now;
     diag_tick(now);
     notify::tick(now);
+    game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
     creations::tick(now);
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
@@ -1697,6 +1698,7 @@ void setup_callbacks()
     g_sess.cb.player_join = [](const net::PlayerInfo& p) {
         shared::on_session_change();
         creations::on_player_join(p.id);
+        npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         g_dna_sent = -1; // resend the DNA total to the newcomer
         auto old = g_remotes.find(p.id);
         if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
@@ -1917,6 +1919,7 @@ void setup_callbacks()
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
+        npc::on_player_leave(id);       // BUG-0125
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
@@ -2362,6 +2365,16 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "swapguard")) { // tests: off = no undo of a swap left open (BUG-0110)
         game::set_swap_guard(strcmp(argv[2], "off") != 0);
         SAY("swap guard %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "knownfix")) { // tests: off = a leaving guest's known NPCs stay (BUG-0125)
+        npc::set_known_fix(strcmp(argv[2], "off") != 0);
+        SAY("knownfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "worldfix")) { // tests: off = worlds told apart by the avatar address only (BUG-0119)
+        game::set_world_epoch_fix(strcmp(argv[2], "off") != 0);
+        SAY("world counter %s (now %u)", argv[2], game::world_epoch());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
