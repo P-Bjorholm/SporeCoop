@@ -1001,6 +1001,9 @@ All take `--nofix` (the fix switches off) and must FAIL with it; logs of both ru
 * The test games' logs from a worktree: `twoinst.Monitor.game_log` derives the game folder from the
   repository root and points into the worktree's parent in a worktree; use the git common dir
   (`coop_rejoin_net.py`, `coop_world_queue.py`).
+  Fixed 2026-10-28 (fix/w4-lab, BUG-0068): `lane.game_dir(n)` / `lane.game_log(inst)` give the
+  lane's game folder and log from any checkout; twoinst, update_check, diag_check, kit_crash and
+  kit_freeze use them.
 ## NPC ids, deferred puppets, the AI swap, creations after leaving (2026-10-28, fix/w2-creature)
 <a id="testing-creature-npc-ids"></a>
 

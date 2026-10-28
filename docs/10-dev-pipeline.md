@@ -58,9 +58,22 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
   They run on the run's first lane among 1-5 (LAN discovery sees only those) and are skipped when
   the run has none; until 2026-10-23 they always took lane 1, even with `--skip 1` (a run on lanes
   7/8 started the UI test in the real install's bottle while other agents had lane 1).
-* After a failure the lane restarts cold and the test runs once more: passing then = **flaky**.
+* After a failure the lane restarts cold. Only harness trouble (no RESULT line, a traceback, a
+  timeout) runs once more: passing then = **flaky** (`ok (flaky)`, the run still passes, the
+  summary counts it). A `RESULT: FAIL`, a crash or a fault is a failure of the run, never retried
+  (until 2026-10-28 every failure was retried and a pass on the retry passed the run: BUG-0073).
   `out/lab/flaky.json` keeps the history; the summary lists the unstable tests - each one is a
   bug in the test or in the mod and gets fixed, not ignored.
+* `RESULT: SKIP` is shown as `SKIP` / `skip` and counted apart ("PASSED: 14/15, 1 skipped"), never
+  as a pass (BUG-0100).
+* A timeout (30 min) kills the test's whole process group: tests run in their own session
+  (BUG-0052: the shell died, the Python test went on driving the lane). Ctrl+C on the lab kills
+  the running tests too.
+* `--branch <b>` takes only the worktree whose branch is exactly `<b>` (BUG-0048: `fix/cell` took
+  the tree of `fix/cell-meat`) and stops when the tree has another branch checked out; the run
+  header and `summary.md` name the tree's branch.
+* Self-test of the lab: `tools/tests/lab_selftest.py` (in `make test`), fake tests through
+  `lab.cmd_run` with the lanes stubbed; `--tree <checkout>` runs it against another checkout's lab.
 * Results: `out/lab/<run>/summary.md`, `results.json`, the test logs and both games' own logs.
 
 ## 10.4 Invariants (checked in every test)
@@ -71,7 +84,23 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
   stack into the game log after 30 s);
 * a game stops answering (crash);
 * the exception logger caught a fault (`exc`);
-* a fixture lacks what the test needs (`tools/tests/fixtures.py` facts).
+* a fixture lacks what the test needs (`tools/tests/fixtures.py` facts; since 2026-10-28 for real,
+  `twoinst.FIXTURE_BAD`; a warm reset that lacks them falls back to a cold start, BUG-0124).
+
+The monitor finds the game log (`loading()`: a world load gets 60 s instead of 10 s) with
+`lane.game_log()` / `lane.game_dir()`, right from a worktree too (BUG-0068: from
+`../SporeCoop-wt/<branch>` it read a folder that does not exist and long loads became FROZE).
+
+`tools/lab.py` checks every test from outside as well (BUG-0036, BUG-0042), so a test that forgets
+`Checks.faults()` or crashes after its checks still fails:
+
+* a new `crash-*.txt`, `crash-*.dmp` or `report-*.txt` in the lane's `mods/logs` between the start
+  of the test and 5 s after it (copied into the run directory as `<test>.<file>`);
+* a game of the lane that answered its console when the test ended and no longer answers 5 s later;
+* a line `<name> faults: total faults: N` with N > 0 in the test's log.
+
+Tests that make reports or faults on purpose (diag, kit_crash, kit_freeze, exit_thread) have
+`reports=True` in `suite.py`.
 
 ## 10.5 Bots
 
