@@ -48,6 +48,7 @@ add('world_queue', P + 'coop_world_queue.py', minutes=6)  # one save for shares 
 add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130; --without-fix fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
+add('ui_status', P + 'coop_ui_status.py', minutes=7)  # the co-op window: port check, a pasted address, the status after the join and the session end, LAN pages, no "host is back" after a disconnect (BUG-0138, BUG-0104, BUG-0183, BUG-0085; --without-fix fails)
 add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu's Co-op item is dropped as the game leaves the menu (BUG-0163)
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
