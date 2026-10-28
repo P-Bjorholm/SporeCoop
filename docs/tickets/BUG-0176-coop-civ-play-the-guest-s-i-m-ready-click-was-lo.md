@@ -36,7 +36,7 @@ many clicks it took. A lost click in the window's first frames is a UI timing, n
 (a click seconds later always worked). If a run needs more than one click, the print says so.
 
 ## Verification
-- PASS out/lab/20261028-030521 ("took 1 click(s)") and the repeat runs in the History.
+- PASS out/lab/20261028-030521 and out/lab/20261028-033546 (3 of 3, --repeat 3): every run "took 1 click(s)".
 - Not reproduced: the two failures of 2026-10-23 came during a headless display restart.
 
 ## History

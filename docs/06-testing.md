@@ -808,8 +808,10 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   ally card fail together. A test timing (the NPC was still busy or out of the social range),
   not a co-op regression. One run also failed "the pause menu is up: the partner's name tag is not
   drawn" once (not seen again).
-* ~ superseded (2026-10-28): a refused game is played again and the test is in suite.py
-  (`creature_social`), see docs/06-testing.md#testing-w4-tests (BUG-0021).
+* 2026-10-28 (fix/w4-tests): a refused game is now played again with the same Kook; still 1 OK of
+  4 runs (out/lab/20261028-030521 OK, out/lab/20261028-033546 3 FAIL). In the failing runs a Kook
+  died during the ally phase (the Kooks' table went to killed=1) and the species' impressed count
+  stayed below the host's `impressed`. Still not in suite.py (BUG-0021).
 
 ## editor_strays fails under a full lab load (2026-10-25)
 <a id="testing-editor-strays-load"></a>
@@ -1175,8 +1177,8 @@ tickets. Each needs ~1.5-3 min on a warm lane.
   Ctrl+Shift+C only while the cheat manager's flag +0x64 is set, which is 0 on games that loaded
   their save by command (docs/re/creature.md#creature-cheat-console-flag): the test sets it first.
   `--without-fix` (`coop.social textfix off`) must FAIL (BUG-0149).
-* `coop_creature_social.py` (suite `creature_social`, was in no suite): a refused social game in
-  the ally phase is played again with the same Kook (BUG-0021).
+* `coop_creature_social.py`: a refused social game in the ally phase is played again with the same
+  Kook; the test is still flaky (1 of 4) and stays out of suite.py (BUG-0021, see 6.24).
 * `coop_civ_play.py`: the guest's "I'm ready" is clicked again (up to 3 times, 3 s apart) when the
   vote did not fire; the number of clicks is printed (BUG-0176).
 * Suite `extended` (`lab.py run extended`, also nightly, not in full): hot reload
