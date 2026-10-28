@@ -7,7 +7,6 @@
 #include <windows.h>
 
 #include "game.h"
-#include "npc.h"
 #include "sporekit_game.hpp"
 
 namespace savestrip {
@@ -38,18 +37,18 @@ static bool own_kind_herd(void* h)
            *(uint32_t*)((uint8_t*)h + 0x88) == 0 && !game::herd_nest(h) && !*(uint8_t*)((uint8_t*)h + 0x84);
 }
 
-// the creature stage: partners' puppets (host), NPC proxies (guest), anything in a herd of ours
+// the creature stage: a herd made for puppets or proxies, and every creature in it (the host's
+// partners' puppets; proxies of a guest that are not in a nest herd). A herd and its members go
+// together, so no herd of the game keeps a null member. Not stripped (not checked what a null member
+// does on load): a puppet in the avatar's herd (the fallback for a partner whose creation is
+// unknown), a guest's proxies in the nest herds of the game.
 static bool creature_filter(void* o, uint32_t noun)
 {
     if (noun == game::kHerdNoun)
         return own_kind_herd(o);
     if (noun != kCreatureNoun || o == game::avatar() || IsBadReadPtr(o, 0x1680))
         return false;
-    // (a puppet in the avatar's herd, the fallback for a partner whose creation is unknown, stays: the
-    // herd's member list would get a null entry, whose load is not checked)
-    if (game::herd_of(o) == game::avatar_herd())
-        return false;
-    return game::is_puppet(o) || npc::is_proxy(o) || own_kind_herd(game::herd_of(o));
+    return own_kind_herd(game::herd_of(o));
 }
 
 static void rebuild()
