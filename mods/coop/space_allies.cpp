@@ -689,6 +689,7 @@ static bool mirror_pol(uint32_t pol)
 
 } // namespace spaceallies
 bool spaceext::allies_mirror_pol(uint32_t pol) { return spaceallies::mirror_pol(pol); }
+std::vector<void*> spaceext::game_missions() { return spaceallies::missions(); }
 namespace spaceallies {
 
 static Mirror* mirror_of_planet(uint32_t planet)

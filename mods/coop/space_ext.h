@@ -79,6 +79,8 @@ void send(uint8_t kind, const net::Writer& body);
 // a political id of a mirror empire of this copy (a partner's colonies): local to each copy, never
 // shared by pol (BUG-0071)
 bool allies_mirror_pol(uint32_t pol);
+// the game's missions (cMission*, every state; space_allies.cpp reads the noun list)
+std::vector<void*> game_missions();
 
 // ---- rivals mode (owned by space_rivalry.cpp; other features only read it) ----
 // rivals(): the host's session option "players are rival empires" (own budgets, diplomacy per

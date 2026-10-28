@@ -515,8 +515,8 @@ static void* inventory()
     return sg ? F<void*>(sg, 0x40) : nullptr;
 }
 
-static std::function<void(uint32_t, int)> g_raid_listener;
-void set_raid_listener(std::function<void(uint32_t place, int state)> fn) { g_raid_listener = std::move(fn); }
+static std::function<void(void*, uint32_t, int)> g_raid_listener;
+void set_raid_listener(std::function<void(void* mission, uint32_t place, int state)> fn) { g_raid_listener = std::move(fn); }
 
 // The planets of a star are generated the first time something needs them (a flight there, the
 // jump, a mission: cStarManager::RequirePlanetsForStar 0xBB4C60 -> GeneratePlanetsForStar 0xBB4270)
@@ -643,7 +643,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
         if (!emp || !star || F<uint32_t>(star, 0x54) != F<uint32_t>(emp, 0x84))
             return;
         if (g_raid_listener && (s == 3 || s == 5 || s == 6))
-            g_raid_listener(place, s);
+            g_raid_listener(m, place, s);
         if (s == 3) { // a raid starts on our colony
             g_raids_seen++;
             g_raid_since[m] = H->time_seconds();
