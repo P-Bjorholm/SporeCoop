@@ -49,6 +49,7 @@ add('notify', P + 'coop_notify.py', minutes=3)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
+add('chat_long', P + 'coop_chat_long.py', warm=True, minutes=2, fixture='creature')  # a reliable message bigger than a packet is split, nothing behind it stalls (BUG-0034)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
 add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input
