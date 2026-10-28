@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "../installer/install.h"
 #include "../mods/coop/slotfs.h"
 #include "../sporekit/inifile.h"
 #include "../updater/winupdate.h"
@@ -23,6 +24,9 @@ static int g_fail;
     } while (0)
 
 static std::wstring g_tmp;
+static bool g_old;          // --old
+static std::wstring g_bat;  // --bat <install.bat to test> (tools/tests/win_unit.py)
+static std::wstring g_excl; // --exclude <installer/ini.exclude>
 
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
@@ -280,9 +284,259 @@ static void test_ini_unicode()
     CHECK(skini::read_str(m, "coop", "name", "") == name);
 }
 
+// ---------------- the setup and install.bat ----------------
+
+static std::vector<uint8_t> bytes(const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); }
+
+// a pack of version v as tools/mkpack.py builds it (the files a release installs)
+static upd::Pack make_pack(const std::string& v)
+{
+    upd::Pack p;
+    p.version = v;
+    p.files.push_back({"SporebinEP1/steam_api.dll", 0, bytes("sporekit-loader " + v)});
+    p.files.push_back({"SporebinEP1/sporekit.dll", 0, bytes("sporekit " + v)});
+    p.files.push_back({"SporebinEP1/mods/coop.dll", 0, bytes("coop " + v)});
+    p.files.push_back({"SporebinEP1/mods/sporekit/symbols/gog2024_dc04aee5.sym", 0, bytes("sym " + v)});
+    p.files.push_back({"Data/SporeCoop.package", 0, bytes("package " + v)});
+    p.files.push_back({"SporebinEP1/mods/coop.ini", upd::kOnlyIfMissing, bytes("[coop]\r\nname=Player\r\n")});
+    p.files.push_back({"SporebinEP1/mods/sporecoop.version", 0, bytes(v + "\n")});
+    return p;
+}
+
+static void put_bytes(const std::wstring& p, const std::vector<uint8_t>& b) { put(p, std::string(b.begin(), b.end())); }
+
+static std::wstring fake_game(const wchar_t* name)
+{
+    std::wstring g = fresh_dir(name);
+    put(g + L"\\SporebinEP1\\SporeApp.exe", "not the game");
+    put(g + L"\\SporebinEP1\\steam_api.dll", "the game's steam api");
+    CreateDirectoryW((g + L"\\Data").c_str(), nullptr);
+    return g;
+}
+
+// every file of version v in place (the setup's result is one version, never a mix)
+static bool all_of_version(const std::wstring& g, const std::string& v, bool quiet = false)
+{
+    bool ok = get(g + L"\\SporebinEP1\\steam_api.dll") == "sporekit-loader " + v &&
+              get(g + L"\\SporebinEP1\\sporekit.dll") == "sporekit " + v &&
+              get(g + L"\\SporebinEP1\\mods\\coop.dll") == "coop " + v &&
+              get(g + L"\\Data\\SporeCoop.package") == "package " + v && upd::installed_version(g) == v;
+    if (!ok && !quiet)
+        printf("  state: steam_api=%s sporekit=%s coop=%s version=%s\n",
+               get(g + L"\\SporebinEP1\\steam_api.dll").c_str(), get(g + L"\\SporebinEP1\\sporekit.dll").c_str(),
+               get(g + L"\\SporebinEP1\\mods\\coop.dll").c_str(), upd::installed_version(g).c_str());
+    return ok;
+}
+
+// BUG-0094: offline the setup took the first SporeCoop-*.pack listed and installed it over a newer
+// version without asking
+static void test_setup_packs()
+{
+    printf("setup: the newest local pack, no silent downgrade (BUG-0094)\n");
+    std::wstring g = fake_game(L"setup_packs");
+    std::wstring dir = fresh_dir(L"setup_packs_dl");
+    for (const char* v : {"0.10.0", "0.11.0", "0.9.0"})
+        put_bytes(dir + L"\\SporeCoop-" + upd::widen(v) + L".pack", upd::write_pack(make_pack(v)));
+    inst::Options o;
+    o.pack_dir = dir;
+    o.api = "http://127.0.0.1:9/"; // offline
+    std::wstring lp = inst::local_pack(o);
+    printf("  local pack: %s\n", upd::narrow(lp).c_str());
+    CHECK(lp == dir + L"\\SporeCoop-0.11.0.pack" || g_old); // the listing order under Wine is the host's
+    upd::ReleaseBox box;
+    std::string msg;
+    o.pack = dir + L"\\SporeCoop-0.11.0.pack";
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    CHECK(all_of_version(g, "0.11.0"));
+    put(g + L"\\SporebinEP1\\mods\\coop.ini", "[coop]\r\nname=Alice\r\n");
+    // an older setup next to an old pack, offline: "Reinstall"
+    o.pack = dir + L"\\SporeCoop-0.9.0.pack";
+    std::string older, have;
+    inst::Result r = inst::do_install(g, o, box, msg, {}, &older, &have);
+    printf("  older pack: %s\n", msg.c_str());
+    CHECK(r == inst::Result::Older);
+    CHECK(older == "0.9.0" && have == "0.11.0");
+    CHECK(all_of_version(g, "0.11.0"));
+    // the player said yes (or /downgrade)
+    o.downgrade = true;
+    CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok);
+    CHECK(all_of_version(g, "0.9.0"));
+    CHECK(get(g + L"\\SporebinEP1\\mods\\coop.ini") == "[coop]\r\nname=Alice\r\n");
+}
+
+struct FindWnd {
+    DWORD pid;
+    HWND w;
+};
+
+static BOOL CALLBACK find_wnd(HWND w, LPARAM lp)
+{
+    auto* f = (FindWnd*)lp;
+    DWORD p = 0;
+    wchar_t cls[64] = {};
+    GetWindowThreadProcessId(w, &p);
+    GetClassNameW(w, cls, 64);
+    if (p == f->pid && !wcscmp(cls, L"SporeCoopSetup")) {
+        f->w = w;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static HWND setup_window(DWORD pid)
+{
+    FindWnd f{pid, nullptr};
+    EnumWindows(find_wnd, (LPARAM)&f);
+    return f.w;
+}
+
+static std::wstring exe_dir()
+{
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    std::wstring s = self;
+    return s.substr(0, s.find_last_of(L"\\/"));
+}
+
+// BUG-0139: the window could be closed while the job swapped files: ExitProcess killed the job
+// between a file's two moves (here: with a test delay of 1.5 s between them)
+static void test_setup_close()
+{
+    printf("setup: closing the window during an install (BUG-0139)\n");
+    std::wstring setup = exe_dir() + L"\\SporeCoopSetup.exe";
+    if (!exists(setup)) {
+        printf("  FAIL no %s\n", upd::narrow(setup).c_str());
+        g_fail++;
+        return;
+    }
+    std::wstring g = fake_game(L"setup_close");
+    std::wstring dir = fresh_dir(L"setup_close_dl");
+    put_bytes(dir + L"\\old.pack", upd::write_pack(make_pack("0.9.0")));
+    put_bytes(dir + L"\\new.pack", upd::write_pack(make_pack("0.11.0")));
+    {
+        inst::Options o;
+        o.pack = dir + L"\\old.pack";
+        o.pack_dir = dir;
+        upd::ReleaseBox box;
+        std::string msg;
+        CHECK(inst::do_install(g, o, box, msg) == inst::Result::Ok); // 0.9.0 installed
+    }
+    std::wstring cmd = L"\"" + setup + L"\" \"/dir:" + g + L"\" \"/pack:" + dir + L"\\new.pack\" /api:http://127.0.0.1:9/" +
+                       (g_old ? L" /oldfix" : L"");
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", L"1500");
+    STARTUPINFOW si{sizeof si};
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    SetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", nullptr);
+    CHECK(started);
+    if (!started)
+        return;
+    HWND w = nullptr;
+    for (int i = 0; i < 100 && !w; i++) {
+        Sleep(100);
+        w = setup_window(pi.dwProcessId);
+    }
+    CHECK(w != nullptr);
+    HWND btn = w ? GetDlgItem(w, 11) : nullptr; // ID_INSTALL
+    for (int i = 0; i < 50 && btn && !IsWindowEnabled(btn); i++)
+        Sleep(100);
+    if (w) {
+        PostMessageW(w, WM_COMMAND, MAKEWPARAM(11, BN_CLICKED), (LPARAM)btn);
+        Sleep(800);                       // the new files are written, the first swap waits
+        PostMessageW(w, WM_CLOSE, 0, 0);  // the window's X (Alt+F4)
+        PostMessageW(w, WM_COMMAND, MAKEWPARAM(13, BN_CLICKED), (LPARAM)GetDlgItem(w, 13)); // Close
+    }
+    bool closed_early = WaitForSingleObject(pi.hProcess, 2000) == WAIT_OBJECT_0;
+    printf("  closed during the job: %s\n", closed_early ? "yes" : "no (refused)");
+    // the job ends (5 files x 1.5 s), then the window closes
+    for (int i = 0; i < 200 && !closed_early && !all_of_version(g, "0.11.0", true); i++)
+        Sleep(100);
+    if (!closed_early && w)
+        PostMessageW(w, WM_CLOSE, 0, 0);
+    bool ended = WaitForSingleObject(pi.hProcess, 20000) == WAIT_OBJECT_0;
+    if (!ended)
+        TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CHECK(ended);
+    CHECK(exists(g + L"\\SporebinEP1\\steam_api.dll"));
+    CHECK(all_of_version(g, "0.11.0"));
+}
+
+static bool run_bat(const std::wstring& bin)
+{
+    std::wstring cmd = L"cmd.exe /c install.bat < NUL > NUL";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, bin.c_str(), &si, &pi))
+        return false;
+    bool ok = WaitForSingleObject(pi.hProcess, 60000) == WAIT_OBJECT_0;
+    if (!ok)
+        TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return ok;
+}
+
+// BUG-0080: install.bat run again over an installed SporeCoop (the documented manual update)
+// replaced mods\coop.ini: the player's name and the [update] check=0 opt-out were lost
+static void test_install_bat()
+{
+    printf("install.bat keeps the player's .ini files (BUG-0080)\n");
+    if (g_bat.empty()) {
+        printf("  (skipped: no --bat)\n");
+        return;
+    }
+    std::wstring g = fake_game(L"bat");
+    std::wstring bin = g + L"\\SporebinEP1", sc = bin + L"\\SporeCoop";
+    CHECK(CopyFileW(g_bat.c_str(), (bin + L"\\install.bat").c_str(), FALSE));
+    put(sc + L"\\steam_api.sporekit.dll", "sporekit-loader 1");
+    put(sc + L"\\sporekit.dll", "sporekit 1");
+    put(sc + L"\\SporeCoop.package", "package 1");
+    put(sc + L"\\mods\\coop.dll", "coop 1");
+    put(sc + L"\\mods\\coop.ini", "[coop]\r\nname=Player\r\n");
+    put(sc + L"\\mods\\sporekit.ini", "[kit]\r\nconsole=1\r\n");
+    put(sc + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym", "sym 1");
+    if (!g_excl.empty()) // tools/package.sh puts it there
+        CHECK(CopyFileW(g_excl.c_str(), (sc + L"\\ini.exclude").c_str(), FALSE));
+    CHECK(run_bat(bin));
+    CHECK(get(bin + L"\\mods\\coop.dll") == "coop 1");
+    CHECK(get(bin + L"\\mods\\coop.ini") == "[coop]\r\nname=Player\r\n"); // a fresh install gets the defaults
+    CHECK(get(bin + L"\\mods\\sporekit.ini") == "[kit]\r\nconsole=1\r\n");
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym") == "sym 1");
+    CHECK(get(bin + L"\\steam_api.dll") == "sporekit-loader 1");
+    CHECK(get(bin + L"\\steam_api_orig.dll") == "the game's steam api");
+    CHECK(get(g + L"\\Data\\SporeCoop.package") == "package 1");
+    // the player plays: a name, no update check; then the next zip over it
+    const std::string mine = "[coop]\r\nname=Alice\r\n[update]\r\ncheck=0\r\n";
+    put(bin + L"\\mods\\coop.ini", mine);
+    DeleteFileW((bin + L"\\mods\\sporekit.ini").c_str());
+    put(sc + L"\\mods\\coop.dll", "coop 2");
+    put(sc + L"\\sporekit.dll", "sporekit 2");
+    put(sc + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym", "sym 2");
+    CHECK(run_bat(bin));
+    printf("  coop.ini after the reinstall: %s\n", get(bin + L"\\mods\\coop.ini") == mine ? "kept" : "replaced");
+    CHECK(get(bin + L"\\mods\\coop.ini") == mine);
+    CHECK(get(bin + L"\\mods\\sporekit.ini") == "[kit]\r\nconsole=1\r\n"); // a missing one comes back
+    CHECK(get(bin + L"\\mods\\coop.dll") == "coop 2");
+    CHECK(get(bin + L"\\sporekit.dll") == "sporekit 2");
+    CHECK(get(bin + L"\\mods\\sporekit\\symbols\\gog2024_dc04aee5.sym") == "sym 2");
+}
+
 int main(int argc, char** argv)
 {
-    if (argc == 2 && !strcmp(argv[1], "--old")) {
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--old"))
+            g_old = true;
+        else if (!strcmp(argv[i], "--bat") && i + 1 < argc)
+            g_bat = upd::widen(argv[++i]);
+        else if (!strcmp(argv[i], "--exclude") && i + 1 < argc)
+            g_excl = upd::widen(argv[++i]);
+    }
+    if (g_old) {
+        inst::g_fix = false;
         upd::g_old_fix = false;
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
@@ -300,6 +554,9 @@ int main(int argc, char** argv)
     test_slot_match();
     test_slot_write_fails();
     test_ini_unicode();
+    test_setup_packs();
+    test_setup_close();
+    test_install_bat();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;
