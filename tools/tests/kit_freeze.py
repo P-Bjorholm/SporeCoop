@@ -28,7 +28,7 @@ import lane
 from twoinst import Checks, wait_up
 from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 
-GAME = os.path.expanduser(f'~/Games/Modding/SPORE-lab/lane{lane.LANE}')
+GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
        'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark'}

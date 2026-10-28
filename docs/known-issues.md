@@ -618,23 +618,16 @@ keeps the history).
 * BUG-0033 (#11, bug): leaving, re-hosting and hot reload each clean up a different subset of the co-op state.
 * BUG-0035 (#13, bug): a received world can move and overwrite the save slot the guest is playing (auto_load_world=0)
 * BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
-* BUG-0036 (#14, tooling): a game crash after a test's checks does not fail the test in the lab.
-* BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
-* BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
-* BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
 * BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
 * BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
-* BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
-* BUG-0073 (#51, tooling): a lab test that FAILs and then passes on retry counts as passed.
 * BUG-0074 (#52, bug): after leaving a session, the game quits to the menu and loads the old host world once the editor closes.
 * BUG-0076 (#54, desync): a new player is shown with the creature or ship of the player who had their id before.
 * BUG-0086 (#64, tooling): re_lint skips the confidence check for overrides entries whose name is also in a generated .sym.
 * BUG-0093 (#71, tooling): coop.cell spawn reads outside the cell pool for a slot number that does not exist.
 * BUG-0096 (#74, test): coop.vote editor submits the editor request inside Present, a path the real game never takes.
 * BUG-0097 (#75, tooling): release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section.
-* BUG-0100 (#78, tooling): a test that prints RESULT: SKIP is counted as passed by the lab.
 * BUG-0101 (#79, tooling): spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own.
 * BUG-0102 (#80, tooling): spore.sh fixture restore with profile "-" deletes the player's own saves.
 * BUG-0103 (#81, tooling): more places that can kill the owner's own Spore on lane 1 (BUG-0025)
@@ -644,7 +637,6 @@ keeps the history).
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
-* BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
 * BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.

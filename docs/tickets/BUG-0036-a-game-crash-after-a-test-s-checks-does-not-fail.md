@@ -1,19 +1,19 @@
 ---
 id: BUG-0036
 title: a game crash after a test's checks does not fail the test in the lab
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#14
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #14
 ---
 
@@ -74,7 +74,9 @@ Inside the test, `twoinst.Monitor` notices a dead console, but `Checks.faults()`
 CONFIRMED by running (fake test above) and by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`lab.run_one` records the lane's `crash-*.txt`, `crash-*.dmp`, `report-*.txt` before the test; after it pings both consoles, waits 5 s (`lab.AFTER`) when a game answered, pings again; a new report or a game that stopped answering fails the test (`FAIL lab: ...` in the summary, reports copied into the run dir). `suite.add(..., reports=True)` exempts tests that crash on purpose: diag, kit_crash, kit_freeze, exit_thread.
+
+Suggested in the review:
 
 In `run_one`:
 1. Before the test, record the set of `crash-*`, `report-*` files in `lane_game(lane)/SporebinEP1/mods/logs`.
@@ -82,7 +84,9 @@ In `run_one`:
 3. `ok = ok and not new_reports and not died`; put the file names into `fails` so the summary shows them, and copy the reports into the run directory.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): cases crash_after, died_after. `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 A self-test of `lab.py` with fake tests and a stub `spore.sh` (as above): `crash_after` must be FAIL with the fix and is OK today. A second fake test that writes no report must stay OK.
 
@@ -92,3 +96,4 @@ CLAUDE.md section 3 ("A crash after the checks is still a crash", "the lab check
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #14.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.

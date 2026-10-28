@@ -1,19 +1,19 @@
 ---
 id: BUG-0073
 title: a lab test that FAILs and then passes on retry counts as passed
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#51
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #51
 ---
 
@@ -70,7 +70,9 @@ The condition does not look at `r['harness']`, so a test that printed `RESULT: F
 CONFIRMED by running.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Only harness trouble (no RESULT line, a traceback, a timeout, and no lab failure) is retried; a RESULT: FAIL, a crash or a fault is a failure of the run. Flaky (harness) results are counted in the summary line. docs/10-dev-pipeline.md 10.3 updated.
+
+Suggested in the review:
 
 ```python
 if not r['ok'] and a.retry and r['harness'] and not r.get('env'):
@@ -79,7 +81,9 @@ if not r['ok'] and a.retry and r['harness'] and not r.get('env'):
 and keep the existing `--retry` meaning for harness trouble. If retrying real failures is wanted for long bots, make it opt-in (`--retry-fails`), and count `flaky` results as not ok in `ok = all(...)` for the exit code. Update docs/10-dev-pipeline.md 10.3 to match.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): cases fails_once (FAIL now, ok (flaky) on main), harness_once (still ok (flaky)). `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 Lab self-test with the `fails_once` fake test: today PASSED (flaky); with the fix the run FAILS. A fake test that dies without a RESULT line on its first run and passes on the second stays `ok (flaky)`.
 
@@ -89,3 +93,4 @@ CLAUDE.md section 3 ("A test you never saw fail proves nothing"), section 4 ("`m
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #51.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.

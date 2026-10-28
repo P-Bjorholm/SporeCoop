@@ -72,6 +72,7 @@ test:
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
+	python3 tools/tests/lab_selftest.py
 	$(MAKE) --no-print-directory test-asan
 	$(MAKE) --no-print-directory test-tsan
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp

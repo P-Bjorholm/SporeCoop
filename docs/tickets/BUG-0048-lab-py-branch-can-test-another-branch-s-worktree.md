@@ -1,19 +1,19 @@
 ---
 id: BUG-0048
 title: lab.py --branch can test another branch's worktree (prefix match)
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#26
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #26
 ---
 
@@ -62,7 +62,9 @@ The test is a substring test: `branch refs/heads/fix/cell` is contained in `bran
 CONFIRMED by running.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`lab.worktree` compares the worktree's `branch refs/heads/<b>` line exactly; `cmd_run` stops when the chosen tree has another branch checked out and prints the tree's branch in the header, results.json and summary.md.
+
+Suggested in the review:
 
 Compare the line exactly:
 
@@ -76,7 +78,9 @@ for block in git('worktree', 'list', '--porcelain').split('\n\n'):
 Also worth printing the branch of the chosen tree in the run header and in `summary.md`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): case worktree (a copy of the tree's lab.py in a scratch repo). `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 A small unit test (no game) that makes two worktrees `fix/a-b` and a branch `fix/a` in a temporary clone and asserts `lab.worktree('fix/a')` is not the `fix/a-b` tree. It fails today and passes with the fix. Could run in `make test`.
 
@@ -86,3 +90,4 @@ CLAUDE.md section 4 ("`main` always works: only merged branches that passed `lab
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #26.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.

@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Self-test of the test lab (tools/lab.py) and of the lane paths of the test harness, no game needed
+(make test). Fake tests run through lab.cmd_run / lab.run_one with every lane action stubbed out
+(no game, no real lane is touched: lane 10 with a fake game folder in a temporary directory).
+
+  python3 tools/tests/lab_selftest.py [--tree <checkout>]
+  --tree: test the lab of another checkout (e.g. main before the fixes: every case below FAILs there)
+
+Cases (ticket):
+  crash_after   RESULT: OK, then a crash report appears: FAIL (BUG-0036)
+  died_after    RESULT: OK, then a game stops answering: FAIL (BUG-0036)
+  faults        a non-zero fault count in the log: FAIL (BUG-0042)
+  fails_once    RESULT: FAIL, OK on a retry: FAIL, not "ok (flaky)" (BUG-0073)
+  harness_once  no RESULT line, OK on a retry: ok (flaky) (BUG-0073, the retry kept for harness trouble)
+  skipper       RESULT: SKIP: skipped, not passed (BUG-0100)
+  clean         RESULT: OK and nothing else: ok
+  timeout       a test past the timeout leaves no process behind (BUG-0052)
+  worktree      --branch fix/a never picks the worktree of fix/a-b (BUG-0048)
+  game_log      twoinst.Monitor reads the lane's game log from a worktree too (BUG-0068)
+  fixture       a fixture that lacks its facts fails Checks.faults() (BUG-0124)
+"""
+import argparse
+import contextlib
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+LANE = 10
+FAILS = []
+
+
+def check(cond, what):
+    print(('  ok   ' if cond else '  FAIL ') + what, flush=True)
+    if not cond:
+        FAILS.append(what)
+
+
+def git(cwd, *a):
+    return subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', *a], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout
+
+
+def leftovers(marker):
+    """processes whose command line holds the marker (/proc, never pkill -f / ps | grep)"""
+    found = []
+    for pid in os.listdir('/proc'):
+        if pid.isdigit():
+            try:
+                cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\0', b' ').decode(errors='replace')
+            except OSError:
+                continue
+            if marker in cmd and int(pid) != os.getpid():
+                found.append(int(pid))
+    return found
+
+
+def lab_cases(tree, tmp):
+    sys.path.insert(0, os.path.join(tree, 'tools'))
+    import lab
+    import suite
+    game = os.path.join(tmp, 'game')
+    logs = os.path.join(game, 'SporebinEP1', 'mods', 'logs')
+    os.makedirs(logs)
+    alive = os.path.join(tmp, 'alive')
+    git(tmp, 'init', '-q', '-b', 'main')  # the run's tree (its head line)
+    git(tmp, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+    lab.ROOT = tmp  # out/lab/<run> and flaky.json go there
+    lab.preflight = lambda: True
+    lab.ensure_lanes = lambda n: None
+    lab.spore = lambda *a, **k: subprocess.CompletedProcess(a, 0, '', '')
+    lab.lane_game = lambda lane: game
+    # both games of the fake lane answer while the file exists
+    lab.lane_alive = lambda lane: {2 * lane - 1: os.path.exists(alive), 2 * lane: os.path.exists(alive)}
+    lab.AFTER = 2.0
+    py = f'{sys.executable} -c'
+    cnt = os.path.join(tmp, 'cnt')
+    suite.T[:] = []
+    suite.add('clean', f'{py} "print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('crash_after', f'{py} "print(\'RESULT: OK\');open(\'{logs}/crash-20261028-000000-i19.txt\',\'w\')'
+                             f'.write(\'crash\')"', ('smoke',))
+    suite.add('died_after', f'touch {alive}; {py} "print(\'RESULT: OK\')"; (sleep 1; rm -f {alive}) &', ('smoke',))
+    suite.add('faults', f'{py} "print(\'host faults: total faults: 3 (0xC0000005 at coop.dll+0x1234)\');'
+                        f'print(\'RESULT: OK\')"', ('smoke',))
+    suite.add('fails_once', f'{py} "import os;p=\'{cnt}1\';n=os.path.exists(p);open(p,\'a\').close();'
+                            f'print(\'RESULT:\', \'OK\' if n else \'FAIL\');exit(0 if n else 1)"', ('smoke',))
+    suite.add('harness_once', f'{py} "import os;p=\'{cnt}2\';n=os.path.exists(p);open(p,\'a\').close();'
+                              f'print(\'RESULT: OK\' if n else \'the game did not answer\');exit(0 if n else 1)"',
+              ('smoke',))
+    suite.add('skipper', f'{py} "print(\'RESULT: SKIP (no free lane)\')"', ('smoke',))
+    a = argparse.Namespace(branch=None, tests='smoke', repeat=1, skip=','.join(str(n) for n in range(1, LANE)),
+                           lanes=1, no_build=True, cold=False, retry=1)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = lab.cmd_run(a)
+    # the inner run's output only as data: under the lab (make test is the test unit) its fake fault and
+    # result lines must not look like this test's own
+    inner = out.getvalue().strip().replace('RESULT:', 'RESULT=').replace(' faults: ', ' faults= ')
+    print('    ' + inner.replace('\n', '\n    '))
+    run = sorted(os.listdir(os.path.join(tmp, 'out', 'lab')))
+    run = [d for d in run if d != 'flaky.json'][-1]
+    res = {r['name']: r for r in json.load(open(os.path.join(tmp, 'out', 'lab', run, 'results.json')))['results']}
+    summary = open(os.path.join(tmp, 'out', 'lab', run, 'summary.md')).read()
+    check(res['clean']['ok'] and not res['clean'].get('skipped'), 'clean: ok')
+    check(not res['crash_after']['ok'], 'crash_after: a crash report after an OK result fails the test (BUG-0036)')
+    check(not res['died_after']['ok'], 'died_after: a game that dies after an OK result fails the test (BUG-0036)')
+    check(not res['faults']['ok'], 'fault count: a non-zero fault count fails the test (BUG-0042)')
+    check(not res['fails_once']['ok'], 'fails_once: a FAIL result is not made a pass by a retry (BUG-0073)')
+    check(res['harness_once']['ok'] and res['harness_once'].get('flaky'),
+          'harness_once: no RESULT line, then OK on the retry: ok (flaky)')
+    check(res['skipper'].get('skipped') and '| skipper | skip' in summary,
+          'skipper: a SKIP result is a skip in results.json and summary.md, not a pass (BUG-0100)')
+    check(rc != 0, 'the run fails')
+
+    # BUG-0052: a test past the timeout (a command bash does not exec: a list) leaves nothing behind
+    marker = f'labselftest_sleep_{os.getpid()}'
+    lab.TIMEOUT = 2
+    logdir = os.path.join(tmp, 'timeout')
+    os.makedirs(logdir)
+    t = dict(name='timeout', cmd=f'{py} "import time; time.sleep(30)" {marker}; true', warm=False, fixture=None,
+             exclusive=False, minutes=1, reports=False)
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = lab.run_one(t, LANE, tree, logdir, False)
+    time.sleep(0.5)
+    left = leftovers(marker)
+    check(not r['ok'] and not left, f'timeout: the test failed and no process of it is left ({left})')
+    for pid in left:
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+
+
+def worktree_case(tree, tmp):
+    """lab.worktree() of a branch whose name is a prefix of another checked-out branch; the tree's
+    lab.py runs from a copy inside a scratch repository (it never sees the real one)"""
+    repo = os.path.join(tmp, 'wt', 'SporeCoop')
+    for f in ('tools/lab.py', 'tools/tests/suite.py'):
+        os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
+        shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-q', '-m', 'x')
+    git(repo, 'branch', 'fix/a')
+    other = os.path.join(tmp, 'wt', 'SporeCoop-wt', 'fix-a-b')
+    git(repo, 'worktree', 'add', '-q', '-b', 'fix/a-b', other)
+    r = subprocess.run([sys.executable, '-c', 'import sys; sys.path.insert(0, "tools"); import lab; '
+                        'print(lab.worktree("fix/a"))'], cwd=repo, capture_output=True, text=True)
+    got = r.stdout.strip() or r.stderr.strip()[-200:]
+    check(os.path.isdir(got) and os.path.realpath(got) != os.path.realpath(other) and
+          git(got, 'branch', '--show-current').strip() == 'fix/a',
+          f'worktree: fix/a -> {os.path.relpath(got, tmp) if got.startswith("/") else got}, '
+          'not the tree of fix/a-b (BUG-0048)')
+
+
+def game_log_case(tree, tmp):
+    """the harness files in a fake layout <tmp>/gl/SPORE/SporeCoop + a worktree, run from the worktree"""
+    base = os.path.join(tmp, 'gl')
+    repo = os.path.join(base, 'SPORE', 'SporeCoop')
+    for f in ('tools/sporectl.py', 'tools/tests/lane.py', 'tools/tests/twoinst.py', 'tools/tests/fixtures.py'):
+        os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
+        shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-q', '-m', 'x')
+    wt = os.path.join(base, 'SPORE', 'SporeCoop-wt', 'fix', 'x')
+    git(repo, 'worktree', 'add', '-q', '-b', 'fix/x', wt)
+    want = {1: os.path.join(base, 'SPORE', 'SporebinEP1', 'mods', 'logs', 'sporekit.log'),
+            3: os.path.join(base, 'SPORE-lab', 'lane2', 'SporebinEP1', 'mods', 'logs', 'sporekit.3.log')}
+    for where in (repo, wt):
+        for inst, path in want.items():
+            lane = (inst + 1) // 2
+            r = subprocess.run([sys.executable, '-c', 'import sys; sys.path.insert(0, "tools/tests"); import twoinst; '
+                                f'print(twoinst.Monitor({inst}, "host").game_log())'], cwd=where,
+                               env=dict(os.environ, SPORE_LANE=str(lane)), capture_output=True, text=True)
+            got = r.stdout.strip() or r.stderr.strip()[-200:]
+            check(got == path, f'game_log: instance {inst} from {os.path.relpath(where, base)} -> '
+                               f'{os.path.relpath(got, base) if got.startswith("/") else got} (BUG-0068)')
+    # BUG-0124: a fixture without its facts fails Checks.faults() (a fake console that answers nothing)
+    code = ('import sys; sys.path.insert(0, "tools/tests"); import twoinst\n'
+            'class C:\n'
+            '    def call(self, line):\n'
+            '        return {"ok": True, "out": "total faults: 0" if line == "exc" else ""}\n'
+            'twoinst.check_fixture(C(), "tribe")\n'
+            'ck = twoinst.Checks()\n'
+            'ck.faults(host=C())\n'
+            'print("checks ok" if ck.ok else "checks failed")\n')
+    r = subprocess.run([sys.executable, '-c', code], cwd=wt, env=dict(os.environ, SPORE_LANE='2'),
+                       capture_output=True, text=True)
+    check('checks failed' in r.stdout, 'fixture: a fixture that lacks its facts fails Checks.faults() (BUG-0124): '
+          + (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:]])[-1])
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--tree', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    a = ap.parse_args()
+    tree = os.path.abspath(a.tree)
+    print(f'lab self-test of {tree}', flush=True)
+    with tempfile.TemporaryDirectory(prefix='labselftest-') as tmp:
+        lab_cases(tree, tmp)
+        worktree_case(tree, tmp)
+        game_log_case(tree, tmp)
+    print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
+    return 0 if not FAILS else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console  # noqa: E402
+import lane as lane_mod  # noqa: E402 (game_dir: the lane's game folder from any checkout)
 
 NEW = '0.5.1'
 PORT = 47999
@@ -119,7 +120,7 @@ def main():
                                       capture_output=True, text=True)
     print(spore('lane', 'create', str(lane)).stdout.strip())
     spore('kill')
-    game = os.path.join(os.path.dirname(os.path.dirname(ROOT)), 'SPORE-lab', f'lane{lane}')
+    game = lane_mod.game_dir(lane)  # right from a worktree too (BUG-0068)
     bottle = f'SporeLab{lane}'
     b = os.path.join(game, 'SporebinEP1')
     # 1. the game's own files back

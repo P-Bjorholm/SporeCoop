@@ -1,19 +1,19 @@
 ---
 id: BUG-0124
 title: a fixture that lacks its facts never fails the test (check_fixture result ignored)
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#103
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #103
 ---
 
@@ -61,14 +61,18 @@ A missing fixture fact makes the test FAIL, or ends it with a distinct harness e
 Confirmed by reading. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`check_fixture` stores what is missing in `twoinst.FIXTURE_BAD`; `Checks.faults()` prints `FAIL invariant: fixture <name> lacks ...`. A warm reset whose fixture lacks its facts falls back to a cold start.
+
+Suggested in the review:
 
 - Have `start()` remember the result (for example `twoinst.FIXTURE_BAD = bad`) and make `Checks.faults()` print `FAIL invariant: fixture <name> lacks ...` and set `ok = False`.
 - Or raise right in `start()`, so a bad fixture is a clear harness failure.
 - Also fix the warm path: a warm reset onto a fixture missing its facts should fall back to a cold start or fail.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): case fixture (a fake console that answers nothing, fixture tribe). `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 The step above (one fact broken) must give `RESULT: FAIL` with the fixture line. Restored, it must pass.
 
@@ -78,3 +82,4 @@ The step above (one fact broken) must give `RESULT: FAIL` with the fixture line.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #103.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.

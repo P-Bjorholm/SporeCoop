@@ -1,7 +1,7 @@
 ---
 id: BUG-0203
 title: twoinst Monitor.game_log points to a wrong folder when a test runs from a git worktree
-status: open
+status: duplicate
 kind: tooling
 stage: All
 reported: 2026-10-27
@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0068
 ---
 
 ## Report
@@ -32,10 +32,11 @@ can be reported as a freeze.
 the wave 2 world area).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Duplicate of BUG-0068 (same code, same cause), fixed there on fix/w4-lab: `lane.game_log()`.
 
 ## Verification
 <!-- the test: FAIL without the fix (run dir), PASS with it (runs) -->
 
 ## History
 - 2026-10-27: opened.
+- 2026-10-28: closed as duplicate of BUG-0068 (fix/w4-lab).

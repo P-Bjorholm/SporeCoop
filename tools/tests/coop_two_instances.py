@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
+from twoinst import Checks, watch  # noqa: E402
 
 
 def sh(*args):
@@ -52,6 +53,25 @@ def shot(con, name):
     if r['ok']:
         recompress_png(path, 0.5)
     return path
+
+
+def avatar_pos(con):
+    for l in con.call('coop.avatar').get('out', '').splitlines():
+        if l.startswith('pos='):
+            return [float(v) for v in l[5:].split(')')[0].split()]
+    return None
+
+
+def puppet_pos(con):
+    """where this game shows the other player (the "puppet pos" line of coop.status)"""
+    for l in con.call('coop.status').get('out', '').splitlines():
+        if 'puppet pos=(' in l:
+            return [float(v) for v in l.split('puppet pos=(')[1].split(')')[0].split()]
+    return None
+
+
+def dist(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
 
 
 def main():
@@ -96,7 +116,9 @@ def main():
         print(f'guest in the host world after {time.time() - t0:.0f}s:', guest.call('coop.avatar')['out'].splitlines()[:1])
         guest.call('wait.frames 300 60000')
     time.sleep(3)
+    watch(lane.HOST, lane.GUEST)  # freezes and dead consoles fail the test (Checks.faults, BUG-0042)
     # walk the guest somewhere: click on the ground left of the screen
+    g0 = avatar_pos(guest)
     guest.call('click 300 700')
     ok = True
     for _ in range(6):
@@ -106,6 +128,15 @@ def main():
             line = [l for l in st.splitlines() if 'puppet pos' in l]
             print(f'{name}: {line[0].strip() if line else "NO PUPPET"}')
             ok &= bool(line)
+    # what the host sees: the guest walked, and the host shows it at the new place, not the old one
+    g1, seen = avatar_pos(guest), puppet_pos(host)
+    if g0 and g1 and seen:
+        moved, err, stale = dist(g0, g1), dist(g1, seen), dist(g0, seen)
+        print(f'the guest walked {moved:.1f} m; the host shows it {err:.1f} m off ({stale:.1f} m from the start)')
+        ok &= moved > 0.5 and err < stale
+    else:
+        print('positions missing', g0, g1, seen)
+        ok = False
     # M2: NPC proxies + host-authoritative damage
     time.sleep(6)
     glist = guest.call('coop.npc list')['out'].splitlines()
@@ -138,10 +169,10 @@ def main():
     print(f'dna host {d0} -> {d1}, guest {d2}')
     ok &= abs(d1 - d0 - 5) < 0.01 and abs(d2 - d1) < 0.01
     print('screens:', shot(host, 'two_host.png'), shot(guest, 'two_guest.png'))
-    print('host faults:', host.call('exc')['out'].splitlines()[0])
-    print('guest faults:', guest.call('exc')['out'].splitlines()[0])
-    print('RESULT:', 'OK' if ok else 'FAIL')
-    return 0 if ok else 1
+    ck = Checks()
+    ck(ok, 'the checks above')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
 
 
 if __name__ == '__main__':

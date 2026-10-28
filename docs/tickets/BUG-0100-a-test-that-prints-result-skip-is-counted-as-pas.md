@@ -1,19 +1,19 @@
 ---
 id: BUG-0100
 title: a test that prints RESULT: SKIP is counted as passed by the lab
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#78
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #78
 ---
 
@@ -61,12 +61,16 @@ The summary table has only `ok` / `FAIL`, so the skip is invisible unless someon
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`RESULT: SKIP` gives `skipped: true` in results.json, `SKIP` in the console, `skip` in summary.md, and is counted apart ("PASSED: n/m, k skipped"); an exclusive test without a lane 1-5 is recorded the same way.
+
+Suggested in the review:
 
 In `run_one`: `skipped = 'RESULT: SKIP' in text`, return it in the result dict, print `SKIP` instead of `OK `, write `skip` in the summary table, and exclude skipped tests from the "all passed" line (or make the verdict `PASSED (N skipped)` so a reader sees it). Optionally warn at the start of the run when `SPORE_FREE_LANE` is empty and `update` is selected.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): case skipper. `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 The `skipper` fake test above: today `OK` / `PASSED`; with the fix `SKIP` in the output and in `summary.md`.
 
@@ -76,3 +80,4 @@ CLAUDE.md section 3 ("Every feature gets an automated test"; "A test you never s
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #78.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.

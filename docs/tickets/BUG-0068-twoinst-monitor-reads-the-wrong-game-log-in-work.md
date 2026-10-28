@@ -1,19 +1,19 @@
 ---
 id: BUG-0068
 title: twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#46
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-lab
+commits: 824813c, 6f2d12e, f8b9733, bb7154e
+tests: tools/tests/lab_selftest.py (make test)
 signature:
-docs:
+docs: docs/10-dev-pipeline.md 10.3/10.4, docs/06-testing.md
 related: #46
 ---
 
@@ -72,7 +72,9 @@ Neither exists. `loading()` catches the `OSError` and returns False, so `run()` 
 CONFIRMED by running (path computation); the false FROZE follows from the code (CONFIRMED by reading).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`lane.game_dir(n)` / `lane.game_log(inst)` from the git common dir (as lab.lane_game); `twoinst.Monitor.game_log`, update_check.py (which wiped a folder that does not exist from a worktree), diag_check.py, kit_crash.py, kit_freeze.py use them. BUG-0203 is the same bug (closed as duplicate).
+
+Suggested in the review:
 
 One helper in `lane.py`, used by `twoinst.Monitor`, `update_check.py`, `diag_check.py` (which hard-codes `~/Games/Modding/SPORE`) and `coop_rejoin_net.py`:
 
@@ -85,7 +87,9 @@ def game_dir(n=LANE):
 ```
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+A self-test of the tool (no game): case game_log (fake layout SPORE/SporeCoop + SporeCoop-wt/fix/x, lanes 1 and 2, from both checkouts). `python3 tools/tests/lab_selftest.py` (in `make test`): all cases PASS on fix/w4-lab; `--tree <main checkout>` (main 7874654): this case FAILs (every case except clean / harness_once and the main-checkout game_log lines fails there). Smoke on lane 2 with the new lab: out/lab/20261028-030019 (13/14, the one FAIL was the self-test's own fake fault line seen by the outer lab, fixed in f8b9733).
+
+Planned in the review:
 
 A unit test with the fake layout above (no game): `Monitor.game_log()` must equal `lab.lane_game(lane)/SporebinEP1/mods/logs/...` from the main checkout and from a worktree. It fails today from the worktree.
 
@@ -95,3 +99,4 @@ CLAUDE.md section 4 (parallel work in git worktrees), section 3 (lab runs). docs
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #46.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-lab (wave 4), test: lab_selftest.py.
