@@ -183,8 +183,14 @@ def main():
     # host moves; the guest must follow the host's position
     mx, my = map(int, a.move.split(','))
     p0 = avatar_pos(host)
-    host.call(f'click {mx} {my}')
-    time.sleep(4)
+    if mode == 'Cell':  # a cell swims while the button is held (a click moves it ~0.1, BUG-0042)
+        host.call(f'button {mx} {my} down')
+        time.sleep(2.5)
+        host.call(f'button {mx} {my} up')
+        time.sleep(1.5)
+    else:
+        host.call(f'click {mx} {my}')
+        time.sleep(4)
     p1 = avatar_pos(host)
     r1 = remote_pos(guest)
     if p0 and p1 and r1:
