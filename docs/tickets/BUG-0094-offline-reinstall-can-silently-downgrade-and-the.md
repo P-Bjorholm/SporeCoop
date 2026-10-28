@@ -80,6 +80,8 @@ Tests:
   player's coop.ini stays. FAIL with `--old`: `local pack: ...SporeCoop-0.10.0.pack` (Wine listed it
   first) and `older pack: SporeCoop 0.9.0 is installed`, three CHECKs fail. PASS with the fix.
 
+Runs: FAIL without the fix: `out/w4-fail/win_unit_old.txt` (manual run on lane 4, worktree fix/w4-installer); PASS: lab run `out/lab/20261028-030533` (win_unit), smoke `out/lab/20261028-030911` 14/14.
+
 ### Related
 The in-game updater's downgrade guard in mods/coop/autoupdate.cpp (`the release pack is not newer`).
 

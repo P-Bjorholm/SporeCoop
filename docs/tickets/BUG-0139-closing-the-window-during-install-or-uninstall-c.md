@@ -74,6 +74,8 @@ offline, `SPORECOOP_SETUP_TEST_DELAY=1500`. The test clicks Install (WM_COMMAND 
 * PASS with the fix: `closed during the job: no (refused)`, the window closes after the job, every
   file is 0.11.0.
 
+Runs: FAIL without the fix: `out/w4-fail/win_unit_old.txt` (manual run on lane 4, worktree fix/w4-installer); PASS: lab run `out/lab/20261028-030533` (win_unit), smoke `out/lab/20261028-030911` 14/14.
+
 ### Related
 #55 (Install before the GitHub check returns races on the release data), #67 (duplicate file in a pack loses the original on rollback), #72 (offline Reinstall can downgrade).
 

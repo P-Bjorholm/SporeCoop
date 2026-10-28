@@ -55,6 +55,8 @@ Tests:
   * PASS: `frames 1294 -> 1327 -> 1458; the join command took 0.0 s`, the guest is in the host world,
     an unknown name ends with "cannot resolve".
 
+Runs: FAIL without the fix: `out/w4-fail/join_name_old.log` (manual run on lane 4, worktree fix/w4-installer); PASS: lab run `out/lab/20261028-030533` (join_name; also the manual PASS out/w4-fail/join_name_fix.log), smoke `out/lab/20261028-030911` 14/14.
+
 ## History
 - 2026-10-28: opened.
 - 2026-10-28: fixed on fix/w4-installer (wave 4): name lookup on a pinned worker thread, the join goes on in update(); unit and two-game tests.

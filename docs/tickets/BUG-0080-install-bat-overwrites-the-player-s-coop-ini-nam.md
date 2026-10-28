@@ -79,6 +79,8 @@ install.bat < NUL`), `mods\coop.ini` is changed to a name and `[update] check=0`
 * PASS with the fix: `coop.ini after the reinstall: kept`, the missing sporekit.ini is back, the new
   dlls and symbols are in place; `ALL OK`.
 
+Runs: FAIL without the fix: `out/w4-fail/win_unit_old.txt` (manual run on lane 4, worktree fix/w4-installer); PASS: lab run `out/lab/20261028-030533` (win_unit), smoke `out/lab/20261028-030911` 14/14.
+
 ### Related
 `tools/mkpack.py` comment "the player's settings stay"; docs/INSTALL.md section 8.
 

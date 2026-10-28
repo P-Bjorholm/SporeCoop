@@ -73,6 +73,8 @@ to the release data now (setup.cpp has no other global for it), which the review
 GUI paths around it run in `win_unit` (test_setup_close: the real SporeCoopSetup.exe, check thread
 and install job at the same time).
 
+Runs: FAIL without the fix: `out/w4-fail/(TSAN, make test-tsan: no run dir)` (manual run on lane 4, worktree fix/w4-installer); PASS: lab run `out/lab/20261028-030533` (unit in smoke), smoke `out/lab/20261028-030911` 14/14.
+
 ### Related
 None known.
 
