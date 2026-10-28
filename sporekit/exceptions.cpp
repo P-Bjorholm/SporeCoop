@@ -50,6 +50,7 @@ bool exceptions_last(EXCEPTION_RECORD* er, CONTEXT* ctx, double* t)
     if (g_last_t.load() < 0)
         return false;
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_EXC);
     *er = g_last_er;
     *ctx = g_last_ctx;
     *t = g_last_t.load();
@@ -76,6 +77,13 @@ static bool in_our_code(uintptr_t eip, std::string& name)
 static std::vector<ExcRec> g_recs; // unique by (code, eip)
 static std::atomic<uint32_t> g_total{0};
 
+// The handler runs at the first chance of every fault, on the faulting thread, maybe inside a lock
+// of SporeKit (BUG-0115):
+//  * a fault inside the handler itself, or while this thread holds g_mu (SK_TF_IN_EXC), is not
+//    handled again: g_mu is not recursive, taking it again would block the thread for good;
+//  * a fault inside the log's lock is recorded, its log lines are dropped (logv checks SK_TF_IN_LOG);
+//  * under g_mu only copies are made: the name lookup (GetModuleHandleExW takes the loader lock,
+//    another thread holding the loader lock may fault and wait for g_mu) and the log come after.
 static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
 {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
@@ -87,26 +95,47 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_STACK_OVERFLOW &&
         code != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
+    bool fix = fixed(g_fix_reentry);
+    if (fix && (thread_flags() & SK_TF_IN_EXC))
+        return EXCEPTION_CONTINUE_SEARCH;
+    ThreadFlag in_exc(SK_TF_IN_EXC);
     g_total++;
     CONTEXT* c = ep->ContextRecord;
     uintptr_t eip = c->Eip;
-    std::lock_guard<std::mutex> lk(g_mu);
-    g_last_er = *ep->ExceptionRecord;
-    g_last_ctx = *c;
-    g_last_t = now_seconds();
-    for (auto& r : g_recs)
-        if (r.code == code && r.eip == eip) {
-            r.count++;
-            return EXCEPTION_CONTINUE_SEARCH;
-        }
-    if (g_recs.size() >= 64)
-        return EXCEPTION_CONTINUE_SEARCH;
     ExcRec r{};
     r.code = code;
     r.eip = eip;
     r.addr = code == EXCEPTION_ACCESS_VIOLATION ? ep->ExceptionRecord->ExceptionInformation[1] : 0;
     r.tid = GetCurrentThreadId();
     r.count = 1;
+    uint32_t regs[8] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp};
+    memcpy(r.regs, regs, sizeof regs);
+    const uint32_t* sp = (const uint32_t*)c->Esp;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
+        for (int i = 0; i < 12; i++)
+            r.stack[i] = sp[i];
+        // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
+        const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
+        int n = 0;
+        for (const uint32_t* q = sp; q < end && q < sp + 512 && n < 10; q++)
+            if (exe_return_address(*q))
+                r.rets[n++] = *q;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_last_er = *ep->ExceptionRecord;
+        g_last_ctx = *c;
+        g_last_t = now_seconds();
+        for (auto& x : g_recs)
+            if (x.code == code && x.eip == eip) {
+                x.count++;
+                return EXCEPTION_CONTINUE_SEARCH;
+            }
+        if (g_recs.size() >= 64)
+            return EXCEPTION_CONTINUE_SEARCH;
+        g_recs.push_back(r); // the name is filled in below
+    }
     r.where = symbols_reverse(eip);
     if (r.where.empty()) {
         HMODULE m = nullptr;
@@ -120,28 +149,18 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
             r.where = narrow(s.substr(s.find_last_of(L"\\/") + 1)) + off;
         }
     }
-    uint32_t regs[8] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp};
-    memcpy(r.regs, regs, sizeof regs);
-    const uint32_t* sp = (const uint32_t*)c->Esp;
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT)
-        for (int i = 0; i < 12; i++)
-            r.stack[i] = sp[i];
-    // the call chain (roughly): return addresses within 2 KB of the stack, same committed region
-    if (VirtualQuery(sp, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
-        const uint32_t* end = (const uint32_t*)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize);
-        int n = 0;
-        for (const uint32_t* q = sp; q < end && q < sp + 512 && n < 10; q++)
-            if (exe_return_address(*q))
-                r.rets[n++] = *q;
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        for (auto& x : g_recs)
+            if (x.code == code && x.eip == eip && x.where.empty())
+                x.where = r.where;
     }
-    g_recs.push_back(r);
     std::string mod;
     if (!g_mod_fault.load() && in_our_code(eip, mod)) {
         snprintf(g_mod_fault_text, sizeof g_mod_fault_text, "0x%08X %s", (unsigned)eip, r.where.c_str());
         g_mod_fault = true;
     }
-    // logging takes the log mutex only; safe enough for a first-chance handler
+    // logging takes the log mutex only (and drops the lines when this thread already holds it)
     logf(&g_kit_mod, SK_ERROR,
          "exception 0x%08lX at 0x%08X %s (data 0x%08X) tid=%lu eax=%08X ebx=%08X ecx=%08X edx=%08X "
          "esi=%08X edi=%08X ebp=%08X esp=%08X",
@@ -159,6 +178,15 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep)
         logf(&g_kit_mod, SK_ERROR, "  called from: %s", named.c_str());
     }
     return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// kit.test excfault: a fault while this thread holds the exception logger's lock (BUG-0115)
+void exceptions_fault_test()
+{
+    volatile uint8_t* page = (volatile uint8_t*)test_fault_page();
+    std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_EXC);
+    page[0] = 1;
 }
 
 void exceptions_pump()
@@ -179,6 +207,7 @@ void exceptions_install()
 std::string exceptions_report()
 {
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_EXC);
     std::string s = "total faults: " + std::to_string(g_total.load()) + "\n";
     for (auto& r : g_recs) {
         char b[512];
@@ -204,6 +233,7 @@ std::string exceptions_report()
 void exceptions_clear()
 {
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_EXC);
     g_recs.clear();
     g_total = 0;
 }

@@ -50,6 +50,9 @@ enum SkCommandFlags {
     SK_CMD_ANY_THREAD = 1,  /* executed on the console thread (must be thread safe) */
     SK_CMD_OUTSIDE_FRAME = 2, /* main thread, but outside IDirect3DDevice9::Present: for code that
                                  creates D3D resources (Spore UI windows, fonts, textures) */
+    SK_CMD_NOT_ON_MAIN = 4,   /* with SK_CMD_ANY_THREAD: waits for frames or stops the main thread
+                                 from outside; refused when called on the main thread (the cheat
+                                 console, a mod's command_exec), where it would freeze the game */
 };
 
 typedef void (*SkTaskFn)(void* user);
