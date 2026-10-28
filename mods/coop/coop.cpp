@@ -36,6 +36,7 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "savestrip.h"
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
@@ -1271,6 +1272,7 @@ void on_frame(void*, int, void*)
         world::tick(g_sess);
     else
         world::guest_tick(); // a received world waiting for the player to leave its editor
+    savestrip::tick();
     npc::tick(now);
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now);
@@ -3007,6 +3009,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
+    savestrip::init(H, M); // BUG-0020: our objects never go into a save
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
     npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
     social::Ctx sc;
