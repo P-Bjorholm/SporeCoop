@@ -2025,6 +2025,10 @@ std::string debug(const std::vector<std::string>& a)
                  mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f, (int)sc[0], (int)sc[1]);
         return b;
     }
+    if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
+        F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
+        return "invuln set";
+    }
     if (a.size() >= 2 && a[0] == "hp") {
         F<int>(av, kHp) = atoi(a[1].c_str());
         return "hp set";
@@ -2071,6 +2075,10 @@ std::string debug(const std::vector<std::string>& a)
     float pd = 0;
     nearest_partner(1e9f, nullptr, &pd);
     std::string ko;
+    if (C.puppets) // what we draw of each partner (a knocked out one: translucent)
+        for (auto& p : C.puppets())
+            if (p.cell)
+                ko += "puppet " + std::to_string(p.id) + " op=" + std::to_string(F<float>(p.cell, kOpacity)).substr(0, 4) + "\n";
     for (auto& [id, k] : g_ko) {
         uint8_t* pc = puppet_cell(id);
         char kb[96];
@@ -2079,9 +2087,9 @@ std::string debug(const std::vector<std::string>& a)
         ko += kb;
     }
     snprintf(b, sizeof b,
-             "avatar hp=%d level=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
+             "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d\n",
-             F<int>(av, kHp), F<int>(av, kLevel), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
+             F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
              g_downed ? 1 : 0, pd, revive_dist(av), local);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the unlocked part flags S+0x34 (13 bytes)
