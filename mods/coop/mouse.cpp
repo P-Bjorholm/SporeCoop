@@ -1,11 +1,13 @@
 // Primary-button clicks on the game window (mouse.h).
 #include "mouse.h"
+#include "fixes.h"
 
 #include <windows.h>
 
 namespace mouse {
 
 bool g_fix = true;
+COOP_FIX("map.click", "BUG-0090 BUG-0145", g_fix, "space: map name tags react only to clicks in the game window");
 static HHOOK g_hook;
 static HWND g_wnd;
 static volatile uint32_t g_clicks;

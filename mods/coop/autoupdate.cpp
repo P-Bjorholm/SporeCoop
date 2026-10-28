@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "../../updater/winupdate.h"
+#include "fixes.h"
 
 namespace autoupdate {
 
@@ -45,6 +46,7 @@ static std::wstring game_root()
 static std::atomic<bool> g_unloaded{false};
 static std::atomic<int> g_threads{0};
 bool g_pin_fix = true; // tests: `coop.corefix update_pin 0` = threads without a module reference
+COOP_FIX("core.update_pin", "BUG-0060", g_pin_fix, "update: its threads hold a reference to their module (hot reload)");
 
 static bool start_thread(LPTHREAD_START_ROUTINE fn)
 {

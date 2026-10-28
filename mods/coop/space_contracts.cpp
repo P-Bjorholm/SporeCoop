@@ -28,6 +28,7 @@
 #include "net/utf8.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -94,6 +95,7 @@ int g_wave_result;                // the raid's end seen by spacecoop's SetState
 void* g_wave_mission;             // the cMission of the wave (pointer, checked in the mission list)
 std::set<void*> g_toughened;      // ships of the wave mission whose HP was raised (once each)
 bool g_wave_fix = true;
+COOP_FIX("contracts.wave", "BUG-0046", g_wave_fix, "space: an armada wave keeps its own mission");
 uint32_t n_resumed;               // returns that resumed the running raid
 uint32_t g_stable_place;          // host: the place the crew check saw last, and since when
 double g_stable_since, g_next_wave, g_last_tick, g_last_publish, g_next_offer;

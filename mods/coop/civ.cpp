@@ -17,6 +17,7 @@
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -58,6 +59,7 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 // orders go to its own game (the host sends no states and drops orders outside Civ).
 // `coop.civ fix away 0`: the old frozen vehicles (tests).
 static bool g_fix_away = true;
+COOP_FIX("civ.away", "BUG-0151", g_fix_away, "civ: while the host is away the guest's vehicles run their own AI");
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
@@ -135,6 +137,8 @@ struct HV {
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
 static bool g_fix_boost = true; // BUG-0040: boosts only on listed vehicles, cleared with the session
 static bool g_fix_world = true; // BUG-0059: every pointer table cleared when the world changes
+COOP_FIX("civ.boost", "BUG-0040", g_fix_boost, "civ: boosts only on listed vehicles, cleared with the session");
+COOP_FIX("civ.world", "BUG-0059", g_fix_world, "civ: every pointer table cleared when the world changes");
 static uint32_t g_world_resets;
 static std::unordered_map<void*, HV> g_hv;
 static std::unordered_map<uint16_t, void*> g_hv_by_id;
@@ -148,6 +152,7 @@ static std::vector<uint8_t> g_split_for;
 // BUG-0031: vehicles of a player who left get a present owner; a capture never names an absent
 // player. `coop.civ fix orphans 0`: the old behaviour (tests).
 static bool g_fix_orphans = true;
+COOP_FIX("civ.orphans", "BUG-0031", g_fix_orphans, "civ: vehicles of a player who left get a present owner");
 static uint32_t g_orphans_given;
 
 // ---------------- guest ----------------
@@ -472,6 +477,7 @@ static uint32_t g_cities_founded, g_cities_in, g_cities_blocked, g_cities_caught
 // lost. The guest compares the host's city count of every snapshot with its own and founds the next
 // site itself when it stays behind (`coop.civ fix cities 0`: only the event, the code before).
 static bool g_fix_cities = true;
+COOP_FIX("civ.cities", "BUG-0120", g_fix_cities, "civ: a guest founds an NPC city it missed from the host's count");
 static double g_city_short_since = -1, g_last_city_spawn = -1e9;
 static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 {
@@ -518,6 +524,7 @@ using SpawnVehicle_t = void*(SK_THISCALL*)(void*, int, int, uint32_t, uint32_t, 
 static SpawnVehicle_t o_SpawnVehicle;
 static std::map<uintptr_t, uint32_t> g_local_spawns;
 static bool g_fix_aispawn = true;
+COOP_FIX("civ.aispawn", "BUG-0188", g_fix_aispawn, "civ: the NPC AI spawns no vehicles on guests");
 static uint32_t g_ai_spawns_blocked;
 static uintptr_t g_ai_spawn_ret[6];
 static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint32_t k0, uint32_t k1, uint32_t k2, int space)
@@ -755,6 +762,7 @@ static bool g_sw_bypass;
 // BUG-0117: the vote's weapon and target are its own (captured), not statics a second request
 // overwrote. `coop.civ fix sw_vote 0`: the old statics (tests).
 static bool g_fix_sw_vote = true;
+COOP_FIX("civ.sw_vote", "BUG-0117", g_fix_sw_vote, "civ: a superweapon vote keeps its own weapon and target");
 static uint32_t g_sw_refused;
 static int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
 static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
@@ -1058,6 +1066,7 @@ static bool movie_playing()
 // (the game's EndCinematic, as Enter does), so a host who is away does not stop everybody's game.
 // `coop.civ fix caption 0`: the old wait for the host's OK (tests).
 static bool g_fix_caption = true;
+COOP_FIX("civ.caption", "BUG-0187", g_fix_caption, "civ: the host's capture caption closes itself when guests wait");
 static double g_caption_wait = 8.0, g_movie_since;
 static uint32_t g_captions_closed;
 static void movie_tick()

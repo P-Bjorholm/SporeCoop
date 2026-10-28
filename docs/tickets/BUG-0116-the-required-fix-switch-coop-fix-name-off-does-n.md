@@ -1,19 +1,19 @@
 ---
 id: BUG-0116
 title: the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#95
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-registry
+commits: 4099ebc, dd3c506, ed70db7
+tests: unit (tests/fixes_tests.cpp), fix_registry; twins via SPORE_FIX_OFF: creature_kills, creature_desync, cell_leave; alt_enter --without-fix
 signature:
-docs:
+docs: docs/06-testing.md#testing-fix-registry, mods/coop/fixes.h
 related: #95
 ---
 
@@ -71,17 +71,38 @@ One documented switch command (`coop.fix` with no arguments listing all fixes an
 Confirmed by reading (grep over the whole tree). A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+`mods/coop/fixes.h/.cpp`: one registry. A module registers each fix bool with one line next to its
+definition, `COOP_FIX("<area>.<switch>", "BUG-NNNN", bool, "what it does")`; the registry only
+points at the bools. `coop.fix` / `coop.fix list` (all switches: on/off, ticket, one line),
+`coop.fix <name> on|off`, `coop.fix all on|off`. 102 switches registered (every switch of
+`coop.pool fix`, `coop.npc <x>`, `coop.civ fix`, `coop.tribe fix`, `coop.res fix`, `coop.worldfix`,
+`coop.corefix`, `coop.sessionfix`, `coop.framefix`, `coop.savestrip`, `coop.fleet`/`coop.space`
+`<x>fix`, `coop.role fix`, `coop.give fix`); the old commands stay and act on the same bools.
+SporeKit's fixes stay under `kit.fix` (another DLL).
 
-- Add `coop.fix` in coop.cpp over a small registry `{name, bool*}`. Register the existing flags: `mirrorfix`, `cinedefer`, `strays`, `hatch`, `partners`.
-- Add switches for the fixes that lack one (at least the alt-enter guard and play_death).
-- Keep the old commands as aliases.
-- Have `tools/tickets.py check` warn when a fixed ticket names no switch.
+New switches for 0.7.2.x fixes that had none: `game.adapter_key` (BUG-0012), `pool.forget`
+(BUG-0006), `npc.stale_proxy` + `npc.world_despawn` (BUG-0009), `npc.play_death` (BUG-0015),
+`creations.own_species` (BUG-0017). Not done (no single branch to switch, a redesign each):
+BUG-0002 (cell meat), BUG-0003 (join the played planet), BUG-0010 (species request).
+
+`SPORE_FIX_OFF=<name>,...` (tools/tests/twoinst.py) switches fixes off on both games right after
+`twoinst.start()`, so any two-game test can run without a fix. Not done from the review's list:
+a `tickets.py check` warning for fixed tickets without a switch (most older tickets name none).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A test runs `coop.fix` and checks that every listed fix is `on` by default. Each fixed ticket's test gets a `--without-fix` mode using `coop.fix <name> off`, and it must FAIL there (as coop_cell_spin.py and coop_migration.py already do).
+* `tests/fixes_tests.cpp` (make test): registry, command parsing, and a scan of mods/coop: every
+  `COOP_FIX` well formed and unique, every bool named like a fix switch registered. FAIL before the
+  registrations (72 fix bools without COOP_FIX), ok after (102 registrations).
+* `coop_fix_registry.py` (suite `fix_registry`, lane 6): FAIL on main + the test (`unknown command:
+  coop.fix`, run 20261028-025840, kept in the agent's scratch dir), PASS on the branch
+  (out/lab/20261028-025806, out/lab/20261028-030127).
+* The new switches bring their bug back (lane 6, SPORE_FIX_OFF / --without-fix, all FAIL):
+  `coop_alt_enter.py --without-fix` (287 faults at 0x7777BE), `npc.play_death` creature_kills ("the
+  guest's mirror is dead ... False"), `npc.stale_proxy,npc.world_despawn` creature_desync (22 living
+  copies of old NPCs), `pool.forget` cell_leave (mirrors=144 kept, a guest fault).
+  `creations.own_species` with SPORE_FIX_OFF does not reproduce BUG-0017: the host's creations reach
+  the guest during the join, before the switch goes off (the species checks passed); the switch
+  needs to be off before the join (not done).
 
 ### Related
 #20, #51 (tests that pass without proving the fix).
@@ -89,3 +110,4 @@ A test runs `coop.fix` and checks that every listed fix is `on` by default. Each
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #95.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-registry: coop.fix registry over every switch, new switches for BUG-0006/0009/0012/0015/0017, SPORE_FIX_OFF for tests.

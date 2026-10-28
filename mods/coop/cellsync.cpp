@@ -15,6 +15,7 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 namespace cellsync {
 
@@ -126,6 +127,10 @@ static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_
 // sent to the host), to show what the fixes change in the same session
 static bool g_mirror_fixes = true;
 static bool g_leave_fix = true; // coop.pool leavefix 0|1: reproduce voluntary leave before BUG-0028
+COOP_FIX("pool.mirror", "BUG-0001", g_mirror_fixes, "cell: the guest turns the host cells and sends chunk and lethal bites (coop.pool mirrorfix)");
+static bool g_fix_forget = true; // off: mirrors kept after the stage, destroyed in its freed pool (BUG-0006, tests)
+COOP_FIX("pool.forget", "BUG-0006", g_fix_forget, "cell: mirrors and puppet indices are forgotten once the Cell stage is left");
+COOP_FIX("pool.leave", "BUG-0028", g_leave_fix, "cell: a guest leaving the session drops its mirror cells (coop.pool leavefix)");
 
 bool voluntary_leave_cleanup_enabled() { return g_leave_fix; }
 
@@ -140,6 +145,15 @@ static bool g_fix_koreset = true;  // BUG-0070: our knockout ends with the sessi
 static bool g_fix_bodylevel = true; // BUG-0041: a level-up during the regrowth gives the level's own size
 static bool g_fix_rescue = true;    // BUG-0131: a knocked-out partner rescues, revives nobody
 static bool g_fix_guestbite = true; // BUG-0078: a guest's bite passes DamageCell's gate (ShouldNotAttack(victim, puppet), +0x17C, +0x111)
+COOP_FIX("pool.purge", "BUG-0032", g_fix_purge, "cell: mirrors removed only after a complete state round");
+COOP_FIX("pool.hostof", "BUG-0088", g_fix_hostof, "cell: a recreated mirror drops its old local index");
+COOP_FIX("pool.foodseq", "BUG-0051", g_fix_foodseq, "cell: the guest keeps its meals the host has not counted yet");
+COOP_FIX("pool.resend", "BUG-0128", g_fix_resend, "cell: food / DNA totals sent again every 2 s and to newcomers");
+COOP_FIX("pool.kostale", "BUG-0061", g_fix_kostale, "cell: a remote knockout ends when its owner leaves or stops refreshing it");
+COOP_FIX("pool.koreset", "BUG-0070", g_fix_koreset, "cell: our knockout ends with the session or the stage");
+COOP_FIX("pool.bodylevel", "BUG-0041", g_fix_bodylevel, "cell: a level-up during the regrowth gives the level's own size");
+COOP_FIX("pool.rescue", "BUG-0131", g_fix_rescue, "cell: a knocked-out partner rescues, revives nobody");
+COOP_FIX("pool.guestbite", "BUG-0078", g_fix_guestbite, "cell: a guest's bite passes the game's ShouldNotAttack gate");
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
@@ -1337,7 +1351,7 @@ void tick(double now)
 {
     static bool was_in_cell;
     bool cell = in_cell();
-    if (!cell && (was_in_cell || !g_mirrors.empty())) {
+    if (!cell && (was_in_cell || !g_mirrors.empty()) && g_fix_forget) {
         if (was_in_cell)
             reset_knockout(); // no avatar any more: only our state is reset
         forget_mirrors();
@@ -1522,7 +1536,7 @@ void on_session_end()
     g_meals.reset();
     g_food_ack.clear();
     g_food_tx.clear();
-    if (in_cell()) // outside the Cell stage the indices point into a pool that is gone
+    if (in_cell() || !g_fix_forget) // outside the Cell stage the indices point into a pool that is gone
         for (auto& [h, m] : g_mirrors)
             if (m.local)
                 destroy_local(m.local);

@@ -10,6 +10,7 @@
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 extern const SkHost* g_host_for_modes;
 extern SkMod* g_mod_for_modes;
@@ -152,6 +153,7 @@ static void space_fill(void* u, net::PlayerState& st)
 }
 
 bool ufo_ident_fix = true;
+COOP_FIX("fleet.type", "BUG-0111", ufo_ident_fix, "space: only our own puppets count as puppets, not any UfoType 6 ship (coop.fleet typefix)");
 static std::unordered_map<void*, skg::ResourceKey> g_ufo_ident; // our puppets: the model key they got
 
 static void* space_spawn(const net::PlayerState& s, void* local)
@@ -261,6 +263,7 @@ uint8_t* cell_game()
 constexpr uint32_t kCellParticles = 1500;
 
 bool cell_at_fix = true;
+COOP_FIX("pool.cellat", "BUG-0083", cell_at_fix, "cell: modes::cell_at refuses the slot past the pool's used range");
 
 uint8_t* cell_at(uint32_t idx)
 {

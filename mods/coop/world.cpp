@@ -16,6 +16,7 @@
 #include "modes.h"
 #include "slotfs.h"
 #include "sui.h"
+#include "fixes.h"
 
 namespace world {
 
@@ -407,6 +408,14 @@ static bool g_world_reset_fix = true;  // BUG-0074: the session end drops the gu
 static bool g_drop_peer_fix = true;    // BUG-0166: shares for a player who left are dropped
 static bool g_one_save_fix = true;     // BUG-0112: one save for every share that waits at the same time
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
+COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
+COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
+COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
+COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+COOP_FIX("world.load_in_editor", "BUG-0157", g_editor_load_fix, "world: a queued load never starts inside an editor");
+COOP_FIX("world.busy_slot", "BUG-0035", slotfs::g_busy_fix, "world: a received world never moves or overwrites the slot being played");
+COOP_FIX("world.slot_match", "BUG-0087", slotfs::g_match_fix, "world: a received world goes only into its own host's co-op slot");
+COOP_FIX("world.write_check", "BUG-0105", slotfs::g_write_fix, "world: a world whose files could not be written is not loaded");
 static unsigned g_share_saves;         // saves posted for shares (tests)
 static unsigned g_shares_dropped;      // shares dropped because their player left (tests)
 static unsigned g_loads_dropped;       // guest: queued loads dropped at a session end (tests)

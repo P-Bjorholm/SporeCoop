@@ -9,12 +9,14 @@
 #include "game.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 namespace savestrip {
 
 static const SkHost* H;
 static SkMod* M;
 static bool g_on = true;
+COOP_FIX("savestrip.on", "BUG-0020", g_on, "saves: our puppets, proxies and their herds are kept out of saves (coop.savestrip 0|1)");
 static std::vector<Filter> g_filters;
 static DWORD g_main_tid;
 static void* g_last_ser;      // the COMSerializer of the save being written
@@ -45,6 +47,7 @@ static bool own_kind_herd(void* h)
 // (not checked what a null member does on load): a puppet in the avatar's herd (the fallback for a
 // partner whose creation is unknown), a guest's proxies in the nest herds of the game.
 static bool g_owner_fix = true; // tests: `coop.savestrip owner 0` strips by herd kind alone (the first version)
+COOP_FIX("savestrip.owner", "BUG-0020", g_owner_fix, "saves: only herds made for our objects are stripped, never a pack member");
 static std::unordered_set<void*> g_strip_herds, g_keep_herds;
 
 static bool creature_filter(void* o, uint32_t noun)

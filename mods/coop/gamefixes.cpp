@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <string>
 
+#include "fixes.h"
+
 namespace gamefixes {
 
 static const SkHost* H;
@@ -127,9 +129,15 @@ static void __fastcall planet_clear_guard(void* sim, void*)
 using AppFlagFn = void(__thiscall*)(void*);
 static AppFlagFn g_next_adapter_orig, g_toggle_fullscreen;
 static std::atomic<unsigned> g_adapter_keys{0};
+static bool g_adapter_fix = true; // off: the game's own next-adapter switch (faults at 0x7777BE, tests)
+COOP_FIX("game.adapter_key", "BUG-0012", g_adapter_fix, "gamefixes: Alt+Shift+Enter toggles fullscreen, not the game's next-adapter switch");
 
 static void __fastcall next_adapter_guard(void* app, void*)
 {
+    if (!g_adapter_fix) {
+        g_next_adapter_orig(app);
+        return;
+    }
     if (++g_adapter_keys <= 4)
         H->log(M, SK_WARN, "game fixes: Alt+Shift+Enter (next display adapter) crashes Spore: toggling fullscreen instead");
     g_toggle_fullscreen(app);

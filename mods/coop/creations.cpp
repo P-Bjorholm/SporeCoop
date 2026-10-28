@@ -13,6 +13,7 @@
 #include "slotfs.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 namespace creations {
 
@@ -41,6 +42,8 @@ constexpr int kPrioPlayer = 1000, kPrioWorld = 2000; // EditorSaves is 1000; the
 // and a species of the host's world that is one of the host's own creations (owner 0, id = the crt
 // instance): the guest uses it under a key of its own (see creations.h)
 constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
+static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
+COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
 
 static uintptr_t a_GetDb, a_OpNew, a_DbCtor, a_RmPtr, a_SetSpecies, a_GetEmpire, a_CellPreload;
 
@@ -976,7 +979,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
     if (kind == kOwnSpecies) {
-        apply_own_species(data);
+        if (g_own_species_fix)
+            apply_own_species(data);
         return;
     }
     if (is_host()) { // keep it for players joining later and pass it on
@@ -999,6 +1003,7 @@ void on_player_join(uint8_t id)
 }
 
 bool g_leave_fix = true;
+COOP_FIX("core.creations_leave", "BUG-0076", g_leave_fix, "creations: a player's creations go with the player, a new one does not inherit them");
 
 void on_player_leave(uint8_t id)
 {

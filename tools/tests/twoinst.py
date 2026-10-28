@@ -234,7 +234,18 @@ def warm_reset(host, guest, fixture, planet):
     return True
 
 
-def start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):
+def start(*a, **kw):
+    """_start(), then SPORE_FIX_OFF=<name>[,<name>...] switches those fixes off on both games
+    (`coop.fix <name> off`, BUG-0116): any test can run once without a fix to show that it still
+    catches the bug. Fixes that act while the guest joins are on until then."""
+    host, guest = _start(*a, **kw)
+    for name in filter(None, os.environ.get('SPORE_FIX_OFF', '').split(',')):
+        for con in (host, guest):
+            print('  SPORE_FIX_OFF: ' + con.call(f'coop.fix {name.strip()} off')['out'].strip(), flush=True)
+    return host, guest
+
+
+def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, guest_creations=True):
     """kill, deploy, restore the fixture for the host, empty guest profile, start both,
     load the host game (tools/tests/load_game.py), host + join; returns (host, guest).
     With SPORE_WARM=1 (tools/lab.py) the running games of the lane are reused when they run the

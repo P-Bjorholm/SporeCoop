@@ -22,7 +22,8 @@ description: Fix one SporeCoop player bug or crash report on your own branch, wo
    `tools/tests/coop_<name>.py` + a `suite.py` entry. It must **FAIL** on the code without the fix
    (record the run). Cannot reproduce: a known-issues entry (template at its top), report, stop.
 5. Root cause, then the fix. Game calls by name (`.sym`, GOG 2024, confidence word); mind object
-   lifetime (CLAUDE.md 2); keep the old path behind `coop.fix <name>` where possible.
+   lifetime (CLAUDE.md 2); keep the old path behind `coop.fix <name>` where possible
+   (one `COOP_FIX` line next to the bool, mods/coop/fixes.h).
 6. The test **PASSES** with the fix (2x); the related tests of the area still pass; `make test`.
 7. Record in the same branch: the ticket (status fixed / not-reproduced / game-bug, fixed_in
    `unreleased`, branch, commits, tests, signature, docs; a History line), `.sym`,

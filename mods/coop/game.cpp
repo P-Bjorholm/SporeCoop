@@ -7,6 +7,7 @@
 
 #include "sporekit_game.hpp"
 #include "swap_ledger.h"
+#include "fixes.h"
 
 using namespace skg;
 
@@ -241,6 +242,7 @@ static void* g_swap_puppet; // ... the puppet written into mpAvatar, and the tun
 static void* g_swap_lent;
 static uint32_t g_ai_swaps, g_swaps_restored;
 static bool g_swap_guard = true;      // coop.npc swapguard off: no restore after an unwind (BUG-0110)
+COOP_FIX("npc.swapguard", "BUG-0110", g_swap_guard, "creature: a fault in the NPC AI tick does not leave the puppet as the avatar");
 static bool g_swap_fault_test = false; // tests: the next swapped tick leaves like a fault would
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
 uint32_t ai_swaps() { return g_ai_swaps; }
@@ -435,6 +437,7 @@ static uint32_t g_world_epoch = 1;
 static bool g_epoch_in_world = false;
 static void* g_epoch_avatar = nullptr;
 static bool g_epoch_fix = true;
+COOP_FIX("npc.world", "BUG-0119", g_epoch_fix, "creature: worlds told apart by a counter, not by the avatar address (coop.npc worldfix)");
 void set_world_epoch_fix(bool on) { g_epoch_fix = on; }
 
 uint32_t world_epoch()
@@ -527,8 +530,10 @@ static WorldToken world_now()
 static std::vector<std::pair<void*, WorldToken>> g_destroy_later; // creature, world when queued
 static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
+COOP_FIX("npc.cinedefer", "BUG-0018", g_destroy_defer, "creature: creatures removed during a cinematic go when it is over");
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
 static bool g_defer_keeps_puppet = true; // tests: off = unregistered at once (coop.npc deferpuppet off, BUG-0066)
+COOP_FIX("npc.deferpuppet", "BUG-0066", g_defer_keeps_puppet, "creature: a deferred puppet or proxy keeps its puppet state");
 void set_defer_keeps_puppet(bool on) { g_defer_keeps_puppet = on; }
 
 bool destroy_pending(void* c)

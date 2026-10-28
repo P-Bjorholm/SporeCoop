@@ -8,6 +8,7 @@
 #include "net/shared_ledger.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
+#include "fixes.h"
 
 namespace shared {
 
@@ -119,6 +120,8 @@ struct Res {
 //  floor: the totals never go below 0, a guest keeps its in-flight changes (BUG-0106)
 static bool g_reset_fix = true;
 static bool g_floor_fix = true;
+COOP_FIX("res.reset", "BUG-0049", g_reset_fix, "shared: the sync state ends with the session, a guest sends nothing before WELCOME");
+COOP_FIX("res.floor", "BUG-0106", g_floor_fix, "shared: totals never go below 0, a guest keeps its in-flight changes");
 
 // the game's AddMoney clamps to 0..99 999 999; raw writes of a total do the same (BUG-0106)
 static double money_clamp(double v)

@@ -21,6 +21,7 @@
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
 #include "cell_logic.h"
+#include "fixes.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -792,6 +793,7 @@ static std::string fly_to(uint32_t star, bool pay)
 }
 
 static bool g_teleport_fix = true;
+COOP_FIX("map.teleport", "BUG-0063", g_teleport_fix, "space: flying to a partner in the galaxy view is refused, costs nothing");
 
 // to a partner: its star system (the 0.6 jump), or, while it flies in the galaxy view, the star
 // next to its ship (SpaceTeleportTo: instant and free in the galaxy view, docs/re/space.md 7.3)

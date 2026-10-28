@@ -1,4 +1,5 @@
 #include "social.h"
+#include "fixes.h"
 #include "creations.h"
 
 #include <algorithm>
@@ -222,6 +223,7 @@ static uint32_t g_goal_dna_dropped = 0, g_goal_dna_paid = 0;
 // BUG-0205: a guest's goal reward (K_GOAL) that reaches the host while it has no creature (an editor,
 // a load) waits here and is checked and paid when the host's creature is back. false: dropped (tests)
 bool g_goal_owe_fix = true;
+COOP_FIX("core.away_goal", "BUG-0205", g_goal_owe_fix, "creature: a goal reward that reaches a host without a creature is paid later");
 struct OwedGoal {
     ResourceKey k;
     int outcome;
