@@ -14,7 +14,7 @@ commits:
 tests:
 signature:
 docs:
-related:
+related: BUG-0122, BUG-0188
 ---
 
 ## Report
@@ -39,3 +39,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28 (fix/w2-civ): not reproduced at 20-27 m: `play_civ.py --minutes 10 --seed 9` on lane 7 (GOG 2024, before the BUG-0188 fix and without the BUG-0122 fix) gave n=2430, p90 0.34 m, max 17.4 m (one sample, vehicle v2). Both candidates of the report are being removed by other fixes: the receive-time velocity of BUG-0122 (fix/w2-net: a late or bunched snapshot made the mirror overshoot by 22-40 units in the harness, which fits a single 20-27 m sample of a fast vehicle) and the guest's own NPC AI vehicles that could be bound as a mirror within 25 m (BUG-0188, fixed here; seen bound once in `coop_civ_ai_spawn.py --nofix`). Left open: re-run play_civ seed 9 after both branches are merged; close if the max stays under ~10 m. Most likely the same cause as BUG-0122 (inferred, not proven).

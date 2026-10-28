@@ -669,3 +669,27 @@ and BUG-0106:
   60 m (lane 7). Counter `cities_caught_up`; switch `coop.civ fix cities 0`. ✔
 * `call Simulator::cCivExpansion::SpawnNextCity thiscall <ex> 0 0` from the console goes through
   the co-op hook and broadcasts the founding (instant 0, who 0); instant 1 does not broadcast. ✔
+
+## The other nations' vehicle purchases (2026-10-28, fix/w2-civ)
+<a id="civ-ai-vehicle-spawns"></a>
+
+GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`): 0xBD72B0,
+0xBDE5F0, 0xBE5890, 0xBE75C0, 0xBF9960, 0xBF9FB0, 0xBFA7A0, 0xBFB160, 0xBFBA70, 0xBFBD30,
+0xCF3350, 0xCF72B0, 0xCFB7C0, 0xD09200 (9 sites), UI::RolloverCivCity::HandleUIMessage.
+* **FUN_00BFBD30** fastcall(civ) = the civilization AI update (called from 0xAE61C0). Player civ:
+  1 in 10 ticks, outside Space, a free vehicle when it has none and less than $1000 (spawn at
+  0xBFBE5C). Other nations: per city FUN_00BE5890 and FUN_00BDE5F0, then FUN_00BF9960,
+  FUN_00BF9FB0, FUN_00BFA7A0(0), FUN_00BFA7A0(1), FUN_00BF8850, FUN_00BFB160, FUN_00BF5DF0, ...;
+  in Space also FUN_00BFBA70 (military spawn, uses the result: `mov ecx,eax` at 0xBFBD1E). ✔
+* **FUN_00BE5890** fastcall(city) = NPC city tick: CreateBuilding growth (blocked on guests
+  since 0f5d5c6) and, when `city+0x760` is 0 and a vehicle slot is left, the city's first vehicle
+  (`SpawnVehicle` at 0xBE5A6B, result ignored, then `city+0x760 = 1`). ✔
+* Result use after the call (disassembly): 0xBE5A6B none; 0xBDEA1C `test eax,eax / jz`;
+  0xBF9F53 none (SpendMoney follows); 0xBFA746, 0xBFB0B1, 0xBFB692 none (budget `civ+0x4B0 -=
+  cost`). These six get null on a guest (BUG-0188, `.sym` `SporeCoop::CivAI_*_SpawnVehicle_Ret`).
+  0xBE7663 is in the city message handler FUN_00BE75C0 (message 0x5416D55; result ignored). ✔
+* Runtime (lane 7, `play_civ.py --seed 9`, 10 min): the guest's game spawned 11 vehicles by
+  itself: 6 x 0xBE5A70 (one per new NPC city), 3 x 0xBF9F58, 2 x 0xBFB0B6. In 4 idle minutes on
+  civ_npc without new cities: none. ✔
+* Diagnostics: `coop.civ spawns` (the guest's spawns by caller, refused ones), switch
+  `coop.civ fix aispawn 0`.

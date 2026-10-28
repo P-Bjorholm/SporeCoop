@@ -154,15 +154,6 @@ anchor so other docs can link to it:
   without health (`coop.tribe fix gameover 0`: the old way).
 * Ticket: BUG-0172.
 
-## Tribe: knocked-out members stand on the guest
-
-* The game's chieftain (and members of NPC tribes) lie knocked out with 0 health until they
-  respawn; the host sends health 0, but `tribe.cpp guest_tick` applies only positive health to
-  mirrors (a 0 might start the local death of a mirror), so on the guest they keep their last
-  health (e.g. 0.4) and stand. Seen in play_tribe.py (enemy chief `#4 hp=0.0` on the host, `0.4`
-  on the guest). The co-op chiefs use the host's health on every machine since 2026-10-23.
-* Ticket: BUG-0173.
-
 ## Cell: a guest far from the host swims in an empty pool
 
 * The host simulates and sends only the cells around its own cell (its active tiles, docs/re/cell.md
@@ -334,6 +325,11 @@ anchor so other docs can link to it:
   `SPORE_LANE=N python3 tools/tests/play_civ.py --minutes 10 --seed 9` (it prints the outliers):
   `v13 22.7 m host (-497, 27, 66) guest (-493, 45, 79)` three samples in a row, an NPC vehicle on
   the far side of the planet; not seen on player vehicles.
+* 2026-10-28 (fix/w2-civ): seed 9 again on lane 7 (GOG 2024): n=2430, p90 0.34 m, max 17.4 m
+  (`v2`, one sample). Both candidates are being removed by other fixes: the receive-time velocity
+  estimate (BUG-0122, fix/w2-net) and the guest's own NPC AI vehicles that could be bound as a
+  mirror (BUG-0188, fix/w2-civ: one of two such spawns was bound, not killed, in
+  `coop_civ_ai_spawn.py --nofix`). Re-measure after both are merged.
 * Ticket: BUG-0186.
 
 ## Civilization: the host's capture caption stops everybody's game
@@ -344,13 +340,6 @@ anchor so other docs can link to it:
   Reproduce: capture a city (`play_civ.py`), do not press Enter on the host. Fix idea: close the
   caption on the host after a few seconds when guests are connected (EndCinematic 0xADFF20).
 * Ticket: BUG-0187.
-
-## Civilization: the NPC AI still spawns vehicles on guests
-
-* The guest's civ AI spawns vehicles for the other nations; the next snapshot kills them
-  (`civ(guest)` `removed=` grows by a few per minute). `SpawnVehicle` callers 0xBE7643 / 0xBFBCF7
-  use the result without a null check, so blocking needs a hook at the AI decision instead.
-* Ticket: BUG-0188.
 
 ## Civilization: no building placement through the city planner in tests
 

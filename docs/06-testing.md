@@ -923,3 +923,23 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   known caught fault at 0x11ECE4F on both games after a cold start, and its retry once in the survey
   ("both at Kaver: surveyed (0/2)": the guest's page still listed Kaver while the host was at Rebel);
   two cold runs right after passed (out/lab/20261027-195928). Treat a single survey failure as flaky.
+
+## Civ and tribe sync tests of wave 2 (2026-10-28, fix/w2-civ)
+<a id="testing-civ-tribe-wave2"></a>
+
+All take `--nofix` (the fix switches off) and must FAIL with it; logs of both runs in the tickets.
+* `coop_civ_shared.py` (suite `civ_shared`, civ, ~1 min): two parts in one session. Crossing
+  spends: the shared money set to 150, `coop.res add money -100` on both games in the same step
+  (two threads, one Console each), the lowest money sampled for 2 s. Rejoin: guest `coop.role 1`,
+  `coop.leave`, `coop.res add money 40000` offline, `lane.JOIN`; the host's money sampled for 12 s,
+  then `coop.role` on both. Switches `coop.res fix reset|floor`, `coop.role fix`.
+* `coop_civ_city_join.py` (suite `civ_city_join`, civ_npc, ~1 min): the guest rejoins; when its
+  `coop.status` says "receiving world" the host calls `Simulator::cCivExpansion::SpawnNextCity`
+  (instant 0, who 0: the hooked path that broadcasts). Cities compared by position (60 m).
+* `coop_civ_ai_spawn.py` (suite `civ_ai_spawn`, civ_npc, ~1.5 min): two NPC cities founded on the
+  host; each new city's tick buys a first vehicle at once, which is what the guest's own AI did
+  too. Reads `coop.civ spawns` and `removed=` on the guest.
+* `coop_tribe_ko.py` (suite `tribe_ko`, tribe, ~1.5 min): `coop.tribe pincer <npc> <own> 1000`,
+  then `dead=` in the guest's `coop.tribe`. The member did not get up within 60 s in any run.
+* Unit tests (`make test`): `test_lobby_roles`, `test_shared_ledger` in tests/net_tests.cpp; build
+  them with `-DSPORECOOP_TEST_NOFIX=1` to see them fail on the old logic.

@@ -183,7 +183,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0170](BUG-0170-creature-chaos-a-guest-crashed-with-a-corrupted.md) | not-reproduced | crash | Creature | 2026-10-23 |  | Creature chaos: a guest crashed with a corrupted heap (seen once) |
 | [BUG-0171](BUG-0171-tribe-the-host-froze-once-while-the-epic-creatur.md) | not-reproduced | freeze | Tribe | 2026-10-22 |  | Tribe: the host froze once while the epic creature was being killed |
 | [BUG-0172](BUG-0172-tribe-host-fault-and-freeze-when-a-member-is-add.md) | not-reproduced | crash | Tribe | 2026-10-23 |  | Tribe: host fault and freeze when a member is added during the game-over caption |
-| [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | open | desync | Tribe | 2026-10-23 |  | Tribe: knocked-out members stand on the guest |
+| [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | fixed | desync | Tribe | 2026-10-23 | unreleased | Tribe: knocked-out members stand on the guest |
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
 | [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | open | test | Civ | 2026-10-23 |  | coop_civ_play: the guest's "I'm ready" click was lost twice |
@@ -198,7 +198,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0185](BUG-0185-space-an-unvisited-star-s-planets-can-still-diff.md) | open | desync | Space | 2026-10-23 |  | Space: an unvisited star's planets can still differ between the two games |
 | [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | open | desync | Civ | 2026-10-27 |  | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | open | bug | Civ | 2026-10-27 |  | Civilization: the host's capture caption stops everybody's game |
-| [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | open | desync | Civ | 2026-10-27 |  | Civilization: the NPC AI still spawns vehicles on guests |
+| [BUG-0188](BUG-0188-civilization-the-npc-ai-still-spawns-vehicles-on.md) | fixed | desync | Civ | 2026-10-27 | unreleased | Civilization: the NPC AI still spawns vehicles on guests |
 | [BUG-0189](BUG-0189-civilization-no-building-placement-through-the-c.md) | open | test | Civ | 2026-10-27 |  | Civilization: no building placement through the city planner in tests |
 | [BUG-0190](BUG-0190-coop-sync-py-space-the-ships-p90-sits-near-its-1.md) | open | test | Space | 2026-10-23 |  | coop_sync.py space: the ships' p90 sits near its 10 m limit |
 | [BUG-0191](BUG-0191-space-contracts-what-is-not-done-space-contracts.md) | open | feature | Space | 2026-10-23 |  | Space contracts: what is not done (space_contracts.cpp, 2026-10-23) |

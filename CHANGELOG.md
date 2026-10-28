@@ -11,6 +11,10 @@
 - **Civilization roles**: a player who joins under the id of a player who left no longer gets that
   player's role (and its bonuses) on the host, and guests no longer see the roles of other players
   swapped after someone rejoined (BUG-0064, BUG-0079).
+- **Civilization: the other nations no longer buy vehicles on a guest's own game** that the next
+  update removed again (BUG-0188). Test: `coop_civ_ai_spawn.py`.
+- **Tribe: a member knocked out on the host lies down on the guest too** instead of standing with
+  its last health (BUG-0173). Test: `coop_tribe_ko.py`.
 - **Civilization: an NPC city founded while a guest joined or loaded** now appears on that guest
   a few seconds later instead of never (BUG-0120). Test: `coop_civ_city_join.py`.
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
