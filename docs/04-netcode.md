@@ -182,3 +182,35 @@ A message is used and passed on only when it fits the player it came from. Share
   with its own creature or the world's species, and later joiners do not get the old one.
 * Fix switches (tests): `coop.corefix big_reliable|state_roster|offset_window|sender_time|id_reuse|creations_leave 0|1`;
   unit tests: `net_tests --nofix` runs the wave 2 cases on the code before the fixes (they fail).
+
+## Decoder fuzzing and the transport seam (2026-10-28, fix/w4-census)
+<a id="netcode-fuzzing"></a>
+
+`tests/fuzz_decoders.cpp` runs in `make test` (AddressSanitizer + UBSan, fixed seeds, about 3 s;
+compiling it takes longer than running it). It feeds everything portable that parses bytes from
+another player or from the internet:
+
+* every `protocol.h` struct and the MSG_NPC_STATE batch: write/read round trip, every strict prefix
+  rejected, 6000 mutations each (bit flips, interesting bytes, truncation, insertion, deletion,
+  0xFFFF lengths); an accepted mutation must encode and decode to itself;
+* `read_lobby` (both `fix` modes), `chunk_add` (MSG_CREATION pieces: shuffled, repeated, forged
+  offsets and totals), `snapshot_time`, the UTF-8 helpers and `str8`/`str16`;
+* RefPack, DBPF (`Package`, `index_info`/`parse_index`, `find_keys`, `metadata_names`, header
+  fields aimed at), the update pack and the release JSON / SHA256SUMS parsers;
+* random and mutated datagrams into `Connection::on_packet` and into a host and a guest `Session`.
+
+The Session runs over `Session::set_transport()` (`net/transport.h`: the UDP socket by default, a
+queue in the test) with `Session::clock` (nullptr: `now_ms()`), so no socket and no real time is
+involved. `fuzz_decoders --seed S --iters N` runs longer; built with `-DFUZZ_LIBFUZZER
+-fsanitize=fuzzer,address` (clang) the same file is a libFuzzer target (first byte picks the decoder).
+Checked that it catches real mistakes: removing the `o + 3 > n` check of the RefPack 3-byte code or
+the `r.left() < len` check of `on_packet` makes it fail with a heap-buffer-overflow.
+
+Not covered: the `on_message` handlers of the game modules (tribe, civ, cell, space ...) read their
+payloads next to game calls and do not build without the game; their common checks live in
+`validate.h` (tests/validate_tests.cpp).
+
+Found on the way: `Reader::raw(nullptr, 0)` (an empty payload read into an empty vector's `data()`)
+passed nullptr to memcpy (undefined behaviour, harmless on the compilers we use): it skips the copy
+now. A RefPack stream that lacks only its final bare stop code (0xFC) is accepted, because the
+decoder stops at the declared size; that is intended (the data is complete).

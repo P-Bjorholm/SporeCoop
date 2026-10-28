@@ -73,6 +73,8 @@ test:
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	$(MAKE) --no-print-directory test-asan
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/fuzz_decoders mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/fuzz_decoders.cpp
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/fuzz_decoders
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp

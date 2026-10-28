@@ -1271,6 +1271,29 @@ static void test_refpack_short()
 }
 
 // BUG-0039: answers with a new port each time grew the LAN game list for ever
+static void test_dbbf_wrap()
+{
+    printf("DBPF: a DBBF index offset near 2^64 is rejected, not read before the file (BUG-0208)\n");
+    std::vector<uint8_t> f(96, 0);
+    memcpy(f.data(), "DBBF", 4);
+    f[0x24] = 1;                         // one entry
+    f[0x28] = 4;                         // index size 4
+    memset(f.data() + 0x38, 0xFF, 8);    // index offset 2^64 - 1: offset + size wraps to 3
+    dbpf::Package p;
+    CHECK(!p.load(f));
+    // an entry whose offset wraps the same way is dropped
+    std::vector<uint8_t> g(96, 0);
+    memcpy(g.data(), "DBBF", 4);
+    g[0x24] = 1;
+    g[0x28] = 4 + 4 + 4 + 4 + 8 + 12;    // flags, type, group, instance, u64 offset, size/usize/flags
+    g[0x38] = 96;
+    std::vector<uint8_t> idx(g[0x28], 0);
+    memset(idx.data() + 16, 0xFF, 8);    // the entry's offset: 2^64 - 1
+    idx[24] = 8;                         // size 8
+    g.insert(g.end(), idx.begin(), idx.end());
+    CHECK(p.load(g) && p.entries().empty());
+}
+
 static void test_discovery_prune()
 {
     printf("LAN game list: pruned and capped (BUG-0039)\n");
@@ -1334,6 +1357,7 @@ int main(int argc, char** argv)
         g_fix = Fixes{false, false, false, false, false, false, false, false};
         g_nofix = true;
         upd::g_dup_fix = false;
+        dbpf::g_bounds_fix = false;
         printf("netcode fixes OFF\n");
     }
     test_buffer();
@@ -1366,6 +1390,7 @@ int main(int argc, char** argv)
     test_lost_first_packet();
     test_interp_wrap();
     test_refpack_short();
+    test_dbbf_wrap();
     test_discovery_prune();
     test_address_parse();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);

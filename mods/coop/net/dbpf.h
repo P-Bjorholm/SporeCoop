@@ -26,6 +26,9 @@ struct Record {
     std::vector<uint8_t> data; // uncompressed
 };
 
+// BUG-0208: Package::load checks offset and size without an overflow (false: the old sum, tests)
+extern bool g_bounds_fix;
+
 class Package {
 public:
     bool load(const std::vector<uint8_t>& file); // whole file in memory

@@ -8,6 +8,7 @@
 
 #include "connection.h"
 #include "protocol.h"
+#include "transport.h"
 
 namespace net {
 
@@ -63,10 +64,15 @@ public:
     std::string name_of(uint8_t id) const;
     std::vector<PlayerInfo> players() const; // including self
     std::string status() const;
-    uint16_t port() const { return sock_.local_port(); }
+    uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
     std::string host_address() const; // guest: "ip:port" of the host
+    size_t peer_count() const { return peers_.size(); } // host: accepted and half-open peers
+
+    // test seam (tests/fuzz_decoders.cpp): another network and clock; nullptr = UDP and now_ms()
+    void set_transport(Transport* t) { tr_ = t ? t : &udp_; }
+    uint32_t (*clock)() = nullptr;
 
 private:
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);
@@ -78,7 +84,9 @@ private:
     bool retired(uint32_t conn) const;
 
     Role role_ = Role::None;
-    UdpSocket sock_;
+    uint32_t now() const { return clock ? clock() : now_ms(); }
+    UdpTransport udp_;
+    Transport* tr_ = &udp_;
     std::string my_name_;
     uint8_t my_id_ = 0;
     bool welcomed_ = false;

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **A damaged creations package (My Creations) can no longer crash the game while it is read**:
+  a 64-bit index offset could wrap the bounds check (BUG-0208, found by the new decoder fuzzer).
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
   players a partner in your own system made every press fail), and the notice names that partner
   (BUG-0072). Flying to a partner in the galaxy view is refused while your ship is disabled
