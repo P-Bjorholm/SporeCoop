@@ -1,19 +1,19 @@
 ---
 id: BUG-0053
 title: partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#31
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418
+tests: net_tests test_interp_wrap
 signature:
-docs:
+docs: docs/06-testing.md#testing-net-w3
 related: #31
 ---
 
@@ -71,14 +71,19 @@ The `Connection` timers are not affected: they use unsigned differences (`now - 
 CONFIRMED by harness (unit level). Not verified: whether Wine's QueryPerformanceCounter starts at boot or at Wine start (if at Wine start, the uptime that matters is Wine's).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `SnapshotBuffer::push`, keep a 64-bit unwrapped sender time: `ext += (int32_t)(s.time_ms - last_raw); last_raw = s.time_ms;`, and use `ext / 1000.0` as `t` (drop the snapshot if the delta is 0 or negative). No switch is needed.
+`SnapshotBuffer::push` (net/interp.h) keeps a 64-bit unwrapped sender time: each snapshot adds
+`(int32_t)(time_ms - last_raw)` and a difference <= 0 is dropped as old or duplicate. A last time
+of 0 is the "no time" of an NPC spawn (npc.cpp pushes `time_ms = 0` before the first state), so any
+time after it is newer (with a signed difference, a host up for more than 24.8 days would have had
+every NPC state dropped after the spawn). `clear()` resets it. Switch: `coop.corefix time_wrap 0`
+/ `net::g_fix.time_wrap`. NPC batches use the same buffer and are covered by it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tests/net_tests.cpp`: a `test_interp_wrap` with the harness above, CHECK `out.pos.x > 4`. It fails on main and passes with the fix.
+Unit test `test_interp_wrap` (the report's harness plus an overtaking pre-wrap snapshot and the
+NPC spawn's time 0 followed by a 28-day host time).
+- FAIL with `net_tests --nofix`: `x=1 (5 expected)`, age check fails.
+- PASS with the fix: `x=5`.
+Not reproduced in game (needs 49.7 days of uptime).
 
 ### Related
 - docs/04-netcode.md 4.4 (rates and smoothing).
@@ -87,3 +92,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #31.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

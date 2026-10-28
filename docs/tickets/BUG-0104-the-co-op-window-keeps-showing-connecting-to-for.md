@@ -1,19 +1,19 @@
 ---
 id: BUG-0104
 title: the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#83
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418, 1e905bb, 423392b
+tests: coop_ui_status.py (suite ui_status)
 signature:
-docs:
+docs: docs/06-testing.md#testing-net-w3
 related: #83
 ---
 
@@ -53,21 +53,21 @@ The host has the same problem: after "Send my world", "Sending the world to ever
 CONFIRMED by reading, low severity. A second reviewer verified it, with one correction: the failure reason is not lost entirely, it reaches a notification and the chat log.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Clear `g_status` from the connected callback.
-- Set it to the reason in the disconnected callback (an Api hook such as `A.on_status(text, color)`, or let coop_ui read a "last session event" string from coop.cpp).
-- Make "Sending the world..." and "Left the session" time out after a few seconds.
-- Show the update line on its own row, not instead of the status.
+coop_ui.cpp: `set_status` takes a lifetime; `coop_ui::session_event(connected, why)` is called by
+the session callbacks in coop.cpp: the connected callback clears the status ("Connecting to ..."
+ends there), the disconnected callback shows "Disconnected: <why>" (red, 30 s). "Sending the world
+to everyone..." and "Left the session" go after 5 s, a "Cannot join" error after 30 s; `tick()`
+clears an expired status, so the update line of the connect page comes back. The Update button is
+shown only together with the update line, never next to an unrelated message. The update line
+does not get its own row (no room in the 600 px window). Switch: `coop.corefix ui_status 0`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Extend `tools/tests/coop_ui.py`:
-- After the guest has joined and loaded the world, assert that `coop.uistate`'s `world` line does not contain "Connecting".
-- After the host stops hosting, assert that the guest's `status` contains the disconnect reason.
-
-FAILS on main 563f72d (the world line is "Connecting to ..."), PASSES with the fix.
+`coop_ui_status.py` parts 2 and 4 (read `coop.uistate`: the window's status and lobby world line).
+- FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): the status stayed "Connecting to 127.0.0.1:107812..." after the guest was in
+  (first log) or kept the old "Cannot join" text (second log), and after the session ended the
+  window still showed it instead of the reason.
+- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): status '' once in, "Disconnected: host closed the session" at the end.
+Not run: the update line itself (needs a test release server); covered by the same expiry.
 
 ### Related
 #8 (join timeout after a lost first packet: the player then sees this stale text), #11 (cleanup on leave).
@@ -75,3 +75,4 @@ FAILS on main 563f72d (the world line is "Connecting to ..."), PASSES with the f
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #83.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

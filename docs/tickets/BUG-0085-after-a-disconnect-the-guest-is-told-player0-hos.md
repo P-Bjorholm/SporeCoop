@@ -1,19 +1,19 @@
 ---
 id: BUG-0085
 title: after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack"
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#63
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418, 1e905bb, 423392b
+tests: coop_ui_status.py (suite ui_status)
 signature:
-docs:
+docs: docs/06-testing.md#testing-net-w3
 related: #63
 ---
 
@@ -49,14 +49,16 @@ After a disconnect the guest is told only that the session ended. The away state
 CONFIRMED by reading the full path. Not run in game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Reset `g_host_away = false; g_host_away_since = -1; g_solo_dna = 0;` in the session-end helper (#11). In `host_away_tick`, when `!g_sess.connected()`, clear the state silently instead of taking the "back" branch.
+coop.cpp: `end_session_modules` (every session end) resets `g_host_away`, `g_host_away_since` and
+`g_solo_dna`; `host_away_tick` clears the away state silently when the session is gone instead of
+taking the "host is back" branch. The DNA earned alone stays in the guest's own game (as before).
+Switch: `coop.corefix host_away_reset 0`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_host_away.py` (or a step in the existing host-away test of play_creature): run the steps above and assert the guest's notification texts (`coop.notify` / `notify::status` lists the shown toasts: the game's UI on that machine) contain no "is back" after the disconnect. It must fail on main.
+`coop_ui_status.py` part 4: host `coop.menu`, guest `coop.dna add 50`, host `coop.leave`; the
+guest's log after `disconnected:` must have no "(host) is back".
+- FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): "player0 (host) is back: your 50 DNA go to the pack".
+- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): no such line, `host_away=0`.
 
 ### Related
 - Umbrella #11.
@@ -64,3 +66,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #63.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

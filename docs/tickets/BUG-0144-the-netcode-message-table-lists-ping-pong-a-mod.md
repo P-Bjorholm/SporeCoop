@@ -1,19 +1,19 @@
 ---
 id: BUG-0144
 title: the netcode message table lists PING/PONG, a mod version and fields the protocol does not send
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#123
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: 815813e
+tests: docs_lint (make test)
 signature:
-docs:
+docs: docs/04-netcode.md 4.3
 related: #123
 ---
 
@@ -52,16 +52,15 @@ The missing mod version matters beyond the docs. Peers of different mod versions
 CONFIRMED by reading (every writer and reader in mods/coop compared in the review).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Fix the four table rows.
-- Mark 8, 9 and 11 as reserved/unused in protocol.h, or drop the PING answer.
-- Optionally add the mod version to `HELLO` in the next protocol bump, so the host can log or refuse a different mod version.
+docs/04-netcode.md 4.3: the rows `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN/LEAVE` list the
+fields the `write()` methods of net/protocol.h send; `PING/PONG` (8, 9) are marked unused (nothing
+sends PING, the host still answers one; RTT is `rtt_ms` from the acks) and `ABILITY` (11) reserved;
+a CORRECTION line under the table. protocol.h: comments on ids 8, 9 and 11. Verified 2026-10-28:
+`grep MSG_PING|MSG_PONG|MSG_ABILITY` finds only protocol.h and the host's answer in session.cpp.
+Not done (left for a protocol bump): a mod version in `HELLO`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/docs_lint.py` cannot check this. A `tests/net_tests.cpp` case that encodes `Hello`, `Welcome` and `PlayerJoin` and checks their exact sizes against constants would catch a future silent layout change. It fails if a field is added without updating the documented size.
+Documentation; `make test` (docs_lint) passes.
 
 ### Related
 #47 (another 04-netcode mismatch: timeouts), #12 (sizes of reliable messages).
@@ -69,3 +68,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #123.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

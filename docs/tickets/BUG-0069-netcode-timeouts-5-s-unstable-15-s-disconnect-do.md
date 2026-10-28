@@ -1,19 +1,19 @@
 ---
 id: BUG-0069
 title: netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#47
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: 815813e
+tests: docs_lint (make test)
 signature:
-docs:
+docs: docs/04-netcode.md 4.6
 related: #47
 ---
 
@@ -46,14 +46,15 @@ Section 4.6 describes the real behaviour: "No packets for 30 s (timeout_ms; the 
 CONFIRMED by reading the full path. The SIGSTOP check was not run.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Correct the bullet in docs/04-netcode.md 4.6 following the project rule for corrections: keep the old line marked `~ superseded (2026-10-27)` and add a `CORRECTION (2026-10-27, <branch>): timeout_ms is 30000 (session.h), no unstable state exists` line. No code change.
+Docs only: docs/04-netcode.md 4.6, the two wrong bullets marked `~ superseded (2026-10-28)` and a
+`CORRECTION (2026-10-28, fix/w3-net, BUG-0069)` with the real values: 30 s `timeout_ms`
+(session.h:43, unchanged anywhere in mods/coop), 10 s join limit on the guest, 10 s for an
+unaccepted peer on the host, no "unstable" state, and the fields `coop status` really prints
+(`rtt`, `last`, `sent`, `recv`, `acked`, `resend`, `pending`). Checked against session.cpp
+597-616 and `Session::status()` on 2026-10-28. A 5 s "unstable" warning would be a feature.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Docs only; `tools/docs_lint.py` (in `make test`) covers the format. Optional: a `tests/net_tests.cpp` check that a silent peer is still connected at 20 s and dropped after 30 s, so the documented value is pinned by a test.
+Documentation; `tools/docs_lint.py` in `make test` passes. The SIGSTOP check was not run.
 
 ### Related
 - docs/06-testing.md (BYE vs timeout behaviour in the leave tests).
@@ -61,3 +62,4 @@ Docs only; `tools/docs_lint.py` (in `make test`) covers the format. Optional: a 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #47.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).

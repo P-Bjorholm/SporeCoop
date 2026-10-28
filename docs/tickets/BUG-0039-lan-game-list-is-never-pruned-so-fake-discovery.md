@@ -1,19 +1,19 @@
 ---
 id: BUG-0039
 title: LAN game list is never pruned, so fake discovery replies grow memory and slow the game
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#17
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-net
+commits: aa6d418
+tests: net_tests test_discovery_prune; coop_ui_status.py (lanfake)
 signature:
-docs:
+docs: docs/06-testing.md#testing-net-w3
 related: #17
 ---
 
@@ -58,14 +58,17 @@ Entries older than the visibility limit (5 s) are removed, and the list has a ca
 CONFIRMED by reading the full path. Not run in game. The growth rate above is computed, not measured.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `Discovery::update`, after the receive loop: `games_.erase(remove_if(... now - g.seen_ms >= 5000 ...))`, and do not `push_back` once `games_.size() >= 32`. This needs no switch (it only changes how long hidden entries are kept).
+`Discovery::update` erases entries not heard from for `kShowMs` (5 s) after the receive loop, and
+`on_reply` (the per-answer logic, now public for tests and `coop.lanfake`) keeps at most
+`kMaxGames` (32): when full, a new answer replaces the entry silent for longest if that one is
+older than 2 s, else it is dropped. Switch: `coop.corefix lan_prune 0` / `net::g_fix.lan_prune`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tests/net_tests.cpp`: extend `test_discovery`. A raw `UdpSocket` sends 500 replies with distinct `port` values to the `Discovery` socket (expose `local_port()` or a test accessor), then call `update()` a few times. CHECK that `games(now).size()` is at most the cap, and that after 6 s without replies the internal list is empty. This fails on main (500 entries) and passes with the fix.
+Unit test `test_discovery_prune`: 500 answers with distinct ports (as `update()` would hand
+them over, 64 per frame), then 6 s without answers.
+- FAIL with `net_tests --nofix`: `kept 500, listed 500`, not empty after 6 s.
+- PASS with the fix: `kept 32, listed 32`, empty after 6 s.
+Not measured in game (memory and frame time under a flood).
 
 ### Related
 - docs/known-issues.md "Co-op window: only three games on the network are listed" (the same list, UI side).
@@ -73,3 +76,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #17.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-net (wave 3).
