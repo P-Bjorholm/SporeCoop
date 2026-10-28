@@ -130,10 +130,14 @@ def main():
                 body = bytes([body[0], a.id]) + body[2:]  # a header that fits: the payload is cut
             if typ == MSG_CREATION and n >= 1:
                 body = bytes([a.id]) + body[1:]
+            # fakepeer packs every unacknowledged message into one datagram: keep it small
+            t1 = time.time()
+            while a.pending() > 3 and time.time() - t1 < 10:
+                time.sleep(0.02)
+            if time.time() - a.c.last_recv > 8:
+                break  # the host dropped A
             a.send(typ, body)
             sent += 1
-        while a.pending() > 64:
-            time.sleep(0.05)
     t0 = time.time()
     while time.time() - t0 < 20 and a.pending():
         time.sleep(0.2)
