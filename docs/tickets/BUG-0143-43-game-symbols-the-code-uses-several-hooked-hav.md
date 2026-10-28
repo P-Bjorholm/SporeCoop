@@ -1,19 +1,19 @@
 ---
 id: BUG-0143
 title: 43 game symbols the code uses (several hooked) have no checked signature on any build
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#122
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 1022c9b
+tests: make test (tools/re_lint.py)
 signature:
-docs:
+docs: data/symbols/overrides_dc04aee5.sym
 related: #122
 ---
 
@@ -104,21 +104,23 @@ Nothing is known to be wrong today. The risk is that a typed call or a detour re
 CONFIRMED (the list was computed from the files), and a second reviewer verified it. Low severity: GOG 2024 is ModAPI's own March2017 layout, and the hooks run on every lane every day, so gross mismatches would show. The finding is about unchecked claims.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Port the 43 entries into `overrides_dc04aee5.sym` with a Ghidra-checked note (prologue, `ret N`, return in EAX/ST0/hidden pointer). Hooked ones first.
-- Extend re_lint: every name the code uses must have an overrides entry for each supported build, and the entry must state a convention and `ret N` (or "plain ret").
+Fixed on fix/w3-sys (1022c9b). On today's code 39 names (4 of the 43 were ported since: the
+cAppSystem / cSporeApp hooks) were used from `march2017_dc04aee5.sym` only. Each was checked in the
+GOG 2024 exe with llvm-objdump (prologue, the ret and ret N, the stack offsets read, how ecx is used)
+against every call and detour of the code and added to `overrides_dc04aee5.sym` (31 verified, 8
+likely: CreateCellObject, GetCurrentAdvectInfo, GetDamageAmount, SpawnUFO, cGameNounManager::GetData,
+GetEmpireForStar, Image::GetImage, UTFWinObject::new_: the ret and the argument count match, the
+types come from the callers). Every hooked one (AddEvolutionPoints, ShouldNotAttack,
+GetModelKeyForCellResource, UILayout::Load, EditorRequest::Submit) matches its detour. No mismatch
+found. `tools/re_lint.py` now fails when a used name of a supported build is only in a generated
+file. Not done: re_lint does not parse the convention / ret N out of the note (free text).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`make test` with the stricter re_lint.
-- FAILS on main: 43 names listed.
-- PASSES once they are ported.
-
-### Related
-#64 (re_lint skips the confidence check for overrides entries whose name is also in a generated .sym).
+Test: `make test` (re_lint).
+* FAIL on main's symbol files with the new re_lint: 39 problems ("unchecked symbol ...").
+* PASS on fix/w3-sys: 0 problems.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #122.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (1022c9b); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

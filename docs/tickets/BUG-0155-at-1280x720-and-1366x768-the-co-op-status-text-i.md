@@ -1,19 +1,19 @@
 ---
 id: BUG-0155
 title: at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#134
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 5f0c909
+tests: tools/tests/coop_window_layout.py block (suite window_layout)
 signature:
-docs:
+docs: docs/06-testing.md#testing-sys-w3
 related: #134
 ---
 
@@ -55,23 +55,20 @@ At 1920 x 1080 the window is clear, but the block's last player lines (y about 1
 CONFIRMED by reading (layout arithmetic from the constants), low severity. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Skip the status block while `!labels` (the co-op window or the pause menu is up). It repeats what the lobby shows anyway.
-- Start the notification stack below the block's last line, or move the block to the top left.
+Fixed on fix/w3-sys (5f0c909). The overlay's status block is not drawn while the co-op window is
+open (or a menu in a game: `g_menu_up` is not refreshed in the main menu, so there only the window
+counts). The notification panels start below the block's last line (`notify::set_top_min`). The
+block's rect is in `coop.status` ("status block (x1 y1 x2 y2)"). `coop.corefix status_block 0`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Extend `tools/tests/coop_notify.py`:
-- At a 1280 x 720 lane resolution, with the window open, read the overlay status block's rect (expose it in `coop.status`) and the widget rects from `coop.uistate`.
-- Assert that they do not intersect, and that the first toast's rect from `coop.notify` does not intersect the block.
-
-FAILS on main 563f72d, PASSES with the fix.
-
-### Related
-None of the existing issues.
+Test: `tools/tests/coop_window_layout.py` (suite `window_layout`), one game hosting in the main menu at
+1280x720 (set through `SporeCoop::Renderer_SetVideoMode`).
+* FAIL with `--old` (`coop.corefix status_block 0`, manual runs on lane 3, 2026-10-28): the first
+  panel at y 108 under the block (800 70 998 112), the block drawn while the window is open.
+* PASS with the fix: 2 manual runs (block hidden with the window open, the panel at y 120) and lab
+  run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #134.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (5f0c909); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
