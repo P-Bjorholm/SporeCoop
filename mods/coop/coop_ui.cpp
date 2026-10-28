@@ -117,6 +117,22 @@ static Win g_menu_btn, g_menu_parent;
 // made a virtual call on the freed item. It goes as soon as the mode is not the menu.
 // `coop.corefix menu_drop 0` = the old behaviour (tests).
 bool g_menu_drop_fix = true;
+bool g_recenter_fix = true;
+
+// The window is centred on the screen it opens on (BUG-0113: it is kept for the whole run, and was
+// centred once; after a smaller resolution in the options its bottom row was off the screen).
+static int g_placed_w = -1, g_placed_h = -1;
+static void place_window(Win root)
+{
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    if (sw <= 0 || sh <= 0 || (sw == g_placed_w && sh == g_placed_h))
+        return;
+    g_placed_w = sw;
+    g_placed_h = sh;
+    float x = std::max(0.f, (sw - kW) / 2), y = std::max(0.f, (sh - kH) / 2);
+    sui::set_area(root, Rect{x, y, x + kW, y + kH});
+}
 static bool in_menu() { return A.mode && A.mode() == modes::kMenu; }
 static void* g_menu_drawable;
 static Win g_menu_drawable_for; // the menu window the drawable was made for
@@ -402,10 +418,7 @@ static void build_dialog()
             return false;
         });
     }
-    int sw = 0, sh = 0;
-    H->screen_size(&sw, &sh);
-    Rect a{(sw - kW) / 2, (sh - kH) / 2, (sw + kW) / 2, (sh + kH) / 2};
-    sui::set_area(root, a);
+    place_window(root);
 
     std::vector<Win> common;
     D.subtitle = add_label(common, {0, 70, kW, 96}, T("CO-OP", "КООПЕРАТИВ"), kGold, sui::kAlignCenter);
@@ -742,6 +755,8 @@ static void refresh()
         sui::bring_to_front(main, D.root);
         sui::set_flag(D.root, sui::kFlagAlwaysInFront, true);
     }
+    if (g_want_open && g_recenter_fix)
+        place_window(D.root);
     show(D.root, g_want_open);
     if (!g_want_open) {
         if (A.lan_scan)
@@ -882,6 +897,10 @@ std::string debug_state()
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") + "\n";
     char b[256];
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    snprintf(b, sizeof b, "screen %d %d\n", sw, sh);
+    s += b;
     if (g_menu_btn && in_menu()) { // never a call on an item of a menu that is gone (BUG-0163)
         Rect r = sui::screen_rect(g_menu_btn);
         snprintf(b, sizeof b, "menu %.0f %.0f %.0f %.0f %d '%s'\n", r.x1, r.y1, r.x2, r.y2,

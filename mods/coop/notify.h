@@ -21,6 +21,8 @@ void show(const std::string& text, const char* kind = nullptr);
 void tick(double now);
 // remove every panel (session end is not needed: they expire; unload is)
 void shutdown();
+// the panels start at this screen y or lower (the co-op status block's bottom; 0 = no block)
+void set_top_min(float y);
 std::string status();
 
 } // namespace notify

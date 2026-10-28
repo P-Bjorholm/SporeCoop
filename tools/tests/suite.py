@@ -52,6 +52,7 @@ add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu'
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('notify', P + 'coop_notify.py', minutes=3)
+add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)

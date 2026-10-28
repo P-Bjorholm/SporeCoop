@@ -1,6 +1,7 @@
 #include "notify.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -53,7 +54,11 @@ static void screen(float& sw, float& sh)
     sh = h > 0 ? (float)h : 1080.f;
 }
 
-static float top_of(size_t i, float sh) { return sh * 0.15f + i * (kH + kGap); }
+// the co-op status block's bottom (coop.cpp, 0 = none): the panels start below it (BUG-0155)
+static std::atomic<float> g_top_min{0.f};
+void set_top_min(float y) { g_top_min = y; }
+
+static float top_of(size_t i, float sh) { return std::max(sh * 0.15f, g_top_min.load()) + i * (kH + kGap); }
 
 static void remove(Toast& t)
 {

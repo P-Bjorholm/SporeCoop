@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -46,6 +47,7 @@
 #include "net/utf8.h"
 #include "creations.h"
 #include "notify.h"
+#include "notify_text.h"
 #include "syncdbg.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -1534,6 +1536,9 @@ void menu_tick(double now)
     H->run_outside_frame(menu_check_task, nullptr);
 }
 
+bool g_status_block_fix = true;   // BUG-0155
+std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
+
 void on_overlay(void*, int, void*)
 {
     if (!g_overlay)
@@ -1588,9 +1593,16 @@ void on_overlay(void*, int, void*)
         head = std::string("CO-OP guest  ") + (g_sess.connected() ? "connected" : "connecting...");
     else if (g_echo)
         head = "CO-OP echo test";
-    if (head.empty())
+    // BUG-0155: the block is not drawn over the co-op window or a menu (the lobby shows the same),
+    // and the notification panels start below it; `coop.corefix status_block 0` = the old way
+    // (g_menu_up is only refreshed in a game: in the main menu the window's own flag counts)
+    bool covered = coop_ui::is_open() || (!labels && g_local);
+    if (head.empty() || (covered && g_status_block_fix)) {
+        g_status_block = {0, 0, 0, 0};
+        notify::set_top_min(0);
         return;
-    int x = sw > 0 ? sw - 480 : 900, y = 70;
+    }
+    int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
     if (g_sess.connected() && g_mode == modes::kCreature) {
@@ -1608,8 +1620,11 @@ void on_overlay(void*, int, void*)
             line += std::string("  [") + modes::mode_name(ls.mode) + (same_place(ls) || ls.mode != g_mode ? "" : ", other world") + "]";
         }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
+        wmax = std::max(wmax, utf8::overlay_width(line));
         y += 20;
     }
+    g_status_block = {x, 70, x + wmax, y};
+    notify::set_top_min(g_status_block_fix ? (float)y + 8 : 0.f);
     // notices are notification panels now (notify.cpp); the history is in the co-op window
 }
 
@@ -2104,6 +2119,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
+    SAY("status block (%d %d %d %d)\n", g_status_block[0], g_status_block[1], g_status_block[2], g_status_block[3]);
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
@@ -2940,7 +2956,9 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
                 {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
                 {"creations_leave", &creations::g_leave_fix},
-                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names}};
+                {"same_place", &g_place_fix}, {"unique_names", &g_sess.unique_names},
+                {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
+                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
