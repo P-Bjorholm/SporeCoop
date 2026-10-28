@@ -83,6 +83,7 @@ struct Mirror {
     // applied state (valid while applied)
     bool applied = false;
     void* emp = nullptr;          // the cEmpire (kept alive by our reference, re-inserted on apply)
+    void* galaxy = nullptr;       // the player's cEmpire when emp was made: another one = a reload (BUG-0038)
     uint32_t pol = 0;
     std::map<uint32_t, StarSnap> stars;
     std::map<uint32_t, PlanetSnap> planets;
@@ -306,9 +307,13 @@ static bool g_reload_fix = true;
 static uint32_t g_reload_resets;
 static void reset_empire(Mirror& m)
 {
-    if (!g_reload_fix || !m.emp)
+    // a save also takes the unmirrored cEmpire out of the map (it is put back on the next apply):
+    // only another player cEmpire means another galaxy; none (the menu) = not known yet
+    void* pe = player_empire();
+    if (!g_reload_fix || !m.emp || !pe || pe == m.galaxy)
         return;
     m.emp = nullptr;
+    m.galaxy = nullptr;
     m.pol = 0;
     m.contact_before = 0;
     m.rel_on = spaceext::Relation::Ally;
@@ -324,8 +329,8 @@ static bool ensure_empire(Mirror& m)
         return false;
     if (m.emp && empire_of(m.pol) == m.emp)
         return true;
-    // not in the map any more: the galaxy was reloaded (also after a save on the way to the menu
-    // unmirrored it, so no "applied" check saw the reload)
+    // not in the map any more: after a save, or the galaxy was reloaded (also after a save on the
+    // way to the menu unmirrored it, so no "applied" check saw the reload)
     reset_empire(m);
     if (!m.emp) {
         uint32_t pol = thiscall<uint32_t>(a_NextPol, sm, 1);
@@ -336,6 +341,7 @@ static bool ensure_empire(Mirror& m)
         thiscall<void>(a_EmpireInit, e, pol, 0);
         m.emp = e;
         m.pol = pol;
+        m.galaxy = player_empire();
     } else {
         uint32_t key = m.pol;
         void** slot = thiscall<void**>(a_MapAt, (uint8_t*)sm + 0x150, &key);
