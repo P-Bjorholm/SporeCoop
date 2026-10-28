@@ -2328,6 +2328,36 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("kill list cleared every frame: %s", strcmp(argv[2], "off") ? "on" : "off");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "reuse")) { // host (tests): reuse <id>: a dead NPC's object alive again (BUG-0044)
+        SAY("%s", npc::debug_reuse((uint16_t)atoi(argv[2])).c_str());
+        return 0;
+    }
+    if (argc > 2 && (!strcmp(argv[1], "reusefix") || !strcmp(argv[1], "idfix"))) { // tests (BUG-0044 / BUG-0023)
+        bool on = strcmp(argv[2], "off") != 0;
+        (argv[1][0] == 'r' ? npc::set_reuse_fix : npc::set_id_fix)(on);
+        SAY("%s %s", argv[1], on ? "on" : "off");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "deferpuppet")) { // tests: off = a deferred puppet loses its puppet state at once (BUG-0066)
+        game::set_defer_keeps_puppet(strcmp(argv[2], "off") != 0);
+        SAY("deferred puppets stay puppets: %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "swapguard")) { // tests: off = no undo of a swap left open (BUG-0110)
+        game::set_swap_guard(strcmp(argv[2], "off") != 0);
+        SAY("swap guard %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        game::debug_swap_fault();
+        SAY("the next NPC tick with a partner as the player leaves like a fault");
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "nextid")) { // host (tests): the next net id tried (BUG-0023)
+        npc::debug_next_id((uint16_t)atoi(argv[2]));
+        SAY("next npc id %s", argv[2]);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "killhold")) { // tests: the avatar into the guest's kill list
         npc::debug_kill_hold();
         SAY("held");

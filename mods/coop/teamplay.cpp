@@ -5,6 +5,7 @@
 #include <map>
 
 #include "game.h"
+#include "hunt_hits.h"
 #include "net/interp.h"
 
 namespace teamplay {
@@ -16,11 +17,7 @@ static bool g_on = true;
 static double g_last_rescue = -1000, g_last_regen = 0;
 static uint32_t g_joint_hits = 0, g_rescues = 0;
 
-struct Hit {
-    uint8_t player;
-    double t;
-};
-static std::map<void*, std::vector<Hit>> g_hits; // target -> recent hits by players
+static HitTable g_hits(kHuntWindow); // target -> recent hits by players (BUG-0099)
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
@@ -31,27 +28,28 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
 }
 
 bool enabled() { return g_on; }
+
+void forget_target(void* target)
+{
+    if (!g_hits.legacy)
+        g_hits.forget(target);
+}
+
+void reset()
+{
+    if (!g_hits.legacy)
+        g_hits.clear();
+}
+
+void set_legacy_hits(bool on) { g_hits.legacy = on; }
+size_t hit_targets() { return g_hits.size(); }
 void set_enabled(bool on) { g_on = on; }
 
 float on_player_hit(void* target, uint8_t player, float damage)
 {
     if (!g_on || !target)
         return damage;
-    double now = H->time_seconds();
-    auto& v = g_hits[target];
-    bool joint = false;
-    for (size_t i = 0; i < v.size();) {
-        if (now - v[i].t > kHuntWindow) {
-            v.erase(v.begin() + i);
-            continue;
-        }
-        joint |= v[i].player != player;
-        i++;
-    }
-    v.push_back({player, now});
-    if (g_hits.size() > 256) // forget old targets
-        for (auto it = g_hits.begin(); it != g_hits.end();)
-            it = it->second.empty() ? g_hits.erase(it) : std::next(it);
+    bool joint = g_hits.hit(target, player, H->time_seconds());
     if (!joint)
         return damage;
     g_joint_hits++;

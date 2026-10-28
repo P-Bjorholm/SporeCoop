@@ -697,3 +697,31 @@ nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`
   costly for every puppet every frame, fine for events).
 * ✔ A guest's `coop.menu` round (galaxy menu, the host sends its world, the guest is back in the
   creature stage with the host's puppet) takes 11-12 s on a lane.
+
+## The creature pool, NPC net ids and the AI swap (2026-10-28, fix/w2-creature)
+<a id="creature-pool-ids"></a>
+
+* ✔ `cCreatureAnimal::Create` (GOG 2024 0xC09B40) with its last argument (reuse) set calls
+  0xAD2020(species profile, ...): it walks the creature noun's pool (0xAD0BE0(0x018EB45E): slots of
+  0xC bytes, +4 in-use byte, +8 object) for a free slot whose object has the same species profile
+  (+0xB20) and takes it; without one (only in the creature and tribe stages, mode 0x1654C01 /
+  0x1654C02) it grows the pool. Without reuse it gets a new object of the noun (0xB20BF0). So a
+  recycled creature object is normally of the **same species**: the case the host's NPC ids must
+  catch is a dead NPC whose object is alive again (BUG-0044), besides another species.
+* ~ Negative result: DestroyInstance on a fresh corpse of the host and then up to 8
+  `Create(reuse)` of its species over 8 frames (or 24 `Create` without reuse of another species in
+  the same frame) never returned the freed object (lane 5). When the game lets a freed creature go
+  back to its pool slot was not found; `coop.npc reuse <id>` (tests) makes the dead object alive
+  again instead.
+* ✔ The host's NPC ids (npc.cpp host_tick): an object keeps its id while it is the same species
+  and has not come back from death; otherwise the old id is despawned on every guest and the
+  object gets a new id and spawn. Ids skip ids in use (`npc_ids.h`, BUG-0023).
+* ✔ A creature removed during a cinematic stays in the puppet list until `destroy_deferred_tick`
+  destroys it (BUG-0066): seen without that, the host gave the guest's old puppet an NPC id during
+  CRG_ClaimNest (`coop_cinematic_puppet.py`). Its position is no sign of AI: the old puppet slid
+  0.4 m and 1.4 m with and without the fix (its last velocity).
+* ✔ `h_NPCTickAI` (game.cpp) writes a partner's puppet into `cGameNounManager +0x54` for one NPC
+  tick. If that tick does not return (a fault the game's handler catches), `game::swap_guard_tick`
+  (once per frame, outside every NPC tick) puts the real avatar back and takes the lent +0xE84 off
+  the puppet (BUG-0110; `swaps_restored=` in `coop.npc`). Seen without it (a forced leave,
+  `coop.npc swapfault`): +0x54 stayed the puppet and `ai_swaps` stopped growing.

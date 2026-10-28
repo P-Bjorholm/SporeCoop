@@ -1,19 +1,19 @@
 ---
 id: BUG-0055
 title: after leaving a session, the host's creations still replace a guest's own creation with the same id
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#33
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-creature
+commits: 85320fe
+tests: creation_leave
 signature:
-docs:
+docs: 
 related: #33
 ---
 
@@ -57,14 +57,24 @@ After the session ends, the guest's own creations resolve to its own records aga
 CONFIRMED by reading the full path (registration, `on_session_end`, `do_leave`). PLAUSIBLE effect: how the game mixes the host's bem with the guest's own cached creaturedata after leaving is not verified at runtime.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In `on_session_end`, unregister every package in `g_world_pkgs` (`drop_package`) and clear the map. Call `creations::on_session_end` from `do_leave` and `on_unload` too, like the `disconnected` callback does. Keep the `species_` packages (registered only for keys the guest did not have). Old behaviour behind `coop.fix world_pkgs_drop off`.
+Fixed (fix/w2-creature): `creations::on_session_end` unregisters every package of
+`g_world_pkgs` (`drop_package`) and clears the map. Since BUG-0033 every session end (Leave, the
+host gone, a new host or join, the unload) runs it through `end_session_modules`, so `do_leave`
+needs no change. The remapped packages (0x7C... / 0x7D...) and the `species_` packages (only for
+keys the guest did not have) stay. `coop.creations worlddrop off` keeps them (tests).
+Not changed: the game's species profile cache (`cSpeciesManager` keeps profiles for the whole
+process, docs/re/creature.md 15): a profile the guest's game made for that key during the session
+may still be the host's creature after leaving, until the game restarts. Not checked in the game.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_creation_leave.py` (suite `creation_leave`): the host chooses its TigerHorse
+290229B9, the guest has its Kirgle under that key, joins, gets the host's creation and leaves;
+the bem the guest's resource manager finds for 290229B9 (`coop.creations bem`).
 
-`tools/tests/coop_creation_leave.py`: two instances with colliding creation ids (`nest_species` profiles). The guest joins, receives the host's creation and leaves. Then the guest loads its own save and runs `coop.creations bem <instance>` (the body the game finds for that key). Assert that the bem hash equals the guest's own EditorSaves record, not the host's. It fails on main and passes with the fix.
+* FAIL without the fix (`--without-fix` = `coop.creations worlddrop off`, lane 5, 2026-10-28,
+  direct run): after leaving still the host's bem 6E1A058F.
+* PASS with the fix: direct run (lane 5): 9B6134E2, the Kirgle's; lab run out/lab/20261027-232407
+  (`creation_leave`).
 
 ### Related
 - docs/re/creature.md 15 (another creation under the same key), docs/re/creations.md (priority 2000 packages).
@@ -73,3 +83,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #33.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-creature (world packages dropped at the session end); test creation_leave. The species profile cache is not reset.

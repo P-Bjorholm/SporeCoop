@@ -49,6 +49,7 @@ void* spawn_creature(const net::Vec3& pos, void* species, void* herd);
 void destroy_creature(void* c);
 void destroy_deferred_tick(); // once per frame
 void set_destroy_defer(bool on); // tests (off: at once)
+void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves the puppet list at once, BUG-0066)
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 void teleport(void* c, const net::Vec3& pos, const net::Quat& rot);
@@ -148,6 +149,10 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
+void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
+void set_swap_guard(bool on);    // tests (off: no undo)
+void debug_swap_fault();         // tests: the next swapped NPC tick returns without its restore
+uint32_t swaps_restored();
 
 // The death of a creature: its behaviour tree's death node (0xD85B80) calls the creature's Die
 // (vt 0x8C, 0xC08210: mbDead +0xB5E, stops locomotion and effects) and plays the death animation.

@@ -77,6 +77,8 @@ test:
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
 	$(B)/host/cell_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/npc_tests tests/npc_tests.cpp
+	$(B)/host/npc_tests
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/tickets.py check

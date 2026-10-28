@@ -982,3 +982,27 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
 * The test games' logs from a worktree: `twoinst.Monitor.game_log` derives the game folder from the
   repository root and points into the worktree's parent in a worktree; use the git common dir
   (`coop_rejoin_net.py`, `coop_world_queue.py`).
+## NPC ids, deferred puppets, the AI swap, creations after leaving (2026-10-28, fix/w2-creature)
+<a id="testing-creature-npc-ids"></a>
+
+* `coop_npc_reuse.py` (BUG-0044 / BUG-0023, ~1.5 min): the host kills an NPC (`coop.npc hosthit`),
+  `coop.npc reuse <id>` makes the dead object alive again (a natural pool reuse could not be forced,
+  docs/re/creature.md#creature-pool-ids); the guest's mirror of the host's id of that object must
+  be alive and of its species in the guest's game (`coop.npc creatures`). Then `coop.npc nextid
+  <id in use>` and `coop.npc epic 0 8`: no two NPCs with one id. `--without-fix` = `coop.npc
+  reusefix off` + `idfix off`: FAILS (the mirror stays the corpse; id 1 twice).
+* `coop_cinematic_puppet.py` (BUG-0066, ~1.5 min): the host plays CRG_ClaimNest (`call
+  Simulator::cCinematicManager::PlayCinematic thiscall <cm> s:CRG_ClaimNest 1 1 0 0 0`, the caption
+  keeps it running), the guest `coop.creations next creature` (the host builds a new puppet). The
+  old puppet must have no host NPC id while it waits. `--without-fix` = `coop.npc deferpuppet off`:
+  FAILS (id 23).
+* `coop_npc_swap.py` (BUG-0110, ~1.5 min): the guest goes to NPCs far from the host (`coop.social
+  goto`) until `ai_swaps` grows, `coop.npc swapfault` makes the next swapped tick skip its restore;
+  `[cGameNounManager::Get() + 0x54]` must be the host's avatar again. `--without-fix` = `coop.npc
+  swapguard off`: FAILS (the slot stays the puppet, ai_swaps stops).
+* `coop_creation_leave.py` (BUG-0055, ~3 min, restarts the guest): the host chooses its TigerHorse,
+  the guest gets the Kirgle under that key (`coop_nest_species.restart_guest`), joins and
+  `coop.leave`s; `coop.creations bem 290229B9` on the guest must be the Kirgle's after leaving.
+  `--without-fix` = `coop.creations worlddrop off`: FAILS (still the host's bem).
+* `tests/npc_tests.cpp` (`make test`): the id allocator and the hit table, each with its old
+  behaviour (`skip_used` false, `legacy`) checked to show the bug.
