@@ -97,20 +97,23 @@ def lab_cases(tree, tmp):
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         rc = lab.cmd_run(a)
-    print('    ' + out.getvalue().strip().replace('\n', '\n    '))
+    # the inner run's output only as data: under the lab (make test is the test unit) its fake fault and
+    # result lines must not look like this test's own
+    inner = out.getvalue().strip().replace('RESULT:', 'RESULT=').replace(' faults: ', ' faults= ')
+    print('    ' + inner.replace('\n', '\n    '))
     run = sorted(os.listdir(os.path.join(tmp, 'out', 'lab')))
     run = [d for d in run if d != 'flaky.json'][-1]
     res = {r['name']: r for r in json.load(open(os.path.join(tmp, 'out', 'lab', run, 'results.json')))['results']}
     summary = open(os.path.join(tmp, 'out', 'lab', run, 'summary.md')).read()
     check(res['clean']['ok'] and not res['clean'].get('skipped'), 'clean: ok')
-    check(not res['crash_after']['ok'], 'crash_after: a crash report after RESULT: OK fails the test (BUG-0036)')
-    check(not res['died_after']['ok'], 'died_after: a game that dies after RESULT: OK fails the test (BUG-0036)')
-    check(not res['faults']['ok'], 'faults: a non-zero fault count fails the test (BUG-0042)')
-    check(not res['fails_once']['ok'], 'fails_once: a RESULT: FAIL is not made a pass by a retry (BUG-0073)')
+    check(not res['crash_after']['ok'], 'crash_after: a crash report after an OK result fails the test (BUG-0036)')
+    check(not res['died_after']['ok'], 'died_after: a game that dies after an OK result fails the test (BUG-0036)')
+    check(not res['faults']['ok'], 'fault count: a non-zero fault count fails the test (BUG-0042)')
+    check(not res['fails_once']['ok'], 'fails_once: a FAIL result is not made a pass by a retry (BUG-0073)')
     check(res['harness_once']['ok'] and res['harness_once'].get('flaky'),
           'harness_once: no RESULT line, then OK on the retry: ok (flaky)')
     check(res['skipper'].get('skipped') and '| skipper | skip' in summary,
-          'skipper: RESULT: SKIP is a skip in results.json and summary.md, not a pass (BUG-0100)')
+          'skipper: a SKIP result is a skip in results.json and summary.md, not a pass (BUG-0100)')
     check(rc != 0, 'the run fails')
 
     # BUG-0052: a test past the timeout (a command bash does not exec: a list) leaves nothing behind
