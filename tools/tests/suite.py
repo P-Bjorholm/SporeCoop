@@ -70,6 +70,7 @@ add('host_away_kill', P + 'coop_host_away_kill.py', minutes=4)  # BUG-0082: the 
 add('npc_reuse', P + 'coop_npc_reuse.py', minutes=3)  # BUG-0044 / BUG-0023: a reused NPC object gets a new id (the guest's mirror is alive), ids never repeat
 add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: a puppet removed during a cinematic stays a puppet (no host NPC id)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
+add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
 add('anim_teardown', P + 'coop_anim_teardown.py', minutes=8)  # BUG-0091: no animation on a puppet freed by a world teardown
 add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts a new game (typed planet name) next to an old one: the guest gets the new one
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')

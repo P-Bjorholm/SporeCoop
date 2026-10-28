@@ -362,6 +362,10 @@ struct WorldPkg {
     void* db = nullptr;
 };
 static std::map<std::pair<uint8_t, uint32_t>, WorldPkg> g_world_pkgs; // (kind, original instance)
+// BUG-0055: the session end drops them (a guest's own creation of the same key is its own again).
+// `coop.creations worlddrop off` keeps them registered for the rest of the process (tests).
+static bool g_world_drop = true;
+static unsigned g_world_dropped;
 
 static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority)
 {
@@ -979,6 +983,19 @@ void on_player_join(uint8_t id)
 
 void on_session_end()
 {
+    // the host's creations registered under their original keys (priority 2000, above the guest's
+    // own My Creations): after the session a guest's own creation of the same id (ids are per
+    // profile and sequential) resolved to the host's records in its own games (BUG-0055). They go;
+    // the remapped packages (0x7C... / 0x7D...) and the species packages of keys the guest did not
+    // have stay (nothing of the guest's own answers for those keys)
+    if (g_world_drop) {
+        for (auto& [k, wp] : g_world_pkgs)
+            if (wp.db) {
+                drop_package(wp.db);
+                g_world_dropped++;
+            }
+        g_world_pkgs.clear();
+    }
     g_asked.clear(); // (registered species packages stay: the same world may come back)
     g_own_sent.clear();
     g_remap.clear(); // (their packages stay registered: the same world may come back)
@@ -1087,6 +1104,11 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t inst = a.size() > 2 && a[2] != "none" ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
         choose((Kind)k, inst ? Key{inst, kInfo[k].type, kInfo[k].group} : Key{});
         return "chosen";
+    }
+    if (a.size() >= 2 && a[0] == "worlddrop") { // worlddrop on|off (tests, BUG-0055)
+        g_world_drop = a[1] != "off";
+        return std::string("the host's world creations are dropped at the session end: ") + (g_world_drop ? "on" : "off") +
+               " (dropped " + std::to_string(g_world_dropped) + ", registered " + std::to_string(g_world_pkgs.size()) + ")";
     }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
