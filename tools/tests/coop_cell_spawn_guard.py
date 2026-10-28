@@ -26,7 +26,11 @@ def main():
     ck(slots, f'the host lists its live cells ({len(slots)})')
     past = (max(slots) + 1) if slots else 4095
     for bad in ('99999', '-1', 'abc', '0', str(past)):
-        out = host.call(f'coop.cell spawn {bad}')['out'].strip()
+        try:
+            out = host.call(f'coop.cell spawn {bad}')['out'].strip()
+        except OSError as e:  # the game hung or died in the command (the bug)
+            ck(False, f'coop.cell spawn {bad}: no answer ({e})')
+            return ck.result()
         ck('no such cell' in out or (bad == str(past) and 'created' in out and past in slots),
            f'coop.cell spawn {bad}: {out[:80]}')
         ck('Cell' in host.call('game.mode')['out'], f'the host still runs in the Cell stage after spawn {bad}')

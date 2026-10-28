@@ -14,6 +14,7 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
             survives the worktree's removal (BUG-0062)
   relint    re_lint.py flags an overrides entry without a confidence word also when a generated
             .sym has the same name (BUG-0086)
+  triage    tools/crash_triage.py reads a report and finds the known ticket (BUG-0158)
   release   tools/release_check.sh: the tag must match COOP_VERSION and the notes are exactly the
             tag's CHANGELOG section (BUG-0097)
 
@@ -280,8 +281,31 @@ def test_release():
     check(rc != 0, 'a version without a CHANGELOG section fails')
 
 
+# ---------------------------------------------------------------- crash triage
+def test_triage():
+    print('triage: crash_triage.py on a made-up report of a known crash')
+    tool = os.path.join(ROOT, 'tools', 'crash_triage.py')
+    if not os.path.exists(tool):
+        check(False, 'tools/crash_triage.py exists (CLAUDE.md 5 and the fix-player-report skill name it)')
+        return
+    check(os.path.exists(os.path.join(ROOT, '.claude', 'skills', 'triage-crash', 'SKILL.md')),
+          'the triage-crash skill exists')
+    rep = os.path.join(TMP, 'crash-20261025-000000-i2.txt')
+    open(rep, 'w').write('SporeCoop crash 20261025-000000 (unhandled exception)\n\n== Environment\n'
+                         'SporeKit 0.3.4, game GOG 2024 (exe dc04aee5a3debc3f), frames from Present\n'
+                         'game mode: Creature, frame 1, up 1 s\nmods: coop 0.7.2.3  \n\n== Exception\n'
+                         '0xC0000005 access violation at 0x00C6AE60 SporeApp.exe Foo::Bar+0x20 (thread 1)\n'
+                         'read of address 0x00000160\n\n== Call chain\n'
+                         '  10043000 coop.i2.1.dll+0x43000\n')
+    r = subprocess.run([sys.executable, '-I', tool, rep], capture_output=True, text=True)
+    out = r.stdout
+    check('GOG 2024' in out and 'coop 0.7.2.3' in out and 'mode Creature' in out, 'build, version and stage read')
+    check('dc04aee5:SporeApp.exe Foo::Bar+0x20' in out, 'the signature names build and place')
+    check('BUG-0018' in out, 'the known ticket of 0xC6AE60 is found (BUG-0018)')
+
+
 CHECKS = {'kill': test_kill, 'fixture': test_fixture, 'headless': test_headless, 'tickets': test_tickets, 'relint': test_relint,
-          'release': test_release}
+          'release': test_release, 'triage': test_triage}
 
 if __name__ == '__main__':
     if sys.argv[1:2] == ['--kill-inside']:

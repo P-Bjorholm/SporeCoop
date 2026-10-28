@@ -117,14 +117,16 @@ SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where i
 |---|---|---|---|
 | **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
 | **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
-| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❔ not tested | ✅ up to 0.7.0: SporeCoop was developed on it ² |
+| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❔ not tested | ✅ up to 0.7.0: SporeCoop was developed on it; the fixes since 0.7.2.2 that need new game addresses are off ² |
 | EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
 
 ¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
 [issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
 frames from the game loop; tested by simulating that case, not yet with the real overlay.
 ² 0.7.x is the last version for the GOG 2016 build; from 0.8 only the current GOG build (and Steam,
-which is the same game): update the game through GOG.
+which is the same game): update the game through GOG. Since 0.7.2.2 new fixes get game addresses for
+the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
+up after a death, the pack, Cell bites, meat and spin); the other fixes work there too.
 
 **Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
 2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
@@ -205,7 +207,7 @@ against the release's SHA-256 sums, and may only replace SporeCoop's own files.
 
 ## Status and roadmap
 
-Version 0.7 (latest 0.7.2): co-op in every stage for up to 4 players, and a Space stage built for playing
+Version 0.7 (the newest release is on the [Releases](https://github.com/WoodyWizard/SporeCoop/releases/latest) page): co-op in every stage for up to 4 players, and a Space stage built for playing
 together (the F9 window's **Space** page: partners on the map, allied colonies, trade, contracts,
 shared diplomacy, the galactic core together, rivals mode). Tested automatically on real game
 instances: 50+ scenario tests with real clicks, bots that play every stage through real input for
