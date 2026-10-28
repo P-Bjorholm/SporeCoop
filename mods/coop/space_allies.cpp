@@ -679,6 +679,10 @@ static bool mirror_pol(uint32_t pol)
     return false;
 }
 
+} // namespace spaceallies
+bool spaceext::allies_mirror_pol(uint32_t pol) { return spaceallies::mirror_pol(pol); }
+namespace spaceallies {
+
 static Mirror* mirror_of_planet(uint32_t planet)
 {
     for (auto& [n, m] : g_m)
@@ -1141,6 +1145,19 @@ static std::string debug(const std::vector<std::string>& a)
         g_reapply_at = 1e18;
         return status();
     }
+    if (a[0] == "detach" && a.size() > 1) { // tests (BUG-0071): mirror <name> becomes a plain empire of this
+        // galaxy: no contact, no alliance, its star and colony stay, the mod forgets it
+        auto it = g_m.find(a[1]);
+        if (it == g_m.end() || !it->second.applied)
+            return "no such applied mirror\n";
+        set_relation(it->second, false);
+        for (auto& [id, p] : it->second.planets)
+            if (p.rec)
+                vcall<void>(p.rec, 1);
+        std::string pol = hex(it->second.pol);
+        g_m.erase(it);
+        return "detached " + pol + "\n";
+    }
     if (a[0] == "drop") { // forget every mirror (after unmirroring it)
         unapply_all();
         for (auto& [n, m] : g_m)
@@ -1165,6 +1182,8 @@ static std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "nextpol") { // cStarManager +0x1D4: the next political id NextPoliticalID hands out
         void* sm = star_mgr();
+        if (sm && a.size() > 1 && a[1] == "bump") // tests: take one id, as a new empire would
+            thiscall<uint32_t>(a_NextPol, sm, 1);
         return sm ? "nextpol " + hex(F<uint32_t>(sm, 0x1D4)) + "\n" : "no star manager\n";
     }
     if (a[0] == "cities") { // on a planet: the cities and their owners

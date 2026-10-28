@@ -89,6 +89,7 @@ add('space_fleet', P + 'coop_space_fleet.py', warm=True, minutes=3, fixture='spa
 add('space_contracts', P + 'coop_space_contracts.py', minutes=9)  # co-op contracts: armada, survey, timeout (F9 Space page clicks)
 add('space_rivalry', P + 'coop_space_rivalry.py', minutes=8)  # rivals mode: own budgets, war and peace by real clicks, PvP
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
+add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)
 add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice sales by real clicks (space_trade.cpp)
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
