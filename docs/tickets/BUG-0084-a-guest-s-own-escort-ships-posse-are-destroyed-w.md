@@ -1,19 +1,19 @@
 ---
 id: BUG-0084
 title: a guest's own escort ships (posse) are destroyed while it is with the host
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#62
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: c5fe0b8
+tests: space_fleet
 signature:
-docs:
+docs: docs/re/space.md#space-ship-state-chunks
 related: #62
 ---
 
@@ -53,7 +53,9 @@ The guest keeps its own posse. Only the NPC ships that the host simulates (pirat
 PLAUSIBLE. The removal loop is confirmed by reading. That type 3 is the posse comes from docs/re/space.md (2.1 step 4 and the 0x1000C60 note), not from a runtime check in co-op. What the posse simulator does with a destroyed member is not verified.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (c5fe0b8). The local NPC removal in `guest_state` skips every type 3 ship. Type 3 is the posse: `cSimulatorSpaceGame::DestroyNPCUFOs` 0x1009310 (GOG 2024, same address as GOG 2016) skips exactly `mUFOType == 3` when keepPosse is set (and type 8 for keepAmbush), checked in the disassembly. No political id check: a posse recruited from an allied empire may carry that empire's id, and the host's own type 3 ships arrive as mirrors anyway. `coop.fleet keepposse 0` restores the old loop.
+
+Suggested in the review:
 
 - Skip type 3 ships of the player's own empire in the removal loop: `if (F<int>(u, kType) == 3 && F<uint32_t>(u, kPol) == GetPlayerEmpireID()) continue;`.
 - Better, keep any ship that is in the posse simulator's member list.
@@ -61,6 +63,8 @@ Not fixed yet. Suggested in the review:
 - Keep the old loop behind `coop.fix keepposse off`.
 
 ## Verification
+Done (2026-10-28, lane 6): `coop_space_fleet.py` step 2: the guest makes a type 3 ship (`coop.fleet spawn 3`) while it is with the host and it must still be in the game's UFO list 2 s later. `--without-fix` (`keepposse 0`) FAILS (the ship is gone), with the fix PASS twice. Not covered: a posse recruited through the comm screen (no recipe yet); a type 3 ship made by SpawnUFO with the own empire's political id is freed by the game at once (outside the real posse), so the test uses pol -1.
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_posse.py` on `twoinst.start('space')`:
@@ -77,3 +81,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #62.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (c5fe0b8): type 3 (posse, per DestroyNPCUFOs) is never removed as a host NPC; test space_fleet FAIL without / PASS with.

@@ -1,19 +1,19 @@
 ---
 id: BUG-0141
 title: two players with the same name share one allies mirror, one set of rivals relations and one budget
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#120
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-space
+commits: de700db
+tests: unit (net_tests test_unique_names)
 signature:
-docs:
+docs: 
 related: #120
 ---
 
@@ -54,11 +54,15 @@ With 2 players and equal names the proposals already resolve to the wrong id (`i
 CONFIRMED by reading. Verified by a second reviewer: low-medium (it needs equal names, and the default name makes that likely for new players).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-space (de700db). The host makes a name unique at HELLO (" 2", " 3", ... when the host or another accepted peer has it) before WELCOME / PLAYER_JOIN; the guest takes its own name from the WELCOME roster, so `name_of(my id)` is the name the others see. The Space tables keyed by name (allies mirrors, rivals relations and proposals, budgets) then see separate players. A rejoin keeps its name (the old peer is gone by then; `test_rejoin_same_endpoint` checks "bob" stays "bob"). `coop.corefix unique_names 0` restores the old shared names. Not done: a per-install token (a rejoin while the old entry has not timed out yet gets " 2" and loses its name-keyed entries).
+
+Suggested in the review:
 
 Make names unique on the host at HELLO: if a name is taken by another accepted peer, append " 2", " 3" (`net/session.cpp`, before `WELCOME` and `PLAYER_JOIN`). The guest learns its effective name from the roster. This keeps the name-based rejoin working for the common case. Alternatively, key these tables by a per-install token sent in HELLO. Keep the old behaviour behind `coop.fix unique_names off`.
 
 ## Verification
+Done (2026-10-28): unit test `test_unique_names` in `tests/net_tests.cpp` (`make test`): host and two guests all named "Player". With the fix every copy lists "Player", "Player 2", "Player 3" and each guest knows its own name; the same case with the fix off finds 3 problems (the test asserts both, so it shows it catches the bug). No two-game test: the logic is the portable session code.
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 Unit test (`mods/coop/net` builds natively): two HELLOs with the same name get two different names in the host's `players()`.
@@ -75,3 +79,4 @@ Both must FAIL on main and PASS with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #120.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-space (de700db): unique names at HELLO; unit test FAIL without (3 problems) / PASS with.

@@ -1646,3 +1646,30 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
 * ✔ The rescue's repair timer: the first `down_tick` after a disable must start from a zero step;
   the old function-local `last` kept the previous disable's time (repair=0.6 after 0.15 s on the
   second disable, BUG-0147).
+
+## Ship state chunks, the posse, trade refunds, mirror empires (2026-10-28, fix/w2-space)
+<a id="space-ship-state-chunks"></a>
+
+* ✔ `cSimulatorSpaceGame::DestroyNPCUFOs(keepAmbush, keepPosse, bool)` 0x1009310 (GOG 2024: the
+  same address as GOG 2016) walks +0x78 and keeps exactly `mUFOType` 3 when keepPosse is set and
+  type 8 when keepAmbush is set (disassembly: `cmp eax,3 / je` to the keepPosse test, `cmp eax,8`).
+  So type 3 is the posse (escort) and the mod never removes it as a host NPC (BUG-0084).
+* ✔ A type 3 UFO made with `SpawnUFO(3, &ownPol, key)` (the player's own political id) is freed by
+  the game at once (not in the UFO list in the next call, its address reused); with pol -1 it stays.
+  The real posse is made another way (comm screen recruitment, not traced).
+* ✔ The host's ship state (MSG_UFO_STATE, 10 Hz) is 18 ships per unreliable chunk; with 20 host
+  ships and one chunk lost the old guest code exploded 18 mirrors and spawned them again. The guest
+  now needs every chunk of a cycle before it removes anything (BUG-0037, `coop.fleet list`:
+  `partial_cycles`, `stale_chunks`).
+* ✔ In the galaxy menu (GalaxyGameEntry) `cSimulatorSpaceGame +0x40` (the player's inventory) is
+  null: `coop.space trade spices` prints "free cargo slots -1". A refund there cannot be added
+  (BUG-0058: now owed until back in Space).
+* ✔ Each allies mirror made with `ensure_empire` (NextPoliticalID + CreateEmpire) advanced the
+  political id counter by 2 in the tests (mirrors 800021CD, 800021CF, ...).
+* ✔ Going to the menu with an applied mirror: the game saves on the way, the allies save hook
+  unmirrors (applied = 0), and after the load the mirror's cEmpire is no longer in the map; the old
+  code put the old object back at the old id (BUG-0038). After the load the counter
+  `cStarManager +0x1D4` was above the mirror's id (21CF before, 21D0 after), so the collision with
+  an NPC empire of the loaded galaxy was not seen on this path.
+* ✔ `cStarManager::GetEmpire` does not return an unapplied mirror's cEmpire after `allies drop`
+  (the "no empire" answer); `allies detach` (tests) keeps the empire with its star instead.

@@ -42,3 +42,4 @@ Not fixed yet.
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w2-space: still open. Not reached in wave 2 (budget spent on the 7 other Space tickets). What is left: find the draw that still differs (or the sure fix from the report: the host sends the planet records of a newly generated star, a protocol feature). No new runtime data.

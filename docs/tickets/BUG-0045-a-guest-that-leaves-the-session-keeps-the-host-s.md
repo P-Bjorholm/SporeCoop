@@ -1,19 +1,19 @@
 ---
 id: BUG-0045
 title: a guest that leaves the session keeps the host's ships, which then attack it with their own AI
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#23
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: integrate/pr5-pr6
+commits: a387323
+tests: leave_cleanup
 signature:
-docs:
+docs: 
 related: #23
 ---
 
@@ -54,11 +54,15 @@ After a leave the guest's game is its own again: no mirror ships, as after the h
 CONFIRMED by reading the full path (Leave button -> `do_leave` -> no squadron cleanup; `tick` and `h_FireTool` both gated on the connection). Not verified at runtime: how long the mirrors survive, how the game's AI treats a political id from another save, and whether such ships can be written into a save. CLAUDE.md section 2 says our objects must never go into a save, so this needs a check.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Already fixed by BUG-0033 (a387323, merged in main before wave 2): `end_session_modules()` runs `squadron::on_session_end()` for `do_leave` too, so the guest's mirrors are destroyed and the maps cleared on Leave. Checked on main 05ee534 (2026-10-28, fix/w2-space): `do_leave` -> `end_session_modules(...)` -> `squadron::on_session_end()`. Not changed further.
+
+Suggested in the review:
 
 Call `squadron::on_session_end()` in `do_leave`, before `g_remotes` is cleared. A shared session-end helper for `do_leave` and the disconnected callback is filed separately by the core review; this issue is about the Space part. Keep the old path behind `coop.fix leavefleet off` for the lab.
 
 ## Verification
+Covered by `coop_leave_cleanup.py` (suite `leave_cleanup`, BUG-0033): Space fixture, the guest presses Leave and the host's mirror ships must be gone from its game; FAILS with `coop.sessionfix 0`, passes with the fix (runs in BUG-0033). Re-run on fix/w2-space in the lab run below.
+
 Not done yet. Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_leave.py` on `twoinst.start('space')`:
@@ -75,3 +79,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #23.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: no longer applies on main: fixed by BUG-0033 (a387323, end_session_modules on Leave); test leave_cleanup (fix/w2-space).
