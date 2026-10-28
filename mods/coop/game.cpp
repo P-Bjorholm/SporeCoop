@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "sporekit_game.hpp"
+#include "swap_ledger.h"
 
 using namespace skg;
 
@@ -284,8 +285,10 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 // restore above never runs, the puppet stays the game's avatar (mpAvatar), game::avatar() returns
 // the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per
 // frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
+static void swap_ledger_tick();
 void swap_guard_tick()
 {
+    swap_ledger_tick();
     if (!g_swap_real || !g_swap_guard)
         return;
     void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
@@ -298,6 +301,44 @@ void swap_guard_tick()
     H->log(M, SK_WARN, "creature AI: an NPC tick with a partner as the player did not return (a fault?): "
            "the avatar %p is the game's player again (puppet %p)", real, g_swap_puppet);
     g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
+}
+
+static swapledger::Ledger<512> g_ledger;
+size_t swap_open(void (*undo)(void*, uintptr_t), void* p, uintptr_t v, const char* what)
+{
+    return g_ledger.open(undo, p, v, what);
+}
+size_t swap_depth() { return g_ledger.n; }
+void swap_close(size_t mark, size_t own) { g_ledger.close(mark, own); }
+void swap_undo_u32(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4))
+        *(uint32_t*)p = (uint32_t)v;
+}
+void swap_undo_u8(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 1))
+        *(uint8_t*)p = (uint8_t)v;
+}
+void swap_undo_or32(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4))
+        *(uint32_t*)p |= (uint32_t)v;
+}
+void swap_undo_ptr_if(void* p, uintptr_t v)
+{
+    if (p && !IsBadWritePtr(p, 4) && *(void**)p == (void*)v)
+        *(void**)p = nullptr;
+}
+void debug_swap_ledger_fault() { g_ledger.fault = true; }
+uint32_t swap_ledger_restored() { return g_ledger.restored; }
+
+static void swap_ledger_tick()
+{
+    g_ledger.guard = g_swap_guard;
+    if (unsigned k = g_ledger.tick())
+        H->log(M, SK_WARN, "swap guard: %u change(s) around a game call were not put back (a fault?), undone now "
+               "(last: %s)", k, g_ledger.last ? g_ledger.last : "?");
 }
 
 void set_swap_guard(bool on) { g_swap_guard = on; }

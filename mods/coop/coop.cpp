@@ -554,13 +554,17 @@ void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5)
         if (!(*flags & 1))
             flags = nullptr;
     }
+    size_t mark = game::swap_depth();
     if (flags) {
+        game::swap_open(game::swap_undo_or32, flags, 1u, "selection flag"); // BUG-0110
         *flags &= ~1u;
         g_select_guards++;
     }
     o_SelectUI(sel, a2, a3, a4, a5);
-    if (flags)
+    if (flags) {
         *flags |= 1u;
+        game::swap_close(mark);
+    }
 }
 
 // The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
@@ -601,7 +605,12 @@ bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg)
     }
     if (n)
         g_stage_msg_guards++;
+    size_t mark = game::swap_depth(); // BUG-0110: a fault in the handler leaves no blank +0xE84 behind
+    for (int i = 0; i < n; i++)
+        game::swap_open(game::swap_undo_ptr_if, (uint8_t*)patched[i] + 0xE84, (uintptr_t)g_blank_e84, "blank +0xE84");
+    size_t own = game::swap_depth() - mark;
     bool r = o_StageMsg(self, id, msg);
+    game::swap_close(mark, own);
     for (int i = 0; i < n; i++) { // the handler may have destroyed nothing of ours: restore only our pointer
         void** e84 = (void**)((uint8_t*)patched[i] + 0xE84);
         if (!IsBadReadPtr(e84, 4) && *e84 == g_blank_e84)
@@ -2378,6 +2387,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        if (argc > 2 && !strcmp(argv[2], "ledger")) { // the other detours (BUG-0110)
+            game::debug_swap_ledger_fault();
+            SAY("the next detour that changes game state around a call leaves like a fault");
+            return 0;
+        }
         game::debug_swap_fault();
         SAY("the next NPC tick with a partner as the player leaves like a fault");
         return 0;

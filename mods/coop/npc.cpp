@@ -899,10 +899,10 @@ std::string status()
         for (auto& [c, pup] : g_ai_target)
             on_partner += g_seen_now.count(c) != 0;
         snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
-                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u reused=%u hunt_targets=%u\n",
+                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
-                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), g_reused, (unsigned)teamplay::hit_targets());
+                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets());
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)

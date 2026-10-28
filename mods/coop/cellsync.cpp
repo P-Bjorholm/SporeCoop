@@ -796,9 +796,11 @@ static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
         return o_NoAttack(a, b);
     uint32_t& av = F<uint32_t>(g, 0x411C);
     uint32_t keep = av;
+    size_t mark = game::swap_open(game::swap_undo_u32, &av, keep, "cell avatar index"); // BUG-0110
     av = F<uint32_t>(b, 0); // single-threaded cell step: restored right after
     bool r = o_NoAttack(a, b);
     av = keep;
+    game::swap_close(mark);
     return r;
 }
 

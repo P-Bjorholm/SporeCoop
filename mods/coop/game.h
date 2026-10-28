@@ -158,6 +158,19 @@ void swap_guard_tick();          // once per frame: undo an NPC tick's avatar sw
 void set_swap_guard(bool on);    // tests (off: no undo)
 void debug_swap_fault();         // tests: the next swapped NPC tick returns without its restore
 uint32_t swaps_restored();
+// BUG-0110, the other detours (cell avatar index, selection flag, blank +0xE84, civ capture
+// attribution): a change made around a call into the game is opened with its undo before the call
+// and closed after it; swap_guard_tick undoes what a fault left open. close(mark, own): own = the
+// entries the caller opened from mark on (it restores them itself).
+size_t swap_open(void (*undo)(void* p, uintptr_t v), void* p, uintptr_t v, const char* what);
+size_t swap_depth();
+void swap_close(size_t mark, size_t own = 1);
+void swap_undo_u32(void* p, uintptr_t v);    // *(uint32_t*)p = v
+void swap_undo_u8(void* p, uintptr_t v);     // *(uint8_t*)p = v
+void swap_undo_or32(void* p, uintptr_t v);   // *(uint32_t*)p |= v
+void swap_undo_ptr_if(void* p, uintptr_t v); // *(void**)p = nullptr when it is still (void*)v
+void debug_swap_ledger_fault();              // tests: the next close is skipped, as after an unwind
+uint32_t swap_ledger_restored();
 
 // The death of a creature: its behaviour tree's death node (0xD85B80) calls the creature's Die
 // (vt 0x8C, 0xC08210: mbDead +0xB5E, stops locomotion and effects) and plays the death animation.

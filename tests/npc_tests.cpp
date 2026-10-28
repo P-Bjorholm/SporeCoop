@@ -6,6 +6,7 @@
 
 #include "hunt_hits.h"
 #include "npc_ids.h"
+#include "swap_ledger.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -89,10 +90,63 @@ static void test_hits()
     CHECK(t.size() == 0);
 }
 
+// BUG-0110: changes around a call into the game that a fault leaves open are undone once per frame
+static void set_u32(void* p, uintptr_t v) { *(uint32_t*)p = (uint32_t)v; }
+static void test_ledger()
+{
+    printf("swap ledger\n");
+    for (bool guard : {false, true}) {
+        swapledger::Ledger<4> l;
+        l.guard = guard;
+        uint32_t av = 7, flag = 1;
+        // a call that returns: nothing left
+        size_t m = l.open(set_u32, &av, av, "av");
+        av = 9;
+        av = 7;
+        l.close(m);
+        CHECK(l.n == 0 && l.tick() == 0);
+        // a call that faults (the close never runs): the frame's tick puts the value back
+        m = l.open(set_u32, &av, av, "av");
+        av = 9;
+        l.fault = true;
+        l.close(m);
+        l.tick();
+        if (guard)
+            CHECK(av == 7 && l.restored == 1);
+        else
+            CHECK(av == 9); // the code before the fix: the partner stays the avatar
+        av = 7;
+        l.n = 0;
+        // an inner call faulted inside an outer one that returned: the outer close undoes it
+        size_t outer = l.open(set_u32, &av, av, "av");
+        av = 9;
+        l.open(set_u32, &flag, flag, "flag"); // inner
+        flag = 0;
+        av = 7;
+        l.close(outer);
+        CHECK(flag == 1 && l.n == 0);
+        // several own entries of one caller are its own (not leftovers)
+        uint32_t x = 1, y = 2;
+        m = l.n;
+        l.open(set_u32, &x, x, "x");
+        l.open(set_u32, &y, y, "y");
+        x = y = 5;
+        l.close(m, l.n - m);
+        CHECK(x == 5 && y == 5 && l.n == 0);
+        // full: no entry, nothing breaks
+        for (int i = 0; i < 6; i++)
+            l.open(set_u32, &x, 1, "x");
+        CHECK(l.n == 4);
+        l.close(0, 4);
+        CHECK(l.n == 0);
+    }
+}
+
 int main()
 {
     test_ids();
     test_hits();
+    test_ledger();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
