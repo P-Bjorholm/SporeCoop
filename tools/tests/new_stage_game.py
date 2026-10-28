@@ -95,14 +95,14 @@ def npc_cities(c, n):
             if not intro_up(c):
                 break
         c.cmd("wait.frames 30 20000")
-    m = re.search(r"eax=(0x[0-9A-Fa-f]+)", c.cmd("call Simulator::cCitySimulator::Get cdecl"))
+    m = re.search(r"eax=(0x[0-9A-Fa-f]+)", c.cmd("call Simulator::cCivExpansion::Get cdecl"))
     if not m or int(m.group(1), 16) == 0:
         print("FAILED: no city simulator")
         return 1
     cs = m.group(1)
     before = city_count(c)
     for _ in range(n):
-        print("  appear:", c.cmd(f"call Simulator::cCitySimulator::AppearNextCity thiscall {cs} 1 0").strip())
+        print("  appear:", c.cmd(f"call Simulator::cCivExpansion::SpawnNextCity thiscall {cs} 1 0").strip())
         c.cmd("wait.frames 90 30000")
     c.cmd("wait.frames 150 30000")
     after = city_count(c)

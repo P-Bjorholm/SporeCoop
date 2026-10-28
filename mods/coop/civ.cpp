@@ -441,7 +441,12 @@ static void* SK_THISCALL h_CreateBuilding(void* city, uint32_t noun, uint32_t ty
 constexpr uint8_t kNextCitySite = 0xFF; // MSG_CIV_BUILD city index: "found the next city site", noun 0
 using SpawnNextCity_t = bool(SK_THISCALL*)(void*, void*, int);
 static SpawnNextCity_t o_SpawnNextCity;
-static uint32_t g_cities_founded, g_cities_in, g_cities_blocked;
+static uint32_t g_cities_founded, g_cities_in, g_cities_blocked, g_cities_caught_up;
+// BUG-0120: a founding broadcast while a guest was not in Civ (receiving or loading the world) was
+// lost. The guest compares the host's city count of every snapshot with its own and founds the next
+// site itself when it stays behind (`coop.civ fix cities 0`: only the event, the code before).
+static bool g_fix_cities = true;
+static double g_city_short_since = -1, g_last_city_spawn = -1e9;
 static bool SK_THISCALL h_SpawnNextCity(void* ex, void* who, int flag)
 {
     if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
@@ -1371,11 +1376,42 @@ static void kill_local(void* v)
     g_applying = false;
 }
 
+// a founded city appears a few seconds after SpawnNextCity (docs/re/civ.md 9.3): the count must
+// stay short for 6 s, and 15 s must pass after any founding here, so a replayed event is not
+// founded a second time; never more cities than the host has
+static void city_catch_up(size_t host_total)
+{
+    if (!g_fix_cities)
+        return;
+    double now = H->time_seconds();
+    if (all_cities().size() >= host_total) {
+        g_city_short_since = -1;
+        return;
+    }
+    if (g_city_short_since < 0)
+        g_city_short_since = now;
+    if (now - g_city_short_since < 6.0 || now - g_last_city_spawn < 15.0)
+        return;
+    void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
+    if (!ex)
+        return;
+    g_applying = true;
+    o_SpawnNextCity(ex, nullptr, 0);
+    g_applying = false;
+    g_last_city_spawn = now;
+    g_city_short_since = -1;
+    g_cities_caught_up++;
+    H->log(M, SK_INFO, "civ: the host has %u cities, this game %u: founding the next site", (unsigned)host_total,
+           (unsigned)all_cities().size());
+}
+
 static bool guest_cities(net::Reader& r) // false: the list does not fit the message
 {
     uint8_t total = r.u8(), c0 = r.u8(), nc = r.u8();
     if (!r.ok() || c0 + nc > total)
         return false;
+    if (c0 == 0)
+        city_catch_up(total);
     if (g_host_cities.size() != total)
         g_host_cities.resize(total, nullptr);
     for (int i = 0; i < nc && r.ok(); i++) {
@@ -1591,6 +1627,7 @@ static void guest_build(net::Reader& r)
             o_SpawnNextCity(ex, nullptr, 0);
             g_applying = false;
             g_cities_in++;
+            g_last_city_spawn = H->time_seconds();
         }
         return;
     }
@@ -1677,6 +1714,7 @@ void on_session_end()
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
+    g_city_short_since = -1;
 }
 
 // a load (or a stage change): every vehicle and city of the old world is freed. Before BUG-0059 civ
@@ -1734,10 +1772,10 @@ std::string status()
         snprintf(b, sizeof b,
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
-                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u\n",
+                 "buildings_fixed=+%u/-%u ruins_in=%u ruins_differ=%u incomplete=%u income_blocked=%u cities_caught_up=%u\n",
                  (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked);
+                 g_bfix_removed, g_ruins_in, g_ruins_differ, g_incomplete, g_income_blocked, g_cities_caught_up);
     return b;
 }
 
@@ -1831,8 +1869,10 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_boost = on;
         else if (a[1] == "world")
             g_fix_world = on;
+        else if (a[1] == "cities")
+            g_fix_cities = on;
         else
-            return "usage: coop.civ fix boost|world 0|1";
+            return "usage: coop.civ fix boost|world|cities 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (!a.empty() && a[0] == "tables") { // sizes of the pointer tables (tests: BUG-0040, BUG-0059)
