@@ -71,6 +71,8 @@ static std::unordered_map<uint16_t, void*> g_hid_rev;
 static uint16_t g_next_id = 1;
 static double g_last_send;
 static uint16_t g_cycle;
+static uint8_t g_drop_chunk = 0xFF; // tests (coop.fleet drop <chunk> <n>): skip sending that chunk n times
+static int g_drop_left;
 static uint32_t g_hits_in, g_damage_out, g_puppet_shots;
 
 // ---------------- guest ----------------
@@ -86,6 +88,17 @@ static std::unordered_map<uint16_t, Mirror> g_mirrors;
 static std::unordered_map<void*, uint16_t> g_mirror_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
 static uint16_t g_rx_cycle = 0xFFFF;
+static bool g_rx_any;         // a cycle was seen in this session (g_rx_cycle is valid)
+static uint32_t g_rx_mask;    // BUG-0037: the chunks of g_rx_cycle that arrived (chunks <= 15)
+static bool g_rx_done;        // the removal pass of g_rx_cycle ran
+// BUG-0037: the removal pass (explosion of every mirror missing from the cycle) ran on the last
+// chunk even when an earlier chunk of the cycle was lost or late, and a late chunk of an older
+// cycle reset the cycle. `coop.fleet chunkfix 0` restores that (tests).
+static bool g_chunk_fix = true;
+// BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
+// `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
+static bool g_keep_posse = true;
+static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept;
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
 
@@ -229,6 +242,10 @@ static void host_tick(double now)
             w.f32(F<float>(u, kHp));
             w.f32(F<float>(u, kMaxHp));
         }
+        if (g_drop_left > 0 && k == g_drop_chunk) { // tests: a lost packet
+            g_drop_left--;
+            continue;
+        }
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
                 C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
@@ -299,7 +316,24 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
     if (!r.ok() || !C.with_host || !C.with_host())
         return; // the host's ships are mirrored only where the host is
-    if (cycle != g_rx_cycle) {
+    if (g_chunk_fix) {
+        if (!chunks || chunks > 31 || chunk >= chunks)
+            return;
+        int16_t age = (int16_t)(uint16_t)(cycle - g_rx_cycle);
+        if (g_rx_any && age < 0 && age > -100) { // a late chunk of an older cycle (> -100: not a restart)
+            g_stale_chunks++;
+            return;
+        }
+        if (!g_rx_any || cycle != g_rx_cycle) {
+            if (g_rx_any && !g_rx_done)
+                g_partial_cycles++; // the previous cycle never completed: nothing was removed for it
+            g_rx_any = true;
+            g_rx_cycle = cycle;
+            g_rx_mask = 0;
+            g_rx_done = false;
+            g_cycle_ids.clear();
+        }
+    } else if (cycle != g_rx_cycle) {
         g_rx_cycle = cycle;
         g_cycle_ids.clear();
     }
@@ -338,7 +372,12 @@ static void guest_state(net::Reader& r)
             g_created++;
         }
     }
-    if (chunk + 1 < chunks)
+    if (g_chunk_fix) { // the removal pass needs every chunk of the cycle, in any order, once
+        g_rx_mask |= 1u << chunk;
+        if (g_rx_done || g_rx_mask != (chunks >= 32 ? 0xFFFFFFFFu : (1u << chunks) - 1))
+            return;
+        g_rx_done = true;
+    } else if (chunk + 1 < chunks)
         return;
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();) {
         if (!g_cycle_ids.count(it->first)) {
@@ -356,6 +395,12 @@ static void guest_state(net::Reader& r)
     for (void* u : all_ufos()) {
         if (u == me || F<int>(u, kType) == 0 || g_mirror_of.count(u) || F<int>(u, kType) == 6)
             continue; // type 6: the mod's player puppets (Defender)
+        if (g_keep_posse && F<int>(u, kType) == 3) {
+            // type 3 is the posse (DestroyNPCUFOs keeps exactly type 3 when keepPosse is set): our
+            // own escort, whatever empire its ships came from, not one of the host's NPCs
+            g_posse_kept++;
+            continue;
+        }
         destroy_mirror(u, false);
         g_local_removed++;
     }
@@ -470,11 +515,16 @@ void on_session_end()
     g_hid_rev.clear();
     g_hold_mirror = 0xFFFF;
     g_stale_puppet = nullptr;
+    g_cycle_ids.clear();
+    g_rx_any = false;
+    g_rx_mask = 0;
+    g_rx_done = false;
+    g_drop_left = 0;
 }
 
 std::string status()
 {
-    char b[320];
+    char b[420];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
@@ -484,9 +534,11 @@ std::string status()
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
-                 "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u\n",
+                 "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
+                 "partial_cycles=%u posse_kept=%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
-                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed);
+                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
+                 g_partial_cycles, g_posse_kept);
     return b;
 }
 
@@ -529,8 +581,9 @@ std::string debug(const std::vector<std::string>& a)
                      dir, (uint8_t*)me + kCombat);
         return "shot";
     }
-    if (a.size() >= 2 && a[0] == "spawn") { // spawn <type>: a ship without an empire (pirate) next to us
-        uint32_t pol = 0xFFFFFFFFu;
+    if (a.size() >= 2 && a[0] == "spawn") { // spawn <type> [own]: a ship without an empire (pirate) next to
+        // us, or with our own empire's political id (`own`: type 3 = an escort ship of ours, BUG-0084)
+        uint32_t pol = a.size() >= 3 && a[2] == "own" ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
         void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol, (void*)&F<uint32_t>(me, kModel));
         if (!u)
             return "spawn failed";
@@ -538,7 +591,9 @@ std::string debug(const std::vector<std::string>& a)
         float pp[3] = {p.x + 30.f, p.y, p.z + 10.f};
         auto& q = F<float[4]>(me, kRot);
         vcall<void>((uint8_t*)u + kLoco, 0x44 / 4, (const float*)pp, (const float*)q);
-        return "spawned";
+        char b[64];
+        snprintf(b, sizeof b, "spawned %p type=%d pol=%08X", u, F<int>(u, kType), F<uint32_t>(u, kPol));
+        return b;
     }
     if (a.size() >= 3 && a[0] == "hurt") { // host: ship #id hits player <p>'s puppet [with dmg]
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
@@ -549,6 +604,19 @@ std::string debug(const std::vector<std::string>& a)
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
+    }
+    if (a.size() >= 2 && a[0] == "chunkfix") { // BUG-0037: 0 = the removal pass on the last chunk (tests)
+        g_chunk_fix = a[1] != "0";
+        return std::string("chunkfix ") + (g_chunk_fix ? "1" : "0");
+    }
+    if (a.size() >= 2 && a[0] == "keepposse") { // BUG-0084: 0 = the guest destroys its own escort (tests)
+        g_keep_posse = a[1] != "0";
+        return std::string("keepposse ") + (g_keep_posse ? "1" : "0");
+    }
+    if (a.size() >= 3 && a[0] == "drop") { // tests (BUG-0037, host): skip the next n sends of chunk k
+        g_drop_chunk = (uint8_t)atoi(a[1].c_str());
+        g_drop_left = atoi(a[2].c_str());
+        return "dropping";
     }
     if (a.size() >= 2 && a[0] == "hitfix") { // BUG-0054: 0 = the old unchecked attacker (tests)
         g_hit_fix = a[1] != "0";
@@ -572,8 +640,8 @@ std::string debug(const std::vector<std::string>& a)
         game::destroy_creature(pup);
         return live(pup) ? "still listed" : "freed";
     }
-    return "usage: coop.fleet list | shoot <id> <dmg> | hurt <ship id> <player> | hitfix 0|1 | freemirror <id> | "
-           "freepuppet <player>";
+    return "usage: coop.fleet list | spawn <type> [own] | shoot <id> <dmg> | hurt <ship id> <player> | hitfix 0|1 | "
+           "chunkfix 0|1 | keepposse 0|1 | drop <chunk> <n> | freemirror <id> | freepuppet <player>";
 }
 
 std::vector<syncdbg::Entry> sync_entries()
