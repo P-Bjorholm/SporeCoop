@@ -101,10 +101,8 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0088](BUG-0088-the-guest-s-local-to-host-index-map-keeps-an-ent.md) | open | bug | Cell | 2026-10-27 |  | the guest's local-to-host index map keeps an entry for every mirror it recreates |
 | [BUG-0089](BUG-0089-a-pack-listing-the-same-file-twice-loses-the-ori.md) | open | bug | All | 2026-10-27 |  | a pack listing the same file twice loses the original file on rollback |
 | [BUG-0090](BUG-0090-galaxy-map-name-tags-react-to-mouse-clicks-in-ot.md) | open | bug | Space | 2026-10-27 |  | galaxy map name tags react to mouse clicks in other windows |
-| [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | open | crash | Creature | 2026-10-27 |  | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
-| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | fixed | crash | Space | 2026-10-27 | unreleased | star lookup by id reads past the end of the star table |
 | [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | fixed | crash | Creature | 2026-10-27 | unreleased | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
-| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | open | crash | Space | 2026-10-27 |  | star lookup by id reads past the end of the star table |
+| [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | fixed | crash | Space | 2026-10-27 | unreleased | star lookup by id reads past the end of the star table |
 | [BUG-0093](BUG-0093-coop-cell-spawn-reads-outside-the-cell-pool-for.md) | open | tooling | All | 2026-10-27 |  | coop.cell spawn reads outside the cell pool for a slot number that does not exist |
 | [BUG-0094](BUG-0094-offline-reinstall-can-silently-downgrade-and-the.md) | open | bug | Installer | 2026-10-27 |  | offline "Reinstall" can silently downgrade, and the pack used is picked arbitrarily |
 | [BUG-0095](BUG-0095-after-a-failed-co-op-jump-the-next-real-zoom-out.md) | fixed | bug | Space | 2026-10-27 | unreleased | after a failed co-op jump the next real zoom-out to the galaxy skips the game's galaxy handler |
