@@ -1,19 +1,19 @@
 ---
 id: BUG-0099
 title: the joint-hunt hit table grows without bound and keys hits by reusable creature addresses
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#77
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-creature
+commits: 8de7ca7
+tests: unit
 signature:
-docs:
+docs: 
 related: #77
 ---
 
@@ -51,14 +51,19 @@ The table holds only hits within `kHuntWindow`, and is cleared on a world change
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-In the size cleanup, prune each vector by `kHuntWindow` and then erase the empty ones (or prune every second from `tick`). Clear `g_hits` on a world change and at session end (#11). Optionally key by creature plus a generation (or check `game::creature_listed` when reading).
+Fixed (fix/w2-creature): the table is `teamplay::HitTable` (mods/coop/hunt_hits.h). Every hit
+prunes the hits older than `kHuntWindow` of every target and drops empty targets, so it holds only
+targets hit in the last 6 s. `teamplay::forget_target` drops a target whose object the host
+retires (npc.cpp `retire`: forgotten after 2 s without an update, or reused, BUG-0044);
+`teamplay::reset` runs on `npc::on_world_change` and `npc::on_session_end`. `hunt_targets=` in
+`coop.npc` (host). `HitTable::legacy` keeps the old pruning (unit test).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tests/net_tests.cpp`-style host test, since teamplay's map logic is portable if `H->time_seconds` is stubbed: hit 1000 distinct targets with time advancing past `kHuntWindow`, then assert the map size stays at most the number hit within the window. It fails on main.
+Unit test `tests/npc_tests.cpp` (`make test`, ASan): 1000 targets hit once a second; with
+`legacy` the table holds all 1000 (the bug, checked), with the fix at most 7. Joint detection,
+the window, `forget` (a new creature at a freed address starts clean) and `clear` are checked too.
+Not run in the game on its own (the change is in portable code; the two-game tests that hit NPCs,
+creature_kills and team, ran with it).
 
 ### Related
 - Umbrella #11 (module state that no session end clears).
@@ -66,3 +71,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #77.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-creature (hit table pruned every hit, cleared on world change and session end); unit test.

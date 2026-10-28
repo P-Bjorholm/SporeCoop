@@ -33,7 +33,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | open | bug | Creature | 2026-10-25 |  | Our objects (puppets, proxies, their herds) are written into saves |
 | [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
 | [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
-| [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | open | bug | Creature | 2026-10-25 |  | NPC net ids can repeat after about 65k allocations in one world |
+| [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | fixed | bug | Creature | 2026-10-25 | unreleased | NPC net ids can repeat after about 65k allocations in one world |
 | [BUG-0024](BUG-0024-tools-fakepeer-py-speaks-protocol-6-the-mod-7.md) | fixed | tooling | All | 2026-10-25 | unreleased | tools/fakepeer.py speaks protocol 6, the mod 7 |
 | [BUG-0025](BUG-0025-spore-sh-kill-on-lane-1-could-kill-a-spore-the-o.md) | open | tooling | All | 2026-10-25 |  | spore.sh kill on lane 1 could kill a Spore the owner started |
 | [BUG-0026](BUG-0026-creature-crash-after-dying-and-skipping-the-cuts.md) | not-reproduced | crash | Creature | 2026-10-24 |  | Creature: crash after dying and skipping the cutscene |
@@ -54,7 +54,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0041](BUG-0041-after-a-small-respawn-the-next-level-up-makes-th.md) | open | bug | Cell | 2026-10-27 |  | after a small respawn, the next level-up makes the player's cell up to twice too big |
 | [BUG-0042](BUG-0042-six-suite-tests-smoke-creature-included-pass-wit.md) | open | test | All | 2026-10-27 |  | six suite tests (smoke creature included) pass with faults and check only mod bookkeeping |
 | [BUG-0043](BUG-0043-an-evolution-or-superweapon-vote-still-runs-afte.md) | fixed | crash | All | 2026-10-27 | unreleased | an evolution or superweapon vote still runs after its stage or session is gone |
-| [BUG-0044](BUG-0044-a-recycled-npc-object-keeps-the-old-net-id-so-gu.md) | open | desync | Creature | 2026-10-27 |  | a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse |
+| [BUG-0044](BUG-0044-a-recycled-npc-object-keeps-the-old-net-id-so-gu.md) | fixed | desync | Creature | 2026-10-27 | unreleased | a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse |
 | [BUG-0045](BUG-0045-a-guest-that-leaves-the-session-keeps-the-host-s.md) | open | bug | Space | 2026-10-27 |  | a guest that leaves the session keeps the host's ships, which then attack it with their own AI |
 | [BUG-0046](BUG-0046-armada-contract-starts-a-second-raid-when-the-ho.md) | open | bug | Space | 2026-10-27 |  | armada contract starts a second raid when the host comes back, and the old raid decides the wave |
 | [BUG-0047](BUG-0047-refpack-decoder-reads-one-byte-past-a-5-byte-com.md) | open | bug | All | 2026-10-27 |  | RefPack decoder reads one byte past a 5-byte compressed record |
@@ -65,7 +65,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0052](BUG-0052-a-lab-test-timeout-kills-only-bin-sh-the-test-ke.md) | open | tooling | All | 2026-10-27 |  | a lab test timeout kills only /bin/sh, the test keeps driving the lane |
 | [BUG-0053](BUG-0053-partner-s-puppet-freezes-when-the-sender-s-milli.md) | open | bug | All | 2026-10-27 |  | partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime) |
 | [BUG-0054](BUG-0054-ship-hit-messages-can-pass-a-freed-mirror-or-pup.md) | fixed | crash | Space | 2026-10-27 | unreleased | ship hit messages can pass a freed mirror or puppet into the game's TakeDamage (possible crash) |
-| [BUG-0055](BUG-0055-after-leaving-a-session-the-host-s-creations-sti.md) | open | bug | Creature | 2026-10-27 |  | after leaving a session, the host's creations still replace a guest's own creation with the same id |
+| [BUG-0055](BUG-0055-after-leaving-a-session-the-host-s-creations-sti.md) | fixed | bug | Creature | 2026-10-27 | unreleased | after leaving a session, the host's creations still replace a guest's own creation with the same id |
 | [BUG-0056](BUG-0056-a-stack-overflow-ends-the-game-without-a-crash-r.md) | open | bug | All | 2026-10-27 |  | a stack overflow ends the game without a crash report |
 | [BUG-0057](BUG-0057-tickets-py-new-reuses-ticket-ids-of-branches-who.md) | open | tooling | All | 2026-10-27 |  | tickets.py new reuses ticket ids of branches whose worktree is gone |
 | [BUG-0058](BUG-0058-gifted-tool-charges-and-spice-that-come-back-whi.md) | open | bug | Space | 2026-10-27 |  | gifted tool charges and spice that come back while you are not in Space are lost |
@@ -76,7 +76,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0063](BUG-0063-flying-to-a-partner-who-is-in-the-galaxy-view-co.md) | open | bug | Space | 2026-10-27 |  | flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled |
 | [BUG-0064](BUG-0064-a-new-player-inherits-the-civilization-role-of-t.md) | open | bug | Civ | 2026-10-27 |  | a new player inherits the civilization role of the player who had their id before |
 | [BUG-0065](BUG-0065-sk-shot-sk-wait-frames-in-the-cheat-console-free.md) | fixed | freeze | All | 2026-10-27 | unreleased | `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good) |
-| [BUG-0066](BUG-0066-a-puppet-or-proxy-removed-during-a-cinematic-get.md) | open | bug | Creature | 2026-10-27 |  | a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC |
+| [BUG-0066](BUG-0066-a-puppet-or-proxy-removed-during-a-cinematic-get.md) | fixed | bug | Creature | 2026-10-27 | unreleased | a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC |
 | [BUG-0067](BUG-0067-chiefs-stay-1-3x-big-after-the-session-ends-and.md) | open | bug | Tribe | 2026-10-27 |  | chiefs stay 1.3x big after the session ends, and the epic creature state survives a leave or a load |
 | [BUG-0068](BUG-0068-twoinst-monitor-reads-the-wrong-game-log-in-work.md) | open | test | All | 2026-10-27 |  | twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE |
 | [BUG-0069](BUG-0069-netcode-timeouts-5-s-unstable-15-s-disconnect-do.md) | open | bug | All | 2026-10-27 |  | netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state) |
@@ -109,7 +109,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0096](BUG-0096-coop-vote-editor-submits-the-editor-request-insi.md) | open | test | All | 2026-10-27 |  | coop.vote editor submits the editor request inside Present, a path the real game never takes |
 | [BUG-0097](BUG-0097-release-job-does-not-check-tag-against-coop-vers.md) | open | tooling | All | 2026-10-27 |  | release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section |
 | [BUG-0098](BUG-0098-ending-the-ship-disabled-state-writes-to-the-pla.md) | fixed | bug | Space | 2026-10-27 | unreleased | ending the "ship disabled" state writes to the player's ship even after Space was left |
-| [BUG-0099](BUG-0099-the-joint-hunt-hit-table-grows-without-bound-and.md) | open | bug | Creature | 2026-10-27 |  | the joint-hunt hit table grows without bound and keys hits by reusable creature addresses |
+| [BUG-0099](BUG-0099-the-joint-hunt-hit-table-grows-without-bound-and.md) | fixed | bug | Creature | 2026-10-27 | unreleased | the joint-hunt hit table grows without bound and keys hits by reusable creature addresses |
 | [BUG-0100](BUG-0100-a-test-that-prints-result-skip-is-counted-as-pas.md) | open | tooling | All | 2026-10-27 |  | a test that prints RESULT: SKIP is counted as passed by the lab |
 | [BUG-0101](BUG-0101-spore-sh-kill-sigkills-half-dead-sporeapp-proces.md) | open | tooling | All | 2026-10-27 |  | spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own |
 | [BUG-0102](BUG-0102-spore-sh-fixture-restore-with-profile-deletes-th.md) | open | tooling | All | 2026-10-27 |  | spore.sh fixture restore with profile "-" deletes the player's own saves |
@@ -120,7 +120,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0107](BUG-0107-the-keepalive-std-thread-can-abort-the-game-at-e.md) | fixed | crash | All | 2026-10-27 | unreleased | the keepalive std::thread can abort the game at exit when Shutdown did not run |
 | [BUG-0108](BUG-0108-0-7-x-is-called-the-gog-2016-release-but-the-0-7.md) | open | bug | All | 2026-10-27 |  | 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016 |
 | [BUG-0109](BUG-0109-with-3-players-a-departed-player-s-last-state-ar.md) | open | desync | All | 2026-10-27 |  | with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner |
-| [BUG-0110](BUG-0110-a-fault-inside-the-npc-ai-tick-leaves-the-partne.md) | open | bug | Creature | 2026-10-27 |  | a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good |
+| [BUG-0110](BUG-0110-a-fault-inside-the-npc-ai-tick-leaves-the-partne.md) | fixed | bug | Creature | 2026-10-27 | unreleased | a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good |
 | [BUG-0111](BUG-0111-the-guest-sees-an-empire-s-defender-ships-twice.md) | open | bug | Space | 2026-10-27 |  | the guest sees an empire's defender ships twice, because any UfoType 6 ship counts as "our puppet" |
 | [BUG-0112](BUG-0112-with-2-guests-waiting-for-the-world-the-host-pos.md) | open | bug | All | 2026-10-27 |  | with 2+ guests waiting for the world, the host posts one save per guest in the same frame |
 | [BUG-0113](BUG-0113-after-a-resolution-change-the-co-op-window-stays.md) | open | bug | All | 2026-10-27 |  | after a resolution change the co-op window stays at its old position, partly off-screen |
