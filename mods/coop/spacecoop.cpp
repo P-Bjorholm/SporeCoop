@@ -308,7 +308,12 @@ std::string travel_to_star(uint32_t star) { return in_space() ? travel_to(star) 
 
 // cStarManager::GetStarRecord faults on an id that is not a star of this galaxy (seen with id 1,
 // 2026-10-23: GetStarRecord+0x32): look the record up in its table (+0xC8, 20-byte sectors whose
-// first dword is the record array, StarID = sector << 12 | index) and check the record's own id
+// first dword is the record array, StarID = sector << 12 | index) and check the record's own id.
+// BUG-0092: the index is checked against the sector's end (+4) before the array is read; an id from
+// the network may name an index past it (`coop.space starfix 0`: the old read, for the tests).
+static bool g_star_fix = true;
+static uint32_t g_star_oob; // lookups whose index was past the sector's end (read or refused)
+static uint32_t g_star_oob_read; // ... and read anyway (the old path)
 void* star_record(uint32_t id)
 {
     if (!id || id == 0xFFFFFFFFu || !a_StarMgr)
@@ -319,10 +324,19 @@ void* star_record(uint32_t id)
     uint8_t* b = F<uint8_t*>(sm, 0xC8);
     uint8_t* e = F<uint8_t*>(sm, 0xCC);
     uint32_t sec = id >> 12, idx = id & 0xFFF;
-    if (!b || e < b || sec >= (uint32_t)((e - b) / 20) || IsBadReadPtr(b + sec * 20, 4))
+    if (!b || e < b || sec >= (uint32_t)((e - b) / 20) || IsBadReadPtr(b + sec * 20, 8))
         return nullptr;
-    void** arr = *(void***)(b + sec * 20);
-    if (!arr || IsBadReadPtr(arr + idx, 4))
+    void** arr = F<void**>(b + sec * 20, 0);
+    void** arr_end = F<void**>(b + sec * 20, 4);
+    if (!arr)
+        return nullptr;
+    if (arr_end <= arr || idx >= (uint32_t)(arr_end - arr)) {
+        g_star_oob++;
+        if (g_star_fix)
+            return nullptr;
+        g_star_oob_read++;
+    }
+    if (IsBadReadPtr(arr + idx, 4))
         return nullptr;
     void* r = arr[idx];
     if (!r || IsBadReadPtr(r, 0x74) || F<uint32_t>(r, 0x70) != id)
@@ -1287,6 +1301,25 @@ std::string debug(const std::vector<std::string>& a)
             return "no active planet / the ship is not flying";
         thiscall<void>(f, mode);
         return "landing";
+    }
+    if (a[0] == "starfix" && a.size() > 1) { // BUG-0092: 0 = the old unchecked index (tests)
+        g_star_fix = a[1] != "0";
+        return std::string("starfix ") + (g_star_fix ? "1" : "0");
+    }
+    if (a[0] == "starrec" && a.size() > 1) { // tests (BUG-0092): look a star id up; the sector's size
+        uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 0);
+        void* sm = a_StarMgr ? cdecl_call<void*>(a_StarMgr) : nullptr;
+        uint8_t* sb = sm && !IsBadReadPtr((uint8_t*)sm + 0xC8, 8) ? F<uint8_t*>(sm, 0xC8) : nullptr;
+        uint8_t* se = sb ? F<uint8_t*>(sm, 0xCC) : nullptr;
+        uint32_t sec = id >> 12;
+        long n = -1;
+        if (sb && se > sb && sec < (uint32_t)((se - sb) / 20) && !IsBadReadPtr(sb + sec * 20, 8))
+            n = (long)(F<void**>(sb + sec * 20, 4) - F<void**>(sb + sec * 20, 0));
+        uint32_t o0 = g_star_oob_read;
+        void* r = star_record(id);
+        snprintf(b, sizeof b, "star %08X rec=%s sector_size=%ld read_outside=%u oob=%u", id, r ? "yes" : "none", n,
+                 g_star_oob_read - o0, g_star_oob);
+        return b;
     }
     if (a[0] == "jumpto" && a.size() > 1) { // "force": even during a cinematic (tests: the old jump)
         bool force = false;

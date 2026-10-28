@@ -246,6 +246,38 @@ static bool live(void* u)
     return false;
 }
 
+// BUG-0054: a ship handed to the game's TakeDamage as the attacker must still exist. The game frees
+// mirrors and puppets on every context switch; a hit message handled in the frame after that (the
+// messages run before squadron::tick drops the freed pointers) passed a freed object, which the
+// game reads and AddRefs (AddHostileUnit). `coop.fleet hitfix 0` restores the old unchecked path.
+static bool g_hit_fix = true;
+static uint16_t g_hold_mirror = 0xFFFF; // tests (coop.fleet freemirror): this freed mirror stays listed
+static void* g_stale_puppet;            // tests (coop.fleet freepuppet): the next MSG_UFO_HIT's attacker
+static uint32_t g_att_dropped, g_att_freed;
+
+static void* hit_attacker(void* a)
+{
+    if (a && g_hit_fix && (!live(a) || F<int>(a, kState) == 2)) {
+        g_att_dropped++;
+        a = nullptr;
+    }
+    if (a && !game::ufo_listed(a)) // what the game gets: counted for the tests, with the fix off
+        g_att_freed++;
+    return a;
+}
+
+static void* hit_puppet(uint8_t from)
+{
+    void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
+    if (g_stale_puppet) {
+        p = g_stale_puppet;
+        g_stale_puppet = nullptr;
+    }
+    if (p && g_hit_fix && live(p) && F<int>(p, kType) != 6) // only the mod's player puppets (Defender)
+        p = nullptr, g_att_dropped++;
+    return hit_attacker(p);
+}
+
 static void destroy_mirror(void* u, bool explode)
 {
     if (!live(u))
@@ -288,6 +320,8 @@ static void guest_state(net::Reader& r)
         auto& m = g_mirrors[id];
         m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
         m.est.update(p, now);
+        if (id == g_hold_mirror)
+            continue; // tests: keep the freed pointer until the next MSG_UFO_DAMAGE
         if (m.u && (!live(m.u) || F<int>(m.u, kState) == 2)) {
             g_mirror_of.erase(m.u);
             m.u = nullptr;
@@ -330,6 +364,8 @@ static void guest_tick(double now)
 {
     bool here = C.with_host && C.with_host();
     for (auto& [id, m] : g_mirrors) {
+        if (id == g_hold_mirror)
+            continue; // tests: the one frame between the free and this tick, held open
         if (m.u && !live(m.u)) { // freed by the game: spawned again with the next state
             g_mirror_of.erase(m.u);
             m.u = nullptr;
@@ -391,7 +427,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_hid_rev.find(id);
         if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
-        void* puppet = C.puppet_of ? C.puppet_of(from) : nullptr;
+        void* puppet = hit_puppet(from);
         g_applying = true;
         o_TakeDamage((uint8_t*)it->second + kCombat, dmg, skg::cdecl_call<uint32_t>(a_PlayerEmpireID), t, dir,
                      puppet ? (uint8_t*)puppet + kCombat : nullptr);
@@ -406,7 +442,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || !me)
             return;
         auto it = g_mirrors.find(att);
-        void* a = it != g_mirrors.end() ? it->second.u : nullptr;
+        void* a = hit_attacker(it != g_mirrors.end() ? it->second.u : nullptr);
+        g_hold_mirror = 0xFFFF;
         // through the hook (g_applying: straight to the game after the own-ship filter): a lethal hit
         // next to a partner only disables the ship (spacecoop rescue). Calling the original here
         // skipped that, and the guest's ship died in real fights with the partner next to it.
@@ -427,20 +464,25 @@ void on_session_end()
     g_mirror_of.clear();
     g_hid.clear();
     g_hid_rev.clear();
+    g_hold_mirror = 0xFFFF;
+    g_stale_puppet = nullptr;
 }
 
 std::string status()
 {
-    char b[256];
+    char b[320];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u\n",
-                 (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots);
+        snprintf(b, sizeof b,
+                 "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
+                 "att_dropped=%u att_freed=%u\n",
+                 (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots, g_att_dropped,
+                 g_att_freed);
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
-                 "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u\n",
+                 "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
-                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits);
+                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed);
     return b;
 }
 
@@ -497,14 +539,37 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "hurt") { // host: ship #id hits player <p>'s puppet [with dmg]
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
         void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[2].c_str())) : nullptr;
-        if (it == g_hid_rev.end() || !pup || !live(it->second))
+        if (it == g_hid_rev.end() || !pup || !live(it->second) || !live(pup))
             return "no such ship or puppet";
         float dir[3] = {0, 0, 1};
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
     }
-    return "usage: coop.fleet list | shoot <id> <dmg> | hurt <ship id> <player>";
+    if (a.size() >= 2 && a[0] == "hitfix") { // BUG-0054: 0 = the old unchecked attacker (tests)
+        g_hit_fix = a[1] != "0";
+        return std::string("hitfix ") + (g_hit_fix ? "1" : "0");
+    }
+    if (a.size() >= 2 && a[0] == "freemirror") { // tests (BUG-0054): free mirror #id as a context switch
+        // does, and keep its pointer listed until the next MSG_UFO_DAMAGE (the one-frame window)
+        auto it = g_mirrors.find((uint16_t)atoi(a[1].c_str()));
+        if (!is_guest() || it == g_mirrors.end() || !it->second.u || !live(it->second.u))
+            return "no such mirror";
+        g_hold_mirror = it->first;
+        game::destroy_creature(it->second.u);
+        return live(it->second.u) ? "still listed" : "freed";
+    }
+    if (a.size() >= 2 && a[0] == "freepuppet") { // tests (BUG-0054, host): free player <p>'s puppet; the
+        // next MSG_UFO_HIT gets that pointer as its attacker (the frame before drive_puppet notices)
+        void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[1].c_str())) : nullptr;
+        if (!is_host() || !pup || !live(pup))
+            return "no such puppet";
+        g_stale_puppet = pup;
+        game::destroy_creature(pup);
+        return live(pup) ? "still listed" : "freed";
+    }
+    return "usage: coop.fleet list | shoot <id> <dmg> | hurt <ship id> <player> | hitfix 0|1 | freemirror <id> | "
+           "freepuppet <player>";
 }
 
 std::vector<syncdbg::Entry> sync_entries()
