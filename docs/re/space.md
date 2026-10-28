@@ -1671,5 +1671,8 @@ How the game finds, opens and rewards the core, and what the co-op finale builds
   code put the old object back at the old id (BUG-0038). After the load the counter
   `cStarManager +0x1D4` was above the mirror's id (21CF before, 21D0 after), so the collision with
   an NPC empire of the loaded galaxy was not seen on this path.
+* ✔ After a save (the allies save hook unmirrors first) the mirror's cEmpire is no longer in the
+  star manager's map (`GetEmpire(pol)` != the object) although the galaxy is the same; the player's
+  cEmpire pointer (`GetPlayerEmpire`) does change with a load, so the mod uses it to tell a reload.
 * ✔ `cStarManager::GetEmpire` does not return an unapplied mirror's cEmpire after `allies drop`
   (the "no empire" answer); `allies detach` (tests) keeps the empire with its star instead.

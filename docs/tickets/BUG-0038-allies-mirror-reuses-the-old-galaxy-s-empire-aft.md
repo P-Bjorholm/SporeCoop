@@ -10,7 +10,7 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w2-space
-commits: d0f6003
+commits: d0f6003, f581bf2
 tests: space_allies_reload
 signature:
 docs: docs/re/space.md#space-ship-state-chunks
@@ -60,7 +60,7 @@ After a reload the mirror starts fresh in the new galaxy: a new cEmpire with an 
 CONFIRMED by reading the full path: `m.emp` / `m.pol` are kept through `forget`, and `ensure_empire` reinserts them. PLAUSIBLE: the id collision with a real NPC empire. Not verified: whether the save stores the counter at `+0x1D4` or rebuilds it on load, and whether the ally/enemy vectors hold references or raw pointers (raw pointers would make this a crash).
 
 ## Fix
-Fixed on fix/w2-space (d0f6003). `reset_empire(m)` drops the kept cEmpire, political id and contact snapshot whenever the galaxy changed: in the three reload branches (`unapply`, `apply`, `tick` outside Space) and in `ensure_empire` when the map no longer holds `m.emp`. The last one is the path that mattered at runtime: going to the menu, the game saves and the save hook unmirrors (applied = false), so none of the "applied" reload checks saw the reload and `ensure_empire` put the old object back. Then a new cEmpire with `NextPoliticalID` of the new galaxy is made. The old object is not released (our reference is its last one, its destructor would release the old galaxy's records): one cEmpire leaks per reload. `coop.space allies reloadfix 0` restores the reuse. Not changed: the `g_end_pending` path (session end on a mirror planet, then a new session); after a reload it now also starts with a new empire.
+Fixed on fix/w2-space (d0f6003). `reset_empire(m)` drops the kept cEmpire, political id and contact snapshot whenever the galaxy changed: in the three reload branches (`unapply`, `apply`, `tick` outside Space) and in `ensure_empire` when the map no longer holds `m.emp`, in every case only when the player's cEmpire is another object than the one the mirror was made in (`m.galaxy`): a save also takes the unmirrored cEmpire out of the map (the first version, d0f6003, made a new empire after every save and `coop_space_allies.py` failed "after the save the mirror is back", fixed in f581bf2). The last one is the path that mattered at runtime: going to the menu, the game saves and the save hook unmirrors (applied = false), so none of the "applied" reload checks saw the reload and `ensure_empire` put the old object back. Then a new cEmpire with `NextPoliticalID` of the new galaxy is made. The old object is not released (our reference is its last one, its destructor would release the old galaxy's records): one cEmpire leaks per reload. `coop.space allies reloadfix 0` restores the reuse. Not changed: the `g_end_pending` path (session end on a mirror planet, then a new session); after a reload it now also starts with a new empire.
 
 Suggested in the review:
 
@@ -96,3 +96,4 @@ This must FAIL on main and with `coop.fix allies_reload off`, and PASS with the 
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #16.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-space (d0f6003): new cEmpire after a reload (also via ensure_empire); test space_allies_reload FAIL without / PASS with.
+- 2026-10-28: f581bf2: the reset only when the player's cEmpire changed (a save also drops the mirror from the map); space_allies_reload FAIL without / PASS with again.
