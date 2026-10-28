@@ -662,7 +662,7 @@ static void show_alarm(void* city, uint8_t kind, uint8_t owner)
     if (!city || !C.beacon)
         return;
     std::string who = owner == kShared ? "the capital" : C.sess->name_of(owner) + "'s city";
-    C.beacon(city_pos(city), (kind ? "✝ " : "⚔ ") + who + (kind ? " is being converted" : " is under attack"),
+    C.beacon(city_pos(city), (kind ? "† " : "× ") + who + (kind ? " is being converted" : " is under attack"),
              20.0, 0xFFFF4040);
 }
 

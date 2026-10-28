@@ -81,6 +81,7 @@ test:
 	$(B)/host/npc_tests
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
+	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
