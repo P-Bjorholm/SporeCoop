@@ -105,6 +105,13 @@ anchor so other docs can link to it:
   then an AV in `GeneralAllocator_FreeInternal`+0xAD 3 s later, and froze in `MallocInternal` (watchdog:
   no frames). Looks like heap corruption from earlier; the bot's last actions on Bob were clicks,
   wheel and `coop.targets`. Not seen in 4 other runs of the same test. Replay with the seed above.
+* 2026-10-27 (fix/w1-creature, lane 4, GOG 2024): not reproduced in 2 runs of `coop_chaos.py
+  --fixture creature --minutes 6` (2 players; seed 417787344 on main 88341cf and seed 71370752
+  with the BUG-0082/0091 fixes; 904 + 839 actions, 4 + 8 rejoins, 0 faults on both games; lab run
+  20261027-183439). The 4-player replay of seed 1035603402 needs two
+  lanes and was not run. Two freed-pointer paths that fit "heap corruption from earlier" were fixed
+  on the way: BUG-0091 (15 animations played on freed puppets in 6 rounds of a guest's world
+  teardown) and BUG-0082 (the guest's kill list kept across the host's absence).
 * Ticket: BUG-0170.
 
 ## Tribe: the host froze once while the epic creature was being killed
@@ -696,11 +703,8 @@ keeps the history).
 * BUG-0044 (#22, desync): a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse.
 * BUG-0055 (#33, bug): after leaving a session, the host's creations still replace a guest's own creation with the same id.
 * BUG-0066 (#44, bug): a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC.
-* BUG-0082 (#60, crash): the guest keeps creature pointers while the host is away and destroys them minutes later.
-* BUG-0091 (#69, crash): a partner's animation or leave in the frame after a world teardown can touch a freed puppet.
 * BUG-0099 (#77, bug): the joint-hunt hit table grows without bound and keys hits by reusable creature addresses.
 * BUG-0110 (#89, bug): a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good.
-* BUG-0118 (#97, crash): the selection guard clears +0xB58 bit 0x1, but the GOG 2024 selection code tests bit 0x2 (contradiction, possible crash)
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
 * BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.

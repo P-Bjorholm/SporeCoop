@@ -1,19 +1,19 @@
 ---
 id: BUG-0082
 title: the guest keeps creature pointers while the host is away and destroys them minutes later
-status: open
+status: fixed
 kind: crash
 stage: Creature
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#60
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-creature
+commits: 543edf6, d624824
+tests: host_away_kill
 signature:
-docs:
+docs: docs/re/creature.md#creature-kill-list
 related: #60
 ---
 
@@ -62,19 +62,24 @@ On a guest, the update filter collects the game's own NPCs into `g_kill` during 
 PLAUSIBLE. The code path is CONFIRMED by reading. Not verified: how many entries the flip frame usually holds (normally few, since native NPCs are removed the frame they first update) and whether a freed creature object keeps `+0x21` set in the pool, which would make the stale entries harmless.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Clear `g_kill` on every path of `npc::tick` that does not call `guest_tick` (the away branch, `!npc_stage()`, NPC sync off). Or let `update_filter` read `C.host_away()` directly, so it never collects while the host is away. Old behaviour behind `coop.fix kill_list_clear off`.
+Fixed (fix/w1-creature): `npc::tick` now ends every frame with `g_kill.clear()` (guest_tick
+empties the list itself, anything left is from a frame that skipped it: the host away, NPC sync off,
+another stage). `coop.npc killfix off` keeps the old behaviour (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_host_away_kill.py` (suite `host_away_kill`), a test command that forces the
+condition: the host leaves for the galaxy menu (`coop.menu`), the guest sees `host_away=1`, then puts
+its avatar into the kill list five times (`coop.npc killhold`: what the update filter does on the
+flip frame; the avatar is a stand-in guest_tick never destroys) and reads `kill_held=` in
+`coop.npc`. Then the host loads its world again, the guest mirrors its NPCs, no faults.
 
-`tools/tests/coop_host_away_kill.py` on two instances: on the guest, start a cinematic so creatures are deferred and re-collected every frame; the host goes to the main menu (`host_away=1` on the guest) and back into the same world after the guest has killed and removed those creatures. Assert that the guest game did not fault (the lab's crash check) and that a creature created in the meantime at a reused address is still alive (`+0x21` = 0, `coop.npc creatures`). The test can be made reliable with a debug command that records the pointers in `g_kill` at the flip and forces their reuse. It fails on main and passes with the fix.
-
-### Related
-- docs/re/creature.md 16 (deferred destroys during cinematics).
-- The issue about pooled creature objects keeping the old net id (same pointer-reuse pattern on the host).
+* FAIL without the fix (`--without-fix` = `coop.npc killfix off`, lane 4, 2026-10-27): kill_held
+  [1, 2, 3, 4, 5]: every pointer stays until the host is back (direct run, no lab directory).
+* PASS with the fix twice: lab run out/lab/20261027-185409 (`host_away_kill#1`, `#2`): [0, 0, 0, 0, 0].
+* Not shown: a crash. The stale entries were used only when the host came back to the same world;
+  whether a pooled creature keeps `+0x21` set is still unknown (the ticket's "PLAUSIBLE").
 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #60.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-27: fixed on fix/w1-creature (kill list cleared every frame, `coop.npc killfix`), test host_away_kill FAIL without / PASS with.

@@ -678,3 +678,22 @@ nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`
   section 11). The coop.cpp comment called mask 0x1 "pack member"; it now names the mask only. What
   mask 0x1 means is still ~ the alpha (SocialPropose 0xDA43D0 adds a round for it); mask 0x2 is the
   bit the stage event handler 0xD47FC0 sets after an event (the 0xD48634 notes above).
+
+## Guest kill list and the frame after a world teardown (2026-10-27, fix/w1-creature)
+<a id="creature-kill-list"></a>
+
+* ✔ (BUG-0082) npc.cpp's update filter runs inside the game's creature update and collects the
+  guest's own NPCs into a kill list; `guest_tick`, later in the same frame, destroys them. Frames
+  that skip `guest_tick` (the host away in the main menu, NPC sync off, another stage) must drop the
+  list: `npc::tick` clears it at the end of every frame. Before, it waited until the host was back
+  (seen: 5 entries held across 2.5 s of the host's absence, `coop_host_away_kill.py --without-fix`).
+* ✔ (BUG-0091) A world teardown (the guest's `coop.menu` / a received world / a load) frees the
+  creature puppets between two frames, and the host's reliable MSG_ANIM queued meanwhile arrive in
+  the first frame after it. `on_frame` handled them before it noticed the avatar change: in 6 rounds
+  of a guest's `coop.menu` with the host sending 10 animations a second, 15 `PlayAnimation` calls
+  went to puppets no longer in the object list (`coop.framefix 0`), without a fault (the memory was
+  still mapped). Now the avatar check runs before `g_sess.update()`; `on_remote_anim` and the
+  remote despawn also check `game::creature_listed` (a walk of the noun manager's object list: too
+  costly for every puppet every frame, fine for events).
+* ✔ A guest's `coop.menu` round (galaxy menu, the host sends its world, the guest is back in the
+  creature stage with the host's puppet) takes 11-12 s on a lane.

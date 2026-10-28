@@ -8,6 +8,10 @@
   showed stayed in its game and flew on by themselves; starting to host or join while still in a
   session kept the old players. Every way a session ends (Leave, the host gone, a new host or join,
   a mod reload) now cleans up the same way. Test: `coop_leave_cleanup.py` (suite `leave_cleanup`).
+- **Creature: fewer crashes around a world change**: a partner's animation (or leave) arriving while
+  the guest's world was being reloaded went to the freed creature of the old world, and a guest kept
+  pointers to its own creatures while the host was in the main menu and used them when the host
+  came back. Tests: `coop_anim_teardown.py`, `coop_host_away_kill.py`.
 
 ## [0.7.2.4] - 2026-10-25
 
