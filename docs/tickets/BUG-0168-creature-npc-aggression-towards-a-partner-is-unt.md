@@ -41,3 +41,4 @@ Not fixed yet.
 ## History
 - 2026-10-25: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests (wave 4): not reached. Needs a save with an aggressive (red face) nest near the avatar; the creature fixture has none and making one means playing to it. Left open (a fixture task, not a test-only change).

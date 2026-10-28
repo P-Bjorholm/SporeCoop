@@ -808,6 +808,8 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   ally card fail together. A test timing (the NPC was still busy or out of the social range),
   not a co-op regression. One run also failed "the pause menu is up: the partner's name tag is not
   drawn" once (not seen again).
+* ~ superseded (2026-10-28): a refused game is played again and the test is in suite.py
+  (`creature_social`), see docs/06-testing.md#testing-w4-tests (BUG-0021).
 
 ## editor_strays fails under a full lab load (2026-10-25)
 <a id="testing-editor-strays-load"></a>

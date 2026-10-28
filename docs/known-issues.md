@@ -211,15 +211,6 @@ anchor so other docs can link to it:
   rates; the 2024 guest's paused seconds after a load are not explained (planet still loading?).
 * Ticket: BUG-0175.
 
-## coop_civ_play: the guest's "I'm ready" click was lost twice
-
-* Two of seven cold runs of `coop_civ_play.py` on lane 5 (2026-10-23, fixture `civ_npc`) failed at
-  "it fires when everybody is ready": the vote stayed at "ready 1/2" although the test clicked the
-  guest's visible "I'm ready" button (the lobby had just opened for the vote); a click by hand a few
-  seconds later worked. The two failures came while the shared headless display was being
-  restarted, the five runs after it passed, so the cause is not settled.
-* Ticket: BUG-0176.
-
 ## Creature: the mating call did not lead to the editor in the bot
 
 * Backspace (Mating Call) at the nest with DNA shows "Mate: Locate your Mate!" and a thought bubble,
@@ -668,7 +659,6 @@ keeps the history).
 
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
-* BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.
 
 **Tribe**
 

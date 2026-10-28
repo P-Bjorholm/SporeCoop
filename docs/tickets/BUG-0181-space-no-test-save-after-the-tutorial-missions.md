@@ -39,3 +39,4 @@ Not fixed yet.
 ## History
 - 2026-10-27: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests (wave 4): not reached: a save played through the Space tutorial is a fixture task (hours of play by a bot or by hand). Left open.

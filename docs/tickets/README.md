@@ -31,7 +31,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0018](BUG-0018-creature-guest-crash-0xc6ae60-after-the-host-mig.md) | fixed | crash | Creature | 2026-10-25 | 0.7.2.4 | Creature: guest crash 0xC6AE60 after the host migrated to a new nest |
 | [BUG-0019](BUG-0019-creature-a-guest-that-gets-the-world-right-after.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Creature: a guest that gets the world right after the host's editor stays a hatchling |
 | [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Our objects (puppets, proxies, their herds) are written into saves |
-| [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
+| [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | fixed | test | Creature | 2026-10-25 | unreleased | coop_creature_social is flaky in its ally phase |
 | [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
 | [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | fixed | bug | Creature | 2026-10-25 | unreleased | NPC net ids can repeat after about 65k allocations in one world |
 | [BUG-0024](BUG-0024-tools-fakepeer-py-speaks-protocol-6-the-mod-7.md) | fixed | tooling | All | 2026-10-25 | unreleased | tools/fakepeer.py speaks protocol 6, the mod 7 |
@@ -159,7 +159,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0146](BUG-0146-a-member-of-an-npc-tribe-counts-as-a-second-play.md) | fixed | bug | Tribe | 2026-10-27 | unreleased | a member of an NPC tribe counts as a second player hitting the epic creature (80 food instead of 30) |
 | [BUG-0147](BUG-0147-from-the-second-time-a-ship-is-disabled-on-its-r.md) | fixed | bug | Space | 2026-10-27 | unreleased | from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %) |
 | [BUG-0148](BUG-0148-coop-creature-desync-s-killed-npc-is-dead-on-the.md) | fixed | test | All | 2026-10-27 | unreleased | coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death |
-| [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | open | bug | Creature | 2026-10-27 |  | typing digits in the cheat console plays social abilities while a guest is socializing |
+| [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | fixed | bug | Creature | 2026-10-27 | unreleased | typing digits in the cheat console plays social abilities while a guest is socializing |
 | [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | fixed | bug | All | 2026-10-27 | unreleased | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |
 | [BUG-0151](BUG-0151-while-the-host-is-in-the-menu-an-editor-or-a-loa.md) | fixed | bug | All | 2026-10-27 | unreleased | while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost |
 | [BUG-0152](BUG-0152-most-3-4-player-gameplay-paths-have-no-test-and.md) | open | test | All | 2026-10-27 |  | most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite |
@@ -186,7 +186,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0173](BUG-0173-tribe-knocked-out-members-stand-on-the-guest.md) | fixed | desync | Tribe | 2026-10-23 | unreleased | Tribe: knocked-out members stand on the guest |
 | [BUG-0174](BUG-0174-cell-a-guest-far-from-the-host-swims-in-an-empty.md) | open | bug | Cell | 2026-10-23 |  | Cell: a guest far from the host swims in an empty pool |
 | [BUG-0175](BUG-0175-coop-sync-py-mirrors-trail-more-at-low-frame-rat.md) | open | bug | All | 2026-10-24 |  | coop_sync.py: mirrors trail more at low frame rates, the GOG 2024 guest pauses after a load (the test failures were fixed 2026-10-24, fix/gog2024-sync) |
-| [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | open | test | Civ | 2026-10-23 |  | coop_civ_play: the guest's "I'm ready" click was lost twice |
+| [BUG-0176](BUG-0176-coop-civ-play-the-guest-s-i-m-ready-click-was-lo.md) | fixed | test | Civ | 2026-10-23 | unreleased | coop_civ_play: the guest's "I'm ready" click was lost twice |
 | [BUG-0177](BUG-0177-creature-the-mating-call-did-not-lead-to-the-edi.md) | open | test | Creature | 2026-10-24 |  | Creature: the mating call did not lead to the editor in the bot |
 | [BUG-0178](BUG-0178-editors-what-is-still-open-after-the-2026-10-24.md) | open | bug | Creature | 2026-10-24 |  | Editors: what is still open after the 2026-10-24 report (item 4) |
 | [BUG-0179](BUG-0179-creature-guest-the-social-game-is-simplified.md) | open | feature | Creature | 2026-10-23 |  | Creature (guest): the social game is simplified |

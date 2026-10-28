@@ -38,3 +38,4 @@ Not fixed yet.
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests (wave 4): not reached: how a player answers the Creature mating call (which object to click after Backspace) is unexplored reverse engineering. Left open.
