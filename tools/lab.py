@@ -7,7 +7,7 @@
   lab.py run tribe_play,select         chosen tests (names: tools/tests/suite.py)
   lab.py reload --lane 2               build, deploy and hot-reload coop.dll in the lane's running games
   lab.py run tribe_play --repeat 6 --retry 0   hunt a flaky bug: 6 runs, no retries
-  lab.py kill [--lanes 3]              stop the games of the lanes
+  lab.py kill [--lanes 2,3] [--include-lane-1]  stop the games of lanes 2..10 (lane 1: test games only)
 
 A lane runs one test at a time. Warm tests reuse the lane's running games (SPORE_WARM=1,
 twoinst.start: ~10 s instead of ~40 s); after a failure the lane restarts cold. A test that dies
@@ -292,8 +292,10 @@ def main():
     ln.add_argument('n', type=int)
     rl = sub.add_parser('reload')
     rl.add_argument('--lane', type=int, action='append', help='lane(s) to reload (default 1)')
-    k = sub.add_parser('kill')
-    k.add_argument('--lanes', type=int, default=5)
+    k = sub.add_parser('kill', help='end the games of lanes 2..10 (lane 1: --include-lane-1, test games only)')
+    k.add_argument('--lanes', default='', help='lanes to clean, e.g. 2,3 (default: 2..10)')
+    k.add_argument('--include-lane-1', action='store_true',
+                   help='also lane 1 (the real install): its test games only, never the owner\'s own Spore')
     a = ap.parse_args()
     if a.cmd == 'run':
         return cmd_run(a)
@@ -301,8 +303,10 @@ def main():
         ensure_lanes(a.n)
     if a.cmd == 'reload':
         cmd_reload(a)
-    if a.cmd == 'kill':
-        for lane in range(1, a.lanes + 1):
+    if a.cmd == 'kill':  # BUG-0103: lane 1 is the owner's install, only on request
+        lanes = [int(x) for x in a.lanes.split(',') if x.strip()] or list(range(2, 11))
+        lanes = [n for n in lanes if n != 1] + ([1] if a.include_lane_1 else [])
+        for lane in lanes:  # a lane that does not exist has no processes: nothing happens
             spore(ROOT, lane, 'kill')
     return 0
 
