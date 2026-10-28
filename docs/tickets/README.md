@@ -30,7 +30,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0017](BUG-0017-creature-the-guest-shows-another-species-at-the.md) | fixed | desync | Creature | 2026-10-25 | 0.7.2.4 | Creature: the guest shows another species at the host's nests ("Datzu") |
 | [BUG-0018](BUG-0018-creature-guest-crash-0xc6ae60-after-the-host-mig.md) | fixed | crash | Creature | 2026-10-25 | 0.7.2.4 | Creature: guest crash 0xC6AE60 after the host migrated to a new nest |
 | [BUG-0019](BUG-0019-creature-a-guest-that-gets-the-world-right-after.md) | open | bug | Creature | 2026-10-25 |  | Creature: a guest that gets the world right after the host's editor stays a hatchling |
-| [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | open | bug | Creature | 2026-10-25 |  | Our objects (puppets, proxies, their herds) are written into saves |
+| [BUG-0020](BUG-0020-our-objects-puppets-proxies-their-herds-are-writ.md) | fixed | bug | Creature | 2026-10-25 | unreleased | Our objects (puppets, proxies, their herds) are written into saves |
 | [BUG-0021](BUG-0021-coop-creature-social-is-flaky-in-its-ally-phase.md) | open | test | Creature | 2026-10-25 |  | coop_creature_social is flaky in its ally phase |
 | [BUG-0022](BUG-0022-editor-strays-fails-once-under-a-full-lab-load.md) | open | test | Creature | 2026-10-25 |  | editor_strays fails once under a full lab load |
 | [BUG-0023](BUG-0023-npc-net-ids-can-repeat-after-about-65k-allocatio.md) | fixed | bug | Creature | 2026-10-25 | unreleased | NPC net ids can repeat after about 65k allocations in one world |

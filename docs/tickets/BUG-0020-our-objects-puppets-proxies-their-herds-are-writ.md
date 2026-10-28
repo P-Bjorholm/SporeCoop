@@ -1,19 +1,19 @@
 ---
 id: BUG-0020
 title: Our objects (puppets, proxies, their herds) are written into saves
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-25
 source: analysis (BUG-0008)
 role: host
 versions: all
-fixed_in: 
-branch: fix/save-hygiene (WIP, stopped)
+fixed_in: unreleased
+branch: fix/w3-cell
 commits: 45acba3, 0d79bae, 2be1123, 3699255, 0a6d447
-tests: 
-signature: 
-docs: docs/known-issues.md, docs/re/creature.md 12
+tests: save_hygiene (creature_e84 makes its save with coop.savestrip 0)
+signature: (fix side effect seen and handled) dc04aee5:0xB0EC8C read 0 (cGameBehaviorManager update, a null entry)
+docs: docs/re/creature.md#creature-save-strip, docs/known-issues.md
 related:
 ---
 
@@ -24,10 +24,31 @@ Every host save keeps the partners' puppets and the herds made for them; they ar
 Nothing keeps our objects out of the serializer (COMSerializer::SaveClassObjects 0x69FB90).
 
 ## Fix
-Planned: hook the save path, take our objects out for the write, put them back.
+Reverse engineered on 2026-10-28 (docs/re/creature.md#creature-save-strip): SaveGame 0xB29000 is
+synchronous; the noun manager writes every noun of its list, and every reference goes through
+`COMSerializer::Write` 0x6A05F0, which queues the object for its record. A hook there
+(`mods/coop/savestrip.cpp`) writes a null reference for our objects, so they are never queued or
+written and the world is not touched: herds without an archetype, a nest or the avatar's flag (made
+by CreateHerd for puppets and proxies) and every creature in them. The set is built once per save
+from the live noun list (also each object's Cast(0x179C807) pointer), main thread only. Null entries
+load as null; the noun list skips them, but cGameBehaviorManager keeps them in its update vector
+(+0x20) and its update faulted at 0xB0EC8C every frame: a hook on its Read 0xB0E570 drops them.
+`coop.savestrip 0|1` keeps the old behaviour for tests. Not stripped (a null member of a game herd
+was not tried): a puppet in the avatar's herd (the fallback for an unknown creation) and a guest's
+proxies in the game's nest herds in a guest's own save.
 
 ## Verification
-Planned test coop_save_hygiene.py.
+Two-game test `tools/tests/coop_save_hygiene.py` (suite `save_hygiene`): the host saves with the
+guest's puppet, both games restart, the host loads alone with the stray removal off and counts in
+its game: creatures without tuning, herds without an archetype, faults.
+- FAIL with `SPORE_SAVE_FIX=0` (`coop.savestrip 0`): out/lab/20261028-005259 (1 creature without
+  tuning, 1 herd without an archetype).
+- With the first version (no behavior manager hook): out/lab/20261028-005430 and -005551 counted 0
+  and 0 but the host faulted 155 times at 0xB0EC8C after the load.
+- PASS with the fix: out/lab/20261028-005950, out/lab/20261028-011940 (in the regression run) and
+  out/lab/20261028-015652 (final code; `last_ours=2 nulled=9`, `behavior_nulls_dropped=1`, no fault).
+- creature_e84 now makes its save with `coop.savestrip 0` (it tests saves made before the fix):
+  FAIL in out/lab/20261028-011940 before that change, OK in out/lab/20261028-015652.
 
 ## History
 - 2026-10-25: reported (analysis (BUG-0008)).
@@ -42,3 +63,6 @@ Planned test coop_save_hygiene.py.
   SaveClassObjects 0x69FB90 first, then `coop_save_hygiene.py` (host saves with a guest puppet,
   restart, load: no creature of ours in the world). Not reached in wave 2 (budget went to the data
   loss tickets); left open, the WIP branch is not merged.
+- 2026-10-28: fix/w3-cell (wave 3): reverse engineered the save (synchronous; the closure of references
+  from the noun list), fixed with a null-reference hook on COMSerializer::Write and a cleanup of the
+  behavior manager's list after a load; test FAIL without the fix, PASS with it.
