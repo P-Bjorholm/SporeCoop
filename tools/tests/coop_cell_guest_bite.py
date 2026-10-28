@@ -74,8 +74,8 @@ def main():
             print(f'  {label}: host {r}; host hp {h0} -> {h1}')
             ck(h0 is not None and h1 is not None and h1 >= h0, f'{label}: the host\'s own bite took nothing ({h0} -> {h1})')
 
+        print('  ' + host.call(f'coop.pool npcflag {key} hp 60')['out'])  # room for the bites (NPCs have 6 or so)
         # 1. control: a guest bite hurts it
-        host.call(f'coop.pool hp 1000')  # (our own cell, not the NPC: survives whatever bites back)
         guest_bite('plain', True)
         # 2. the species won't attack the player
         print('  ' + host.call(f'coop.pool npcflag {key} spare 1')['out'])

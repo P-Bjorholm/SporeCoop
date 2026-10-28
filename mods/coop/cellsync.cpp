@@ -2041,14 +2041,17 @@ std::string debug(const std::vector<std::string>& a)
                  mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f, (int)sc[0], (int)sc[1]);
         return b;
     }
-    if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1 (BUG-0078)
+    if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1, hp <n> (BUG-0078)
         // spare: the NPC's species "won't attack the player" (resource data +0x300, all of its kind);
         // invuln: the NPC's own +0x111. Both make DamageCell skip a bite of the player on it.
         uint8_t* c = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
         if (!c || !is_host() || modes::cell_is_puppet(c) || c == av)
             return "no such NPC (host only)";
         uint8_t v = a[3] == "1";
-        if (a[2] == "invuln") {
+        if (a[2] == "hp") { // hp <n>: room for a few bites
+            F<int>(c, kHp) = atoi(a[3].c_str());
+            v = 1;
+        } else if (a[2] == "invuln") {
             F<uint8_t>(c, kInvuln) = v;
         } else if (a[2] == "spare" && a_GetData && F<void*>(c, kRes)) {
             void* holder = nullptr;
@@ -2059,7 +2062,7 @@ std::string debug(const std::vector<std::string>& a)
                 return "no resource data";
             F<uint8_t>(res, 0x300) = v;
         } else
-            return "usage: coop.pool npcflag c<key> spare|invuln 0|1";
+            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>";
         char b[96];
         snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
         return b;
