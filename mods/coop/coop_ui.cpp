@@ -109,6 +109,12 @@ static void show(Win w, bool on)
 
 // ---------------- main menu item ----------------
 static Win g_menu_btn, g_menu_parent;
+// BUG-0163: the item is a child of the galaxy menu window, which the game frees when it leaves the
+// menu; the pointer was dropped only by the next refresh (up to 1 s later), and a click meanwhile
+// made a virtual call on the freed item. It goes as soon as the mode is not the menu.
+// `coop.corefix menu_drop 0` = the old behaviour (tests).
+bool g_menu_drop_fix = true;
+static bool in_menu() { return A.mode && A.mode() == modes::kMenu; }
 static void* g_menu_drawable;
 static Win g_menu_drawable_for; // the menu window the drawable was made for
 
@@ -799,9 +805,13 @@ void tick()
     // handler) and opens the window once the menu takes clicks again. (Ending the intro with EndCinematic in the
     // menu, as before a load, left the menu broken: an access violation in UTFWin::Window::SetFlag
     // from App::Canvas::Tick 10 s later, or a game that stopped answering.)
+    if (g_menu_drop_fix && g_menu_btn && !in_menu())
+        g_menu_btn = g_menu_parent = nullptr;
     bool lb = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     HWND gw = (HWND)H->game_window();
-    if (lb && !g_lb_down && gw && g_menu_btn && sui::visible(g_menu_btn) && !g_want_open && !g_skip_since &&
+    // menu_intro_playing() (mode-checked) before any call on the item
+    if (lb && !g_lb_down && gw && g_menu_btn && !g_want_open && !g_skip_since &&
+        (!g_menu_drop_fix || world::menu_intro_playing()) && sui::visible(g_menu_btn) &&
         world::menu_intro_playing()) {
         POINT c{};
         Rect r = sui::screen_rect(g_menu_btn);
@@ -844,7 +854,7 @@ void shutdown()
 {
     if (D.root)
         sui::set_visible(D.root, false);
-    if (g_menu_btn)
+    if (g_menu_btn && (!g_menu_drop_fix || in_menu()))
         sui::set_visible(g_menu_btn, false);
 }
 
