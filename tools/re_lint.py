@@ -11,11 +11,15 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 known = {}
 by_build = {}  # exe hash (file name suffix) -> names
+checked = {}  # exe hash -> names in the hand-written overrides file (a signature checked by a person)
 for f in glob.glob(os.path.join(ROOT, 'data', 'symbols', '*.sym')):
+    build = os.path.basename(f)[:-4].rsplit('_', 1)[-1]
     for i, line in enumerate(open(f, errors='replace'), 1):
         m = re.match(r'\s*([^=;#\s]+)\s*=\s*(0x[0-9A-Fa-f]+)\s*(;.*)?$', line)
         if m:
-            by_build.setdefault(os.path.basename(f)[:-4].rsplit('_', 1)[-1], set()).add(m.group(1))
+            by_build.setdefault(build, set()).add(m.group(1))
+            if os.path.basename(f).startswith('overrides'):
+                checked.setdefault(build, set()).add(m.group(1))
             known.setdefault(m.group(1), (os.path.basename(f), i, (m.group(3) or '').strip()))
 used = {}
 for f in glob.glob(os.path.join(ROOT, 'mods', '**', '*.cpp'), recursive=True) + \
@@ -41,6 +45,16 @@ for name, where in sorted(used.items()):
                 print(f'missing symbol {name} (used at {where}) for build {build}: port it to '
                       f'data/symbols/overrides_{build}.sym (docs/05-re-notes.md 5.1.1)')
                 bad += 1
+# BUG-0143: a name only in a generated file (ModAPI's address, "high" / "medium") has no checked
+# convention, argument count or return: every name the code uses needs an overrides entry of every
+# supported build, with its confidence and signature
+for name, where in sorted(used.items()):
+    for build in sorted(by_build):
+        if build in FROZEN or name not in by_build[build] or name in checked.get(build, ()):
+            continue
+        print(f'unchecked symbol {name} (used at {where}) for build {build}: only in a generated .sym; check its '
+              f'signature in the disassembly and add it to data/symbols/overrides_{build}.sym')
+        bad += 1
 for name, (f, i, note) in sorted(known.items()):
     if f.startswith('overrides') and not re.search(r'\b(verified|likely|unknown|high|ported)\b', note, re.I):
         print(f'{f}:{i} {name}: say how sure it is (verified / likely / unknown) and what it does')

@@ -50,10 +50,12 @@ add('world_queue', P + 'coop_world_queue.py', minutes=6)  # one save for shares 
 add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130; --without-fix fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
+add('ui_status', P + 'coop_ui_status.py', minutes=7)  # the co-op window: port check, a pasted address, the status after the join and the session end, LAN pages, no "host is back" after a disconnect (BUG-0138, BUG-0104, BUG-0183, BUG-0085; --without-fix fails)
 add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu's Co-op item is dropped as the game leaves the menu (BUG-0163)
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('notify', P + 'coop_notify.py', minutes=3)
+add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
@@ -73,7 +75,8 @@ add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, version in the menu, report button, hang / crash reports
-add('kit_freeze', P + 'kit_freeze.py', minutes=4)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn (BUG-0050/0065/0115/0132; --old: every case fails)
+add('kit_freeze', P + 'kit_freeze.py', minutes=4)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function (BUG-0050/0065/0115/0132/0202; --old: every case fails)
+add('kit_crash', P + 'kit_crash.py', minutes=4)  # crash reports for a stack overflow and a failed archive (out of memory); old reports pruned (BUG-0056/0127/0137; --old: every case fails)
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
@@ -81,6 +84,9 @@ add('host_away_kill', P + 'coop_host_away_kill.py', minutes=4)  # BUG-0082: the 
 add('npc_reuse', P + 'coop_npc_reuse.py', minutes=3)  # BUG-0044 / BUG-0023: a reused NPC object gets a new id (the guest's mirror is alive), ids never repeat
 add('cinematic_puppet', P + 'coop_cinematic_puppet.py', minutes=3)  # BUG-0066: a puppet removed during a cinematic stays a puppet (no host NPC id)
 add('npc_swap', P + 'coop_npc_swap.py', minutes=3)  # BUG-0110: an NPC tick that does not return leaves no puppet as the game's avatar
+add('world_reload', P + 'coop_world_reload.py', minutes=6)  # BUG-0119: after a reload the guest plays its own creature again although the avatar's address came back (--without-fix fails)
+add('npc_rejoin_paused', P + 'coop_npc_rejoin_paused.py', minutes=4)  # BUG-0125: a guest that rejoins while the host is paused gets the NPCs around it (--without-fix fails)
+add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the world after an evolution that starts a migration waits for its cinematic: the guest grows up and migrates (--without-fix fails)
 add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
 add('anim_teardown', P + 'coop_anim_teardown.py', minutes=8)  # BUG-0091: no animation on a puppet freed by a world teardown
 add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts a new game (typed planet name) next to an old one: the guest gets the new one

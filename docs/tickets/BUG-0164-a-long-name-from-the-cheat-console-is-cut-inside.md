@@ -1,17 +1,17 @@
 ---
 id: BUG-0164
 title: a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#143
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 116731e
+tests: make test (tests/text_tests.cpp)
 signature:
 docs:
 related: #143
@@ -48,20 +48,20 @@ Three small text-handling gaps:
 CONFIRMED by reading, low severity. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- `c_name`: cap at 24 code points and refuse while `g_sess.role() != None` (or update the session name and broadcast it).
-- `Writer::str8`/`str16`: after clamping `n`, step back while `(s[n] & 0xC0) == 0x80`.
-- creations.cpp: log `narrow(g_es_path)` with `%s`. Grep for other `%ls` uses in log calls.
+Fixed on fix/w3-sys (116731e). `net::Writer::str8` / `str16` cut a too long text between two
+characters (`utf8::cut_bytes`, `mods/coop/net/utf8.h`). Names from `coop.name`, `coop.host`,
+`coop.join`, the co-op window and coop.ini go through `utf8::player_name` (24 code points, no
+control characters); `coop.name` is refused in a session (the others keep the session's name).
+creations.cpp logs the My Creations path as UTF-8 with `%s` (and the `stack all` command too).
+`coop.corefix text_utf8 0` = the byte cut.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Host-side unit test in tests/net_tests.cpp: `Writer::str8` of a 300-byte Cyrillic string, read back with `Reader::str8`, decodes as valid UTF-8. FAILS on main (the last byte is a lone lead byte), PASSES with the fix.
-
-### Related
-None of the existing issues.
+Test: `tests/text_tests.cpp` in `make test` (a 260-byte Cyrillic str8 and a 4500-byte CJK str16 read
+back as valid UTF-8; names capped).
+* FAIL with `text_tests --old` (the byte cut): 3 checks.
+* PASS with the fix (`make test`). The name cap and the refusal in a session have no game test.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #143.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (116731e); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

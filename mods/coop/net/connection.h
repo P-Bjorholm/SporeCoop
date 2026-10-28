@@ -98,7 +98,11 @@ private:
 
     void ack_packet(SentPkt& p, uint32_t now);
 
+    // BUG-0030: the first packet is seq 1. A peer that has received nothing writes ack 0 (with no ack
+    // bits); with a first packet of seq 0 that "acknowledged" it, and a lost first packet of the host
+    // (the WELCOME) was never resent: the join failed after 10 s. No wire change.
     uint16_t local_seq_ = 0;
+    bool seq_started_ = false;
     uint16_t remote_seq_ = 0;
     AckBits recv_bits_;
     bool have_remote_ = false;

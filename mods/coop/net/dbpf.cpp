@@ -112,6 +112,8 @@ bool refpack_decode(const uint8_t* src, size_t n, std::vector<uint8_t>& out)
     size_t o = 2;
     uint32_t size;
     if (src[0] & 0x80) {
+        if (n < 6) // BUG-0047: the 4-byte size needs 6 header bytes (be32 read one byte past a 5-byte record)
+            return false;
         size = be32(src + 2);
         o = 6;
     } else {

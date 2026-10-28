@@ -1,19 +1,19 @@
 ---
 id: BUG-0142
 title: a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#121
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 363db2b
+tests: tools/tests/win_unit.py (tests/win_tests.cpp test_ini_unicode)
 signature:
-docs:
+docs: docs/02-modkit.md#modkit-crash-hard-cases
 related: #121
 ---
 
@@ -47,23 +47,24 @@ Any name the Co-op window accepts survives a restart unchanged, and a UTF-8 `coo
 CONFIRMED by reading the code and the documented behaviour of the profile API. A second reviewer verified it. Severity low, but visible to players.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Before the first write, if `coop.ini` has no UTF-16 BOM, rewrite it as UTF-16LE with a BOM (converting the existing content from UTF-8 when it decodes as valid UTF-8, else from the ANSI codepage). After that the profile API reads and writes Unicode.
-- Or replace the profile API in SporeKit's `config_*` with a small UTF-8 ini reader/writer of our own (and write atomically: temp file plus rename).
-- Ship `data/config/coop.ini` in the chosen encoding.
+Fixed on fix/w3-sys (363db2b), `sporekit/inifile.cpp`: before a read, a `mods\*.ini` without a BOM
+that holds non-ASCII bytes is rewritten as UTF-16LE with a BOM (from UTF-8 when its bytes are valid
+UTF-8, else from the ANSI codepage; temp file + rename); before a write of a non-ASCII value the
+same is done (a missing file is made as an empty UTF-16 file). ASCII-only files stay as they are
+(tools edit them with sed). Report archives convert UTF-16 settings back to UTF-8 (last address
+still hidden). `config_str` cuts between characters; coop reads the name into 256 bytes (64 cut a
+CJK name). `kit.fix iniutf 0` = the old ANSI files. The shipped coop.ini says to save it as UTF-8.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A test on two instances (the name must go through the Co-op window's name field; the `coop.name` console command does not save to coop.ini):
-- Enter "Вася 太郎" in the Co-op window's name field and host, restart the host game, join with the other instance, and read the name the guest sees (its `coop.status`, the caption over the puppet).
-- A second case: write `name=Jörg` as UTF-8 into the lane's `coop.ini`, start, check the partner sees "Jörg".
-- FAILS on main ("????" / "JÃ¶rg"). PASSES with the fix.
-
-### Related
-- #58 (install.bat overwrites the player's coop.ini on a reinstall)
+Test: `tools/tests/win_unit.py` (Windows unit test under Wine in the lane's bottle, the real profile
+API; the lane's codepage is 1252): writes "Вася 太郎" into an ASCII coop.ini and reads it back, reads
+`name=Jörg` from a UTF-8 file without a BOM.
+* FAIL with `win_tests --old` (lane 3, 2026-10-28): 3 checks (the name, "Jörg", a new file).
+  (A UTF-8 file with a BOM is read right by Wine even before the fix.)
+* PASS with the fix (lane 3, 2026-10-28) and lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
+Not done: an in-game check through the co-op window's name field and a restart (two instances).
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #121.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (363db2b); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

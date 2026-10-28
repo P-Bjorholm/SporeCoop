@@ -8,6 +8,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/utf8.h"
 #include "net/validate.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
@@ -934,7 +935,7 @@ void draw_overlay()
     char b[160];
     snprintf(b, sizeof b, "SHIP DISABLED  %d s  -  a partner repairs it by flying close", left);
     uint32_t col = ((int)(now * 3)) & 1 ? 0xFFFF5030 : 0xFFFFD040;
-    H->overlay_text(sw / 2 - (int)strlen(b) * 9 / 2, sh / 4, col, b);
+    H->overlay_text(sw / 2 - utf8::overlay_width(b) / 2, sh / 4, col, b); // cells, not bytes (BUG-0159)
     if (g_repair_t > 0) {
         std::string bar = "repair ";
         int n = (int)(g_repair_t / kRepairHold * 10);

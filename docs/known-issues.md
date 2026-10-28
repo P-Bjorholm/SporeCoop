@@ -48,6 +48,9 @@ anchor so other docs can link to it:
   puppet got NPC id 23 during CRG_ClaimNest); a puppet or proxy that waits for the end of the
   cinematic now stays a puppet (no AI, no host NPC id) until it is destroyed. Local NPCs the guest
   removes in that time still run their AI until then. BUG-0066.
+* FIXED (2026-10-28, fix/w3-creature): the host's world after an evolution now waits until its
+  cinematic is over (the caption confirmed, at most 120 s): the guest's creature grows up and its
+  game migrates as the host's (`coop_evolve_world.py`). BUG-0019.
 * Ticket: BUG-0019.
 
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
@@ -113,6 +116,10 @@ anchor so other docs can link to it:
   second candidate was fixed on the way: a reused creature object kept its net id (BUG-0044), but
   that shows the old species or a corpse, not an offset. Next time: `coop.npc list` on the host
   for that id (its vel: `coop.npc` sync entries) and on a guest (err, want).
+* FIXED (2026-10-28, fix/w3-creature): the candidate cause: an NPC proxy that stays more than 2.5 m
+  off for 3 s without getting closer is now teleported whatever speed the host's NPC reports
+  (`drive_plan.h`, unit test in `make test`). Not reproduced in the game; if an offset like this is
+  seen again, `coop.npc list` on a guest shows whether the proxy's teleports grow. BUG-0169.
 * Ticket: BUG-0169.
 
 ## Creature chaos: a guest crashed with a corrupted heap (seen once)
@@ -288,18 +295,6 @@ anchor so other docs can link to it:
   3D distance never got under 60 m): fixed, the repair measures along the ground now, and the bot
   zooms to the partner's height. The landing delay itself is still not understood.
 * Ticket: BUG-0182.
-
-## Co-op window: only three games on the network are listed
-
-* The connect page shows the first three answers of the LAN discovery (`lan0`..`lan2`). On a
-  machine running several lab lanes every host answers on 127.0.0.1 (and the LAN address), so the
-  own lane's host can be the fourth and is not listed; a click on `lan0` then joined another lane's
-  game ("rejected: different SporeApp.exe build", lane 9, 2026-10-24). `coop_ui.py` joins its own
-  host by address when it is not listed and never clicks another lane's row. (The discovery also
-  queried only ports 47810-47819, lanes 1-5: lane 9's host on 47826 was never found. It queries 20
-  ports now, lanes 1-10.) Players with more than three co-op hosts on their
-  network see only three: more rows or a filter (same build first) would help.
-* Ticket: BUG-0183.
 
 ## Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once)
 
@@ -629,26 +624,21 @@ keeps the history).
 
 **All stages (netcode, core, UI, SporeKit, updater, tools, tests, docs)**
 
-* BUG-0030 (#8, bug): join fails after 10 s when the host's first packet is lost (WELCOME falsely acked)
 * BUG-0033 (#11, bug): leaving, re-hosting and hot reload each clean up a different subset of the co-op state.
 * BUG-0035 (#13, bug): a received world can move and overwrite the save slot the guest is playing (auto_load_world=0)
 * BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
 * BUG-0036 (#14, tooling): a game crash after a test's checks does not fail the test in the lab.
-* BUG-0039 (#17, bug): LAN game list is never pruned, so fake discovery replies grow memory and slow the game.
 * BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
-* BUG-0047 (#25, bug): RefPack decoder reads one byte past a 5-byte compressed record.
 * BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
 * BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
-* BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
+* BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
 * BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
 * BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
-* BUG-0069 (#47, bug): netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state)
 * BUG-0073 (#51, tooling): a lab test that FAILs and then passes on retry counts as passed.
 * BUG-0074 (#52, bug): after leaving a session, the game quits to the menu and loads the old host world once the editor closes.
 * BUG-0076 (#54, desync): a new player is shown with the creature or ship of the player who had their id before.
-* BUG-0085 (#63, bug): after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack".
 * BUG-0086 (#64, tooling): re_lint skips the confidence check for overrides entries whose name is also in a generated .sym.
 * BUG-0093 (#71, tooling): coop.cell spawn reads outside the cell pool for a slot number that does not exist.
 * BUG-0096 (#74, test): coop.vote editor submits the editor request inside Present, a path the real game never takes.
@@ -657,37 +647,32 @@ keeps the history).
 * BUG-0101 (#79, tooling): spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own.
 * BUG-0102 (#80, tooling): spore.sh fixture restore with profile "-" deletes the player's own saves.
 * BUG-0103 (#81, tooling): more places that can kill the owner's own Spore on lane 1 (BUG-0025)
-* BUG-0104 (#83, bug): the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line.
 * BUG-0105 (#84, bug): a received world is loaded even when writing its files failed (disk full, locked or read-only file)
 * BUG-0106 (#85, bug): shared money can be spent twice in one round trip, and Civ/Space money goes negative.
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
-* BUG-0113 (#92, bug): after a resolution change the co-op window stays at its old position, partly off-screen.
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
-* BUG-0127 (#106, bug): a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written.
-* BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
 * BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
 * BUG-0135 (#114, test): coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC.
 * BUG-0137 (#116, bug): crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed.
-* BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
 * BUG-0142 (#121, bug): a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled.
 * BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
-* BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
+* BUG-0204 (freeze): joining by host name resolves DNS on the game's main thread; a slow name server freezes the game (numeric addresses never wait).
+* BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
+* BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
+* BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
-* BUG-0155 (#134, bug): at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
 * BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
-* BUG-0159 (#138, bug): name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
-* BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 
 **Creature**

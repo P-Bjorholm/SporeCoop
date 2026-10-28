@@ -1,19 +1,19 @@
 ---
 id: BUG-0127
 title: a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#106
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 1bebf57
+tests: tools/tests/kit_crash.py oom (suite kit_crash)
 signature:
-docs:
+docs: docs/02-modkit.md#modkit-crash-hard-cases
 related: #106
 ---
 
@@ -46,23 +46,23 @@ Even when memory is exhausted, the minidump (or at least `last-problem.txt` poin
 PLAUSIBLE, severity low. CONFIRMED by reading that no handler exists and that the large allocations come before the minidump; that they fail in a real out-of-memory crash is inferred. A second reviewer verified the reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- Wrap the body of `crash_report_thread` (and `exit_report`, `diag_hang_report`) in `try { ... } catch (...) {}` per step, so a failed archive still lets the next step run.
-- Call `mark_problem` with the crash `.txt` path before building the archive, then update it to the zip once that exists.
-- Build the archive in a streaming way (write each entry to the file as it is read, in small blocks) instead of holding all entries in memory.
+Fixed on fix/w3-sys (1bebf57). Every step of the crash report thread, the exit report and the hang
+report runs in `report_step` (a `try` / `catch` per step that logs and goes on). The crash path marks
+`last-problem.txt` with the crash `.txt` before the archive is built and re-marks it with the
+archive when that exists; the minidump is written even when the archive failed. `crash.test oom`
+makes every archive throw `std::bad_alloc` (as an allocation in a full address space would);
+`kit.fix crashsafe 0` = the old order without catches. The archive is still built in memory (the
+streaming writer the review suggested is not done: with the catches it is no longer fatal).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Extend `tools/tests/diag_check.py --crash` with an out-of-memory variant (a debug command that fills the address space before `crash.test thread`):
-- Assert after the crash: a `.dmp` exists (or at least `last-problem.txt` names the crash report), and the next start shows the "last game crashed" notice.
-- FAILS on main (no dump, no mark). PASSES with the fix.
-
-### Related
-- #34 (a stack overflow ends the game without a crash report)
-- #28 (stack dump can freeze the game for good)
+Test: `tools/tests/kit_crash.py --case oom` (suite `kit_crash`), forced condition (the archive fails).
+* FAIL with `kit.fix crashsafe 0` (manual run on lane 3, 2026-10-28 01:44): the game ends at once
+  (`ExitProcess 3`, abort), no `.dmp`, no `last-problem.txt`.
+* PASS with the fix: manual run 2026-10-28 01:47 (the `.dmp` written, `last-problem.txt` names the
+  crash report, the next start shows "the last game crashed. A report to send is ready") and lab run
+  out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #106.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (1bebf57); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

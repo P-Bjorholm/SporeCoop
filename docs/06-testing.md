@@ -1068,3 +1068,50 @@ Each has an environment switch that turns its fix off; that run must FAIL:
   alone with `coop.npc strays off`: no creature without tuning, no herd without an archetype, no
   fault in 8 s (a null left in the behavior manager's list faulted at 0xB0EC8C every frame). BUG-0020.
 * BUG-0160 is a unit test (`tests/cell_tests.cpp`, `numerics`): both the fixed and the old results.
+## Netcode and the co-op window, wave 3 (2026-10-28, fix/w3-net)
+<a id="testing-net-w3"></a>
+
+* Unit tests in `make test` (each FAILS with `net_tests --nofix`): `test_lost_first_packet`
+  (BUG-0030), `test_interp_wrap` (BUG-0053), `test_discovery_prune` (BUG-0039),
+  `test_address_parse` (BUG-0138). `test_refpack_short` (BUG-0047) is a bounds check without a
+  switch: the ASan build (`test-asan`) reports a heap-buffer-overflow with the old `dbpf.cpp`.
+* In game, `coop.corefix` switches: `first_ack`, `time_wrap`, `lan_prune`, `addr_check` (the
+  `net::g_fix` fields), `host_away_reset` (BUG-0085), `ui_status` (BUG-0104), `lan_pages` (BUG-0183).
+  `first_ack` is read when a connection sends its first packet.
+* `coop.lanfake <n> [seconds]`: n made-up games (`fake1`..`fakeN` at 192.0.2.x, TEST-NET-1, never
+  joinable) answer the LAN discovery for that long; other lanes' hosts may be listed too, so a
+  test looks for its own `fakeN` rows instead of counting rows.
+* `coop_ui_status.py` (suite `ui_status`, cold, ~6 min): the guest leaves and joins again through
+  the co-op window (a wrong port, then the address with a leading space), checks the status and
+  the lobby world line once in, pages through six fake games with "More >", rejoins, and the host
+  leaves while it is in the main menu (`coop.menu`): no "(host) is back" line in the guest's log
+  after `disconnected:`, and the window status starts with "Disconnected". `--without-fix` sets
+  the four switches to 0.
+## SporeKit crash reports, text and the co-op window (2026-10-28, fix/w3-sys)
+<a id="testing-sys-w3"></a>
+
+* `kit_crash.py` (suite `kit_crash`, one game): `crash.test stackoverflow` (a thread recursing
+  without end: a report naming 0xC00000FD, BUG-0056), `crash.test oom` (every report archive fails
+  like an allocation in a full address space: the minidump and `last-problem.txt` are still
+  written, the next start tells the player, BUG-0127), `prune` (12 planted old crash reports, dumps,
+  reports and archives: only 5 / 5 / 5 / 3 stay, the file `last-problem.txt` names stays, BUG-0137).
+  `--old` switches `kit.fix stackov / crashsafe / logprune` off: every case fails. Under Wine a
+  stack overflow in a worker thread kills only that thread: the game goes on (the report is
+  written anyway with the fix).
+* `kit_freeze.py hookrace`: `kit.test.hookchurn 200 3 nogate` makes the hook while 3 threads run
+  through the function (BUG-0202); `kit.fix hookpark 0` crashes the game (eip two bytes into the
+  hooked function). The `hookchurn` case switches `hookpark` off itself: it tests MinHook's removal
+  (BUG-0132).
+* `win_unit.py`: `test_ini_unicode` writes "Вася 太郎" through the profile API into an ASCII
+  coop.ini, reads a UTF-8 file edited by hand (BUG-0142); `--old` reads "????" / "JÃ¶rg".
+* `make test` runs `tests/text_tests.cpp` (net strings cut between characters, name caps, overlay
+  widths by letter cells, notification lines; `text_tests --old` fails, BUG-0129/0159/0164).
+* `coop_window_layout.py` (suite `window_layout`, one game in the main menu): the resolution goes
+  to 1280x720 through `SporeCoop::Renderer_SetVideoMode` (`call ... thiscall <renderer> <fs> w h
+  -1`); the window opened again has every widget on the screen (BUG-0113); hosting, the overlay's
+  status block (`coop.status`: `status block (x1 y1 x2 y2)`) is not drawn while the window is open
+  and the first panel starts below it (BUG-0155). `coop.corefix window_recenter 0` /
+  `status_block 0` (`--old`) fail. `coop.uistate` prints `screen W H`.
+* New switches in `coop.corefix`: `text_utf8`, `notify_text` (the byte-based text code),
+  `window_recenter`, `status_block`; in `kit.fix`: `stackov`, `crashsafe`, `logprune`, `iniutf`,
+  `hookpark`.

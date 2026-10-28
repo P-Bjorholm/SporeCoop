@@ -516,7 +516,7 @@ static int c_stack_here(void*, int argc, const char* const* argv, SkOut* o)
                 wchar_t name[MAX_PATH] = L"?";
                 GetModuleFileNameW((HMODULE)mbi.AllocationBase, name, MAX_PATH);
                 const wchar_t* b = wcsrchr(name, L'\\');
-                outf(o, "  [%p] 0x%08X %ls+0x%X\n", (void*)p, v, b ? b + 1 : name,
+                outf(o, "  [%p] 0x%08X %s+0x%X\n", (void*)p, v, narrow(b ? b + 1 : name).c_str(),
                      (unsigned)(v - (uintptr_t)mbi.AllocationBase));
                 found++;
             }
@@ -662,7 +662,8 @@ static int c_test_fault(void* user, int, const char* const*, SkOut* o)
 static int c_test_hookchurn(void*, int argc, const char* const* argv, SkOut* o)
 {
     std::string r;
-    hooks_churn_test(argc > 1 ? atoi(argv[1]) : 200, argc > 2 ? atoi(argv[2]) : 3, r);
+    hooks_churn_test(argc > 1 ? atoi(argv[1]) : 200, argc > 2 ? atoi(argv[2]) : 3, r,
+                     argc > 3 && !strcmp(argv[3], "nogate"));
     outf(o, "%s", r.c_str());
     return 0;
 }
@@ -681,7 +682,7 @@ void register_builtin_commands()
                     return 0;
                 },
                 nullptr, M);
-    command_add(k, "crash.test", "crash.test [thread|main] - make the game crash (tests of the crash report)",
+    command_add(k, "crash.test", "crash.test [thread|main|stackoverflow|oom] - make the game crash (tests of the crash report)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {
                     outf(out, "crashing");
                     diag_crash_test(argc > 1 ? argv[1] : "thread");
@@ -751,7 +752,7 @@ void register_builtin_commands()
                 (void*)0, M);
     command_add(k, "kit.test.excfault", "kit.test.excfault - a fault inside the exception logger's lock (BUG-0115)",
                 c_test_fault, (void*)1, M);
-    command_add(k, "kit.test.hookchurn", "kit.test.hookchurn [rounds] [threads] - hook / unhook while threads run the hook (BUG-0132)",
+    command_add(k, "kit.test.hookchurn", "kit.test.hookchurn [rounds] [threads] [nogate] - hook / unhook while threads run the hook (BUG-0132; nogate: also while the hook is made, BUG-0202)",
                 c_test_hookchurn, nullptr, M);
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
     command_add(k, "frames.source", "frames.source [auto|loop] - where frames come from (loop: ignore Present, tests)",

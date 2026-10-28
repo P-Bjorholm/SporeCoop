@@ -9,6 +9,11 @@ struct Fixes {
     bool state_roster = true;  // BUG-0109: a guest ignores the state of a player not in its roster
     bool offset_window = true; // BUG-0133: the clock offset forgets an old minimum within seconds
     bool sender_time = true;   // BUG-0122: ship / vehicle velocity over the host's time, not arrival
+    // wave 3
+    bool first_ack = true;  // BUG-0030: packet seq starts at 1, the "ack 0" of a peer that got nothing acks nothing
+    bool time_wrap = true;  // BUG-0053: snapshot order survives the sender's 32-bit millisecond wrap
+    bool lan_prune = true;  // BUG-0039: the LAN game list forgets silent hosts and has a cap
+    bool addr_check = true; // BUG-0138: host addresses trimmed, the port checked (1..65535)
 };
 inline Fixes g_fix;
 

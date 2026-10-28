@@ -27,6 +27,12 @@ public:
     bool active() const { return sock_.is_open(); }
     void update(uint32_t now_ms);
     std::vector<Game> games(uint32_t now_ms) const; // answers from the last few seconds
+    // one answer from `from` (what update() does per datagram; tests and `coop.lan fake` call it)
+    void on_reply(const Endpoint& from, const DiscoverReply& rep, uint32_t now_ms);
+    size_t stored() const { return games_.size(); } // entries kept, shown or not (tests)
+
+    static constexpr uint32_t kShowMs = 5000; // a host that has not answered for this long is gone
+    static constexpr size_t kMaxGames = 32;   // BUG-0039: fake answers cannot grow the list for ever
 
 private:
     UdpSocket sock_;

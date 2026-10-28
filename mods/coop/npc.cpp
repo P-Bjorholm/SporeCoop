@@ -54,6 +54,10 @@ static double g_frozen_since = 0;                       // host: no creature upd
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
 static bool g_reuse_fix = true; // coop.npc reusefix off: a reused creature object keeps its id (BUG-0044)
 static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use (BUG-0023)
+// BUG-0169: a proxy that stays more than 2.5 m off for 3 s is put in place whatever the host's
+// NPC reports as its speed (coop.npc stallfix off: the old driving)
+static bool g_stall_fix = true;
+void set_stall_fix(bool on) { g_stall_fix = on; }
 static uint32_t g_reused = 0;   // host: creature objects that became another NPC (new id)
 void set_reuse_fix(bool on) { g_reuse_fix = on; }
 void set_id_fix(bool on) { g_id_fix = on; }
@@ -432,10 +436,14 @@ static void guest_tick(double now)
         return;
     // the first frames of a world: the update filter meets the game's own NPCs and learns their
     // herds (g_local_herds) before the proxies are made
+    // (with the world counter: the avatar of a reloaded world may have the old address, BUG-0119)
     static void* s_av = nullptr;
+    static uint32_t s_epoch = 0;
     static double s_av_t0 = 0;
-    if (av != s_av) {
+    uint32_t epoch = game::world_epoch();
+    if (av != s_av || epoch != s_epoch) {
         s_av = av;
+        s_epoch = epoch;
         s_av_t0 = now;
     }
     if (now - s_av_t0 < 1.0)
@@ -498,7 +506,7 @@ static void guest_tick(double now)
             game::teleport(px.c, s.pos, s.rot);
         }
         if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix);
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
@@ -689,6 +697,16 @@ void on_world_change()
     teamplay::reset();
     for (auto& [g, ks] : g_known)
         ks.clear(); // host re-sends spawns
+}
+
+// BUG-0125: host_tick forgets what a guest mirrors only while the simulation runs; a guest that
+// left and joined again (the same id) while the host was paused kept the old set and got no spawns
+static bool g_known_fix = true;
+void set_known_fix(bool on) { g_known_fix = on; }
+void on_player_leave(uint8_t id)
+{
+    if (g_known_fix)
+        g_known.erase(id);
 }
 
 void on_session_end()
@@ -885,10 +903,10 @@ std::string status()
         for (auto& [c, pup] : g_ai_target)
             on_partner += g_seen_now.count(c) != 0;
         snprintf(b, sizeof b, "npc(host): tracked=%u alive=%u mirrored=%u hits_applied=%u guest_kills=%u strays_removed=%u "
-                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u reused=%u hunt_targets=%u\n",
+                 "hatch_helped=%u partner_targets=%d on_partner=%u partner_picks=%u ai_swaps=%u swaps_restored=%u ledger_restored=%u reused=%u hunt_targets=%u\n",
                  (unsigned)g_host_npcs.size(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
-                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), g_reused, (unsigned)teamplay::hit_targets());
+                 g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets());
     } else {
         unsigned spawned = 0;
         for (auto& [id, px] : g_proxies)

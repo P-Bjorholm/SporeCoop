@@ -9,6 +9,8 @@
   logfault   BUG-0115: a fault while a thread holds the log's lock: the thread goes on
   excfault   BUG-0115: a fault while a thread holds the exception logger's lock: the same
   hookchurn  BUG-0132: a hook is made and removed 200 times while 3 threads run through it: no crash
+             (the removal path of MinHook: `kit.fix hookpark 0` first)
+  hookrace   BUG-0202: the same, and the hook is also made while the threads run through the function
 
   --old      switch each case's fix off first (`kit.fix <name> 0`): every case must FAIL then
   --case a,b only these cases
@@ -29,7 +31,7 @@ from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 GAME = os.path.expanduser(f'~/Games/Modding/SPORE-lab/lane{lane.LANE}')
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 FIX = {'stack': 'stackdump', 'hangdump': 'stackdump', 'cheat': 'cheatwait', 'logfault': 'reentry',
-       'excfault': 'reentry', 'hookchurn': 'hookkeep'}
+       'excfault': 'reentry', 'hookchurn': 'hookkeep', 'hookrace': 'hookpark'}
 CASES = list(FIX)
 
 
@@ -92,7 +94,13 @@ def run_case(ck, case):
         print(f'  {case}: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
         ck(r is not None and 'goes on' in r['out'], f'a fault inside the lock of {case[:3]}: the thread goes on')
     elif case == 'hookchurn':
+        timed('kit.fix hookpark 0', 10)  # MinHook's own removal is what BUG-0132 is about
         r, dt = timed('kit.test.hookchurn 200 3', 60)
+        timed('kit.fix hookpark 1', 10)
+        print(f'  hookchurn: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
+        ck(r is not None and 'rounds' in r['out'], 'hook churn finishes')
+    elif case == 'hookrace':
+        r, dt = timed('kit.test.hookchurn 200 3 nogate', 60)
         print(f'  hookchurn: {r["out"].strip() if r else "no answer"} ({dt:.1f} s)')
         ck(r is not None and 'rounds' in r['out'], 'hook churn finishes')
     ok, how = frames_go_on()

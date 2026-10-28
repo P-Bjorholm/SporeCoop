@@ -36,7 +36,7 @@ class Conn:
         self.sock, self.addr = sock, addr
         self.protocol = PROTO if protocol is None else protocol
         self.conn = int.from_bytes(os.urandom(4), 'little') or 1  # a new id for every join
-        self.local_seq = 0
+        self.local_seq = 1  # like net::Connection (BUG-0030): ack 0 of a peer that got nothing acks nothing
         self.remote_seq = 0
         self.recv_bits = 0
         self.have_remote = False

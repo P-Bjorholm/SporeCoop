@@ -52,10 +52,10 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 
 | Type | Channel | Contents |
 |---|---|---|
-| `HELLO` | R | protocol version, exe build-id, nickname |
-| `WELCOME` | R | player id, world id (save hash), player list |
-| `REJECT` | R | reason (version, no free slots, different exe) |
-| `PLAYER_JOIN/LEAVE` | R | id, nickname, appearance |
+| `HELLO` | R | `u16` protocol version, `u32` exe build-id, `str8` nickname (no mod version: peers of the same protocol are not told apart) |
+| `WELCOME` | R | `u8` your player id, `u32` world id (save hash), `u8` count, then `{u8 id, str8 name}` per player (no host tick) |
+| `REJECT` | R | `u8` reason (1 version, 2 no free slots, 3 different exe), `str8` text |
+| `PLAYER_JOIN/LEAVE` | R | JOIN `u8 id, str8 name`; LEAVE `u8 id, u8 reason` (no appearance: the look comes from `CREATION` and the species in the state) |
 | `PLAYER_STATE` | U | id, tick, position (3×f32), orientation, velocity, movement flags, health, species, **mode** and **place** (protocol v2: a puppet is visible only in the same mode and place) |
 | `ANIM` | R | animation played by the player's creature (jump, attack, social); the host relays it |
 | `NPC_SPAWN` | R | net-id, species key (ResourceKey), scale, flags (dead / "family" / impressed), position, HP |
@@ -71,8 +71,13 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 | `WORLD_TIME` | U | once per second: quaternion of the sky object (time of day) |
 | `WORLD_OFFER/FILE/CHUNK/DONE` | R | transfer of the host's save in 1 KB chunks, at most 160 unacknowledged messages (600 when the round trip is under 40 ms) |
 | `CHAT` | R | id, UTF-8 text |
-| `PING/PONG` | U | timestamp → RTT in the status |
+| `PING/PONG` (8, 9) | U | unused: nothing sends `PING` (the host still answers one with a `PONG`); the round trip in `coop status` and the lobby is `rtt_ms`, averaged from the packet acks |
+| `ABILITY` (11) | - | reserved, never sent or handled |
 | `BYE` | U | reason; sent in three packets on leave (protocol 6: a reliable one waited behind any lost earlier message) |
+
+CORRECTION (2026-10-28, fix/w3-net, BUG-0144): the rows `HELLO`, `WELCOME`, `PLAYER_JOIN/LEAVE`
+and `PING/PONG` described fields and messages the protocol never had (a mod version, a host tick,
+an appearance, a PING sender); they now list what the `write()` methods in `net/protocol.h` send.
 
 ## 4.4 Rates and smoothing
 
@@ -97,8 +102,18 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 * Handshake: `HELLO` → `WELCOME`/`REJECT`; `HELLO` is resent like any reliable message for up to 10 s.
 * Leave: `BYE`; the host drops the peer at once. A lost `BYE` costs nothing on a rejoin (the new
   connection id replaces the peer), otherwise the peer times out.
-* No packets for 5 s → "connection unstable", 15 s → disconnect.
-* `coop status` shows RTT, packet loss, and each player's state.
+* ~ superseded (2026-10-28): No packets for 5 s → "connection unstable", 15 s → disconnect.
+* ~ superseded (2026-10-28): `coop status` shows RTT, packet loss, and each player's state.
+* CORRECTION (2026-10-28, fix/w3-net, BUG-0069): no packets for 30 s (`Session::timeout_ms`,
+  session.h: the game can block that long while saving or loading) → disconnect ("connection to
+  host lost (timeout)" on a guest, the peer dropped on the host). A guest without `WELCOME` after
+  10 s gives up ("no answer from host (timeout)"); the host drops a peer it has not accepted after
+  10 s. There is no "unstable" state. `coop status` prints per peer `rtt`, `last` (ms since the
+  last packet), `sent`, `recv`, `acked`, `resend` and `pending` (reliable messages not acked
+  yet), not a loss figure.
+* The first packet of a connection has seq 1 (BUG-0030): a peer that has received nothing writes
+  ack 0 with no ack bits, which acknowledges nothing (with a first packet of seq 0 it acknowledged
+  the host's lost `WELCOME`, and the join timed out).
 
 ### Measured over netem (2026-10-23, tribe save of 3.8 MB, `coop_rejoin_net.py`, lane 2)
 

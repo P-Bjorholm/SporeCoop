@@ -1,17 +1,17 @@
 ---
 id: BUG-0125
 title: a guest that rejoins while the host is paused sees no animals near it
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#104
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-creature
+commits: 7f36e32, 9c3aa4b
+tests: npc_rejoin_paused
 signature:
 docs:
 related: #104
@@ -57,21 +57,20 @@ The bug is narrower than it first looks. If the host unfreezes while the rejoini
 - A second reviewer verified it and rated it low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Add `npc::on_player_leave(id)` that erases `g_known[id]`. Call it from `cb.player_leave`, and as a safety from `cb.player_join` too. The prune in `host_tick` can stay.
+`npc::on_player_leave(id)` erases what the host remembers the player mirrors (`g_known[id]`); it is
+called from `cb.player_leave` and, as a safety for a reused id, from `cb.player_join`. The prune in
+`host_tick` stays. `coop.npc knownfix off` keeps the old behaviour (tests).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test `tools/tests/coop_npc_rejoin_paused.py` (suite `npc_rejoin_paused`), as in the report: the host
+opens the pause menu (Esc), the guest leaves, joins again under id 1 and loads the world while the
+menu stays up, then the host closes it. Checked on the guest's game: spawned proxies within 100 m.
 
-`coop_creature_rejoin`-style test, run as in the steps above with the host paused. After the host unpauses, assert that the guest's game has living proxy creatures within 50 m (the game's own creature list on the guest, not the mod's proxy count).
-
-- FAILS on main.
-- PASSES with the fix.
-
-### Related
-#42 and #54 (state of a former player inherited through a reused id), #11 (leave paths clean up different subsets), #60.
+* FAIL without the fix (`--without-fix` = `coop.npc knownfix off`, lane 5, 2026-10-28, direct run):
+  no mirrored NPC near the guest 15 s after the host went on, the host counted 21 as mirrored.
+* PASS with the fix (lane 5, direct run; lab run out/lab/20261028-010504, `npc_rejoin_paused`): 19 mirrored NPCs near the guest.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #104.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: reproduced and fixed on fix/w3-creature; test npc_rejoin_paused (FAIL with knownfix off, PASS with it).
