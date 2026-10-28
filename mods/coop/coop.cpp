@@ -893,6 +893,14 @@ void vote_tick(double now)
     }
 }
 
+// BUG-0019: the world sent after an evolution was saved while the host's game played the
+// cinematic of the evolution (CRG_SpeciesMigrate, a caption waiting for OK): the creature in it is
+// still the hatchling (age 0) and the migration not started, and a guest's game that loads it never
+// grows up nor migrates. Such a share waits until the cinematic had 3 s to start and none plays (at
+// most 120 s). `coop.npc sharecine off`: at once, as before (tests).
+bool g_share_cine_fix = true;
+double g_share_cine_since = 0, g_share_due_at = 0;
+
 void on_mode_change(uint32_t from, uint32_t to)
 {
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
@@ -916,6 +924,7 @@ void on_mode_change(uint32_t from, uint32_t to)
     for (auto& [id, r] : g_remotes)
         if (!r.echo)
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
+    g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"
                               : g_name + " evolved the species: everybody gets the new body",
@@ -934,6 +943,16 @@ void follow_phase(double now)
         if (r.echo)
             continue;
         if (r.needs_world && g_local) { // joined while the host was in a menu
+            if (g_share_cine_fix && now < g_share_due_at)
+                continue;
+            if (g_share_cine_fix && world::cinematic_playing()) { // BUG-0019
+                if (g_share_cine_since == 0)
+                    g_share_cine_since = now;
+                if (now - g_share_cine_since < 120.0)
+                    continue;
+                LOG("share: a cinematic plays for 120 s, the world is sent anyway");
+            }
+            g_share_cine_since = 0;
             r.needs_world = false;
             r.world_sent = key;
             r.joined_phase = false;
@@ -1486,6 +1505,11 @@ void draw_civ_tags()
 // frame a few times a second.
 constexpr uint32_t kPauseMenuId = 0x0615B50D;
 std::atomic<bool> g_menu_up{false};
+// BUG-0149: the cheat console (Ctrl+Shift+C) is open: keys typed there are no ability keys. Its
+// window (control id 0x014A4606, its text edit 0x014A4608) exists only while it is open.
+constexpr uint32_t kCheatConsoleId = 0x014A4606;
+std::atomic<bool> g_text_up{false};
+bool g_text_fix = true; // coop.social textfix off: the old key poll (tests)
 std::atomic<bool> g_menu_check_queued{false};
 double g_menu_checked = 0;
 uint32_t g_menu_hidden = 0; // frames whose labels were hidden (coop.status)
@@ -1527,6 +1551,8 @@ void menu_check_task(void*)
         if (sui::Win root = sui::main_window())
             up = shown_chain(sui::find(root, kPauseMenuId));
     g_menu_up = up;
+    sui::Win root = sui::main_window();
+    g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
 }
 
 void menu_tick(double now)
@@ -2376,6 +2402,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("swap guard %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "sharecine")) { // tests: off = the world goes during a cinematic (BUG-0019)
+        g_share_cine_fix = strcmp(argv[2], "off") != 0;
+        SAY("sharecine %s", argv[2]);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "stallfix")) { // tests: off = the old proxy driving (BUG-0169)
         npc::set_stall_fix(strcmp(argv[2], "off") != 0);
         SAY("stallfix %s", argv[2]);
@@ -2462,6 +2493,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
 
 int c_social(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 2 && !strcmp(argv[1], "textfix")) { // tests: off = ability keys also while the cheat console is open (BUG-0149)
+        g_text_fix = strcmp(argv[2], "off") != 0;
+        SAY("textfix %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "keys")) { // tests: whether the ability keys are taken now
+        SAY("text_up=%d menu_up=%d", (int)g_text_up.load(), (int)g_menu_up.load());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "species")) {
         SAY("%s", social::species_dump().c_str());
         return 0;
@@ -3049,7 +3089,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         auto it = g_remotes.find(id);
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
-    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open(); };
+    sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     social::init(H, M, sc);
     game::set_damage_filter(npc::damage_filter);
     setup_callbacks();
