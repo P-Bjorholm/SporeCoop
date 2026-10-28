@@ -2491,6 +2491,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("sharecine %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "deathfix")) { // tests: off = a killed proxy stays alive at 0 health (BUG-0015, BUG-0148)
+        npc::set_death_fix(strcmp(argv[2], "off") != 0);
+        SAY("deathfix %s", argv[2]);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "stallfix")) { // tests: off = the old proxy driving (BUG-0169)
         npc::set_stall_fix(strcmp(argv[2], "off") != 0);
         SAY("stallfix %s", argv[2]);
@@ -3298,7 +3303,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped);
                        return 0;
                    },
-                   nullptr, MT);
+                   // outside the frame: `editor` submits an editor request, which the game does
+                   // from its update, never inside Present (BUG-0096)
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     tribe::Ctx trc;
     trc.sess = &g_sess;
     trc.feed = feed;

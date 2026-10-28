@@ -39,6 +39,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();                        // destroy proxies, restore local NPCs
 void on_world_change();                       // world unloaded: forget (not destroy) proxies
 void on_player_leave(uint8_t id);             // host: the NPCs a player knew are not the next one's (BUG-0125)
+void set_death_fix(bool on);                  // tests: off = a killed proxy does not play the game's death (BUG-0015, BUG-0148)
 void set_stall_fix(bool on);                  // tests: off = no teleport of a proxy far off while the NPC reports a speed (BUG-0169)
 void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
