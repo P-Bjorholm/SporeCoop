@@ -295,6 +295,26 @@ static std::string empire_name(const Mirror& m)
     return m.name + spaceext::tr("'s empire", ": империя");
 }
 
+// BUG-0038: after a reload of the galaxy the mirror's cEmpire and political id belong to the old
+// galaxy. ensure_empire put that object back into the new galaxy's map at the old id, where a real
+// NPC empire of the new galaxy may live (ids come from the reloaded counter), with the old galaxy's
+// star records still in its +0x88. Now the mirror starts over: a new cEmpire with an id of the new
+// galaxy. The old object is not released (our reference is its last one, and its destructor would
+// release the old galaxy's records): one cEmpire leaks per reload. `coop.space allies reloadfix 0`
+// restores the old reuse (tests).
+static bool g_reload_fix = true;
+static uint32_t g_reload_resets;
+static void reset_empire(Mirror& m)
+{
+    if (!g_reload_fix || !m.emp)
+        return;
+    m.emp = nullptr;
+    m.pol = 0;
+    m.contact_before = 0;
+    m.rel_on = spaceext::Relation::Ally;
+    g_reload_resets++;
+}
+
 // the mirror's cEmpire in the star manager: made once (then kept alive by our reference and put
 // back into the map on every apply), so nothing in the game ever sees it freed
 static bool ensure_empire(Mirror& m)
@@ -304,6 +324,9 @@ static bool ensure_empire(Mirror& m)
         return false;
     if (m.emp && empire_of(m.pol) == m.emp)
         return true;
+    // not in the map any more: the galaxy was reloaded (also after a save on the way to the menu
+    // unmirrored it, so no "applied" check saw the reload)
+    reset_empire(m);
     if (!m.emp) {
         uint32_t pol = thiscall<uint32_t>(a_NextPol, sm, 1);
         void* e = thiscall<void*>(a_CreateEmpire, sm, pol); // new cEmpire, inserted into +0x150
@@ -401,6 +424,7 @@ static void unapply(Mirror& m)
     void* sm = star_mgr();
     if (!m.emp || !sm || empire_of(m.pol) != m.emp) { // the galaxy was reloaded: nothing of ours is left
         forget(m);
+        reset_empire(m);
         return;
     }
     set_relation(m, false);
@@ -496,6 +520,7 @@ static void apply(Mirror& m)
     if (m.applied && (!m.emp || empire_of(m.pol) != m.emp)) { // a reload threw it away
         m.applied = false;
         forget(m);
+        reset_empire(m);
     }
     m.skipped.clear();
     std::vector<std::pair<void*, void*>> todo;
@@ -850,6 +875,7 @@ static void tick(double now)
             if (m.applied && (!star_mgr() || empire_of(m.pol) != m.emp)) {
                 m.applied = false;
                 forget(m);
+                reset_empire(m);
             }
         return;
     }
@@ -1129,7 +1155,17 @@ static std::string debug(const std::vector<std::string>& a)
         return "empire " + a[1] + " '" + str16((uint8_t*)e + 0x3C) + "' stars=" +
                std::to_string(ptr_vec((uint8_t*)e + 0x88).size()) + " home=" + std::to_string(F<uint32_t>(e, 0xB0)) +
                " color=" + hex(F<uint32_t>(e, 0x10)) + " allies=" + std::to_string(ptr_vec((uint8_t*)e + 0x70).size()) +
-               " enemies=" + std::to_string(ptr_vec((uint8_t*)e + 0x5C).size()) + "\n";
+               " enemies=" + std::to_string(ptr_vec((uint8_t*)e + 0x5C).size()) + " at=" + hex((uint32_t)(uintptr_t)e) +
+               "\n";
+    }
+    if (a[0] == "reloadfix" && a.size() > 1) { // BUG-0038: 0 = reuse the old galaxy's cEmpire after a reload
+        g_reload_fix = a[1] != "0";
+        return std::string("reloadfix ") + (g_reload_fix ? "1" : "0") + " resets=" + std::to_string(g_reload_resets) +
+               "\n";
+    }
+    if (a[0] == "nextpol") { // cStarManager +0x1D4: the next political id NextPoliticalID hands out
+        void* sm = star_mgr();
+        return sm ? "nextpol " + hex(F<uint32_t>(sm, 0x1D4)) + "\n" : "no star manager\n";
     }
     if (a[0] == "cities") { // on a planet: the cities and their owners
         void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;

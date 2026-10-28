@@ -93,6 +93,7 @@ add('space_trade', P + 'coop_space_trade.py', minutes=4)  # tool gifts and spice
 add('space_trade_refund', P + 'coop_space_trade_refund.py', warm=True, minutes=3, fixture='space')  # gifts that come back outside Space are owed, not lost (BUG-0058)
 # a partner's colonies as an allied empire in the guest's galaxy, its raid fought there, a clean save
 add('space_allies', P + 'coop_space_allies.py', minutes=10)
+add('space_allies_reload', P + 'coop_space_allies_reload.py', minutes=5, fixture='space')  # after a galaxy reload the allies mirror gets a new cEmpire (BUG-0038)
 add('space_finale', P + 'coop_space_finale.py', minutes=12)  # the galaxy core together (space_finale.cpp): wait, joint entry, Staff of Life, rejoin
 add('space_finale_alone', P + 'coop_space_finale.py --alone', minutes=10)  # "Enter now" alone: the partner gets Steve's gift by message
 # joins and rejoins over a bad network (goodbye lost every second round), the setup + in-game update
