@@ -236,7 +236,11 @@ static NPCTickAI_t o_NPCTickAI;
 
 static AiTargetPicker g_ai_picker;
 static void* g_swap_real; // the real avatar while an NPC ticks with a puppet as mpAvatar
-static uint32_t g_ai_swaps;
+static void* g_swap_puppet; // ... the puppet written into mpAvatar, and the tuning lent to it
+static void* g_swap_lent;
+static uint32_t g_ai_swaps, g_swaps_restored;
+static bool g_swap_guard = true;      // coop.npc swapguard off: no restore after an unwind (BUG-0110)
+static bool g_swap_fault_test = false; // tests: the next swapped tick leaves like a fault would
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
 uint32_t ai_swaps() { return g_ai_swaps; }
 
@@ -254,6 +258,7 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
     // the NPC's AI sees the partner as the player for this tick (its stimuli name the puppet as
     // the sender, so a chase or an attack started now goes on against it)
     g_swap_real = real;
+    g_swap_puppet = t;
     field<void*>(nm, kNounAvatarOff) = t;
     // a puppet of the partner's own creature has no archetype tuning (+0xE84; its herd has no
     // archetype): code that reads the player's tuning would find none (the class of the 0xD48634
@@ -262,13 +267,42 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
     void* lent = !tun ? field<void*>(real, 0xE84) : nullptr;
     if (lent)
         tun = lent;
+    g_swap_lent = lent;
     g_ai_swaps++;
     o_NPCTickAI(self, dt);
+    if (g_swap_fault_test) { // tests: as if the game faulted in the tick and its handler unwound past us
+        g_swap_fault_test = false;
+        return;
+    }
     if (lent && tun == lent)
         tun = nullptr;
     field<void*>(nm, kNounAvatarOff) = real;
-    g_swap_real = nullptr;
+    g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
 }
+
+// A fault inside o_NPCTickAI that the game's own handler catches unwinds past h_NPCTickAI: the
+// restore above never runs, the puppet stays the game's avatar (mpAvatar), game::avatar() returns
+// the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per
+// frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
+void swap_guard_tick()
+{
+    if (!g_swap_real || !g_swap_guard)
+        return;
+    void* nm = g_ready ? cdecl_call<void*>(a_NounGet) : nullptr;
+    void* real = g_swap_real;
+    if (nm && field<void*>(nm, kNounAvatarOff) == g_swap_puppet)
+        field<void*>(nm, kNounAvatarOff) = real;
+    if (g_swap_lent && g_swap_puppet && field<void*>(g_swap_puppet, 0xE84) == g_swap_lent)
+        field<void*>(g_swap_puppet, 0xE84) = nullptr;
+    g_swaps_restored++;
+    H->log(M, SK_WARN, "creature AI: an NPC tick with a partner as the player did not return (a fault?): "
+           "the avatar %p is the game's player again (puppet %p)", real, g_swap_puppet);
+    g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
+}
+
+void set_swap_guard(bool on) { g_swap_guard = on; }
+void debug_swap_fault() { g_swap_fault_test = true; }
+uint32_t swaps_restored() { return g_swaps_restored; }
 
 void play_death(void* c)
 {
@@ -410,6 +444,8 @@ static std::vector<std::pair<void*, void*>> g_destroy_later; // creature, avatar
 static uint32_t g_destroys_deferred = 0, g_destroys_late = 0;
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
+static bool g_defer_keeps_puppet = true; // tests: off = unregistered at once (coop.npc deferpuppet off, BUG-0066)
+void set_defer_keeps_puppet(bool on) { g_defer_keeps_puppet = on; }
 
 // the creature world the pointers belong to: the noun manager's avatar (it stays through the
 // editors, a load or a stage change replaces it)
@@ -437,8 +473,12 @@ void destroy_creature(void* c)
 {
     if (!g_ready || !c)
         return;
-    puppet_unregister(c); // also used for UFOs and other cGameData puppets
-    if (g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running()) {
+    bool defer = g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running();
+    // a puppet or proxy that waits stays one (BUG-0066): no AI of its own (h_NPCTickAI), not an
+    // NPC for host_tick to send to the guests. It leaves the puppet list when it is destroyed.
+    if (!defer || !g_defer_keeps_puppet)
+        puppet_unregister(c); // also used for UFOs and other cGameData puppets
+    if (defer) {
         if (destroy_pending(c))
             return;
         g_destroy_later.push_back({c, world_token()});
@@ -452,15 +492,25 @@ void destroy_creature(void* c)
 
 void destroy_deferred_tick()
 {
+    if (g_destroy_later.empty())
+        return;
+    void* world = world_token();
+    // another world since (a load, the stage left): the pointer may be another object now. It is
+    // dropped at once, also while a cinematic of the new world plays, and is no puppet of ours
+    for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
+        if (it->second != world) {
+            puppet_unregister(it->first);
+            it = g_destroy_later.erase(it);
+        } else
+            ++it;
     if (g_destroy_later.empty() || cinematic_running())
         return;
     auto later = std::move(g_destroy_later);
     g_destroy_later.clear();
-    void* world = world_token();
     void* nm = cdecl_call<void*>(a_NounGet);
     for (auto& [c, queued_in] : later) {
-        // another world since (a load, the stage left): the pointer may be another object now
-        if (queued_in != world || !creature_listed(c) || !nm)
+        puppet_unregister(c);
+        if (!creature_listed(c) || !nm)
             continue;
         thiscall<void>(a_DestroyInstance, nm, c);
         g_destroys_late++;
@@ -655,6 +705,10 @@ void puppet_register(void* c)
 {
     if (!is_puppet(c))
         g_puppets.push_back(c);
+    // a new puppet in an object that still waited for its deferred destroy: that one is gone
+    // (freed and reused by the game), the new one must not be destroyed or unregistered with it
+    for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
+        it = it->first == c ? g_destroy_later.erase(it) : std::next(it);
 }
 
 void puppet_unregister(void* c)

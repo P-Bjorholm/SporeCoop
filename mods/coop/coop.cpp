@@ -2273,6 +2273,21 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s %s", argv[1], on ? "on" : "off");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "deferpuppet")) { // tests: off = a deferred puppet loses its puppet state at once (BUG-0066)
+        game::set_defer_keeps_puppet(strcmp(argv[2], "off") != 0);
+        SAY("deferred puppets stay puppets: %s", argv[2]);
+        return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "swapguard")) { // tests: off = no undo of a swap left open (BUG-0110)
+        game::set_swap_guard(strcmp(argv[2], "off") != 0);
+        SAY("swap guard %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "swapfault")) { // tests: the next swapped NPC tick skips its restore
+        game::debug_swap_fault();
+        SAY("the next NPC tick with a partner as the player leaves like a fault");
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "nextid")) { // host (tests): the next net id tried (BUG-0023)
         npc::debug_next_id((uint16_t)atoi(argv[2]));
         SAY("next npc id %s", argv[2]);
