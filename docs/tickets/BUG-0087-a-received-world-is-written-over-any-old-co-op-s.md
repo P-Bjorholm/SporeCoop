@@ -1,19 +1,19 @@
 ---
 id: BUG-0087
 title: a received world is written over any old co-op slot and mixed with another host's files
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#65
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9
+tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
 signature:
-docs:
+docs: docs/03-gameplay.md
 related: #65
 ---
 
@@ -58,12 +58,23 @@ A new host world goes into the slot of the same host and planet (and replaces it
 CONFIRMED by reading the full path (`pick_slot` and `finish`). PLAUSIBLE effect: what the game does when it loads the leftover planet with the other host's `stars.db` is not verified.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). `slotfs::pick` reuses a co-op slot only when its `sporecoop.txt`
+names the same host (player name) and planet; the crc is not used (it changes with every save).
+Otherwise a free GameN; only when none of 64 is free, another co-op slot (that is then replaced
+entirely). `slotfs::write` writes the world into a fresh folder and swaps it in for the slot as a
+whole, so no file of an older world stays next to the new one. Old behaviour:
+`coop.worldfix slot_match 0` (and `write_check 0` for the in-place write).
+
+The review suggested:
 
 Match the marker on the host name and planet (write a stable id into `sporecoop.txt`, for example the planet name plus the host's player name, instead of the crc). When reusing a slot, empty it first (or write into a temporary folder and swap it in only after every file was written, which also avoids half-written slots when a write fails). Never touch the busy slot (see the related issue). Old behaviour behind `coop.fix slot_match off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Windows-side unit test `win_unit` (tests/win_tests.cpp built with llvm-mingw, run under Wine in the lane's bottle by tools/tests/win_unit.py; real Win32 file calls, no game). `win_unit.py --old` switches the fixes off. Lane 3, 2026-10-28: FAIL with `--old` (21 failed checks), PASS with the fixes (lab runs 20261027-225936 and the smoke run of the branch). Case `test_slot_match`: host A's world (Terra), then host B's (Vulcan): with `--old` B's world goes
+into A's slot (A's Terra.spo next to B's files); with the fix B gets its own slot, and A's world
+coming again replaces A's slot without leaving an old planet file behind.
+
+The planned test was:
 
 `tools/tests/coop_world_slot_reuse.py`: host A shares with the guest, then host B (another fixture galaxy) shares with the same guest. Assert on the guest's file system that each `Games\GameN` with a `host_slot` marker holds exactly the files of one shared world (the received file list), and no `.spo` of the other host. It fails on main and passes with the fix.
 
@@ -74,3 +85,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #65.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: slots matched on host and planet, replaced as a whole (win_unit).

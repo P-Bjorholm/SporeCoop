@@ -20,7 +20,7 @@ KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildcard updater/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: test-asan all loader sporekit coop res setup clean test
+.PHONY: test-win test-asan all loader sporekit coop res setup clean test
 all: loader sporekit coop res setup
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
@@ -86,6 +86,13 @@ test-asan:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
+
+# Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
+# a lane's bottle by tools/tests/win_unit.py (lab test win_unit)
+test-win: $(B)/win_tests.exe
+$(B)/win_tests.exe: tests/win_tests.cpp mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp
+	@mkdir -p $(B)
+	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp -lwinhttp
 
 clean:
 	rm -rf $(B)

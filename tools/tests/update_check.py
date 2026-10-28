@@ -8,7 +8,7 @@ lab a lane that is neither in the run nor skipped):
   3. a local server answers like the GitHub API: release 0.5.1 (a build of this tree that calls
      itself 0.5.1, its pack and SHA256SUMS.txt)
   4. the game finds the update, coop.update apply installs it, after a restart coop 0.5.1 runs
-     and the replaced files (*.old) are gone
+     and the replaced files (*.sporecoop-old) are gone
   5. SporeCoopSetup.exe /S /uninstall puts the game's own steam_api.dll back
 
   python3 tools/tests/update_check.py [--lane 6]
@@ -207,9 +207,10 @@ def main():
     mods = c.call('mods')['out']
     print(' ', mods.strip()[:120])
     ck(NEW in mods, f'after the restart coop {NEW} runs')
-    old = [os.path.join(dp, f) for dp, _, fs in os.walk(game) for f in fs if f.endswith('.old')
+    old = [os.path.join(dp, f) for dp, _, fs in os.walk(game) for f in fs if f.endswith(('.old', '.sporecoop-old'))
            and ('SporebinEP1' in dp or 'Data' in dp)]
-    ck(not [o for o in old if not o.endswith('sporekit.dll.old')], f'the replaced files are cleaned up ({old})')
+    ck(not [o for o in old if not o.endswith(('sporekit.dll.old', 'sporekit.dll.sporecoop-old'))],
+       f'the replaced files are cleaned up ({old})')
     st = c.call('coop.update')['out']
     ck('up to date' in st, 'no further update offered')
     spore('kill')

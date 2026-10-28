@@ -21,6 +21,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
 
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1)
+add('win_unit', P + 'win_unit.py', minutes=1)  # Win32 file handling under Wine: updater backups / pending list / duplicate files, received world slots (BUG-0035/0087/0089/0105/0114/0150; --old fails)
 add('creature', P + 'coop_two_instances.py --guest-menu', ('smoke',), minutes=4)
 add('cell', P + 'coop_mode.py --fixture cell', minutes=3)
 add('tribe', P + 'coop_mode.py --fixture tribe', minutes=3)
@@ -43,6 +44,8 @@ add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game
 add('vote', P + 'coop_vote.py', minutes=5)
 add('vote_stale', P + 'coop_vote_stale.py', minutes=5)  # a vote ends with its session and its stage (BUG-0043)
+add('world_queue', P + 'coop_world_queue.py', minutes=6)  # one save for shares waiting at once, shares of gone players dropped, no load inside an editor, no host world after Leave (BUG-0112/0166/0157/0074; --without all fails)
+add('join_other_world', P + 'coop_join_other_world.py', minutes=5)  # a guest in another world of the stage gets no DNA / NPC removal from the host (BUG-0130; --without-fix fails)
 add('leave_during_share', P + 'coop_leave_during_share.py', minutes=4)  # Leave right after a share save: the host can still leave the stage (BUG-0140)
 add('exit_thread', P + 'coop_exit_thread.py', minutes=2)  # ExitProcess without Shutdown: no abort from the keepalive std::thread (BUG-0107)
 add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu's Co-op item is dropped as the game leaves the menu (BUG-0163)

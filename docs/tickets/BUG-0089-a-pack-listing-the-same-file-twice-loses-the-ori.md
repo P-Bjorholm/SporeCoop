@@ -1,19 +1,19 @@
 ---
 id: BUG-0089
 title: a pack listing the same file twice loses the original file on rollback
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#67
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: 6e8e765
+tests: tests/net_tests.cpp test_updater_dup (make test), tools/tests/win_unit.py (apply_pack)
 signature:
-docs:
+docs: 
 related: #67
 ---
 
@@ -117,12 +117,22 @@ On Windows the same happens with two paths that differ only in case (`SporebinEP
 CONFIRMED by harness for `parse_pack` accepting duplicates. The `apply_pack` sequence is CONFIRMED by reading and replayed in the harness on a simulated file system; not run against a real Windows game folder.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (6e8e765). `upd::duplicate_path` compares the paths without case (and with
+'\\' as '/'); `parse_pack` rejects a pack with a repeated path ("the pack lists a file twice: ...")
+and `apply_pack` checks the same before step 1 (packs built in memory). Old behaviour: `upd::g_dup_fix
+= false` (`net_tests --old`, `win_tests --old`).
+
+The review suggested:
 
 In `parse_pack`, keep a `std::set<std::string>` of lower-cased paths and fail on a repeat. As defence in depth, `apply_pack` can check the same before step 1 (it also receives packs built in memory). Optionally `tools/mkpack.py` asserts unique lower-cased paths so a bad staging folder fails the release build.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`make test` (test_updater_dup): `build/host/net_tests --old` FAILS (both duplicate packs accepted),
+`net_tests` PASSES. Win32: win_unit `test_apply_pack` installs a pack listing coop.dll twice: with
+`--old` the original is lost and the player's coop.dll.old overwritten; with the fix nothing is
+changed.
+
+The planned test was:
 
 Add to the updater part of tests/net_tests.cpp:
 
@@ -144,3 +154,4 @@ None known.
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #67.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: duplicate paths rejected in parse_pack and apply_pack (net_tests, win_unit).

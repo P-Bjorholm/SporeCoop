@@ -45,7 +45,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0032](BUG-0032-one-lost-state-packet-makes-the-guest-delete-and.md) | fixed | desync | Cell | 2026-10-27 | unreleased | one lost state packet makes the guest delete and recreate up to 14 of the host's cells |
 | [BUG-0033](BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md) | fixed | bug | All | 2026-10-27 | unreleased | leaving, re-hosting and hot reload each clean up a different subset of the co-op state |
 | [BUG-0034](BUG-0034-one-reliable-message-bigger-than-a-packet-stalls.md) | fixed | desync | All | 2026-10-27 | unreleased | one reliable message bigger than a packet stalls all reliable traffic and floods empty packets |
-| [BUG-0035](BUG-0035-a-received-world-can-move-and-overwrite-the-save.md) | open | bug | All | 2026-10-27 |  | a received world can move and overwrite the save slot the guest is playing (auto_load_world=0) |
+| [BUG-0035](BUG-0035-a-received-world-can-move-and-overwrite-the-save.md) | fixed | bug | All | 2026-10-27 | unreleased | a received world can move and overwrite the save slot the guest is playing (auto_load_world=0) |
 | [BUG-0036](BUG-0036-a-game-crash-after-a-test-s-checks-does-not-fail.md) | open | tooling | All | 2026-10-27 |  | a game crash after a test's checks does not fail the test in the lab |
 | [BUG-0037](BUG-0037-one-lost-ship-state-packet-makes-up-to-18-of-the.md) | open | desync | Space | 2026-10-27 |  | one lost ship-state packet makes up to 18 of the host's ships explode and respawn on the guest |
 | [BUG-0038](BUG-0038-allies-mirror-reuses-the-old-galaxy-s-empire-aft.md) | open | bug | Space | 2026-10-27 |  | allies mirror reuses the old galaxy's empire after a load and can take over a real NPC empire |
@@ -84,7 +84,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0071](BUG-0071-shared-diplomacy-sends-the-allies-mirror-empire.md) | open | bug | Space | 2026-10-27 |  | shared diplomacy sends the allies mirror empire, so a guest can be allied with an NPC it never met |
 | [BUG-0072](BUG-0072-with-3-or-more-players-the-jump-to-button-fails.md) | open | bug | Space | 2026-10-27 |  | with 3 or more players the "Jump to" button fails, and the jump message names the wrong player |
 | [BUG-0073](BUG-0073-a-lab-test-that-fails-and-then-passes-on-retry-c.md) | open | tooling | All | 2026-10-27 |  | a lab test that FAILs and then passes on retry counts as passed |
-| [BUG-0074](BUG-0074-after-leaving-a-session-the-game-quits-to-the-me.md) | open | bug | All | 2026-10-27 |  | after leaving a session, the game quits to the menu and loads the old host world once the editor closes |
+| [BUG-0074](BUG-0074-after-leaving-a-session-the-game-quits-to-the-me.md) | fixed | bug | All | 2026-10-27 | unreleased | after leaving a session, the game quits to the menu and loads the old host world once the editor closes |
 | [BUG-0075](BUG-0075-gifts-can-go-to-a-player-who-is-not-there-and-wi.md) | open | bug | Tribe, Civ | 2026-10-27 |  | gifts can go to a player who is not there, and with 3+ players the Give button only reaches one player |
 | [BUG-0076](BUG-0076-a-new-player-is-shown-with-the-creature-or-ship.md) | fixed | desync | All | 2026-10-27 | unreleased | a new player is shown with the creature or ship of the player who had their id before |
 | [BUG-0077](BUG-0077-clicking-install-before-the-github-check-returns.md) | open | bug | Installer | 2026-10-27 |  | clicking Install before the GitHub check returns races on the release data |
@@ -97,9 +97,9 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0084](BUG-0084-a-guest-s-own-escort-ships-posse-are-destroyed-w.md) | open | bug | Space | 2026-10-27 |  | a guest's own escort ships (posse) are destroyed while it is with the host |
 | [BUG-0085](BUG-0085-after-a-disconnect-the-guest-is-told-player0-hos.md) | open | bug | All | 2026-10-27 |  | after a disconnect the guest is told "player0 (host) is back: your N DNA go to the pack" |
 | [BUG-0086](BUG-0086-re-lint-skips-the-confidence-check-for-overrides.md) | open | tooling | All | 2026-10-27 |  | re_lint skips the confidence check for overrides entries whose name is also in a generated .sym |
-| [BUG-0087](BUG-0087-a-received-world-is-written-over-any-old-co-op-s.md) | open | bug | All | 2026-10-27 |  | a received world is written over any old co-op slot and mixed with another host's files |
+| [BUG-0087](BUG-0087-a-received-world-is-written-over-any-old-co-op-s.md) | fixed | bug | All | 2026-10-27 | unreleased | a received world is written over any old co-op slot and mixed with another host's files |
 | [BUG-0088](BUG-0088-the-guest-s-local-to-host-index-map-keeps-an-ent.md) | fixed | bug | Cell | 2026-10-27 | unreleased | the guest's local-to-host index map keeps an entry for every mirror it recreates |
-| [BUG-0089](BUG-0089-a-pack-listing-the-same-file-twice-loses-the-ori.md) | open | bug | All | 2026-10-27 |  | a pack listing the same file twice loses the original file on rollback |
+| [BUG-0089](BUG-0089-a-pack-listing-the-same-file-twice-loses-the-ori.md) | fixed | bug | All | 2026-10-27 | unreleased | a pack listing the same file twice loses the original file on rollback |
 | [BUG-0090](BUG-0090-galaxy-map-name-tags-react-to-mouse-clicks-in-ot.md) | open | bug | Space | 2026-10-27 |  | galaxy map name tags react to mouse clicks in other windows |
 | [BUG-0091](BUG-0091-a-partner-s-animation-or-leave-in-the-frame-afte.md) | fixed | crash | Creature | 2026-10-27 | unreleased | a partner's animation or leave in the frame after a world teardown can touch a freed puppet |
 | [BUG-0092](BUG-0092-star-lookup-by-id-reads-past-the-end-of-the-star.md) | fixed | crash | Space | 2026-10-27 | unreleased | star lookup by id reads past the end of the star table |
@@ -115,16 +115,16 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0102](BUG-0102-spore-sh-fixture-restore-with-profile-deletes-th.md) | open | tooling | All | 2026-10-27 |  | spore.sh fixture restore with profile "-" deletes the player's own saves |
 | [BUG-0103](BUG-0103-more-places-that-can-kill-the-owner-s-own-spore.md) | open | tooling | All | 2026-10-27 |  | more places that can kill the owner's own Spore on lane 1 (BUG-0025) |
 | [BUG-0104](BUG-0104-the-co-op-window-keeps-showing-connecting-to-for.md) | open | bug | All | 2026-10-27 |  | the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line |
-| [BUG-0105](BUG-0105-a-received-world-is-loaded-even-when-writing-its.md) | open | bug | All | 2026-10-27 |  | a received world is loaded even when writing its files failed (disk full, locked or read-only file) |
+| [BUG-0105](BUG-0105-a-received-world-is-loaded-even-when-writing-its.md) | fixed | bug | All | 2026-10-27 | unreleased | a received world is loaded even when writing its files failed (disk full, locked or read-only file) |
 | [BUG-0106](BUG-0106-shared-money-can-be-spent-twice-in-one-round-tri.md) | open | bug | All | 2026-10-27 |  | shared money can be spent twice in one round trip, and Civ/Space money goes negative |
 | [BUG-0107](BUG-0107-the-keepalive-std-thread-can-abort-the-game-at-e.md) | fixed | crash | All | 2026-10-27 | unreleased | the keepalive std::thread can abort the game at exit when Shutdown did not run |
 | [BUG-0108](BUG-0108-0-7-x-is-called-the-gog-2016-release-but-the-0-7.md) | open | bug | All | 2026-10-27 |  | 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016 |
 | [BUG-0109](BUG-0109-with-3-players-a-departed-player-s-last-state-ar.md) | fixed | desync | All | 2026-10-27 | unreleased | with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner |
 | [BUG-0110](BUG-0110-a-fault-inside-the-npc-ai-tick-leaves-the-partne.md) | open | bug | Creature | 2026-10-27 |  | a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good |
 | [BUG-0111](BUG-0111-the-guest-sees-an-empire-s-defender-ships-twice.md) | open | bug | Space | 2026-10-27 |  | the guest sees an empire's defender ships twice, because any UfoType 6 ship counts as "our puppet" |
-| [BUG-0112](BUG-0112-with-2-guests-waiting-for-the-world-the-host-pos.md) | open | bug | All | 2026-10-27 |  | with 2+ guests waiting for the world, the host posts one save per guest in the same frame |
+| [BUG-0112](BUG-0112-with-2-guests-waiting-for-the-world-the-host-pos.md) | fixed | bug | All | 2026-10-27 | unreleased | with 2+ guests waiting for the world, the host posts one save per guest in the same frame |
 | [BUG-0113](BUG-0113-after-a-resolution-change-the-co-op-window-stays.md) | open | bug | All | 2026-10-27 |  | after a resolution change the co-op window stays at its old position, partly off-screen |
-| [BUG-0114](BUG-0114-every-game-start-deletes-all-old-files-in-the-ga.md) | open | bug | All | 2026-10-27 |  | every game start deletes all *.old files in the game folders, also the player's own backups |
+| [BUG-0114](BUG-0114-every-game-start-deletes-all-old-files-in-the-ga.md) | fixed | bug | All | 2026-10-27 | unreleased | every game start deletes all *.old files in the game folders, also the player's own backups |
 | [BUG-0115](BUG-0115-a-fault-inside-the-exception-logger-or-the-log-f.md) | fixed | freeze | All | 2026-10-27 | unreleased | a fault inside the exception logger or the log freezes the game for good |
 | [BUG-0116](BUG-0116-the-required-fix-switch-coop-fix-name-off-does-n.md) | open | test | All | 2026-10-27 |  | the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch |
 | [BUG-0117](BUG-0117-a-second-superweapon-request-changes-the-weapon.md) | open | bug | Civ | 2026-10-27 |  | a second superweapon request changes the weapon and target of the vote already running |
@@ -140,7 +140,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0127](BUG-0127-a-crash-from-running-out-of-memory-can-end-the-g.md) | open | bug | All | 2026-10-27 |  | a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written |
 | [BUG-0128](BUG-0128-the-shared-dna-and-cell-food-totals-reach-a-gues.md) | fixed | desync | All | 2026-10-27 | unreleased | the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads |
 | [BUG-0129](BUG-0129-chat-in-notifications-is-cut-short-for-non-latin.md) | open | bug | All | 2026-10-27 |  | chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere |
-| [BUG-0130](BUG-0130-a-guest-in-another-world-gets-the-host-s-dna-npc.md) | open | bug | All | 2026-10-27 |  | a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved |
+| [BUG-0130](BUG-0130-a-guest-in-another-world-gets-the-host-s-dna-npc.md) | fixed | bug | All | 2026-10-27 | unreleased | a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved |
 | [BUG-0131](BUG-0131-a-disabled-knocked-out-dead-or-frozen-partner-co.md) | open | bug | Space, Cell | 2026-10-27 |  | a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you |
 | [BUG-0132](BUG-0132-hooks-that-game-worker-threads-run-are-removed-w.md) | fixed | crash | All | 2026-10-27 | unreleased | hooks that game worker threads run are removed without stopping those threads |
 | [BUG-0133](BUG-0133-after-the-latency-rises-partners-and-npcs-move-i.md) | fixed | desync | All | 2026-10-27 | unreleased | after the latency rises, partners and NPCs move in steps for about 50 s |
@@ -160,14 +160,14 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0147](BUG-0147-from-the-second-time-a-ship-is-disabled-on-its-r.md) | fixed | bug | Space | 2026-10-27 | unreleased | from the second time a ship is disabled on, its repair starts with a 0.5 s head start (25 %) |
 | [BUG-0148](BUG-0148-coop-creature-desync-s-killed-npc-is-dead-on-the.md) | open | test | All | 2026-10-27 |  | coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death |
 | [BUG-0149](BUG-0149-typing-digits-in-the-cheat-console-plays-social.md) | open | bug | Creature | 2026-10-27 |  | typing digits in the cheat console plays social abilities while a guest is socializing |
-| [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | open | bug | All | 2026-10-27 |  | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |
+| [BUG-0150](BUG-0150-a-deferred-update-file-is-never-applied-if-its-s.md) | fixed | bug | All | 2026-10-27 | unreleased | a deferred update file is never applied if its swap fails once (the pending list is deleted anyway) |
 | [BUG-0151](BUG-0151-while-the-host-is-in-the-menu-an-editor-or-a-loa.md) | open | bug | All | 2026-10-27 |  | while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost |
 | [BUG-0152](BUG-0152-most-3-4-player-gameplay-paths-have-no-test-and.md) | open | test | All | 2026-10-27 |  | most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite |
 | [BUG-0153](BUG-0153-known-issues-md-has-a-merge-damaged-entry-stale.md) | fixed | bug | All | 2026-10-27 | unreleased | known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids |
 | [BUG-0154](BUG-0154-ship-vehicle-and-tribe-member-ids-can-repeat-aft.md) | fixed | desync | All | 2026-10-27 | unreleased | ship, vehicle and tribe member ids can repeat after 65 535 allocations, and guests then mix up two objects |
 | [BUG-0155](BUG-0155-at-1280x720-and-1366x768-the-co-op-status-text-i.md) | open | bug | All | 2026-10-27 |  | at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications |
 | [BUG-0156](BUG-0156-test-profiles-redirect-only-appdata-so-tests-on.md) | open | test | All | 2026-10-27 |  | test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations) |
-| [BUG-0157](BUG-0157-a-queued-world-load-can-run-under-an-editor-that.md) | open | bug | All | 2026-10-27 |  | a queued world load can run under an editor that opened after the world arrived |
+| [BUG-0157](BUG-0157-a-queued-world-load-can-run-under-an-editor-that.md) | fixed | bug | All | 2026-10-27 | unreleased | a queued world load can run under an editor that opened after the world arrived |
 | [BUG-0158](BUG-0158-the-triage-crash-skill-and-tools-crash-triage-py.md) | open | bug | All | 2026-10-27 |  | the triage-crash skill and tools/crash_triage.py are referenced but do not exist |
 | [BUG-0159](BUG-0159-name-tags-and-hud-lines-with-cyrillic-or-other-n.md) | open | bug | All | 2026-10-27 |  | name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre |
 | [BUG-0160](BUG-0160-small-numeric-edge-cases-non-unit-quaternion-fro.md) | open | bug | Cell | 2026-10-27 |  | small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int) |
@@ -176,7 +176,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0163](BUG-0163-a-click-right-after-the-galaxy-menu-closes-can-m.md) | fixed | crash | All | 2026-10-27 | unreleased | a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button |
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | open | bug | All | 2026-10-27 |  | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | open | bug | All | 2026-10-27 |  | INSTALL check line, README latest version and stability-report lane count are out of date |
-| [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | open | bug | All | 2026-10-27 |  | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
+| [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | fixed | bug | All | 2026-10-27 | unreleased | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |
 | [BUG-0167](BUG-0167-guest-fault-in-the-tribe-setup-with-a-null-simul.md) | fixed | crash | Tribe | 2026-10-23 | unreleased | Guest: fault in the tribe setup with a null simulator object (seen once) |
 | [BUG-0168](BUG-0168-creature-npc-aggression-towards-a-partner-is-unt.md) | open | test | Creature | 2026-10-25 |  | Creature: NPC aggression towards a partner is untested end to end |
 | [BUG-0169](BUG-0169-creature-one-npc-4-m-off-on-every-guest-for-30-s.md) | open | desync | Creature | 2026-10-23 |  | Creature: one NPC 4 m off on every guest for 30+ s (seen once) |
@@ -212,3 +212,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | open | test | All | 2026-10-23 |  | Not covered by tests yet |
 | [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | open | bug | Creature | 2026-10-25 |  | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
 | [BUG-0202](BUG-0202-making-a-hook-while-another-thread-runs-the-firs.md) | open | crash | All | 2026-10-27 |  | making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt) |
+| [BUG-0203](BUG-0203-twoinst-monitor-game-log-points-to-a-wrong-folde.md) | open | tooling | All | 2026-10-27 |  | twoinst Monitor.game_log points to a wrong folder when a test runs from a git worktree |

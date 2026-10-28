@@ -29,6 +29,25 @@ bool allowed_path(const std::string& path)
            path == "Data/SporeCoop.package" || path.rfind("SporebinEP1/mods/", 0) == 0;
 }
 
+bool g_dup_fix = true;
+
+static std::string fold(const std::string& s)
+{
+    std::string o = s;
+    for (auto& c : o)
+        c = c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c == '\\' ? '/' : c;
+    return o;
+}
+
+std::string duplicate_path(const std::vector<PackFile>& files)
+{
+    for (size_t i = 0; i < files.size(); i++)
+        for (size_t k = 0; k < i; k++)
+            if (fold(files[i].path) == fold(files[k].path))
+                return files[i].path;
+    return {};
+}
+
 namespace {
 
 struct In {
@@ -145,6 +164,11 @@ bool parse_pack(const std::vector<uint8_t>& bytes, Pack& out, std::string& err)
             return false;
         }
         out.files.push_back(std::move(f));
+    }
+    if (std::string d = g_dup_fix ? duplicate_path(out.files) : std::string(); !d.empty()) {
+        err = "the pack lists a file twice: " + d;
+        out = Pack{};
+        return false;
     }
     return true;
 }

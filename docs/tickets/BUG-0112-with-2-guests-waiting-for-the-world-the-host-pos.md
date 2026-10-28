@@ -1,19 +1,19 @@
 ---
 id: BUG-0112
 title: with 2+ guests waiting for the world, the host posts one save per guest in the same frame
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#91
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9, 75b7383
+tests: tools/tests/coop_world_queue.py (suite world_queue)
 signature:
-docs:
+docs: 
 related: #91
 ---
 
@@ -56,12 +56,23 @@ One save per moment, shared by every guest waiting for the world. A new guest jo
 - Verified by a second reviewer: medium-high severity, more common than first stated (every stage change and evolution with 2+ guests).
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). In `world::tick` a share that needs a save first looks for another
+share whose save is posted and not written yet (`!need_save`, before its `latest`); if there is one,
+it takes that save's `at` / `latest` / `mode` and posts none of its own. N guests waiting at a stage
+change, or a guest joining during another one's save, get one save. `coop.status` counts
+"world saves posted N, for shares M". Old behaviour: `coop.worldfix share_one_save 0`.
+
+The review suggested:
 
 In `world::tick`, before calling `save_game` for an entry, check two things: is a save busy (`save_busy()`), or did another entry already post one in this tick? If so, do not save again. Copy that save's `at` / `latest` / `mode` into this entry and set `need_save = false`. Equivalently, `share_with(peer, err, true)` can attach the peer to an existing saving entry. The box watcher should keep watching until `latest` of every waiting entry has passed. Keep the old behaviour behind `coop.fix share_one_save off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `coop_world_queue.py` part 1: `coop.worldfix queue 1 0` queues two shares that both ask
+for a save in one frame (the guest and the host's own id 0, which is in the session, as the stand-in
+for a second guest: a third game needs a second lane). FAIL without the fix: 2 saves posted; PASS:
+1 save, and the guest still gets the world and plays in it. Lane 3, 2026-10-28, PASS: lab runs 20261027-230646 and the branch's smoke run. FAIL runs: `coop_world_queue.py --without share_one_save,share_drop_peer,world_reset` and `--without load_in_editor` (outputs kept in the wave's scratch folder, named in the branch report).
+
+The planned test was:
 
 A new `tools/tests/coop_multi_share.py` on top of `twoinst.start` plus `coop_multi.start_extra` (3 players).
 - Case 1: the host plays and evolves (or `coop.share` with no id), so both guests need the world.
@@ -76,3 +87,4 @@ A new `tools/tests/coop_multi_share.py` on top of `twoinst.start` plus `coop_mul
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #91.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: one save for every share that waits at the same time (coop_world_queue).

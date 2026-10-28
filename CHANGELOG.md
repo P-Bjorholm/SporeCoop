@@ -30,6 +30,26 @@
   during or right after a knockout no longer leaves the player's cell invulnerable, translucent or
   moved. After a small respawn, a level-up gives the cell its normal size instead of up to twice
   that (BUG-0061, BUG-0070, BUG-0041, BUG-0083).
+- **A received world never overwrites your game**: a guest with `auto_load_world=0` playing its
+  co-op slot had that slot moved away and rewritten when the host shared again (BUG-0035); a new host's
+  world was written over an old co-op slot of another host and mixed with its planets (BUG-0087); a
+  world whose files could not be written (disk full, a file in use) was still loaded (BUG-0105). A
+  received world now goes into its own slot (same host and planet, or a free one), is written into a
+  temporary folder, checked and moved into place as a whole, and is never loaded half-written.
+  Test: `win_unit` (Windows file handling under Wine).
+- **A guest in another world is left alone**: a player who joined from inside its own game (or loaded
+  its own save while connected) got the host's DNA, its own creatures removed and the host's cells,
+  tribe and relations applied, and the game then saved that (BUG-0130). Test: `coop_join_other_world.py`.
+- **World sharing with several players**: one save is made for all guests waiting for the world, not
+  one per guest in the same moment (BUG-0112); a share for a player who already left no longer saves
+  the host's game or holds its editors (BUG-0166); a world load no longer starts inside an editor
+  that opened just before (it waits until the editor is closed; it crashed the game, BUG-0157); after
+  Leave, the old host's world is no longer loaded once the editor closes (BUG-0074). Test:
+  `coop_world_queue.py`.
+- **Updates keep your own files**: SporeCoop's update deleted every `*.old` file in the game folders at
+  each start, also a player's `SporeApp.exe.old` backup (BUG-0114; its own backups are now
+  `*.sporecoop-old`); a file that could not be replaced at the next start was never replaced later
+  (BUG-0150); a pack listing a file twice could lose the original file on rollback (BUG-0089).
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

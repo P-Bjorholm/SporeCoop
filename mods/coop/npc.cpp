@@ -266,6 +266,12 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         auto& known = g_known[p.id];
         net::Vec3 gp;
         float relevance = kRelevance;
+        if (C.in_place && !C.in_place(p.id)) { // another world (BUG-0130): its proxies go, sent again later
+            for (uint16_t id : known)
+                send_despawn(p.id, id);
+            known.clear();
+            continue;
+        }
         if (rts) {
             gp = center;
             relevance = kRtsRelevance;

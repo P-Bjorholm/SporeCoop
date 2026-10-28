@@ -1,19 +1,19 @@
 ---
 id: BUG-0105
 title: a received world is loaded even when writing its files failed (disk full, locked or read-only file)
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#84
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-world
+commits: df2f0a9
+tests: tools/tests/win_unit.py + tests/win_tests.cpp (suite win_unit)
 signature:
-docs:
+docs: docs/03-gameplay.md
 related: #84
 ---
 
@@ -49,14 +49,28 @@ A world whose files could not all be written completely is not marked and not lo
 CONFIRMED by reading the code. A second reviewer checked it independently. Severity low to medium: it needs a full disk or a locked/read-only file, but when it happens the result is a hang or crash with no hint why.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-world (df2f0a9). `slotfs::write` writes every received file into
+`Spore\Games-sporecoop-tmp\GameN-<time>` (next to Games, so the galaxy menu and `newest_slot` never
+see it), checking `CreateDirectoryW` (`ERROR_ALREADY_EXISTS` accepted), `CreateFileW`, the
+`WriteFile` count and `CloseHandle`, and writes the marker last. Only then the old slot is moved
+aside and the new folder moved into place (the old one is put back when that fails, then
+deleted). On any failure `finish()` logs the path and the error, tells the player ("could not save
+the world of X: ... (disk full)"), and neither marks nor loads anything. Old behaviour:
+`coop.worldfix write_check 0`.
+
+The review suggested:
 
 - Check `CreateDirectoryW` (accept `ERROR_ALREADY_EXISTS`), `_wfopen`, the `fwrite` count and `fclose` for every file. On the first error, stop, log the path and the error, and tell the player.
 - Better: write the received files into a fresh temporary folder next to `Games`, verify every size, then move the folder into place as a whole and only then write `sporecoop.txt`. That also avoids mixing with an older world in the same slot (#65).
 - Never call `load_slot` or set `g_deferred` after a failed write.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Windows-side unit test `win_unit` (tests/win_tests.cpp built with llvm-mingw, run under Wine in the lane's bottle by tools/tests/win_unit.py; real Win32 file calls, no game). `win_unit.py --old` switches the fixes off. Lane 3, 2026-10-28: FAIL with `--old` (21 failed checks), PASS with the fixes (lab runs 20261027-225936 and the smoke run of the branch). Case `test_slot_write_fails`: a world with a file Windows cannot create: `--old` writes the rest,
+the marker and reports success; with the fix the write fails and nothing is marked. A file of the
+slot held open by another program: Wine moves the folder anyway (Windows refuses and the write
+fails with "a file in it is in use"); either way the slot holds one whole world, never a mix.
+
+The planned test was:
 
 A test for `coop_*` on two instances, with a switch `coop.fix world_write_check off` for the old behaviour:
 - Before the join, mark a file in the guest's co-op slot read-only (or point the slot at a full test volume), then let the host share its world.
@@ -70,3 +84,4 @@ A test for `coop_*` on two instances, with a switch `coop.fix world_write_check 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #84.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-world: received files written to a temporary folder, checked, swapped in whole; a failed write is not loaded (win_unit).

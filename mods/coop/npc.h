@@ -28,6 +28,9 @@ struct Ctx {
     std::function<bool()> host_away;
     // RTS stages (no avatar): the shared centre (player tribe) all players are near
     std::function<bool(net::Vec3& pos)> stage_center;
+    // host: player `id` plays our world (same stage and world); a guest in another world gets no
+    // NPCs (BUG-0130). Unset = everybody.
+    std::function<bool(uint8_t id)> in_place;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
