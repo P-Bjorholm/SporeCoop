@@ -72,6 +72,7 @@ add('join_new_game', P + 'coop_join_new_game.py', minutes=5)  # the host starts 
 add('tribe_play', P + 'coop_tribe_play.py', ('smoke',), warm=True, minutes=3, fixture='tribe')
 add('civ_play', P + 'coop_civ_play.py', warm=True, minutes=3, fixture='civ_npc')
 add('civ_reload', P + 'coop_civ_reload.py', warm=True, minutes=5, fixture='civ_npc')  # tables after a load and a leave (BUG-0040, BUG-0059; --nofix fails)
+add('civ_shared', P + 'coop_civ_shared.py', warm=True, minutes=4, fixture='civ')  # crossing spends, offline money, roles on a rejoin (BUG-0106, BUG-0049, BUG-0064; --nofix fails)
 add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes=3, fixture='tribe')  # a chief removed at once (BUG-0081; --nofix fails)
 add('tribe_gameover', P + 'coop_tribe_gameover.py', minutes=4)  # a member added during the game-over caption (BUG-0172; --nofix fails)
 # two bots play Civilization for 10 minutes through real input (docs/stability/civ.md)
