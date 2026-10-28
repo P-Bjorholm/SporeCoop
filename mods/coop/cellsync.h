@@ -38,6 +38,8 @@ void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 bool voluntary_leave_cleanup_enabled(); // test switch; other session endings always clean up
+bool totals_resend_enabled(); // BUG-0128 switch (coop.pool fix resend): DNA total resent every 2 s too
+void on_player_leave(int id); // a remote player left: its knockout and food bookkeeping go
 void draw_overlay();
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();

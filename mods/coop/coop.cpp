@@ -85,6 +85,7 @@ bool g_share_world = true; // host sends its save to joining guests
 bool g_anim_log = false;
 double g_last_time_sync = 0;
 float g_dna_sent = -1;      // host: last broadcast total
+double g_dna_at = 0;        // host: when it was sent
 uint32_t g_dna_rx = 0, g_dna_fwd = 0;
 
 // DNA earned locally: the host's total is authoritative
@@ -1233,8 +1234,10 @@ void on_frame(void*, int, void*)
     shared::tick(g_sess, game::mode_id(), now);
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
-        if (total != g_dna_sent) {
+        // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
+        if (total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
             g_dna_sent = total;
+            g_dna_at = now;
             net::Writer w;
             w.f32(total);
             for (auto& p : g_sess.players())
@@ -1852,6 +1855,7 @@ void setup_callbacks()
         chat_log("* " + it->second.name + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
+        cellsync::on_player_leave(id);
         despawn(it->second);
         g_remotes.erase(it);
     };
