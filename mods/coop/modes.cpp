@@ -151,6 +151,9 @@ static void space_fill(void* u, net::PlayerState& st)
     st.max_health = skg::field<float>(u, kUfoCombat + 0x2C);
 }
 
+bool ufo_ident_fix = true;
+static std::unordered_map<void*, skg::ResourceKey> g_ufo_ident; // our puppets: the model key they got
+
 static void* space_spawn(const net::PlayerState& s, void* local)
 {
     uintptr_t spawn = S("Simulator::SpawnUFO"), empid = S("Simulator::GetPlayerEmpireID"),
@@ -170,6 +173,7 @@ static void* space_spawn(const net::PlayerState& s, void* local)
     if (!u)
         return nullptr;
     skg::field<uint8_t>(u, kUfoCombat + 0x80) = 1; // mbInvincible
+    g_ufo_ident[u] = skg::field<skg::ResourceKey>(u, 0x780); // mDesiredModelKey (BUG-0111)
     skg::Vector3 p{s.pos.x, s.pos.y, s.pos.z};
     skg::Quaternion q{s.rot.x, s.rot.y, s.rot.z, s.rot.w};
     skg::vcall<void>((uint8_t*)u + kUfoLoco, 0x44 / 4, &p, &q); // Teleport
@@ -200,6 +204,7 @@ static void space_drive(void* u, const net::PlayerState& s, drive::State&, doubl
 // system destroys every NPC UFO, the puppets too) is only forgotten
 static void space_despawn(void* u)
 {
+    g_ufo_ident.erase(u);
     if (game::ufo_listed(u)) {
         game::destroy_creature(u);
     } else {
@@ -211,10 +216,28 @@ static void space_despawn(void* u)
 // the game removes NPC UFOs on its own: driving a freed puppet crashed the host (play_space.py,
 // 2026-10-23: AV in space_drive, vtable overwritten)
 // (a listed pointer may be a new UFO at a reused address: it must still be a Defender, type +0x714)
+// BUG-0111: and it must be the UFO space_spawn made: a game Defender (an empire's or a colony's)
+// allocated at the freed puppet's address is not ours (model key, invincible, no owner mission)
+bool space_puppet_ok(void* u)
+{
+    if (!u || !game::ufo_listed(u) || !game::object_alive(u) || skg::field<int>(u, 0x714) != 6)
+        return false;
+    if (!ufo_ident_fix)
+        return true;
+    auto it = g_ufo_ident.find(u);
+    if (it == g_ufo_ident.end())
+        return false;
+    const skg::ResourceKey& k = skg::field<skg::ResourceKey>(u, 0x780);
+    return !memcmp(&k, &it->second, sizeof k) && skg::field<uint8_t>(u, kUfoCombat + 0x80) == 1 &&
+           !skg::field<void*>(u, 0x800);
+}
+
 static bool space_alive(void* u)
 {
-    if (game::ufo_listed(u) && game::object_alive(u) && skg::field<int>(u, 0x714) == 6)
+    if (space_puppet_ok(u))
         return true;
+    if (ufo_ident_fix && g_ufo_ident.erase(u))
+        game::puppet_unregister(u); // (the address may be a game ship now: forgotten, never destroyed)
     game::g_ufos_freed++;
     return false;
 }

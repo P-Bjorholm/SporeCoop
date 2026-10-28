@@ -293,7 +293,7 @@ static void* hit_puppet(uint8_t from)
         p = g_stale_puppet;
         g_stale_puppet = nullptr;
     }
-    if (p && g_hit_fix && live(p) && F<int>(p, kType) != 6) // only the mod's player puppets (Defender)
+    if (p && g_hit_fix && live(p) && !modes::space_puppet_ok(p)) // only the mod's player puppets (BUG-0111)
         p = nullptr, g_att_dropped++;
     return hit_attacker(p);
 }
@@ -396,8 +396,13 @@ static void guest_state(net::Reader& r)
     // our own NPC ships in the host's place: the host's are the real ones
     void* me = player_ufo();
     for (void* u : all_ufos()) {
-        if (u == me || F<int>(u, kType) == 0 || g_mirror_of.count(u) || F<int>(u, kType) == 6)
-            continue; // type 6: the mod's player puppets (Defender)
+        if (u == me || F<int>(u, kType) == 0 || g_mirror_of.count(u))
+            continue;
+        // the mod's player puppets (Defenders) stay; the game's own Defenders (an empire's system, a
+        // colony's) go like the other NPC ships: the host's come as mirrors (BUG-0111: every type 6
+        // was kept, and the guest saw each defender twice). coop.fleet typefix 0: the old check
+        if (modes::ufo_ident_fix ? (C.puppet_owner && C.puppet_owner(u) >= 0) : F<int>(u, kType) == 6)
+            continue;
         if (g_keep_posse && F<int>(u, kType) == 3) {
             // type 3 is the posse (DestroyNPCUFOs keeps exactly type 3 when keepPosse is set): our
             // own escort, whatever empire its ships came from, not one of the host's NPCs
@@ -620,6 +625,22 @@ std::string debug(const std::vector<std::string>& a)
         g_drop_chunk = (uint8_t)atoi(a[1].c_str());
         g_drop_left = atoi(a[2].c_str());
         return "dropping";
+    }
+    if (a.size() >= 2 && (a[0] == "puppet" || a[0] == "impostor")) { // tests (BUG-0111): player <p>'s puppet;
+        // impostor: give it another model key, as a game Defender made at the freed puppet's address has
+        void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[1].c_str())) : nullptr;
+        if (!pup || !live(pup))
+            return "no puppet";
+        if (a[0] == "impostor")
+            F<uint32_t>(pup, kModel) ^= 0x5A5A5A5Au;
+        char b[96];
+        snprintf(b, sizeof b, "puppet %p type=%d pol=%08X model=%08X", pup, F<int>(pup, kType), F<uint32_t>(pup, kPol),
+                 F<uint32_t>(pup, kModel));
+        return b;
+    }
+    if (a.size() >= 2 && a[0] == "typefix") { // BUG-0111: 0 = any listed Defender is a partner's puppet (tests)
+        modes::ufo_ident_fix = a[1] != "0";
+        return std::string("typefix ") + (modes::ufo_ident_fix ? "1" : "0");
     }
     if (a.size() >= 2 && a[0] == "hitfix") { // BUG-0054: 0 = the old unchecked attacker (tests)
         g_hit_fix = a[1] != "0";

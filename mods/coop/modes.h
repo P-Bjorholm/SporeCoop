@@ -57,6 +57,11 @@ uint8_t* cell_game();             // cCellGame*
 uint8_t* cell_at(uint32_t idx);   // live cell for a pool index, else nullptr
 extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
+// BUG-0111: a Space puppet is ours only while the UFO at its address still has what space_spawn gave
+// it (model key, invincible, no owner mission); any listed Defender (UfoType 6) passed before, so a
+// game Defender at a reused address became the partner's ship. coop.fleet typefix 0: the old check
+extern bool ufo_ident_fix;
+bool space_puppet_ok(void* u); // listed, alive and still our puppet
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
 uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
 void cell_destroy(uint32_t idx);
