@@ -15,6 +15,11 @@
 - **install.bat keeps your settings on a reinstall** (BUG-0080): `mods\coop.ini` (name, last address,
   `[update] check=0`) and `mods\sporekit.ini` are only copied when missing.
 - **Docs: GOG 2016 players are told which fixes their build does not get**: the fixes since 0.7.2.2 that need new game addresses switch themselves off on the old GOG 2016 build; the README and these notes now say so (BUG-0108). `INSTALL.md` names the right log line to check an install (BUG-0165).
+- **Creature: a goal card's reward a guest earns while the host is in its editor is no longer
+  lost**; it is paid when the host's creature is back. A guest whose host stays in an editor or on a
+  loading screen plays on with its own creatures, as when the host is in the main menu (BUG-0205).
+- **A damaged creations package (My Creations) can no longer crash the game while it is read**:
+  a 64-bit index offset could wrap the bounds check (BUG-0208, found by the new decoder fuzzer).
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more
   players a partner in your own system made every press fail), and the notice names that partner
   (BUG-0072). Flying to a partner in the galaxy view is refused while your ship is disabled

@@ -719,9 +719,21 @@ def audit(game, hc, gc, final=False):
         _, gv, _ = civ_state(gc)
         if set(hv) != set(gv):
             game.problem(f'vehicles differ: host only {sorted(set(hv) - set(gv))}, guest only {sorted(set(gv) - set(hv))}')
-    for i, v in hv.items():
-        if i in gv and gv[i]['owner'] != v['owner']:
-            game.problem(f'vehicle #{i}: owner {v["owner"]} on the host, {gv[i]["owner"]} on the guest')
+    # BUG-0206: a gift changes the owner on the host at once and reaches the guest with the next
+    # snapshot (0.1 s; while the guest's bot is in a city planner, only when it is back): an owner
+    # that differs is looked at again 1.5 s later, like the cities, and is a problem only then
+    differ = [i for i, v in hv.items() if i in gv and gv[i]['owner'] != v['owner']]
+    if differ:
+        game.bump('owner_differs_once')
+        print(f'    {time.strftime("%H:%M:%S")} vehicle owners differ once: '
+              + ', '.join(f'#{i} host {hv[i]["owner"]} guest {gv[i]["owner"]}' for i in differ)
+              + f' | guest mode {gc.call("game.mode")["out"].strip()[:40]}', flush=True)
+        time.sleep(1.5)
+        _, hv2, _ = civ_state(hc)
+        _, gv2, _ = civ_state(gc)
+        for i in differ:
+            if i in hv2 and i in gv2 and gv2[i]['owner'] != hv2[i]['owner']:
+                game.problem(f'vehicle #{i}: owner {hv2[i]["owner"]} on the host, {gv2[i]["owner"]} on the guest')
     # sync error of the vehicles (coop.sync, like coop_sync.py: the closer of two host samples)
     from coop_sync import sample
     for _ in range(3):

@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "census.h"
 
 #include <algorithm>
 #include <array>
@@ -160,6 +161,13 @@ struct GV {
     double seen = 0;
     net::VelocityEstimate est; // vehicles snapshots carry no velocity
     bool listed = false;       // seen in the game's vehicle list (a new one joins it a little later)
+    // BUG-0186 diagnostics (coop.civ on the guest): how far the vehicle was from where guest_tick put
+    // it one frame before (the game moved it: collision, its own locomotion), the largest of that in
+    // the last 5 s, and how far it was from where it should be
+    net::Vec3 put{};
+    bool has_put = false;
+    float pushed = 0, pushed_max = 0, err = 0;
+    double pushed_at = 0;
 };
 static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
@@ -1734,14 +1742,27 @@ static void guest_tick(double now)
         last_sel = now;
         drop_foreign_selection();
     }
-    if (local_play())
+    if (local_play()) {
+        for (auto& [id, g] : g_gv)
+            g.has_put = false;
         return; // the last states would stop every order for 3 s (StopMovement below)
+    }
     for (auto& [id, g] : g_gv) {
-        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0)
+        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0) {
+            g.has_put = false;
             continue;
+        }
         net::Vec3 cur = veh_pos(g.v);
         net::Vec3 want = g.est.at(now); // moved on with the estimated velocity (no lag behind the host)
         float d = net::dist(cur, want);
+        if (g.has_put) {
+            g.pushed = net::dist(cur, g.put);
+            if (g.pushed > g.pushed_max || now - g.pushed_at > 5.0) {
+                g.pushed_max = g.pushed;
+                g.pushed_at = now;
+            }
+        }
+        g.err = d;
         net::Vec3 p = want;
         if (d < 30.f && d > 0.01f) { // glide out small corrections
             float k = 0.5f;
@@ -1752,6 +1773,8 @@ static void guest_tick(double now)
         vcall<void>(sp, 0xEC / 4); // StopMovement: the locomotion does not pull it back
         vcall<void>(sp, 0x44 / 4, (const float*)pp, (const float*)q); // Teleport
         F<float>(g.v, kVHp) = g.hp;
+        g.put = p;
+        g.has_put = true;
     }
 }
 
@@ -1986,8 +2009,43 @@ std::string list()
                  pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco), F<uint8_t>(v, kVSelected),
                  F<float>(v, kVHp), p.x, p.y, p.z, otype);
         out += b;
+        auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
+        if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
+            out.pop_back();
+            snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f\n", H->time_seconds() - gi->second.seen,
+                     gi->second.err, gi->second.pushed, gi->second.pushed_max);
+            out += b;
+        }
     }
     return out;
+}
+
+// coop.census (census.h): every vehicle with its net id, owner (player id, 254 an NPC civ's) and
+// position; key = the political id of its civilization
+void census_rows(std::vector<census::Row>& out)
+{
+    if (!g_ok || !nm())
+        return;
+    bool host = C.sess && C.sess->role() == net::Role::Host;
+    for (void* v : all_vehicles()) {
+        census::Row r;
+        r.kind = 'v';
+        if (host) {
+            auto it = g_hv.find(v);
+            r.id = it == g_hv.end() ? -1 : it->second.id;
+        } else {
+            auto it = g_gv_of.find(v);
+            r.id = it == g_gv_of.end() ? -1 : it->second;
+        }
+        r.own = r.id < 0 ? "local" : host ? "host" : "mirror";
+        uint8_t o = owner_of_vehicle(v);
+        r.owner = o == 0xFF ? -1 : o;
+        r.key = pol_of(v);
+        r.alive = F<uint8_t>(v, kVDead) ? 0 : 1;
+        r.hp = F<float>(v, kVHp);
+        r.pos = veh_pos(v);
+        out.push_back(r);
+    }
 }
 
 // ---- debug (tests): the same hooked paths the UI uses ----

@@ -23,10 +23,10 @@ static void logf(const Session::Callbacks& cb, const char* fmt, ...)
 }
 
 // a connection id that differs from the previous ones of this process (and of other processes)
-static uint32_t new_conn_id(uint32_t salt)
+static uint32_t new_conn_id(uint32_t now, uint32_t salt)
 {
     static uint64_t counter = 0;
-    uint64_t x = ((uint64_t)now_ms() << 32) ^ salt ^ (++counter * 0x9E3779B97F4A7C15ull) ^ (uint64_t)(uintptr_t)&counter;
+    uint64_t x = ((uint64_t)now << 32) ^ salt ^ (++counter * 0x9E3779B97F4A7C15ull) ^ (uint64_t)(uintptr_t)&counter;
     x ^= x >> 30;
     x *= 0xBF58476D1CE4E5B9ull;
     x ^= x >> 27;
@@ -38,13 +38,13 @@ static uint32_t new_conn_id(uint32_t salt)
 bool Session::host(uint16_t port, const std::string& name, std::string& err)
 {
     leave("restart");
-    if (!sock_.open(port, &err))
+    if (!tr_->open(port, &err))
         return false;
     role_ = Role::Host;
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
-    logf(cb, "hosting on UDP port %u", sock_.local_port());
+    logf(cb, "hosting on UDP port %u", tr_->local_port());
     return true;
 }
 
@@ -89,12 +89,12 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
             return false;
     } else if (!Endpoint::parse(addr, kDefaultPort, ep, err)) // the old way: blocks in the click
         return false;
-    if (!sock_.open(0, &err))
+    if (!tr_->open(0, &err))
         return false;
     role_ = Role::Client;
     my_name_ = name;
     welcomed_ = false;
-    join_started_ = now_ms();
+    join_started_ = now();
     if (!host_name.empty()) {
         auto l = std::make_shared<Lookup>();
         l->host = host_name;
@@ -121,7 +121,7 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     auto p = std::make_unique<Peer>();
     p->id = 0;
     p->conn.remote = ep;
-    p->conn.conn_id = new_conn_id(sock_.local_port());
+    p->conn.conn_id = new_conn_id(join_started_, tr_->local_port());
     p->conn.created_ms = p->conn.last_recv_ms = join_started_;
     Hello h;
     h.build = build;
@@ -172,7 +172,7 @@ void Session::leave(const char* why)
     }
     leave_pending_ = false;
     lookup_.reset(); // a lookup still running ends on its own (the worker holds its own reference)
-    uint32_t now = now_ms();
+    uint32_t now = this->now();
     for (auto& p : peers_) {
         // unreliable, in three packets: a reliable BYE waited behind any earlier lost message (and
         // was sent once), so over a lossy link the other side often never saw it
@@ -182,13 +182,13 @@ void Session::leave(const char* why)
         for (int i = 0; i < 3; i++) {
             p->conn.send_unreliable(MSG_BYE, w, true);
             if (p->conn.build_packet(now + 1000, pkt))
-                sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
+                tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         }
     }
     peers_.clear();
     roster_.clear();
     retired_.clear();
-    sock_.close();
+    tr_->close();
     role_ = Role::None;
     welcomed_ = false;
     logf(cb, "session closed (%s)", why);
@@ -276,12 +276,12 @@ std::string Session::status() const
     if (role_ == Role::None)
         return "offline\n";
     if (role_ == Role::Host)
-        snprintf(b, sizeof b, "host port=%u players=%d/%d\n", sock_.local_port(),
+        snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
                  (int)players().size(), kMaxPlayers);
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
-    uint32_t now = now_ms();
+    uint32_t now = this->now();
     for (auto& p : peers_) {
         snprintf(b, sizeof b, "  [%u] %-16s %s rtt=%.0fms last=%ums sent=%u recv=%u acked=%u resend=%u pending=%u\n",
                  p->id, p->name.c_str(), p->conn.remote.str().c_str(), p->conn.rtt_ms,
@@ -339,7 +339,7 @@ void Session::send_state(PlayerState st)
     if (!connected())
         return;
     st.id = my_id_;
-    st.time_ms = now_ms();
+    st.time_ms = now();
     Writer w;
     st.write(w);
     for (auto& p : peers_)
@@ -616,7 +616,7 @@ void Session::flush(uint32_t now)
         // 14 cells and used to push the player state queued after it past the limit
         int burst = p->conn.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
         for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt); i++)
-            sock_.send_to(p->conn.remote, pkt.data(), pkt.size());
+            tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
     }
 }
@@ -625,25 +625,25 @@ void Session::update()
 {
     if (role_ == Role::None)
         return;
-    uint32_t now = now_ms();
+    uint32_t now = this->now();
     if (lookup_ && !poll_lookup(now))
         return;
     uint8_t buf[2048];
     for (int i = 0; i < 256; i++) {
         Endpoint from;
-        int n = sock_.recv_from(from, buf, sizeof buf);
+        int n = tr_->recv_from(from, buf, sizeof buf);
         if (n <= 0)
             break;
         if (n >= 6 && role_ == Role::Host && *(const uint32_t*)buf == kDiscoverQuery) {
             DiscoverReply rep;
-            rep.port = sock_.local_port();
+            rep.port = tr_->local_port();
             rep.name = my_name_;
             rep.players = (uint8_t)players().size();
             rep.max_players = kMaxPlayers;
             rep.info = lobby_info;
             Writer w;
             rep.write(w);
-            sock_.send_to(from, w.data.data(), w.size());
+            tr_->send_to(from, w.data.data(), w.size());
             continue;
         }
         if (!Connection::looks_valid(buf, n))

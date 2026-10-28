@@ -83,7 +83,8 @@ public:
             ok_ = false;
             return false;
         }
-        memcpy(out, p_ + pos_, n);
+        if (n) // an empty read may pass nullptr (an empty vector's data()): memcpy must not see it
+            memcpy(out, p_ + pos_, n);
         pos_ += n;
         return true;
     }

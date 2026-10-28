@@ -219,6 +219,16 @@ typedef void(SK_THISCALL* GoalUpdate_t)(void*, uint32_t*, uint32_t*);
 static GoalUpdate_t o_GoalUpdate;
 static void* g_goal = nullptr; // the card being updated
 static uint32_t g_goal_dna_dropped = 0, g_goal_dna_paid = 0;
+// BUG-0205: a guest's goal reward (K_GOAL) that reaches the host while it has no creature (an editor,
+// a load) waits here and is checked and paid when the host's creature is back. false: dropped (tests)
+bool g_goal_owe_fix = true;
+struct OwedGoal {
+    ResourceKey k;
+    int outcome;
+    float dna;
+};
+static std::vector<OwedGoal> g_goal_owed;
+static uint32_t g_goal_owed_paid = 0;
 static std::map<std::pair<uint64_t, int>, bool> g_goal_paid; // host: (species, outcome) paid
 
 static void SK_THISCALL h_GoalUpdate(void* goal, uint32_t* a, uint32_t* b)
@@ -511,6 +521,18 @@ void tick(double now)
 {
     if (!C.sess || !game::in_creature_stage() || !game::avatar())
         return;
+    if (is_host() && !g_goal_owed.empty()) { // BUG-0205: rewards that came while we had no creature
+        auto owed = std::move(g_goal_owed);
+        g_goal_owed.clear();
+        for (auto& o : owed)
+            if (goal_outcome(o.k) == o.outcome && host_goal_pay(o.k, o.outcome)) {
+                game::dna_add_raw(o.dna);
+                g_goal_owed_paid++;
+                if (C.feed)
+                    C.feed(std::string(o.outcome == 6 ? "A species became our ally" : "A goal was reached") +
+                           ": +" + std::to_string((int)(o.dna + 0.5f)) + " DNA");
+            }
+    }
     if (is_host()) {
         static double last = 0;
         if (now - last < 1.0)
@@ -588,8 +610,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         float dna = r.f32();
         // a card pays when its species became allied (6) or extinct (5): the host's own table (the
         // one every guest follows) must say so too
-        if (r.ok() && std::isfinite(dna) && dna > 0 && dna < 10000 && (outcome == 5 || outcome == 6) &&
-            goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
+        bool sane = r.ok() && std::isfinite(dna) && dna > 0 && dna < 10000 && (outcome == 5 || outcome == 6);
+        if (sane && !game::avatar() && g_goal_owe_fix) {
+            if (g_goal_owed.size() < 64)
+                g_goal_owed.push_back({k, outcome, dna});
+            return;
+        }
+        if (sane && goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
             game::dna_add_raw(dna);
             if (C.feed)
                 C.feed(std::string(outcome == 6 ? "A species became our ally" : "A goal was reached") + ": +" +
@@ -630,6 +657,7 @@ void on_session_end()
 {
     g_engaged = -1;
     g_goal_paid.clear();
+    g_goal_owed.clear();
     g_games.clear();
     g_have_table = false;
     g_host_table.clear();
@@ -642,9 +670,9 @@ std::string status()
     if (is_host())
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
-                 "goal_dna_dropped=%u\n",
+                 "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
-                 g_goal_dna_dropped);
+                 g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
@@ -664,6 +692,20 @@ std::string species_dump()
         out += b;
     }
     return out.empty() ? "no species records\n" : out;
+}
+
+// tests (BUG-0205): a guest reports a goal card's reward for species <inst> the way goal_dna does
+bool debug_send_goal(uint32_t inst, int outcome, float dna)
+{
+    if (!C.sess || C.sess->role() != net::Role::Client || !C.sess->connected())
+        return false;
+    net::Writer w;
+    w.u8(K_GOAL);
+    w.u16(0);
+    w.u32(inst); w.u32(0x2B978C46u); w.u32(0x40626200u);
+    w.u8((uint8_t)outcome);
+    w.f32(dna);
+    return C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
 }
 
 // tests: the host's record of a creature species (as the game's ApplyEvent keeps it), sent on change

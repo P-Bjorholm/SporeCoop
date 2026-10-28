@@ -4,6 +4,8 @@
 
 namespace dbpf {
 
+bool g_bounds_fix = true;
+
 static uint32_t le32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
 static void put32(std::vector<uint8_t>& v, size_t at, uint32_t x)
@@ -82,13 +84,15 @@ bool Package::load(const std::vector<uint8_t>& file)
     entries_.clear();
     size_t n = file_.size();
     IndexInfo info;
-    if (!index_info(file_.data(), n, info) || info.offset + info.size > n)
+    // BUG-0208: a DBBF offset is 64-bit: offset + size wrapped past 2^64 and passed the check
+    if (!index_info(file_.data(), n, info) || (g_bounds_fix ? info.offset > n || info.size > n - info.offset
+                                                            : info.offset + info.size > n))
         return false;
     std::vector<Entry> all;
     if (!parse_index(file_.data() + info.offset, info.size, info, all))
         return false;
     for (auto& e : all)
-        if (e.offset + e.size <= n)
+        if (g_bounds_fix ? e.offset <= n && e.size <= n - e.offset : e.offset + e.size <= n)
             entries_.push_back(e);
     return true;
 }

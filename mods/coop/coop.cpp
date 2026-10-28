@@ -32,6 +32,7 @@
 #include "teamplay.h"
 #include "tribe.h"
 #include "cellsync.h"
+#include "census.h"
 #include "civ.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
@@ -402,12 +403,28 @@ float g_solo_dna = 0;
 uint32_t g_host_away_count = 0;
 bool g_host_away_fix = true; // BUG-0085: the away state ends with the session, without a "host is back"
 
-bool host_in_menu()
+// BUG-0205: the host in an editor of its own (the guest left its editor first, or did not get one)
+// or on a loading screen is away too: it sends no NPC, vehicle or citizen states meanwhile, and the
+// guest's proxies stood frozen. Not while this guest's own editor of the same vote is still due (it
+// opens up to ~20 s after the host's). `coop.corefix away_editor 0`: only the main menu (tests).
+bool g_away_editor_fix = true;
+extern uint32_t g_own_editor_due;
+// why the host is not playing our stage: 'm' main menu, 'e' editor, 'l' loading, 0 it is (or unknown)
+char host_out_of_stage()
 {
     if (g_sess.role() != net::Role::Client || !g_sess.connected() || !stage_mode(g_mode) || !g_local)
-        return false;
+        return 0;
     auto it = g_remotes.find(0);
-    return it != g_remotes.end() && !it->second.buf.empty() && it->second.buf.latest().mode == modes::kMenu;
+    if (it == g_remotes.end() || it->second.buf.empty())
+        return 0;
+    uint32_t m = it->second.buf.latest().mode;
+    if (m == modes::kMenu)
+        return 'm';
+    if (!g_away_editor_fix || g_own_editor_due)
+        return 0;
+    if (m == modes::kEdit || m == modes::kEditor)
+        return 'e';
+    return m == modes::kLoad ? 'l' : 0;
 }
 
 bool host_here() // the host plays in our world again (not loading it any more)
@@ -472,12 +489,16 @@ void host_away_tick(double now)
         g_solo_dna = 0;
         return;
     }
-    bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : host_in_menu();
+    // an editor or a load counts after 4 s: a host passing through the loading screen between two
+    // places, or the shared editor of a vote opening a moment later here, is not away
+    char why = g_host_away ? 0 : host_out_of_stage();
+    bool change = g_host_away ? host_here() || !g_sess.connected() || !stage_mode(g_mode) : why != 0;
     if (!change)
         g_host_away_since = -1;
     else if (g_host_away_since < 0)
         g_host_away_since = now;
-    bool away = change && now - g_host_away_since > (g_host_away ? 1.0 : 1.5) ? !g_host_away : g_host_away;
+    double wait = g_host_away ? 1.0 : why == 'm' ? 1.5 : 4.0;
+    bool away = change && now - g_host_away_since > wait ? !g_host_away : g_host_away;
     if (away == g_host_away)
         return;
     g_host_away_since = -1;
@@ -485,7 +506,8 @@ void host_away_tick(double now)
     std::string host = g_sess.name_of(0);
     if (away) {
         g_host_away_count++;
-        feed(host + " (host) left for the main menu: you play on alone until " + host + " is back");
+        const char* where = why == 'e' ? "is in an editor" : why == 'l' ? "is loading" : "left for the main menu";
+        feed(host + " (host) " + where + ": you play on alone until " + host + " is back");
         return;
     }
     if (g_solo_dna > 0 && g_sess.connected()) {
@@ -2639,6 +2661,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::species_dump().c_str());
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "goal")) { // tests: goal <hex crt> <outcome 5|6> <dna> (guest -> host, BUG-0205)
+        bool ok = social::debug_send_goal(strtoul(argv[2], nullptr, 16), atoi(argv[3]), (float)atof(argv[4]));
+        SAY(ok ? "goal sent" : "not a connected guest");
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "record")) { // tests: record <hex crt> <relation> <impressed>
         bool ok = social::debug_set_record(strtoul(argv[2], nullptr, 16), atoi(argv[3]), (uint32_t)atoi(argv[4]));
         SAY(ok ? "record set" : "no relationship manager");
@@ -3150,7 +3177,8 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"lan_pages", &coop_ui::g_lan_pages_fix},
                 {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
                 {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix},
-                {"away_dna", &g_away_dna_fix}};
+                {"away_dna", &g_away_dna_fix}, {"away_editor", &g_away_editor_fix},
+                {"away_goal", &social::g_goal_owe_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -3500,6 +3528,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     cvc.beacon = add_beacon;
     cvc.host_away = [] { return g_host_away; };
     civ::init(H, M, std::move(cvc));
+    census::Ctx csc;
+    csc.sess = &g_sess;
+    csc.place = [](uint32_t& m, uint32_t& w) {
+        m = g_mode;
+        w = g_world;
+    };
+    census::init(H, M, std::move(csc));
     squadron::Ctx sqc;
     sqc.sess = &g_sess;
     sqc.with_host = [] {
