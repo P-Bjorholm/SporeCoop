@@ -237,12 +237,17 @@ def test_relint():
     gen = open(os.path.join(ROOT, 'data', 'symbols', 'march2017_dc04aee5.sym'), errors='replace').read()
     import re
     name = re.search(r'^([A-Za-z_][A-Za-z0-9_:]*)\s*=', gen, re.M).group(1)
-    with open(os.path.join(tree, 'data', 'symbols', 'overrides_dc04aee5.sym'), 'a') as f:
-        f.write(f'\n{name}=0x00401000 ; TODO\nFoo::NewThing=0x00401000 ; TODO\n')
+    ovr = os.path.join(tree, 'data', 'symbols', 'overrides_dc04aee5.sym')
+    # a name the overrides file already has (a second entry: which one counts depended on the order)
+    dup = re.search(r'^([A-Za-z_][A-Za-z0-9_:]*)\s*=', open(ovr, errors='replace').read(), re.M).group(1)
+    with open(ovr, 'a') as f:
+        f.write(f'\n{name}=0x00401000 ; TODO\nFoo::NewThing=0x00401000 ; TODO\n{dup}=0x00401000 ; TODO\n')
     r = lint()
     flagged = [l for l in r.stdout.splitlines() if 'say how sure' in l]
     check(any(name in l for l in flagged), f'the override of the generated name {name} is flagged (BUG-0086)')
     check(any('Foo::NewThing' in l for l in flagged), 'the override of a new name is flagged')
+    check(any(l.startswith('overrides_dc04aee5.sym:') and dup in l for l in flagged),
+          f'a second overrides entry of {dup} without a confidence word is flagged')
 
 
 # ---------------------------------------------------------------- release
