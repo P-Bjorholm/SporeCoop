@@ -44,7 +44,7 @@ change). `coop.lanfake <n> [s]` makes up games for tests. Switch: `coop.corefix 
 fake game must show in a visible row.
 - FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): 0 of 6 listed (the first three rows were taken by real hosts and `fake1` was not
   among them on that run; no way to see the others).
-- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): 6 of 6 over three pages ("1-3 of 8", "4-6 of 8", "7-8 of 8").
+- PASS: lab runs `out/lab/20261028-005022` and `out/lab/20261028-011423` (lane 2, both PASS): 6 of 6 over three pages ("1-3 of 8", "4-6 of 8", "7-8 of 8").
 
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.

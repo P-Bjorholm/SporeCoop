@@ -76,7 +76,7 @@ Unit test `test_address_parse` (FAILS with `net_tests --nofix`: " 192.168.1.5:47
 then ` 127.0.0.1:<port>` into the real address field and presses Join.
 - FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): "Connecting to 127.0.0.1:107812..." (the wrong port accepted), then
   "Cannot join: cannot resolve  127.0.0.1:47812".
-- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): "Cannot join: the port must be a number from 1 to 65535", then joined.
+- PASS: lab runs `out/lab/20261028-005022` and `out/lab/20261028-011423` (lane 2, both PASS): "Cannot join: the port must be a number from 1 to 65535", then joined.
 
 ### Related
 #8 (join timeout), #83 (the status keeps "Connecting to ..." after such a failed join).

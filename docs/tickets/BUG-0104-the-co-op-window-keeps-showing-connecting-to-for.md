@@ -66,7 +66,7 @@ does not get its own row (no room in the 600 px window). Switch: `coop.corefix u
 - FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): the status stayed "Connecting to 127.0.0.1:107812..." after the guest was in
   (first log) or kept the old "Cannot join" text (second log), and after the session ended the
   window still showed it instead of the reason.
-- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): status '' once in, "Disconnected: host closed the session" at the end.
+- PASS: lab runs `out/lab/20261028-005022` and `out/lab/20261028-011423` (lane 2, both PASS): status '' once in, "Disconnected: host closed the session" at the end.
 Not run: the update line itself (needs a test release server); covered by the same expiry.
 
 ### Related

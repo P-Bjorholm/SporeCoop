@@ -58,7 +58,7 @@ Switch: `coop.corefix host_away_reset 0`.
 `coop_ui_status.py` part 4: host `coop.menu`, guest `coop.dna add 50`, host `coop.leave`; the
 guest's log after `disconnected:` must have no "(host) is back".
 - FAIL: `coop_ui_status.py --without-fix` on lane 2 (switches off), logs `out/lab/manual-w3-net/ui_status_nofix.log` and `ui_status_nofix2.log` (2026-10-28): "player0 (host) is back: your 50 DNA go to the pack".
-- PASS: lab run `out/lab/20261028-005022` (lane 2, PASS): no such line, `host_away=0`.
+- PASS: lab runs `out/lab/20261028-005022` and `out/lab/20261028-011423` (lane 2, both PASS): no such line, `host_away=0`.
 
 ### Related
 - Umbrella #11.
