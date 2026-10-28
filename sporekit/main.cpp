@@ -80,7 +80,7 @@ static int h_command_exec(const char* line, SkOut* out)
 }
 static void h_run_on_main(SkTaskFn fn, void* u)
 {
-    run_on_main([fn, u] { fn(u); });
+    run_on_main_from((const void*)fn, [fn, u] { fn(u); });
 }
 static std::wstring mod_ini(SkMod* m) { return g_mods_dir + L"\\" + widen(m ? m->name : "sporekit") + L".ini"; }
 static int h_config_int(SkMod* m, const char* s, const char* k, int d) { return ini_int(mod_ini(m), s, k, d); }
@@ -99,7 +99,7 @@ static int h_config_set_str(SkMod* m, const char* s, const char* k, const char* 
 }
 static void h_run_outside_frame(SkTaskFn fn, void* u)
 {
-    run_outside_frame([fn, u] { fn(u); });
+    run_outside_frame_from((const void*)fn, [fn, u] { fn(u); });
 }
 static void* h_d3d_device() { return d3d_device(); }
 static void* h_game_window() { return game_window(); }

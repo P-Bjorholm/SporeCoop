@@ -16,5 +16,8 @@ void tick(); // main thread: notifications
 bool ui(std::string& line, std::string& button);
 void start_update();
 std::string command(const std::string& arg); // coop.update [check | apply | status]
+// on_unload: no thread logs or notifies any more; returns how many still run (each holds the
+// module, so the old image stays mapped until they end: BUG-0060)
+int shutdown();
 
 } // namespace autoupdate
