@@ -1,19 +1,19 @@
 ---
 id: BUG-0162
 title: hot reload and every 3-4 player test are outside the lab suites, so they never run
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#141
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tests
+commits: 95cc55a, 352f164
+tests: hotreload, multi3, npc_multi3
 signature:
-docs:
+docs: docs/06-testing.md#testing-w4-tests
 related: #141
 ---
 
@@ -63,20 +63,21 @@ $ for f in tools/tests/*.py; do grep -q "$(basename $f)" tools/tests/suite.py ||
 Confirmed by reading. A second reviewer verified it, and noted that coop_creature_social is excluded on purpose.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-1. Add `add('hotreload', P + 'hotreload_check.py', minutes=4)` (full).
-2. Add a `lanes=2` property to `suite.add`. The scheduler reserves two free lanes and passes `SPORE_LANE_B`.
-3. Add `coop_npc_multi.py --players 4` (nightly, short) and `coop_multi.py --players 4 --minutes 6` (nightly) with it.
+Fixed on fix/w4-tests (95cc55a, 352f164), differently from the suggestion: no two-lane scheduling.
+A third and fourth player run in the test's own lane: instances 20+N and 30+N in lane N's bottle
+(`coop_multi.extra_instances`; console ports 47820..47839 and co-op ports 47830..47849 belong to no
+lane). `SPORE_LANE_B` is now optional (its old default, lane N+1, was another lab worker's lane).
+Suite `extended` (`lab.py run extended`, also in nightly, not in full or smoke): `hotreload`
+(hotreload_check.py), `multi3` (coop_multi.py --fixture creature --players 3 --minutes 3) and
+`npc_multi3` (coop_npc_multi.py --players 3). Four players in one lane (4 games on one lane's GPU
+share) were not tried: `--players 4` works the same way when wanted.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`lab.py run nightly` lists and runs `hotreload` and the two multi-player tests, on two lanes each for the latter.
-
-### Related
-#38 (hot reload crash), #50, #53, #54, #57, #42 (3+ player bugs).
+- `lab.py run extended`, lane 5: out/lab/20261028-030927, 3 of 3 passed (multi3: Bob and Carol in the
+  host's world, sync p90 0.17-0.67 m over 3 rounds; npc_multi3: NPC p90 0.25/0.35 m; hotreload).
+- A suite membership change: nothing to fail without it.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #141.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fix/w4-tests: extended suite with hot reload and 3 players in one lane; 3/3 passed.

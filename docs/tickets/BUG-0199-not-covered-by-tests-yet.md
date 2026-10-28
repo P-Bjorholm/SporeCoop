@@ -40,3 +40,4 @@ Not fixed yet.
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w4-tests: not reached: every item needs a later fixture (a tribe with instruments and a healer tool, a live Space mission, raids, a civ with designs: BUG-0189, BUG-0181). Stays open.

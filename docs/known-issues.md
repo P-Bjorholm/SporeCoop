@@ -652,7 +652,6 @@ keeps the history).
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
 * BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
-* BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 
 **Creature**
