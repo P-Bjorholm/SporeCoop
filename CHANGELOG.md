@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Fixed
+- **Creature: NPCs on the guest match the host's after the game reuses a creature**: when the game
+  built a new NPC in the object of a freed one, guests kept showing the old one (another species,
+  or its corpse dragged along the new creature's path); NPC ids no longer repeat in long sessions
+  (BUG-0044, BUG-0023). Test: `coop_npc_reuse.py` (suite `npc_reuse`).
+- **Creature: a partner's creature removed during a cinematic** no longer shows up for that partner
+  as an extra AI-driven copy of itself (BUG-0066). Test: `coop_cinematic_puppet.py`.
+- **Creature: an error in an NPC's AI next to a partner** can no longer leave the partner's creature
+  as the host's player creature for good (BUG-0110). Test: `coop_npc_swap.py`.
+- **After leaving a session, a guest's own creation is its own again**: the host's creation with the
+  same id kept replacing it until the game was restarted (BUG-0055). Test: `coop_creation_leave.py`.
+- **Joint-hunt bonus**: the hit table no longer grows for the whole session, and a new creature does
+  not inherit the hits of a dead one (BUG-0099). Test: `tests/npc_tests.cpp` (`make test`).
 - **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
   `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could

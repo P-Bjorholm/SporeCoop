@@ -43,6 +43,10 @@ anchor so other docs can link to it:
   `destroy_creature` unregisters the puppet or proxy before the cinematic deferral, so its
   NPCTickAI runs again and it can move, and the host may send it to the guests as an NPC (code
   reading, verified by a second reviewer; not seen in the game yet). BUG-0066.
+* FIXED (2026-10-28, fix/w2-creature): seen in the game (`coop_cinematic_puppet.py`: the host's old
+  puppet got NPC id 23 during CRG_ClaimNest); a puppet or proxy that waits for the end of the
+  cinematic now stays a puppet (no AI, no host NPC id) until it is destroyed. Local NPCs the guest
+  removes in that time still run their AI until then. BUG-0066.
 * Ticket: BUG-0019.
 
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
@@ -99,6 +103,14 @@ anchor so other docs can link to it:
   The same offset on every guest points at the host side or at a spot the proxy cannot stand on
   (pushed out by collision after each stuck-teleport of `drive::step`). Not seen again in 5 min of
   watching nor in 4 more sessions. Hunt: `coop.npc list` on host and guests for that id (err, want).
+* 2026-10-28 (fix/w2-creature): not reproduced (no runs of the 4-player probe). Code reading of
+  `drive::step` (driver.h) gives a candidate (inferred, not observed): a proxy 4 m off is under the
+  8 m snap, and the stuck teleport fires only while the host's NPC reports less than 0.3 m/s. An NPC
+  of the host that pushes against something (velocity reported, position fixed) keeps the proxy
+  walking towards a spot it cannot reach on any guest (collision), for as long as it pushes. A
+  second candidate was fixed on the way: a reused creature object kept its net id (BUG-0044), but
+  that shows the old species or a corpse, not an offset. Next time: `coop.npc list` on the host
+  for that id (its vel: `coop.npc` sync entries) and on a guest (err, want).
 * Ticket: BUG-0169.
 
 ## Creature chaos: a guest crashed with a corrupted heap (seen once)
@@ -705,11 +717,6 @@ keeps the history).
 
 **Creature**
 
-* BUG-0044 (#22, desync): a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse.
-* BUG-0055 (#33, bug): after leaving a session, the host's creations still replace a guest's own creation with the same id.
-* BUG-0066 (#44, bug): a puppet or proxy removed during a cinematic gets its AI back, and the host sends it to guests as an NPC.
-* BUG-0099 (#77, bug): the joint-hunt hit table grows without bound and keys hits by reusable creature addresses.
-* BUG-0110 (#89, bug): a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good.
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
 * BUG-0125 (#104, bug): a guest that rejoins while the host is paused sees no animals near it.
 * BUG-0149 (#128, bug): typing digits in the cheat console plays social abilities while a guest is socializing.
