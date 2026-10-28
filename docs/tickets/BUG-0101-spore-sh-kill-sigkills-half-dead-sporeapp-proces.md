@@ -1,17 +1,17 @@
 ---
 id: BUG-0101
 title: spore.sh kill SIGKILLs half-dead SporeApp processes of every lane, not only its own
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#79
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 14463ee
+tests: tools/tests/tools_selftest.py kill (make test)
 signature:
 docs:
 related: #79
@@ -49,24 +49,17 @@ done
 PLAUSIBLE (the selection is CONFIRMED by reading; the cross-lane kill needs the half-dead state).
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Filter the zombie loop by the lane like the other steps. The leader's cmdline is empty for a zombie, so take a live thread's cmdline, or match the `bwrap` sandbox the process descends from (the same `index($0, bin)` test as the next loop):
-
-```bash
-for z in $(ps -eo pid=,stat=,comm= | awk '$2 ~ /Z/ && $3 ~ /SporeApp/ {print $1}'); do
-    for t in /proc/"$z"/task/*; do
-        if tr '\0' ' ' < "$t/cmdline" 2>/dev/null | grep -qE "$GAME_RE"; then kill -9 "$z"; break; fi
-    done
-done
-```
-
-Or, as planned for BUG-0025, kill by recorded PIDs of the lane.
+The zombie loop by `comm` is gone. A half-dead game (zombie leader, live threads) has no command
+line on the leader, so `lane_procs` reads a live thread's `/proc/<pid>/task/<tid>/cmdline` and
+matches the lane's folder like any other game of the lane; then the leader gets SIGKILL (the whole
+thread group). Another lane's half-dead game does not match.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Hard to automate with the real game. A shell test can start a dummy process named `SporeApp.exe` (`exec -a`) under a fake lane path, make its leader exit with a live thread (e.g. a small C or Python program calling `pthread_exit` / `syscall(SYS_exit)` in the main thread), and run `SPORE_LANE=2 tools/spore.sh kill`: the dummy of "lane 3" must survive.
+`tools/tests/tools_selftest.py kill`: a Python fake that exits its main thread with `syscall(SYS_exit)` while a second
+thread sleeps (state Z, comm `SporeApp.exe` via prctl), one under "lane 2" and one under "lane 3";
+`SPORE_LANE=2 spore.sh kill`.
+- FAIL with main's spore.sh: "lane 2 kill leaves the half-dead game of lane 3 alone" FAIL (and lane 1 kill also killed it).
+- PASS with the fix: lane 2's half-dead game ends, lane 3's survives.
 
 ### Related
 docs/tickets/BUG-0025 (kill not PID-scoped on lane 1); CLAUDE.md section 3 ("Lanes are independent copies of the game + bottle").
@@ -74,3 +67,4 @@ docs/tickets/BUG-0025 (kill not PID-scoped on lane 1); CLAUDE.md section 3 ("Lan
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #79.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

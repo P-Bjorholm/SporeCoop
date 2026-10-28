@@ -1,17 +1,17 @@
 ---
 id: BUG-0097
 title: release job does not check tag against COOP_VERSION, and notes for vX.Y.Z take every X.Y.Z.N section
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#75
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: b28f978
+tests: tools/tests/tools_selftest.py release (make test)
 signature:
 docs:
 related: #75
@@ -55,24 +55,20 @@ The release job fails before publishing when `${GITHUB_REF_NAME#v}` differs from
 Notes: CONFIRMED by running. Version mismatch: CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-```yaml
-      - name: publish the release
-        run: |
-          ver="${GITHUB_REF_NAME#v}"
-          code=$(sed -n 's/^#define COOP_VERSION "\(.*\)"/\1/p' mods/coop/coop.cpp)
-          [ "$ver" = "$code" ] || { echo "tag $GITHUB_REF_NAME but COOP_VERSION $code"; exit 1; }
-          awk -v h="## [$ver]" 'index($0, h) == 1 {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
-          [ -s notes.md ] || { echo "no CHANGELOG section for $ver"; exit 1; }
-```
-
-(`index(...) == 1` compares the literal heading start `## [0.7.2]`, so `## [0.7.2.4]` no longer matches.) The same version check could also go into the `build` job for tag pushes, so it fails before the artifacts are made.
+`tools/release_check.sh vX.Y.Z [notes.md]`: fails when the tag is not `COOP_VERSION`, cuts exactly
+the `## [X.Y.Z]` section of CHANGELOG.md (literal heading, `index(...) == 1`, so `0.7.2` no longer
+takes the `0.7.2.N` sections) and fails when it is missing or empty. The build job runs it first on a
+tag (fails before any artifact is built), the release job before publishing.
+docs/10-dev-pipeline.md#pipeline-release-check. For v0.7.3.0: bump `COOP_VERSION` to "0.7.3.0" and add
+`## [0.7.3.0]` to CHANGELOG.md, else the job stops.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Run the new shell snippet locally against CHANGELOG.md: `0.7.2` gives only its own section (about 25 lines), `0.7.3` exits non-zero. A push of a test tag in a fork with a mismatched `COOP_VERSION` must fail the job.
+`tools/tests/tools_selftest.py release`: a temporary tree with COOP_VERSION and a CHANGELOG that has 0.7.3.0, 0.7.3,
+0.7.2.4 and 0.7.2 sections.
+- FAIL with main's workflow step (as a script): a mismatched tag passes, v0.7.2 takes 0.7.2.4 too, a
+  missing section passes.
+- PASS with the fix: v0.7.3.0 gives exactly its own section; mismatch and missing section fail.
+Also run on the real tree: `tools/release_check.sh v0.7.2.4` gives its 42 lines.
 
 ### Related
 CLAUDE.md section 4 (Releases: bump `COOP_VERSION`, push a tag `vX.Y.Z`: GitHub Actions builds and publishes).
@@ -80,3 +76,4 @@ CLAUDE.md section 4 (Releases: bump `COOP_VERSION`, push a tag `vX.Y.Z`: GitHub 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #75.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

@@ -1,17 +1,17 @@
 ---
 id: BUG-0156
 title: test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
-status: open
+status: fixed
 kind: test
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#135
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 850644d
+tests: tools/tests/kit_profile_docs.py (lab kit_docs; --old fails)
 signature:
 docs:
 related: #135
@@ -47,18 +47,23 @@ A test profile redirects every per-user folder the game writes to (AppData and D
 PLAUSIBLE, severity low. CONFIRMED by reading that only `CSIDL_APPDATA` is redirected. That Spore writes into Documents through `SHGetFolderPathW(CSIDL_PERSONAL)` (and not another API) is not verified in this game build. A second reviewer verified the reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- In `h_SHGetFolderPathW`, also redirect `CSIDL_PERSONAL` / `CSIDL_MYDOCUMENTS` (to e.g. `AppData\Roaming\SporeKit-<name>\Documents`), and `CSIDL_LOCAL_APPDATA` if the game uses it.
-- Check with the `probe` file trace (CreateFileW paths containing "My Spore") which API the game uses, and hook `SHGetFolderPathA`, `SHGetSpecialFolderPathW` or `SHGetKnownFolderPath` too if needed. Record the result in docs/06-testing.md.
+`h_SHGetFolderPathW` (sporekit/instance.cpp) also redirects CSIDL_PERSONAL, CSIDL_MYPICTURES,
+CSIDL_MYVIDEO and CSIDL_MYMUSIC while a profile is active: to
+`<AppData>\SporeKit-<profile>\Documents[\Pictures|Videos|Music]` (built from the real AppData, the
+folders are created). The game imports only `SHGetFolderPathW` of the shell folder APIs (checked in
+the GOG 2024 exe's import table) and the hook is on the shell32 export, so every caller goes through
+it. The log says `profile '<name>': Documents in ...` once. Switch: `-sporekit-profile-docs:0` (the
+old behaviour, AppData only). `spore.sh run -x <arg>` passes extra game arguments.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-A lane test with a profile:
-- Before: list the owner's Documents\My Spore Creations (or a marker folder in the bottle). Run an editor save in a test profile (`coop.vote editor` path or the creations test).
-- Assert: no new or changed file in the owner's Documents; the PNG is in the profile's redirected folder.
-- FAILS on main (the PNG lands in the owner's Documents), PASSES with the fix. Uses the CreateFileW trace as the check, not a mod counter.
+`tools/tests/kit_profile_docs.py` (lab `kit_docs`), lane 3: one game with a fresh test profile;
+the game must make its "My Spore Creations" under the profile's Documents by itself at start (it
+does, through CSIDL_PERSONAL: the log line shows the Documents redirect), and nothing in the
+bottle's own Documents/My Spore Creations may change.
+- FAIL `--old` (`-sporekit-profile-docs:0`): "the game made My Spore Creations in the profile" FAIL.
+- PASS with the fix (lane 3, 2026-10-28).
+Note: at start the game did not write into the existing owner folder either way (the folder
+already existed); the files it writes later (creation cards, screenshots) go to the same CSIDL.
 
 ### Related
 - #80 (spore.sh fixture restore with profile "-" deletes the player's own saves)
@@ -67,3 +72,4 @@ A lane test with a profile:
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #135.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

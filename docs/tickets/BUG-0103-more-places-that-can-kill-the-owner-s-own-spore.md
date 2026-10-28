@@ -1,17 +1,17 @@
 ---
 id: BUG-0103
 title: more places that can kill the owner's own Spore on lane 1 (BUG-0025)
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#81
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 14463ee
+tests: tools/tests/tools_selftest.py kill (make test)
 signature:
 docs:
 related: #81
@@ -60,16 +60,21 @@ On lane 1, `kill_game(1)` (simulating a host crash) SIGKILLs every SporeApp.exe 
 CONFIRMED by reading.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- With the BUG-0025 PID files: `spore.sh run` writes `out/pids/lane<N>.inst<I>`. `spore.sh kill` and `kill_game` kill only those PIDs, after checking that `/proc/<pid>/cmdline` still names the lane's exe.
-- `lab.py kill`: default to the lanes of `lab.py run`'s default (2..N), take `--lanes`/`--skip` like `run`, cover lanes up to 10, and require `--include-lane-1` for lane 1.
-- `coop_creature_desync.kill_game`: use the PID file of the instance instead of scanning, and use the lane's real folder (not a hard-coded `SPORE`).
+- `spore.sh kill` on lane 1 ends only test games (BUG-0025).
+- `lab.py kill` cleans lanes 2..10 by default (`--lanes 2,3` to choose); lane 1 only with
+  `--include-lane-1`, and then only its test games.
+- `coop_creature_desync.kill_game` asks `spore.sh pids <inst>` (the lane's real folder, no
+  hard-coded `SPORE`; on lane 1 only test games, so instance 1 is the test host started with
+  `-sporekit-profile:test`, never the owner's game).
+- `lab.py run` still uses lane 1 unless `--skip 1`: with the kill fix that no longer endangers the
+  owner's game; whether the lab should skip lane 1 by default is left to the lab harness (wave 4,
+  fix/w4-lab).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-With a dummy process `exec -a SporeApp.exe` whose command line looks like the owner's game (no instance argument, the install's path), `lab.py kill` and `kill_game(1)` must leave it running. Today both kill it.
+`tools/tests/tools_selftest.py kill`: `spore.sh pids 1` on lane 1 returns only the test host, not the owner's fake
+game; `pids 2` only the guest; lane 1 kill leaves the owner's game. FAIL with main's spore.sh (no
+`pids`, the owner's game killed), PASS with the fix. `lab.py kill` by reading (it only calls
+`spore.sh kill` for lanes 2..10).
 
 ### Related
 docs/tickets/BUG-0025; CLAUDE.md section 3 ("Tests must not touch the player's own Spore profile"; pitfalls about killing processes).
@@ -77,3 +82,4 @@ docs/tickets/BUG-0025; CLAUDE.md section 3 ("Tests must not touch the player's o
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #81.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).

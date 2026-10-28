@@ -1,17 +1,17 @@
 ---
 id: BUG-0062
 title: tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#40
 role: 
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w4-tools
+commits: 60c9c1e
+tests: tools/tests/tools_selftest.py tickets (make test)
 signature:
 docs:
 related: #40
@@ -66,22 +66,15 @@ d = PRIVATE if a.private else PUBLIC
 CONFIRMED by running.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-Derive the private folder from the common git dir, like the lock does:
-
-```python
-common = git('rev-parse', '--path-format=absolute', '--git-common-dir')
-MAIN = os.path.dirname(common)
-PRIVATE = os.path.join(MAIN, 'out', 'tickets')
-```
-
-and use that `PRIVATE` in `all_tickets()`, `cmd_new`, `cmd_release`. Optionally warn in the merge-batch skill to check `out/tickets` of a worktree before removing it, for tickets written by older versions.
+`PRIVATE` is the main checkout's `out/tickets` (the folder of the common git dir), for every
+worktree: `new --private` writes there, `list`/`find`/`show`/`release`/`check` read it. No
+private ticket was stranded in a worktree on this machine (checked 2026-10-28).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Temporary repo test: create a private ticket in a worktree, remove the worktree, run `tickets.py find` from the main checkout: the ticket must be found. Today it is not.
+`tools/tests/tools_selftest.py tickets`: a private ticket made in a worktree is found from the main checkout, survives
+`git worktree remove --force`, and its id is not given out again.
+- FAIL with main's tickets.py (all three checks).
+- PASS with the fix.
 
 ### Related
 CLAUDE.md section 1 ("Open security problems: `--private` (out/tickets/)"; "Agents open tickets themselves ... in their own worktree"). The id reuse of public tickets is filed separately.
@@ -89,3 +82,4 @@ CLAUDE.md section 1 ("Open security problems: `--private` (out/tickets/)"; "Agen
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #40.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w4-tools (wave 4, tests and tooling).
