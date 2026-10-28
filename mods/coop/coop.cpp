@@ -37,6 +37,7 @@
 #include "squadron.h"
 #include "npc.h"
 #include "savestrip.h"
+#include "cell_logic.h"
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
@@ -1421,11 +1422,10 @@ void draw_marks()
         // off screen: an arrow on the edge towards it (behind the camera: at the bottom)
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
-        float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
-                           std::fabs(dy) > 0.5f ? (cy - 60) / std::fabs(dy) : 1e9f);
-        if (!front)
-            k = cy - 60;
-        int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+        float fx, fy;
+        if (!cell_logic::edge_point(cx, cy, dx, dy, 90, 60, 1, 0.5f, fx, fy)) // a NaN position (BUG-0160)
+            continue;
+        int x = (int)fx, y = (int)fy;
         const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
         std::string t = std::string(arrow) + " " + m.text;
         H->overlay_text(x - text_width(t) / 2, y - 10, col, t.c_str());

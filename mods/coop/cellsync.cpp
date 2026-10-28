@@ -1049,7 +1049,7 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(v[0]); w.f32(v[1]);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
-            w.u8((uint8_t)F<int>(c, kHp));
+            w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
         }
         for (auto& pl : C.sess->players())
@@ -1553,8 +1553,10 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
     if (!H->world_to_screen(w, sc)) // behind: never happens in the flat cell world, keep a fallback
         sc[0] = cx, sc[1] = sh + 100.f;
     float dx = sc[0] - cx, dy = sc[1] - cy;
-    float k = std::min(std::fabs(dx) > 1 ? (cx - 70) / std::fabs(dx) : 1e9f, std::fabs(dy) > 1 ? (cy - 50) / std::fabs(dy) : 1e9f);
-    int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+    float fx, fy;
+    if (!cell_logic::edge_point(cx, cy, dx, dy, 70, 50, 1, 1, fx, fy)) // a NaN position (BUG-0160)
+        return;
+    int x = (int)fx, y = (int)fy;
     const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
     std::string s = std::string(arrow) + " " + name + " " + t;
     H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
