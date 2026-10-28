@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cmath>
 #include <thread>
+#include <csignal>
 #include <cstdio>
 #include <deque>
 #include <map>
@@ -438,8 +439,16 @@ struct Vote {
     std::string text;
     int left = 0;
     uint32_t editor = 0; // the editor the host opens (EditorRequest+0xC); guests open the same for their own creature
+    uint32_t mode = 0;   // host: the stage and world the vote belongs to (BUG-0043)
+    uint32_t world = 0;
 };
 Vote g_vote;
+// BUG-0043: a vote ends with its stage, its world and its session (its action or editor request is
+// dropped, not run later on a freed civilization or in another save). `coop.corefix vote_scope 0`
+// restores the old behaviour (tests).
+bool g_vote_scope_fix = true;
+unsigned g_vote_actions_run; // tests: action votes whose action ran
+unsigned g_votes_dropped;    // tests: votes ended without running their result
 bool g_vote_bypass = false;
 bool g_vote_opened_ui = false; // the vote opened the co-op window: it closes again afterwards
 double g_vote_last_send = 0;
@@ -456,7 +465,7 @@ bool start_action_vote(const std::string& text, const std::string& done, std::fu
 {
     if (g_vote.active)
         return false;
-    g_vote = Vote{true, nullptr, H->time_seconds(), text, 60, 0u};
+    g_vote = Vote{true, nullptr, H->time_seconds(), text, 60, 0u, game::mode_id(), modes::current_world()};
     g_vote_action = std::move(action);
     g_vote_done = done;
     for (auto& p : g_sess.players())
@@ -475,7 +484,8 @@ void start_vote(void* req, const std::string& text)
     g_vote_done = design_stage(game::mode_id()) ? "the editor opens" : "evolution starts";
     if (req)
         skg::vcall<int>(req, 1); // AddRef: kept until the vote ends
-    g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u};
+    g_vote = Vote{true, req, H->time_seconds(), text, 60, req ? skg::field<uint32_t>(req, 0xC) : 0u,
+                  game::mode_id(), modes::current_world()};
     for (auto& p : g_sess.players())
         g_ready[p.id] = p.id == 0;
     g_lobby_dirty = true;
@@ -766,7 +776,7 @@ void finish_vote(const char* why)
         static std::function<void()> run;
         run = std::move(g_vote_action);
         g_vote_action = nullptr;
-        H->run_outside_frame([](void*) { run(); }, nullptr);
+        H->run_outside_frame([](void*) { g_vote_actions_run++; run(); }, nullptr);
     }
     if (req) { // the editor opens from submit_tick (outside the frame) once no world save is written
         hold_submit(req);
@@ -787,10 +797,36 @@ void broadcast_vote()
     g_sess.broadcast_reliable(net::MSG_VOTE, w);
 }
 
+// the vote ends without its result: the editor request is released, the action is not run
+void drop_vote(const char* why)
+{
+    if (!g_vote.active)
+        return;
+    LOG("the vote '%s' is dropped: %s", g_vote.text.c_str(), why);
+    g_votes_dropped++;
+    void* req = g_vote.request;
+    g_vote = Vote{};
+    g_vote_action = nullptr;
+    broadcast_vote();
+    if (g_vote_opened_ui)
+        coop_ui::open(false);
+    g_vote_opened_ui = false;
+    if (req)
+        skg::vcall<int>(req, 2); // the vote's reference
+}
+
 void vote_tick(double now)
 {
     if (!g_vote.active || g_sess.role() != net::Role::Host)
         return;
+    if (g_vote_scope_fix) {
+        uint32_t w = modes::current_world();
+        if (game::mode_id() != g_vote.mode || (g_vote.world && w && w != g_vote.world)) {
+            notice(g_vote.text + ": cancelled (the stage was left)", -1);
+            drop_vote("the stage was left");
+            return;
+        }
+    }
     g_vote.left = (int)(60 - (now - g_vote.t0));
     bool all = true;
     for (auto& p : g_sess.players())
@@ -937,7 +973,14 @@ void lobby_tick(double now)
 // from the window procedure, so guests do not time out.
 std::atomic<double> g_last_frame{0};
 std::atomic<bool> g_keepalive_run{false}, g_keepalive_queued{false};
-std::thread g_keepalive;
+// BUG-0107: a joinable std::thread in a global aborted the game at exit (~thread() calls
+// std::terminate when the process ends through ExitProcess without cSporeApp::Shutdown, so
+// on_unload never joined it). The thread is held through a pointer whose object is only destroyed
+// after a join; at process exit nothing is destroyed. `coop.corefix keepalive_ptr 0`: the old
+// global object (tests: coop.exittest then aborts).
+bool g_keepalive_ptr_fix = true;
+std::thread* g_keepalive = nullptr;
+std::thread g_keepalive_old; // the old way, only with the fix off
 
 void keepalive_task(void*)
 {
@@ -952,7 +995,7 @@ void keepalive_task(void*)
 void keepalive_start()
 {
     g_keepalive_run = true;
-    g_keepalive = std::thread([] {
+    auto loop = [] {
         while (g_keepalive_run) {
             Sleep(100);
             if (!g_keepalive_queued && H->time_seconds() - g_last_frame > 0.5 && g_last_frame > 0) {
@@ -960,14 +1003,52 @@ void keepalive_start()
                 H->run_outside_frame(keepalive_task, nullptr);
             }
         }
-    });
+    };
+    if (g_keepalive_ptr_fix)
+        g_keepalive = new std::thread(loop);
+    else
+        g_keepalive_old = std::thread(loop);
 }
 
 void keepalive_stop()
 {
     g_keepalive_run = false;
-    if (g_keepalive.joinable())
-        g_keepalive.join();
+    if (g_keepalive && g_keepalive->joinable())
+        g_keepalive->join();
+    delete g_keepalive;
+    g_keepalive = nullptr;
+    if (g_keepalive_old.joinable())
+        g_keepalive_old.join();
+}
+
+// tests (BUG-0107): end the process the way the game's own fault handler does, through ExitProcess
+// without cSporeApp::Shutdown. An abort on the way out (std::terminate from a static destructor)
+// writes "abort" into mods\logs\coop_exittest.txt.
+char g_exittest_path[MAX_PATH];
+void exittest_abort(int)
+{
+    if (FILE* f = fopen(g_exittest_path, "a")) {
+        fputs("abort\n", f);
+        fclose(f);
+    }
+    _exit(3);
+}
+
+int c_exittest(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1 && !strcmp(argv[1], "old")) { // the old global std::thread, started now
+        keepalive_stop();
+        g_keepalive_ptr_fix = false;
+        keepalive_start();
+    }
+    snprintf(g_exittest_path, sizeof g_exittest_path, "%s\\logs\\coop_exittest.txt", H->mods_dir());
+    if (FILE* f = fopen(g_exittest_path, "w")) {
+        fputs("exit 0\n", f);
+        fclose(f);
+    }
+    signal(SIGABRT, exittest_abort);
+    LOG("coop.exittest: ExitProcess(0) without Shutdown (keepalive %s)", g_keepalive ? "pointer" : "global object");
+    ExitProcess(0);
 }
 
 void menu_tick(double now);
@@ -1547,6 +1628,9 @@ void end_session_modules(bool cell)
     for (auto& [id, r] : g_remotes)
         despawn(r);
     g_remotes.clear();
+    if (g_vote_scope_fix)
+        drop_vote("the session ended");
+    world::reset_shares();
 }
 
 void setup_callbacks()
@@ -2694,6 +2778,8 @@ void on_unload()
 {
     gamefixes::shutdown();
     keepalive_stop();
+    if (int n = autoupdate::shutdown()) // their image stays mapped until they end (BUG-0060)
+        LOG("%d update thread(s) still running: the old image stays loaded until they end", n);
     notify::shutdown();
     coop_ui::shutdown();
     lan_scan(false);
@@ -2716,6 +2802,23 @@ int c_framefix(void*, int argc, const char* const* argv, SkOut* out)
     SAY("frame order fix %s: calls on a puppet the game no longer lists: anims dropped=%u made=%u, despawns "
         "dropped=%u made=%u\n",
         g_frame_fix ? "on" : "off", g_anims_dropped, g_anims_unlisted, g_despawns_dropped, g_despawns_unlisted);
+    return 0;
+}
+
+// the core's fix switches (tests: 0 = the old behaviour, so a test can show the bug)
+int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
+{
+    struct Sw {
+        const char* name;
+        bool* on;
+    } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
+                {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
+                {"update_pin", &autoupdate::g_pin_fix}};
+    for (auto& x : sw)
+        if (argc > 2 && !strcmp(argv[1], x.name))
+            *x.on = atoi(argv[2]) != 0;
+    for (auto& x : sw)
+        SAY("%s %d\n", x.name, *x.on ? 1 : 0);
     return 0;
 }
 
@@ -2811,6 +2914,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    c_framefix, nullptr, MT);
     H->command_add(M, "coop.sessionfix", "coop.sessionfix [0|1] - one cleanup for every session end (tests: 0 = the old per-path lists, BUG-0033)",
                    c_sessionfix, nullptr, MT);
+    H->command_add(M, "coop.corefix", "coop.corefix [name 0|1] - the core's fix switches (tests: 0 = the old behaviour)",
+                   c_corefix, nullptr, MT);
+    H->command_add(M, "coop.exittest", "coop.exittest [old] - end the game with ExitProcess(0) without Shutdown (tests, BUG-0107)",
+                   c_exittest, nullptr, MT);
     H->command_add(M, "coop.targets",
                    "coop.targets [all|objs] - clickable units on screen: kind id owner x y; all: also every synced "
                    "object: obj key distance x y; objs: also every game object: obj o<noun> distance x y (tests)",
@@ -2870,13 +2977,18 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            skg::field<uint32_t>(req, 0x18) = k.group;
                            bool r = skg::cdecl_call<bool>(submit, req);
                            SAY("editor request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "action") && g_sess.role() == net::Role::Host) {
+                           // an action vote like the superweapon's (tests, BUG-0043)
+                           start_action_vote(g_name + " wants to test an action", "the test action runs",
+                                             [] { LOG("the test vote action ran"); });
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
                        SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
-                           "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)",
+                           "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
+                           "actions run %u, votes dropped %u",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
-                           g_own_editor_due ? 1 : 0, g_own_editor_waits);
+                           g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped);
                        return 0;
                    },
                    nullptr, MT);

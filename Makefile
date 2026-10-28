@@ -20,7 +20,7 @@ KIT_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(KIT_SRC))
 COOP_SRC := $(wildcard mods/coop/*.cpp) $(wildcard mods/coop/net/*.cpp) $(wildcard updater/*.cpp)
 COOP_OBJ := $(patsubst %.cpp,$(B)/obj/%.o,$(COOP_SRC))
 
-.PHONY: all loader sporekit coop res setup clean test
+.PHONY: test-asan all loader sporekit coop res setup clean test
 all: loader sporekit coop res setup
 
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
@@ -72,9 +72,16 @@ test:
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
+	$(MAKE) --no-print-directory test-asan
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/tickets.py check
+
+# the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
+test-asan:
+	@mkdir -p $(B)/host
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -fno-omit-frame-pointer -Imods/coop -o $(B)/host/net_tests_asan mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 $(B)/host/net_tests_asan
 
 clean:
 	rm -rf $(B)

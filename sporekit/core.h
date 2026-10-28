@@ -92,6 +92,10 @@ void run_on_main(std::function<void()> fn);
 void pump_main_tasks(); // called on main thread every frame
 void run_after_frames(int frames, std::function<void()> fn);
 void run_outside_frame(std::function<void()> fn); // main thread, from the window procedure
+// the same for a mod's task: `code` is the mod's function, so an unload can drop what it queued
+void run_on_main_from(const void* code, std::function<void()> fn);
+void run_outside_frame_from(const void* code, std::function<void()> fn);
+size_t drop_tasks_in(uintptr_t lo, uintptr_t hi); // queued mod tasks whose code is in [lo, hi)
 void pump_outside_tasks();
 bool in_frame(); // inside the Present hook
 DWORD main_thread_id();

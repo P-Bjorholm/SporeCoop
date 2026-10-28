@@ -1,17 +1,17 @@
 ---
 id: BUG-0043
 title: an evolution or superweapon vote still runs after its stage or session is gone
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#21
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: 066df15
+tests: tools/tests/coop_vote_stale.py (suite vote_stale)
 signature:
 docs:
 related: #21
@@ -69,7 +69,15 @@ Guest side: a guest that disconnects during a vote keeps `g_vote.active`. On the
 CONFIRMED by reading the full path for both cases. Not verified: whether `cCivilization` is freed on "Exit to main menu" (very likely, as the planet is unloaded), and what the game does with an EditorRequest of a species not in the loaded save.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (066df15). `Vote` keeps the mode and world it was started in. `vote_tick`
+ends a vote whose stage or world is gone ("cancelled (the stage was left)") through `drop_vote`:
+the editor request is released (`vcall(req, 2)`), the action is not run, the co-op window closes if
+the vote opened it. `end_session_modules()` (every session end) calls `drop_vote` too, so a new
+session starts without a vote (host and guest). Old behaviour: `coop.corefix vote_scope 0`.
+Not done: the extra check in civ.cpp's superweapon lambda (`player_civ() == s_civ`), area D; with
+the vote scoped the lambda no longer runs after the planet was left.
+
+The review suggested:
 
 - Store `mode`, `current_world()` and a session counter in `Vote` at `start_vote` / `start_action_vote`.
 - In `vote_tick`: when the mode or world differs, or the session is not the same, end the vote with "the stage was left". Drop `g_vote_action` and release `g_vote.request` (`vcall(req, 2)`) without running them.
@@ -78,7 +86,14 @@ Not fixed yet. Suggested in the review:
 - Keep the old behaviour behind `coop.fix vote_scope off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `coop_vote_stale.py` (creature fixture, lane 2, 2026-10-28):
+1. `coop.vote editor` (a real EditorRequest through the vote), `coop.leave`, `coop.host`: the host's
+   game mode must stay the stage. 2. `coop.vote action` (an action vote like the superweapon's),
+   `coop.menu` to the galaxy menu, the guest clicks "I'm ready": the action must not run.
+FAIL with `--without-fix` (vote_scope 0): the host's mode became `Editor` after hosting again, and
+the action ran in the galaxy menu (actions run 0 -> 1). PASS with the fix, 2 runs.
+
+The planned test was:
 
 `tools/tests/coop_vote_stale.py` (two instances):
 1. Start an action vote in civ (superweapon) on the host, then `coop.menu` on the host. Wait 65 s. Assert the host game is alive (lab crash check), `coop.vote` shows no active vote, and no superweapon effect or money change happened on the guest's machine (game state, not a mod counter).
@@ -93,3 +108,4 @@ It must fail on main and with `coop.fix vote_scope off`.
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #21.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: votes scoped to mode, world and session (coop_vote_stale.py).

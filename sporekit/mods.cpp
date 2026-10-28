@@ -84,6 +84,13 @@ static void unload_from(SkMod* m)
     // (BUG-0132). Not a guarantee for a detour that blocks, only for short ones (RandomInt).
     if (hooks && fixed(g_fix_hookkeep))
         Sleep(kUnloadGraceMs);
+    {
+        // tasks the mod queued and that have not run: their code goes with the image (BUG-0060)
+        auto base = (uintptr_t)m->module;
+        auto* nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+        if (size_t n = drop_tasks_in(base, base + nt->OptionalHeader.SizeOfImage))
+            logf(m, SK_INFO, "dropped %u queued task(s) of the old image", (unsigned)n);
+    }
     FreeLibrary(m->module);
     m->module = nullptr;
     m->info = nullptr;

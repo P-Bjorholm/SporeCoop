@@ -1,17 +1,17 @@
 ---
 id: BUG-0029
 title: guest uses freed memory when the host rejects it or leaves (REJECT / BYE)
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#7
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: a702d15
+tests: tests/net_tests.cpp test_session_end_in_delivery, make test-asan (in make test)
 signature:
 docs:
 related: #7
@@ -100,12 +100,25 @@ The host side is not affected: on the host, `MSG_BYE` only sets `p.bye`, and the
 CONFIRMED by harness (ASan, both paths). Not verified: whether the 32-bit Windows build actually crashes on players' PCs today. The freed block is usually still intact, so it may only corrupt the heap now and then.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (a702d15). `Session::leave()` asked for while a Connection parses a packet
+(`delivering_`, set around `on_packet` in `handle_packet`) only records the reason; `handle_packet`
+runs the leave and then `cb.disconnected` after `on_packet` has returned. The REJECT and BYE handlers
+store the disconnect text instead of calling the callback themselves. A `cb.custom` callback that
+calls `leave()` is covered by the same path. No switch (memory safety). `make test` now also builds
+and runs the unit tests with `-fsanitize=address,undefined` (`make test-asan`).
+
+The review suggested:
 
 Do not call `leave()` from inside message delivery on the client. Set a flag in `handle_msg` (like the host's `p.bye`), e.g. `pending_leave_ = "rejected"` plus the text, and call `leave()` plus `cb.disconnected` in `update()` after `handle_packet` returns. Alternatively, make `on_packet` return right after any `deliver()` that closed the connection, using a "closed" flag set by `Session` before `peers_.clear()`. That fix alone is not enough, though: `peers_.clear()` still frees the object before `on_packet` can read the flag, so deferring the leave is the safer option. This is a memory-safety fix, so there is no need to keep the old behaviour behind a `coop.fix` switch.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Unit test, 2026-10-28: `test_session_end_in_delivery` (BYE with an unacknowledged reliable message
+behind it, and a build REJECT; `cb.disconnected` exactly once with the reason, role None).
+FAIL on main under ASan: heap-use-after-free in `Connection::on_packet` (already from the old
+`test_session` REJECT part; the new BYE case alone also fails, built against main's net code).
+PASS with the fix (`make test-asan`, `make test`).
+
+The planned test was:
 
 `tests/net_tests.cpp`: a case that joins, queues a reliable message on the host, calls `host.leave()` and pumps, plus the existing reject case. `make test` builds `net_tests` with `-fsanitize=address` (or a separate ASan target in `make test`), so the test fails on main with heap-use-after-free and passes with the fix. Also check that `cb.disconnected` was called exactly once with the reject reason.
 
@@ -116,3 +129,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #7.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: deferred leave during delivery, ASan unit tests in make test.

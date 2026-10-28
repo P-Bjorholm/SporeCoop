@@ -1,17 +1,17 @@
 ---
 id: BUG-0107
 title: the keepalive std::thread can abort the game at exit when Shutdown did not run
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#86
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: 066df15
+tests: tools/tests/coop_exit_thread.py (suite exit_thread)
 signature:
 docs:
 related: #86
@@ -56,7 +56,12 @@ The game ends with its own exit code. No abort, no extra crash dialog.
 A second reviewer checked the destructor and CRT detach behaviour. Severity: low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (066df15). The keepalive thread is a `std::thread*` created with `new`;
+`keepalive_stop` joins and deletes it (hot reload, Shutdown). At an exit without Shutdown nothing is
+destroyed, so `~thread()` never sees a joinable thread. Old behaviour: `coop.exittest old` (starts
+the old global `std::thread` and exits).
+
+The review suggested:
 
 Do not keep a joinable `std::thread` in a global. Any of these works:
 - `detach()` it right after creation and stop it with the atomic flag.
@@ -66,7 +71,15 @@ Do not keep a joinable `std::thread` in a global. Any of these works:
 `keepalive_stop` can still wait for it on hot reload, through an event or the handle.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+One-game test `coop_exit_thread.py` (lane 2, 2026-10-28): `coop.exittest` calls `ExitProcess(0)` on the
+main thread without `cSporeApp::Shutdown`; a SIGABRT handler writes "abort" into
+mods/logs/coop_exittest.txt.
+FAIL with `--without-fix` (`coop.exittest old`): the marker reads "exit 0 | abort", so the CRT's
+DLL detach destroyed the joinable global std::thread and std::terminate -> abort ran (CONFIRMED in
+the game, Wine). PASS with the fix, 2 runs: marker "exit 0", SporeKit logged "the game exits
+(ExitProcess 0)".
+
+The planned test was:
 
 A tools/tests check that starts a game with coop.dll, calls `ExitProcess(0)` through the devkit console, and asserts on the process exit code (0, not 3 or `0xC0000409`) and that no crash report or last-problem mark was written. On main it should fail.
 
@@ -76,3 +89,4 @@ A tools/tests check that starts a game with coop.dll, calls `ExitProcess(0)` thr
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #86.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: keepalive thread through a pointer; abort at exit confirmed by coop_exit_thread.py.

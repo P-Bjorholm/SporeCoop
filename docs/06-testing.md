@@ -880,3 +880,26 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   seconds after the last member is out: the test waits 15 s and finds it with `coop.ui find
   "Alas"`. The original fault did not come back on GOG 2024, also with `--nofix`: a regression test,
   not a proof of the fix.
+## Core fix switches and the tests that need them (2026-10-28, fix/w1-core)
+<a id="testing-core-fix-switches"></a>
+
+* `coop.corefix [name 0|1]` lists and sets the core's fix switches; 0 restores the old behaviour so
+  a test can show the bug (`--without-fix` of the tests below sets it): `vote_scope` (BUG-0043),
+  `keepalive_ptr` (BUG-0107, used through `coop.exittest old`), `share_reset` (BUG-0140),
+  `menu_drop` (BUG-0163), `update_pin` (BUG-0060; it applies to threads the current image starts).
+* `make test` also runs the unit tests under AddressSanitizer (`make test-asan`, about 20 s more):
+  a freed object used later fails there (BUG-0029). Leak detection is off.
+* `coop_vote_stale.py` (two games, ~3 min): a vote from the previous session or stage must not
+  run. `coop.vote action` starts an action vote like the superweapon's; `coop.vote` prints
+  "actions run N, votes dropped N".
+* `coop_leave_during_share.py` (two games, ~2 min): Leave 0.2 s after the share save was posted,
+  then `coop.menu`; `coop.status` lists pending shares ("share for N saved, being written").
+* `coop_exit_thread.py` (one game, ~1 min): `coop.exittest` ends the game with `ExitProcess(0)`
+  without Shutdown; an abort on the way out writes "abort" into mods/logs/coop_exittest.txt. The
+  game is gone afterwards (the lane restarts cold).
+* `coop_ui_menu_leave.py` (one game, ~1.5 min): `coop.uistate` shows `in_menu=0|1`; the first answer
+  after a load from the menu must say `menu_button=no`. Without the fix it said yes for one answer.
+* `coop_reload_update.py` (one game, ~1.5 min): a local HTTP server on 47990 + lane holds the update
+  check 8 s, `mod.reload coop` meanwhile. Under Wine the new shadow copy of coop.dll loads at the
+  old base (the old one is unmapped), so an old thread does not fault: it runs on in the new
+  image's identical code. The test therefore asserts the new image logs only its own result.
