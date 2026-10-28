@@ -27,8 +27,7 @@ from coop_ui import VK_F9, Ui
 from sporectl import Console
 from twoinst import Checks, wait_up
 
-GAME = os.path.expanduser('~/Games/Modding/SPORE') if lane.LANE == 1 else \
-    os.path.expanduser(f'~/Games/Modding/SPORE-lab/lane{lane.LANE}')
+GAME = lane.game_dir()
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
 
 

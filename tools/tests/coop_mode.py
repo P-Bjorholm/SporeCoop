@@ -21,7 +21,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
-from twoinst import wait_guest_in  # noqa: E402
+from twoinst import Checks, wait_guest_in, watch  # noqa: E402
 from sporectl import Console, recompress_png  # noqa: E402
 import lane  # noqa: E402
 import fixtures  # noqa: E402
@@ -175,6 +175,7 @@ def main():
     print(f'guest after {time.time() - t0:.0f}s:', gav['out'].splitlines()[0] if gav['out'] else '?')
     ok = gav['ok'] and gav['out'].split(':')[0] == mode
     guest.call('wait.frames 400 60000')
+    watch(lane.HOST, lane.GUEST)  # freezes and dead consoles fail the test (Checks.faults, BUG-0042)
     for name, con in (('host', host), ('guest', guest)):
         l = puppet_line(con)
         print(f'{name}: {l or "NO PUPPET"}')
@@ -189,18 +190,20 @@ def main():
     if p0 and p1 and r1:
         moved = sum((x - y) ** 2 for x, y in zip(p0, p1)) ** 0.5
         err = sum((x - y) ** 2 for x, y in zip(p1, r1)) ** 0.5
-        print(f'host moved {moved:.1f} m, guest sees it {err:.1f} m off')
-        ok &= err < 5.0
+        stale = sum((x - y) ** 2 for x, y in zip(p0, r1)) ** 0.5
+        print(f'host moved {moved:.1f} m, guest sees it {err:.1f} m off ({stale:.1f} m from the start)')
+        # the host really moved, and the guest shows it at the new place, not the old one (BUG-0042)
+        ok &= err < 5.0 and moved > 0.3 and err < stale
     else:
         print('positions missing', p0, p1, r1)
         ok = False
     l = puppet_line(guest)
     print('guest puppet:', l)
     print('screens:', shot(host, 'mode_host.png'), shot(guest, 'mode_guest.png'))
-    for name, con in (('host', host), ('guest', guest)):
-        print(f'{name} faults:', out(con, 'exc').splitlines()[0])
-    print('RESULT:', 'OK' if ok else 'FAIL')
-    return 0 if ok else 1
+    ck = Checks()
+    ck(ok, 'the checks above')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
 
 
 if __name__ == '__main__':

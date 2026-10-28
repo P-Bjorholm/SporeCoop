@@ -45,6 +45,29 @@ def run_guest():
         sh('run', '-i', str(GUEST), '-p', GUEST_PROFILE)
 
 
+_MAIN = None
+
+
+def game_dir(n=None):
+    """the game folder of lane n (default: this lane), from any checkout: lane 1 = the folder that
+    holds the main checkout (SPORE/SporeCoop), lane N = SPORE-lab/laneN next to it (tools/spore.sh,
+    lab.lane_game). Found from the git common dir, so a worktree (../SporeCoop-wt/<branch>) gives the
+    same folder as the main checkout (BUG-0068)."""
+    global _MAIN
+    n = LANE if n is None else n
+    if _MAIN is None:
+        common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        _MAIN = os.path.dirname(os.path.dirname(common)) if common else os.path.dirname(ROOT)
+    return _MAIN if n == 1 else os.path.join(os.path.dirname(_MAIN), 'SPORE-lab', f'lane{n}')
+
+
+def game_log(inst):
+    """the SporeKit log of a game instance (instance 1: sporekit.log, else sporekit.<inst>.log)"""
+    return os.path.join(game_dir((inst + 1) // 2), 'SporebinEP1', 'mods', 'logs',
+                        'sporekit.log' if inst == 1 else f'sporekit.{inst}.log')
+
+
 def out_dir(*sub):
     """per-lane output (logs, screenshots) so parallel lanes do not overwrite each other"""
     p = os.path.join(ROOT, 'out', *(sub if LANE == 1 else (f'lane{LANE}',) + sub))

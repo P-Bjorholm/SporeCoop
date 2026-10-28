@@ -65,13 +65,8 @@ class Monitor(threading.Thread):
     events = []
 
     def game_log(self):
-        """the game log of this instance (lane 1: the main game folder)"""
-        ln = (self.inst + 1) // 2
-        root = os.path.dirname(lane.ROOT)
-        game = os.path.join(root, 'SporebinEP1') if ln == 1 else \
-            os.path.join(os.path.dirname(root), 'SPORE-lab', f'lane{ln}', 'SporebinEP1')
-        name = 'sporekit.log' if self.inst == 1 else f'sporekit.{self.inst}.log'
-        return os.path.join(game, 'mods', 'logs', name)
+        """the game log of this instance (lane.game_log: right from a worktree too, BUG-0068)"""
+        return lane.game_log(self.inst)
 
     def loading(self):
         """the game's last log lines say it is loading a world"""
@@ -182,8 +177,12 @@ def restore_creations(guest=True):
             shutil.copy(src, os.path.join(d, 'EditorSaves.package'))
 
 
+FIXTURE_BAD = []  # what the loaded fixture lacks (start()): Checks.faults() fails the test on it (BUG-0124)
+
+
 def check_fixture(host, fixture):
     bad = [what for what, ok in fixtures.check(host, fixture) if not ok]
+    FIXTURE_BAD[:] = [f'fixture {fixture} lacks: {", ".join(bad)} (tools/tests/fixtures.py)'] if bad else []
     if bad:
         print(f'  (fixture {fixture} lacks: {", ".join(bad)} - tools/tests/fixtures.py)', flush=True)
     return not bad
@@ -254,8 +253,11 @@ def start(fixture='creature', planet=None, load_args=(), join_in_intro=False, gu
         try:
             if warm_reset(host, guest, fixture, planet):
                 watch(lane.HOST, lane.GUEST)
-                check_fixture(host, fixture)
-                return host, guest
+                if check_fixture(host, fixture):
+                    return host, guest
+                for m in _monitors:  # the reused games miss a fixture fact: start them again from the files
+                    m.stop = True
+                print('  (warm reset: the fixture lacks its facts)', flush=True)
         except (OSError, ValueError) as e:
             print('  (warm reset failed:', e, ')', flush=True)
         print('  (warm reset failed: cold start)', flush=True)
@@ -349,7 +351,7 @@ class Checks:
             for line in out[1:4]:
                 print(f'    {line.strip()}')
             self.ok &= 'total faults: 0' in out[0]
-        for e in Monitor.events:  # freezes / crashes seen while the test ran
+        for e in Monitor.events + FIXTURE_BAD:  # freezes / crashes seen while the test ran, a broken fixture
             print('  FAIL invariant:', e)
             self.ok = False
 
