@@ -801,3 +801,20 @@ GOG 2024; the 0xB238B0 of section 12 / the 05-re-notes table is the GOG 2016 add
   reported, a fixed position) kept its proxy walking towards a spot it could not reach. NPC proxies
   now also teleport after 3 s more than 2.5 m off without getting 0.5 m closer (then 10 s quiet).
   Inferred from code, not seen in the game.
+
+## The cheat console's enabled flag (2026-10-28, fix/w4-tests)
+<a id="creature-cheat-console-flag"></a>
+
+* ✔ Why injected Ctrl+Shift+C did not open the console on the lane games (BUG-0149): the key reaches
+  `AppShortcuts_OnKeyDown` 0x814180 with (vk 0x43, modifiers 3), `IWindowManager` +0x82C is null and
+  `cCheatManager` vt 0x44 (0x67E730) is called (probes, lane 5), but 0x67E730 returns at once while
+  the cheat manager's byte +0x64 is 0. It was 0 on a lane game in the creature fixture; after
+  vt 0x4C (0x67E0A0, `func4Ch(1)`, sets +0x64) the same keys opened the console (control 0x014A4606
+  in the UI tree, `coop.social keys` text_up=1). Esc closes it (and may open the pause menu).
+* ~ Who clears it: only two callers of vt 0x4C after `ICheatManager::Get` exist, 0xDEA3D0 (sets 1)
+  and 0xDEB450 (sets 0), in the GalaxyGameEntry UI code (after `GlobalGGEUI::Initialize` 0xDEA1B0).
+  Inferred: the menu disables the console and leaving it the normal way enables it again; the
+  lanes load their save by command (`coop.load`), so it stays off. Not checked which UI event calls
+  which. The earlier note "opened once, never again" (creature-world-epoch) fits: that game had
+  passed the menu.
+* `coop_social_console.py` sets the flag first (`call App::cCheatManager::func4Ch thiscall <mgr> 1`).

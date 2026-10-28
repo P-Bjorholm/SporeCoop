@@ -8,7 +8,11 @@ console is closed the key 1 works again (the host counts the act).
 
   coop_social_console.py [--without-fix]   (--without-fix: coop.social textfix off, must FAIL)
 
-Not in suite.py yet: the console does not open reliably by injected keys (BUG-0149).
+The console opens only while the cheat manager's flag +0x64 is set (cCheatManager vt 0x4C,
+SetEnabled; AppShortcuts_OnKeyDown -> vt 0x44 -> 0x67E730 returns at once without it). It is 0 on
+the lane games, which load their save by command, not through the galaxy menu's UI (the GGE UI
+code at 0xDEA3D0 sets it to 1, 0xDEB450 to 0): the test sets it first, as the game does
+(docs/re/creature.md#creature-cheat-console-flag).
 """
 import re
 import sys
@@ -16,6 +20,27 @@ import time
 
 from coop_creature_social import KOOK, engage, hold, num, social
 from twoinst import Checks, shot, start
+
+
+def enable_console(con):
+    """the cheat manager's enabled flag (+0x64), which the galaxy menu's UI sets for a player"""
+    m = re.search(r'eax=0x([0-9A-F]+)', con.call('call App::ICheatManager::Get cdecl')['out'])
+    if m:
+        con.call(f'call App::cCheatManager::func4Ch thiscall 0x{m.group(1)} 1')
+
+
+def console_open(con):
+    return '014A4606 none' not in con.call('coop.ui where 014A4606')['out']
+
+
+def close_console(con):
+    """Esc closes it (Ctrl+Shift+C does not); the pause menu Esc may open as well is closed"""
+    from uifind import press, shown
+    con.call('key esc')
+    time.sleep(1.5)
+    if shown(con, 'Resume Game'):
+        press(con, 'Resume Game')
+        time.sleep(1)
 
 
 def console(con):
@@ -50,12 +75,11 @@ def main():
     def acts():
         return num(r'acts_in=(\d+)', social(host), 0)
 
+    enable_console(guest)
     console(guest)
     keys = guest.call('coop.social keys')['out'].strip()
     print('  guest:', keys)
-    # (2026-10-28: Ctrl+Shift+C opened the console on a lane game once, never again in 6 tries, also
-    # not with the cheat manager's vt 0x44(1): the test stops here until a reliable way is found)
-    ck('014A4606 none' not in guest.call('coop.ui where 014A4606')['out'], 'the cheat console is open on the guest')
+    ck(console_open(guest), 'the cheat console is open on the guest (Ctrl+Shift+C)')
     a0 = acts()
     for vk in (0x31, 0x32, 0x31):  # "121" typed into the console
         hold(guest, vk)
@@ -65,7 +89,8 @@ def main():
     print(f'  host acts_in while the console was open: {a0} -> {a1}')
     shot(guest, 'social_console_guest.png')
     ck(a1 == a0, 'digits typed in the cheat console play no social ability (the host got no act)')
-    console(guest)  # closes it
+    close_console(guest)
+    ck(not console_open(guest), 'the cheat console is closed again')
     time.sleep(1)
     guest.call(f'coop.social goto {target}')
     for _ in range(3):  # (the engagement may have run out meanwhile: engage again)
