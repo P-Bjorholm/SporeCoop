@@ -44,7 +44,14 @@ constexpr unsigned kRelWindow = 2048;
 
 struct ConnStats {
     uint32_t packets_sent = 0, packets_recv = 0, resends = 0, acked = 0;
+    uint32_t split = 0;     // reliable messages sent in pieces (bigger than one packet)
+    uint32_t too_big = 0;   // reliable messages refused: above kMaxReliable
+    uint32_t joined = 0;    // reliable messages received in pieces and joined
+    uint32_t frag_lost = 0; // received pieces thrown away (a message above kMaxReliable)
 };
+// largest reliable message (BUG-0034): bigger ones are split into pieces of one packet each and
+// joined by the receiver; this caps what a receiver collects for one message
+constexpr size_t kMaxReliable = 1u << 20;
 
 class Connection {
 public:
@@ -78,6 +85,7 @@ private:
         uint8_t type;
         uint16_t rel_id;
         std::vector<uint8_t> payload;
+        bool more = false; // a piece of a split message, more pieces follow (wire flag 2)
         uint32_t last_sent = 0;
         int sends = 0;
     };
@@ -101,7 +109,16 @@ private:
     uint16_t next_rel_id_ = 0;
     std::deque<OutMsg> rel_out_;
     uint16_t next_rel_expected_ = 0;
-    std::map<uint16_t, std::pair<uint8_t, std::vector<uint8_t>>> rel_in_;
+    struct InMsg {
+        uint8_t type, flags;
+        std::vector<uint8_t> payload;
+    };
+    std::map<uint16_t, InMsg> rel_in_;
+    // pieces of a split reliable message received so far (reliable delivery is in order)
+    std::vector<uint8_t> frag_;
+    uint8_t frag_type_ = 0;
+    bool frag_on_ = false, frag_drop_ = false;
+    void deliver_reliable(uint8_t type, uint8_t flags, const uint8_t* p, size_t len, const Deliver& deliver);
     std::vector<std::pair<uint8_t, std::vector<uint8_t>>> unrel_out_;
 
 public:

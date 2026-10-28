@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "fixes.h"
 #include "protocol.h"
 
 namespace net {
@@ -26,13 +27,71 @@ uint32_t Connection::peek_conn(const uint8_t* data, size_t n)
     return c;
 }
 
+// payload of a reliable message that fits one packet (header + type, flags, len, rel_id)
+static constexpr size_t kRelPiece = kMaxPacket - kHeader - 6;
+
 void Connection::send_reliable(uint8_t type, const Writer& w)
 {
+    if (g_fix.big_reliable && w.data.size() > kRelPiece) {
+        // BUG-0034: a message that fits no packet was never sent and blocked every reliable message
+        // after it (and the due check sent a burst of empty packets every frame): split it into
+        // pieces of one packet, flag 2 on all but the last; the receiver joins them in order
+        if (w.data.size() > kMaxReliable) {
+            stats.too_big++;
+            return;
+        }
+        stats.split++;
+        for (size_t off = 0; off < w.data.size(); off += kRelPiece) {
+            size_t n = std::min(kRelPiece, w.data.size() - off);
+            OutMsg m;
+            m.type = type;
+            m.rel_id = next_rel_id_++;
+            m.payload.assign(w.data.begin() + off, w.data.begin() + off + n);
+            m.more = off + n < w.data.size();
+            rel_out_.push_back(std::move(m));
+        }
+        return;
+    }
     OutMsg m;
     m.type = type;
     m.rel_id = next_rel_id_++;
     m.payload = w.data;
     rel_out_.push_back(std::move(m));
+}
+
+void Connection::deliver_reliable(uint8_t type, uint8_t flags, const uint8_t* p, size_t len, const Deliver& deliver)
+{
+    bool more = (flags & 2) != 0;
+    if (!more && !frag_on_) {
+        Reader pr(p, len);
+        deliver(type, pr);
+        return;
+    }
+    if (!frag_on_ || frag_type_ != type) { // the first piece (a different type: the old one was cut)
+        frag_.clear();
+        frag_on_ = true;
+        frag_drop_ = false;
+        frag_type_ = type;
+    }
+    if (!frag_drop_ && frag_.size() + len > kMaxReliable) {
+        frag_drop_ = true; // never collect more than the sender may send
+        frag_.clear();
+        frag_.shrink_to_fit();
+    }
+    if (!frag_drop_)
+        frag_.insert(frag_.end(), p, p + len);
+    if (more)
+        return;
+    frag_on_ = false;
+    if (frag_drop_) {
+        stats.frag_lost++;
+        return;
+    }
+    stats.joined++;
+    std::vector<uint8_t> whole = std::move(frag_);
+    frag_.clear();
+    Reader pr(whole.data(), whole.size());
+    deliver(type, pr);
 }
 
 void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
@@ -108,7 +167,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
         if (w.size() + 6 + m.payload.size() > kMaxPacket || count == 255)
             break;
         w.u8(m.type);
-        w.u8(1);
+        w.u8(m.more ? 3 : 1);
         w.u16((uint16_t)m.payload.size());
         w.u16(m.rel_id);
         w.raw(m.payload.data(), m.payload.size());
@@ -218,20 +277,19 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
             continue;
         }
         if (rel_id == next_rel_expected_) {
-            Reader pr(p, len);
-            deliver(type, pr);
             next_rel_expected_++;
+            deliver_reliable(type, flags, p, len, deliver);
             for (auto it = rel_in_.find(next_rel_expected_); it != rel_in_.end();
                  it = rel_in_.find(next_rel_expected_)) {
-                Reader br(it->second.second.data(), it->second.second.size());
-                deliver(it->second.first, br);
+                InMsg m = std::move(it->second);
                 rel_in_.erase(it);
                 next_rel_expected_++;
+                deliver_reliable(m.type, m.flags, m.payload.data(), m.payload.size(), deliver);
             }
         } else if (seq_greater(rel_id, next_rel_expected_)) {
             // the sender keeps within kRelWindow of the oldest message we lack (see build_packet)
             if ((uint16_t)(rel_id - next_rel_expected_) < kRelWindow && !rel_in_.count(rel_id))
-                rel_in_[rel_id] = {type, std::vector<uint8_t>(p, p + len)};
+                rel_in_[rel_id] = {type, flags, std::vector<uint8_t>(p, p + len)};
         }
         // else: duplicate of an already delivered message
     }

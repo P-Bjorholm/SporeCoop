@@ -4,6 +4,8 @@
 #include <cstdarg>
 #include <cstdio>
 
+#include "fixes.h"
+
 namespace net {
 
 static void logf(const Session::Callbacks& cb, const char* fmt, ...)
@@ -457,8 +459,15 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     }
     case MSG_PLAYER_STATE: {
         PlayerState st;
-        if (st.read(r) && st.id != my_id_ && cb.player_state)
-            cb.player_state(st);
+        if (!st.read(r) || st.id == my_id_ || !cb.player_state)
+            break;
+        // BUG-0109: the host relays a leaving guest's last state unreliably, behind the frame's
+        // snapshot chunks, so it can arrive after the reliable PLAYER_LEAVE: it made a ghost
+        // partner that stayed for the session (and passed its buffer to the next player of the id)
+        if (g_fix.state_roster && std::none_of(roster_.begin(), roster_.end(),
+                                               [&](const PlayerInfo& x) { return x.id == st.id; }))
+            break;
+        cb.player_state(st);
         break;
     }
     case MSG_CHAT: {
