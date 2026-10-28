@@ -51,6 +51,10 @@ std::string herds(bool all = false);                 // debug: herd objects
 void set_strays(bool on);                            // tests: removal of creatures like ours from saves
 void set_hatch_help(bool on);
 void set_kill_clear(bool on);                        // tests: off = keep the guest's kill list across skipped frames (BUG-0082)
+std::string debug_reuse(uint16_t id);                // tests: a dead NPC's object is a living creature again (BUG-0044)
+void set_reuse_fix(bool on);                         // tests: off = a reused object keeps the old id (BUG-0044)
+void set_id_fix(bool on);                            // tests: off = ids wrap over ids in use (BUG-0023)
+void debug_next_id(uint16_t id);                     // tests: the next id the allocator tries
 void debug_kill_hold();                              // tests: put the avatar into the guest's kill list                        // tests: a waiting hatchling grows up without its family
 // host: aggressive NPCs see a partner's puppet as a target like the host's avatar (on by default)
 void set_partner_targets(bool on);
