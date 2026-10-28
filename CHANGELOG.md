@@ -22,6 +22,18 @@
 - **Space: rescue timing**: from the second time a ship was disabled on, a partner repaired it in
   1.5 s instead of 2 s (BUG-0147). After a failed co-op jump, the player's own zoom-out to the
   galaxy no longer loses the game's galaxy caption and hints (BUG-0095).
+- **A host that left right after a guest joined could not leave its stage**: Leave within a few
+  seconds of the save for the guest's world kept that save "in progress" for good, and the game's
+  exit to the menu (and the load of another host's world) never happened (BUG-0140).
+- **Votes from a stage or session that is gone**: an evolution or superweapon vote that was still
+  open when the host left the stage or the session no longer runs later (an editor opening by
+  itself after hosting again, a superweapon on the planet that was left) (BUG-0043).
+- **Crashes**: a guest rejected by the host (other game build, full session) or whose host left
+  used freed memory (BUG-0029); the game could end with an abort ("abort() has been called") when
+  it closed itself without the normal shutdown (BUG-0107); a click right after leaving the galaxy
+  menu could call into the freed "Co-op" item (BUG-0163).
+- **Hot reload of coop.dll** (developers, the lab): the update check thread and tasks queued by the
+  old DLL no longer run into the reloaded one (BUG-0060).
 
 ## [0.7.2.4] - 2026-10-25
 

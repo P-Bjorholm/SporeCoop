@@ -1,17 +1,17 @@
 ---
 id: BUG-0140
 title: a host that leaves a few seconds after a share save can no longer leave any stage (quit message re-posted forever)
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#119
 role: host
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: fd28d1c, 927a4c5
+tests: tools/tests/coop_leave_during_share.py (suite leave_during_share)
 signature:
 docs:
 related: #119
@@ -57,14 +57,26 @@ Leaving the session drops the shares that were waiting for it, and `save_busy()`
 CONFIRMED by reading. A second reviewer verified it independently. Not run in a game. That the pause menu's own exit uses 0x4715068 is inferred from docs/re/space.md 8.2 ("the native way out"); `coop.menu` and the world loads use it for sure.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (fd28d1c, 927a4c5). `world::reset_shares()` clears the pending shares and the
+outgoing transfers; `end_session_modules()` calls it, so every session end (Leave, Join elsewhere,
+host gone, re-host, unload) drops them. `save_busy()` also counts a written-but-unshared entry only
+up to 5 s after its `latest`. `coop.status` lists pending shares ("share for N waits for its save" /
+"saved, being written"). Old behaviour: `coop.corefix share_reset 0`.
+
+The review suggested:
 
 - Add `world::reset_shares()` (clears `g_pending` and `g_out`, resets `g_saved_at`) and call it whenever the role changes: `do_leave`, `do_host`, `do_join`, `on_unload`.
 - Also bound `save_busy()` in time: an entry whose `latest` has passed by more than a few seconds no longer counts.
 - Keep the old behaviour behind `coop.fix share_reset off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `coop_leave_during_share.py` (creature fixture, lane 2, 2026-10-28): the guest rejoins,
+the host leaves 0.2 s after "saved, being written" shows, then `coop.menu`.
+FAIL with `--without-fix`: after Leave `coop.status` still showed "share for 1 saved, being written",
+the game stayed in the stage for 40 s and the quit was held 9 times. PASS with the fix, 2 runs: the
+queue is empty after Leave and GalaxyGameEntry is reached after 2 s (quit held 0 times).
+
+The planned test was:
 
 `coop_leave_during_share.py` (two instances, Creature fixture):
 - The guest joins; the host waits for the share save to be posted (status line), then runs `coop.leave` within 1 s.
@@ -79,3 +91,4 @@ It fails on main (the mode stays in the stage, the quits-delayed counter grows) 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #119.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: shares dropped at every session end (coop_leave_during_share.py).

@@ -1,17 +1,17 @@
 ---
 id: BUG-0163
 title: a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#142
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: 51ad070, 94b79e2
+tests: tools/tests/coop_ui_menu_leave.py (suite ui_menu_leave)
 signature:
 docs:
 related: #142
@@ -48,7 +48,12 @@ No access to a menu window after the game left the menu: the item pointer is dro
 PLAUSIBLE. Confirmed by reading; a second reviewer agreed. Not checked: exactly when the game frees the menu window after the mode switch.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (51ad070, 94b79e2). `coop_ui::tick` drops `g_menu_btn` / `g_menu_parent`
+as soon as the mode is not the galaxy menu, and checks `world::menu_intro_playing()` before any
+call on the item. `shutdown()` and `debug_state()` do not touch the item outside the menu.
+`coop.uistate` shows `in_menu=0|1`. Old behaviour: `coop.corefix menu_drop 0`.
+
+The review suggested:
 
 - Reorder the condition so `world::menu_intro_playing()` (cheap, mode-checked) comes before any `sui` call on `g_menu_btn`.
 - Also set `g_menu_btn = g_menu_parent = nullptr` in `tick()` as soon as `A.mode() != modes::kMenu`.
@@ -56,7 +61,14 @@ Not fixed yet. Suggested in the review:
 No behaviour change for players, so a fix switch is not needed.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+One-game test `coop_ui_menu_leave.py` (lane 2, 2026-10-28): the menu with the item, `coop.load` of the
+creature fixture, `coop.uistate` polled as fast as the console answers, clicks on the item's place
+after the mode changed.
+FAIL with `--without-fix`: the first answer after the mode change showed `menu_button=yes in_menu=0`
+(the pointer of the freed menu's item still kept). PASS with the fix, 2 runs: every answer
+`menu_button=no`, no faults. A crash from the stale call was not seen (the freed memory was intact).
+
+The planned test was:
 
 `coop_ui_menu_leave.py` (one instance is enough):
 - The menu is up and the item exists (`coop.uistate` shows `menu_button=yes`).
@@ -72,3 +84,4 @@ The last check fails on main (it stays "yes" up to 1 s) and passes with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #142.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: menu item pointer dropped with the menu (coop_ui_menu_leave.py).

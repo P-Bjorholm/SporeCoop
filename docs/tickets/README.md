@@ -39,7 +39,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0026](BUG-0026-creature-crash-after-dying-and-skipping-the-cuts.md) | not-reproduced | crash | Creature | 2026-10-24 |  | Creature: crash after dying and skipping the cutscene |
 | [BUG-0027](BUG-0027-steam-build-no-co-op-button-steamstub-then-no-pr.md) | fixed | bug | Menu | 2026-10-24 | 0.7.2 | Steam build: no Co-op button (SteamStub, then no Present on Windows) |
 | [BUG-0028](BUG-0028-cell-guest-leave-keeps-passive-mirrors.md) | fixed | bug | Cell | 2026-10-27 | unreleased | Cell guest leaving the session retains mirror cells |
-| [BUG-0029](BUG-0029-guest-uses-freed-memory-when-the-host-rejects-it.md) | open | crash | All | 2026-10-27 |  | guest uses freed memory when the host rejects it or leaves (REJECT / BYE) |
+| [BUG-0029](BUG-0029-guest-uses-freed-memory-when-the-host-rejects-it.md) | fixed | crash | All | 2026-10-27 | unreleased | guest uses freed memory when the host rejects it or leaves (REJECT / BYE) |
 | [BUG-0030](BUG-0030-join-fails-after-10-s-when-the-host-s-first-pack.md) | open | bug | All | 2026-10-27 |  | join fails after 10 s when the host's first packet is lost (WELCOME falsely acked) |
 | [BUG-0031](BUG-0031-vehicles-of-a-player-who-left-stay-theirs-nobody.md) | open | bug | Civ | 2026-10-27 |  | vehicles of a player who left stay theirs, nobody can order them, and captured cities can go to them |
 | [BUG-0032](BUG-0032-one-lost-state-packet-makes-the-guest-delete-and.md) | open | desync | Cell | 2026-10-27 |  | one lost state packet makes the guest delete and recreate up to 14 of the host's cells |
@@ -53,7 +53,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0040](BUG-0040-the-city-alarm-speed-boost-can-write-into-freed.md) | open | crash | Civ | 2026-10-27 |  | the city-alarm speed boost can write into freed vehicles after a leave or a load |
 | [BUG-0041](BUG-0041-after-a-small-respawn-the-next-level-up-makes-th.md) | open | bug | Cell | 2026-10-27 |  | after a small respawn, the next level-up makes the player's cell up to twice too big |
 | [BUG-0042](BUG-0042-six-suite-tests-smoke-creature-included-pass-wit.md) | open | test | All | 2026-10-27 |  | six suite tests (smoke creature included) pass with faults and check only mod bookkeeping |
-| [BUG-0043](BUG-0043-an-evolution-or-superweapon-vote-still-runs-afte.md) | open | crash | All | 2026-10-27 |  | an evolution or superweapon vote still runs after its stage or session is gone |
+| [BUG-0043](BUG-0043-an-evolution-or-superweapon-vote-still-runs-afte.md) | fixed | crash | All | 2026-10-27 | unreleased | an evolution or superweapon vote still runs after its stage or session is gone |
 | [BUG-0044](BUG-0044-a-recycled-npc-object-keeps-the-old-net-id-so-gu.md) | open | desync | Creature | 2026-10-27 |  | a recycled NPC object keeps the old net id, so guests see the wrong species or a walking corpse |
 | [BUG-0045](BUG-0045-a-guest-that-leaves-the-session-keeps-the-host-s.md) | open | bug | Space | 2026-10-27 |  | a guest that leaves the session keeps the host's ships, which then attack it with their own AI |
 | [BUG-0046](BUG-0046-armada-contract-starts-a-second-raid-when-the-ho.md) | open | bug | Space | 2026-10-27 |  | armada contract starts a second raid when the host comes back, and the old raid decides the wave |
@@ -70,7 +70,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0057](BUG-0057-tickets-py-new-reuses-ticket-ids-of-branches-who.md) | open | tooling | All | 2026-10-27 |  | tickets.py new reuses ticket ids of branches whose worktree is gone |
 | [BUG-0058](BUG-0058-gifted-tool-charges-and-spice-that-come-back-whi.md) | open | bug | Space | 2026-10-27 |  | gifted tool charges and spice that come back while you are not in Space are lost |
 | [BUG-0059](BUG-0059-vehicle-and-city-tables-survive-a-load-so-new-ve.md) | open | crash | Civ | 2026-10-27 |  | vehicle and city tables survive a load, so new vehicles can inherit old owners and guests can use freed cities |
-| [BUG-0060](BUG-0060-hot-reload-of-coop-dll-can-crash-while-the-updat.md) | open | crash | All | 2026-10-27 |  | hot reload of coop.dll can crash while the update check thread or a queued task still runs old code |
+| [BUG-0060](BUG-0060-hot-reload-of-coop-dll-can-crash-while-the-updat.md) | fixed | crash | All | 2026-10-27 | unreleased | hot reload of coop.dll can crash while the update check thread or a queued task still runs old code |
 | [BUG-0061](BUG-0061-a-partner-can-stay-shown-as-knocked-out-for-good.md) | open | desync | Cell | 2026-10-27 |  | a partner can stay shown as knocked out for good (translucent, frozen "KO" label) |
 | [BUG-0062](BUG-0062-tickets-py-new-private-in-a-worktree-writes-to-t.md) | open | tooling | All | 2026-10-27 |  | tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost |
 | [BUG-0063](BUG-0063-flying-to-a-partner-who-is-in-the-galaxy-view-co.md) | open | bug | Space | 2026-10-27 |  | flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled |
@@ -117,7 +117,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0104](BUG-0104-the-co-op-window-keeps-showing-connecting-to-for.md) | open | bug | All | 2026-10-27 |  | the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line |
 | [BUG-0105](BUG-0105-a-received-world-is-loaded-even-when-writing-its.md) | open | bug | All | 2026-10-27 |  | a received world is loaded even when writing its files failed (disk full, locked or read-only file) |
 | [BUG-0106](BUG-0106-shared-money-can-be-spent-twice-in-one-round-tri.md) | open | bug | All | 2026-10-27 |  | shared money can be spent twice in one round trip, and Civ/Space money goes negative |
-| [BUG-0107](BUG-0107-the-keepalive-std-thread-can-abort-the-game-at-e.md) | open | crash | All | 2026-10-27 |  | the keepalive std::thread can abort the game at exit when Shutdown did not run |
+| [BUG-0107](BUG-0107-the-keepalive-std-thread-can-abort-the-game-at-e.md) | fixed | crash | All | 2026-10-27 | unreleased | the keepalive std::thread can abort the game at exit when Shutdown did not run |
 | [BUG-0108](BUG-0108-0-7-x-is-called-the-gog-2016-release-but-the-0-7.md) | open | bug | All | 2026-10-27 |  | 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016 |
 | [BUG-0109](BUG-0109-with-3-players-a-departed-player-s-last-state-ar.md) | open | desync | All | 2026-10-27 |  | with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner |
 | [BUG-0110](BUG-0110-a-fault-inside-the-npc-ai-tick-leaves-the-partne.md) | open | bug | Creature | 2026-10-27 |  | a fault inside the NPC AI tick leaves the partner's puppet as the game's avatar for good |
@@ -150,7 +150,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0137](BUG-0137-crash-dumps-reports-and-report-zips-up-to-24-mb.md) | open | bug | All | 2026-10-27 |  | crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed |
 | [BUG-0138](BUG-0138-a-pasted-host-address-with-a-leading-space-fails.md) | open | bug | All | 2026-10-27 |  | a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted |
 | [BUG-0139](BUG-0139-closing-the-window-during-install-or-uninstall-c.md) | open | bug | Installer | 2026-10-27 |  | closing the window during Install or Uninstall can leave the game half installed |
-| [BUG-0140](BUG-0140-a-host-that-leaves-a-few-seconds-after-a-share-s.md) | open | freeze | All | 2026-10-27 |  | a host that leaves a few seconds after a share save can no longer leave any stage (quit message re-posted forever) |
+| [BUG-0140](BUG-0140-a-host-that-leaves-a-few-seconds-after-a-share-s.md) | fixed | freeze | All | 2026-10-27 | unreleased | a host that leaves a few seconds after a share save can no longer leave any stage (quit message re-posted forever) |
 | [BUG-0141](BUG-0141-two-players-with-the-same-name-share-one-allies.md) | open | bug | Space | 2026-10-27 |  | two players with the same name share one allies mirror, one set of rivals relations and one budget |
 | [BUG-0142](BUG-0142-a-cyrillic-or-cjk-player-name-becomes-after-a-re.md) | open | bug | All | 2026-10-27 |  | a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled |
 | [BUG-0143](BUG-0143-43-game-symbols-the-code-uses-several-hooked-hav.md) | open | bug | All | 2026-10-27 |  | 43 game symbols the code uses (several hooked) have no checked signature on any build |
@@ -173,7 +173,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0160](BUG-0160-small-numeric-edge-cases-non-unit-quaternion-fro.md) | open | bug | Cell | 2026-10-27 |  | small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int) |
 | [BUG-0161](BUG-0161-the-under-attack-being-converted-city-beacons-pr.md) | open | bug | Civ | 2026-10-27 |  | the "under attack" / "being converted" city beacons probably start with an empty box instead of the swords or cross symbol |
 | [BUG-0162](BUG-0162-hot-reload-and-every-3-4-player-test-are-outside.md) | open | test | All | 2026-10-27 |  | hot reload and every 3-4 player test are outside the lab suites, so they never run |
-| [BUG-0163](BUG-0163-a-click-right-after-the-galaxy-menu-closes-can-m.md) | open | crash | All | 2026-10-27 |  | a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button |
+| [BUG-0163](BUG-0163-a-click-right-after-the-galaxy-menu-closes-can-m.md) | fixed | crash | All | 2026-10-27 | unreleased | a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button |
 | [BUG-0164](BUG-0164-a-long-name-from-the-cheat-console-is-cut-inside.md) | open | bug | All | 2026-10-27 |  | a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated |
 | [BUG-0165](BUG-0165-install-check-line-readme-latest-version-and-sta.md) | open | bug | All | 2026-10-27 |  | INSTALL check line, README latest version and stability-report lane count are out of date |
 | [BUG-0166](BUG-0166-a-world-share-for-a-guest-who-already-left-stays.md) | open | bug | All | 2026-10-27 |  | a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s |

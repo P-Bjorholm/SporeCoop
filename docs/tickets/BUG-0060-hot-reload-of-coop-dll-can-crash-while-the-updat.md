@@ -1,17 +1,17 @@
 ---
 id: BUG-0060
 title: hot reload of coop.dll can crash while the update check thread or a queued task still runs old code
-status: open
+status: fixed
 kind: crash
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#38
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w1-core
+commits: cb65cfa, 927a4c5, ec3c204
+tests: tools/tests/coop_reload_update.py (suite reload_update)
 signature:
 docs:
 related: #38
@@ -51,13 +51,34 @@ Every load of coop.dll starts a background update-check thread (WinHTTP to the G
 CONFIRMED by reading the full path (no join, no cancel, no state check at the thread's end). The crash itself is not reproduced here; it needs the timing above.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-core (cb65cfa, ec3c204).
+- autoupdate: every thread takes a reference to its own module (`GetModuleHandleExW(FROM_ADDRESS)`)
+  and ends with `FreeLibraryAndExitThread`, so the old image stays mapped until the thread is done;
+  `autoupdate::shutdown()` (from `on_unload`) keeps an old thread quiet (no log, no feed).
+  Old behaviour: `coop.corefix update_pin 0`.
+- SporeKit: `run_on_main` / `run_outside_frame` tasks of a mod are tagged with the mod's function
+  (`h_run_on_main` / `h_run_outside_frame`); `unload_from` drops the queued tasks whose code lies in
+  the image being freed (PE SizeOfImage), before `FreeLibrary` ("dropped N queued task(s) of the old
+  image" in the log). No ABI change. Small hunks in sporekit/console.cpp, core.h, main.cpp, mods.cpp.
+
+The review suggested:
 
 - autoupdate: keep the thread handles. Add `autoupdate::shutdown()` called from `on_unload`: set a cancel flag, close the WinHTTP handles (`WinHttpCloseHandle` on the request aborts a blocked call), then `WaitForSingleObject` the threads (bounded, e.g. 35 s, logging if it times out). Alternatively hold a module reference while the thread runs (`GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)` at the start and `FreeLibraryAndExitThread` at the end), so the image cannot be freed under it.
 - Outside-frame tasks: SporeKit could tag tasks with the queuing mod (`run_outside_frame` has no `SkMod*`, so this needs an ABI addition) and drop them at unload. Or coop could gate every queued task on a generation counter that `on_unload` bumps. That only helps while the code is still mapped, so the SporeKit-side fix is the real one.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+One-game test `coop_reload_update.py` (lane 2, 2026-10-28): a local server answers the update check
+after 8 s; `coop.update check`, then `mod.reload coop` at once.
+Observed under Wine: the new shadow copy loads at the old base (the old one is unmapped:
+/proc/PID/maps showed only `coop.i3.2.dll` after a reload), so the old thread returned into the
+identical code of the new image and finished there with the new image's state: the new image
+logged two results ("cannot reach 127.0.0.1 (error 12019)", "(error 6)") instead of its own 404.
+No access violation because the code was identical; a different build would fault.
+FAIL with `--without-fix` (update_pin 0): two foreign results in the new image. PASS with the fix,
+2 runs: one result ("the server answered 404"), console and frames alive, no faults. The queued
+task drop was seen at every reload ("dropped 1 queued task(s) of the old image").
+
+The planned test was:
 
 `tools/tests/coop_reload_update.py` (one instance): a local HTTP server that holds the update-check request for 5 s, `mod.reload coop` during that time, release the request, then 10 s of frames. Assert the game is alive (frames advance, no crash report: the lab's crash check) and `coop.update` answers from the new instance. It must fail on main.
 
@@ -68,3 +89,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #38.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w1-core: pinned update threads, SporeKit drops queued tasks of an unloaded image.

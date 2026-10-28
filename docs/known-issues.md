@@ -23,7 +23,8 @@ anchor so other docs can link to it:
 
 * [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): fixed
   (unreleased) for the stage modules: every way a session ends now runs the same cleanup. Still
-  open: the vote, `shared` resources, `g_roles` and `g_host_away` are not reset on any path.
+  open: `shared` resources, `g_roles` and `g_host_away` are not reset on any path. The vote (BUG-0043)
+  and the world share queue (BUG-0140) are reset by the same cleanup since fix/w1-core.
 
 ## Creature: a guest that gets the world right after the host's editor stays a hatchling
 
@@ -599,7 +600,6 @@ keeps the history).
 
 **All stages (netcode, core, UI, SporeKit, updater, tools, tests, docs)**
 
-* BUG-0029 (#7, crash): guest uses freed memory when the host rejects it or leaves (REJECT / BYE)
 * BUG-0030 (#8, bug): join fails after 10 s when the host's first packet is lost (WELCOME falsely acked)
 * BUG-0033 (#11, bug): leaving, re-hosting and hot reload each clean up a different subset of the co-op state.
 * BUG-0034 (#12, desync): one reliable message bigger than a packet stalls all reliable traffic and floods empty packets.
@@ -607,7 +607,6 @@ keeps the history).
 * BUG-0036 (#14, tooling): a game crash after a test's checks does not fail the test in the lab.
 * BUG-0039 (#17, bug): LAN game list is never pruned, so fake discovery replies grow memory and slow the game.
 * BUG-0042 (#20, test): six suite tests (smoke creature included) pass with faults and check only mod bookkeeping.
-* BUG-0043 (#21, crash): an evolution or superweapon vote still runs after its stage or session is gone.
 * BUG-0047 (#25, bug): RefPack decoder reads one byte past a 5-byte compressed record.
 * BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
 * BUG-0049 (#27, bug): money or food changed while offline is added to the next host's shared pool.
@@ -615,7 +614,6 @@ keeps the history).
 * BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
 * BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
-* BUG-0060 (#38, crash): hot reload of coop.dll can crash while the update check thread or a queued task still runs old code.
 * BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
 * BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
 * BUG-0069 (#47, bug): netcode timeouts (5 s unstable, 15 s disconnect) do not match the code (30 s, no unstable state)
@@ -636,7 +634,6 @@ keeps the history).
 * BUG-0104 (#83, bug): the co-op window keeps showing "Connecting to ..." for the whole session and hides the update line.
 * BUG-0105 (#84, bug): a received world is loaded even when writing its files failed (disk full, locked or read-only file)
 * BUG-0106 (#85, bug): shared money can be spent twice in one round trip, and Civ/Space money goes negative.
-* BUG-0107 (#86, crash): the keepalive std::thread can abort the game at exit when Shutdown did not run.
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
@@ -654,7 +651,6 @@ keeps the history).
 * BUG-0135 (#114, test): coop_team.py checks the joint-hunt bonus only by a mod counter, never the extra damage on the NPC.
 * BUG-0137 (#116, bug): crash dumps, reports and report zips (up to 24 MB each) pile up in mods\logs and are never removed.
 * BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
-* BUG-0140 (#119, freeze): a host that leaves a few seconds after a share save can no longer leave any stage (quit message re-posted forever)
 * BUG-0142 (#121, bug): a Cyrillic or CJK player name becomes "????" after a restart, and a name typed into coop.ini by hand is garbled.
 * BUG-0143 (#122, bug): 43 game symbols the code uses (several hooked) have no checked signature on any build.
 * BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
@@ -671,7 +667,6 @@ keeps the history).
 * BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
 * BUG-0159 (#138, bug): name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
-* BUG-0163 (#142, crash): a click right after the galaxy menu closes can make a virtual call on the freed "Co-op" menu button.
 * BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 * BUG-0166 (#145, bug): a world share for a guest who already left stays queued, so the host saves for nobody and its editors wait up to 15 s.
