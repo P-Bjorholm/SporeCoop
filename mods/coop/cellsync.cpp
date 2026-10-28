@@ -12,6 +12,7 @@
 #include "game.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/utf8.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
 
@@ -1511,7 +1512,7 @@ static std::string bar(float f)
     return s;
 }
 
-static int text_w(const std::string& s) { return (int)s.size() * 9; }
+static int text_w(const std::string& s) { return utf8::overlay_width(s); } // cells, not bytes (BUG-0159)
 
 static void draw_ko(uint8_t* c, const std::string& name, float left, float hold, double now, int sw, int sh)
 {

@@ -8,6 +8,7 @@
 //  - a report on request (console `report`, the co-op window): the same without the exception
 //  - ExitProcess is logged (a game that closes itself leaves its exit code in the log)
 #include "core.h"
+#include "inifile.h"
 
 #include <d3d9.h>
 
@@ -15,6 +16,8 @@
 #include <atomic>
 #include <cstdio>
 #include <mutex>
+#include <new>
+#include <stdexcept>
 
 namespace sk {
 
@@ -431,7 +434,7 @@ static std::vector<std::wstring> files_in(const std::wstring& dir, const wchar_t
 // a settings file without the address of the last host joined (a friend's IP)
 static std::vector<uint8_t> redacted_ini(const std::vector<uint8_t>& d)
 {
-    std::string s(d.begin(), d.end()), out;
+    std::string s = skini::to_utf8_text(std::string(d.begin(), d.end())), out; // UTF-16 since BUG-0142
     size_t i = 0;
     while (i < s.size()) {
         size_t e = s.find('\n', i);
@@ -454,6 +457,63 @@ static void mark_problem(const std::string& zip, const char* what)
 }
 
 static std::string g_last_problem; // read at boot: "<what>\n<zip path>" of the previous run, or ""
+
+// Only the newest files of each kind stay in mods\logs (BUG-0137): a crash on every start wrote a
+// report, a minidump and an archive of up to 24 MB per start and nothing removed them. Names carry
+// the time, so the name order is the age. The files named in last-problem.txt (this run's or the
+// previous run's, which the player was told about) are never removed.
+static constexpr size_t kKeepCrashes = 5, kKeepReports = 5, kKeepArchives = 3;
+
+static std::wstring file_name_of(const std::string& path)
+{
+    std::wstring w = widen(path);
+    size_t k = w.find_last_of(L"\\/");
+    return k == std::wstring::npos ? w : w.substr(k + 1);
+}
+
+void diag_prune_logs()
+{
+    if (!fixed(g_fix_logprune))
+        return;
+    std::wstring dir = logs_dir();
+    std::vector<std::wstring> keep;
+    auto keep_lines = [&](const std::string& t) {
+        size_t i = 0;
+        while (i < t.size()) {
+            size_t e = t.find('\n', i);
+            std::string l = t.substr(i, e == std::string::npos ? std::string::npos : e - i);
+            while (!l.empty() && (l.back() == '\r' || l.back() == ' '))
+                l.pop_back();
+            if (!l.empty())
+                keep.push_back(file_name_of(l));
+            if (e == std::string::npos)
+                break;
+            i = e + 1;
+        }
+    };
+    keep_lines(g_last_problem);
+    std::vector<uint8_t> d;
+    if (read_file_tail(dir + L"\\last-problem.txt", 4096, d))
+        keep_lines(std::string(d.begin(), d.end()));
+    int removed = 0;
+    auto prune = [&](const wchar_t* pattern, size_t n) {
+        std::vector<std::wstring> v = files_in(dir, pattern); // oldest first
+        for (size_t i = 0; i + n < v.size(); i++) {
+            bool kept = false;
+            for (auto& k : keep)
+                kept |= _wcsicmp(k.c_str(), v[i].c_str()) == 0;
+            if (!kept && DeleteFileW((dir + L"\\" + v[i]).c_str()))
+                removed++;
+        }
+    };
+    prune(L"crash-*.txt", kKeepCrashes);
+    prune(L"crash-*.dmp", kKeepCrashes);
+    prune(L"report-*.txt", kKeepReports);
+    prune(L"SporeCoop-report-*.zip", kKeepArchives);
+    if (removed)
+        logf(&g_kit_mod, SK_INFO, "logs: %d old crash / report files removed (kept the newest %u crashes, %u reports, %u archives)",
+             removed, (unsigned)kKeepCrashes, (unsigned)kKeepReports, (unsigned)kKeepArchives);
+}
 
 void diag_read_last_problem()
 {
@@ -552,6 +612,8 @@ std::string diag_write_bundle_with(const char* reason, const std::string& existi
     }
     logf(&g_kit_mod, SK_INFO, "report archive: %s (%u files, %u KB)", narrow(zip).c_str(), (unsigned)z.size(),
          (unsigned)(total >> 10));
+    z.clear();
+    diag_prune_logs();
     return narrow(zip);
 }
 
@@ -566,6 +628,41 @@ using ExitProcess_t = void(WINAPI*)(UINT);
 static ExitProcess_t o_ExitProcess;
 using TerminateProcess_t = BOOL(WINAPI*)(HANDLE, UINT);
 static TerminateProcess_t o_TerminateProcess;
+
+// BUG-0127: a crash report runs in a process that may have crashed because memory ran out. Each
+// step catches its own failure (a std::bad_alloc that left the thread ended the game through
+// std::terminate before the minidump and the mark were written); the next step still runs.
+static std::atomic<int> g_test_oom{0}; // crash.test oom: the archive fails like an allocation would
+
+template <class F> static bool report_step(const char* what, F f)
+{
+    if (!fixed(g_fix_crashsafe)) {
+        f();
+        return true;
+    }
+    try {
+        f();
+        return true;
+    } catch (const std::exception& e) {
+        try {
+            logf(&g_kit_mod, SK_ERROR, "problem report: %s failed (%s), the next step goes on", what, e.what());
+        } catch (...) {
+        }
+    } catch (...) {
+        try {
+            logf(&g_kit_mod, SK_ERROR, "problem report: %s failed, the next step goes on", what);
+        } catch (...) {
+        }
+    }
+    return false;
+}
+
+static std::string bundle_for_problem(const char* why, const std::string& report)
+{
+    if (g_test_oom.load())
+        throw std::bad_alloc();
+    return diag_write_bundle_with(why, report);
+}
 
 // the game ends: after a fault of the last kFaultExitSec (its own handler caught it and closes the
 // game, the unhandled filter never runs) or with an error code, a crash report of that fault
@@ -585,9 +682,13 @@ static void exit_report(UINT code, const char* how)
     snprintf(why, sizeof why, "the game ends (%s %u)%s", how, code,
              fault ? ", seconds after a fault: the report shows that fault" : "");
     EXCEPTION_POINTERS ep{&er, &ctx};
-    std::string p = diag_write_report(why, fault ? &ep : nullptr);
-    mark_problem(diag_write_bundle_with(why, p), fault ? "closed right after an error" : "closed with an error code");
-    logf(&g_kit_mod, SK_ERROR, "%s; crash report: %s", why, p.c_str());
+    const char* what = fault ? "closed right after an error" : "closed with an error code";
+    std::string p;
+    if (!report_step("the report", [&] { p = diag_write_report(why, fault ? &ep : nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, what); });
+    report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), what); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "%s; crash report: %s", why, p.c_str()); });
 }
 
 // the full report is written by a thread of its own: if the crashed thread holds a lock the report
@@ -601,12 +702,12 @@ struct CrashJob {
 };
 // the report, the archive and the mark first; the minidump last (the riskiest step: it suspends the
 // other threads and walks the crashed one), then the archive again with it
-static DWORD WINAPI crash_report_thread(void* p)
+static DWORD WINAPI crash_report_thread_old(void* p)
 {
     auto* j = (CrashJob*)p;
     std::string path = diag_write_report_as(j->base, "unhandled exception", j->ep, false);
     logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str());
-    std::string zip = diag_write_bundle_with("the game crashed", path); // one file to send
+    std::string zip = bundle_for_problem("the game crashed", path); // one file to send
     mark_problem(zip, "crashed");
     if (write_minidump(logs_dir() + L"\\" + widen(j->base) + L".dmp", j->ep, j->tid)) {
         std::string zip2 = diag_write_bundle_with("the game crashed", path);
@@ -619,8 +720,83 @@ static DWORD WINAPI crash_report_thread(void* p)
     return 0;
 }
 
+// BUG-0127: every step guarded; the mark names the crash report before the archive is built (the
+// short report written by the filter is there already), then the archive when it exists
+static DWORD WINAPI crash_report_thread(void* p)
+{
+    if (!fixed(g_fix_crashsafe))
+        return crash_report_thread_old(p);
+    auto* j = (CrashJob*)p;
+    std::string path = narrow(logs_dir() + L"\\" + widen(j->base) + L".txt"); // the short report
+    report_step("the crash report", [&] { path = diag_write_report_as(j->base, "unhandled exception", j->ep, false); });
+    report_step("the mark", [&] { mark_problem(path, "crashed"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "crash report: %s", path.c_str()); });
+    std::string zip;
+    report_step("the archive", [&] {
+        zip = bundle_for_problem("the game crashed", path); // one file to send
+        if (zip != path)
+            mark_problem(zip, "crashed");
+    });
+    bool dumped = false;
+    report_step("the minidump", [&] { dumped = write_minidump(logs_dir() + L"\\" + widen(j->base) + L".dmp", j->ep, j->tid); });
+    if (!dumped) {
+        report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "crash report: no minidump (MiniDumpWriteDump failed)"); });
+        return 0;
+    }
+    report_step("the archive with the minidump", [&] {
+        std::string zip2 = bundle_for_problem("the game crashed", path);
+        if (zip2 != path && zip2 != zip) {
+            mark_problem(zip2, "crashed");
+            if (!zip.empty() && zip != path)
+                DeleteFileW(widen(zip).c_str());
+        }
+    });
+    return 0;
+}
+
+// BUG-0056: a stack overflow leaves the crashed thread about one page of stack; creating a thread
+// there (or formatting, logging) overflows again and Windows ends the game without a report. This
+// thread is made at boot and waits: the filter only signals it and waits for it.
+static CrashJob g_so_job;
+static HANDLE g_so_go, g_so_done;
+
+static DWORD WINAPI so_report_thread(void*)
+{
+    WaitForSingleObject(g_so_go, INFINITE);
+    report_step("the short report", [&] {
+        g_so_job.base = report_base(true);
+        DWORD code = g_so_job.ep->ExceptionRecord->ExceptionCode;
+        uintptr_t eip = g_so_job.ep->ContextRecord->Eip;
+        char b[512];
+        snprintf(b, sizeof b,
+                 "SporeCoop crash %s (short: the full report is being written over this file)\n"
+                 "SporeKit " SK_VERSION ", game %s\nexception 0x%08lX %s at 0x%08X %s (thread %lu)\n",
+                 g_so_job.base.c_str(), build_name(), code, code_name(code), (unsigned)eip, where(eip).c_str(),
+                 g_so_job.tid);
+        CreateDirectoryW(logs_dir().c_str(), nullptr);
+        write_text(logs_dir() + L"\\" + widen(g_so_job.base) + L".txt", b);
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX (stack overflow) at 0x%08X %s, thread %lu", code,
+             (unsigned)eip, where(eip).c_str(), g_so_job.tid);
+    });
+    if (!g_so_job.base.empty())
+        crash_report_thread(&g_so_job);
+    SetEvent(g_so_done);
+    return 0;
+}
+
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
 {
+    if (ep && ep->ExceptionRecord && ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW && g_so_go &&
+        fixed(g_fix_stackov)) {
+        // nothing but a signal and a wait on this stack (BUG-0056)
+        if (g_crashed++ == 0) {
+            g_so_job.ep = ep;
+            g_so_job.tid = GetCurrentThreadId();
+            SetEvent(g_so_go);
+            WaitForSingleObject(g_so_done, kReportWaitMs);
+        }
+        return g_next_filter ? g_next_filter(ep) : EXCEPTION_CONTINUE_SEARCH;
+    }
     if (g_crashed++ == 0 && ep && ep->ExceptionRecord && ep->ContextRecord) {
         DWORD code = ep->ExceptionRecord->ExceptionCode;
         uintptr_t eip = ep->ContextRecord->Eip;
@@ -684,9 +860,12 @@ void diag_hang_report(const char* why)
     HWND w = (HWND)game_window();
     if (!w || IsIconic(w) || GetForegroundWindow() != w || once++)
         return;
-    std::string p = diag_write_report(why, nullptr);
-    logf(&g_kit_mod, SK_ERROR, "hang report: %s", p.c_str());
-    mark_problem(diag_write_bundle_with(why, p), "stopped responding");
+    std::string p;
+    if (!report_step("the hang report", [&] { p = diag_write_report(why, nullptr); }))
+        return;
+    report_step("the mark", [&] { mark_problem(p, "stopped responding"); });
+    report_step("the log line", [&] { logf(&g_kit_mod, SK_ERROR, "hang report: %s", p.c_str()); });
+    report_step("the archive", [&] { mark_problem(bundle_for_problem(why, p), "stopped responding"); });
 }
 
 static DWORD WINAPI crash_thread(void*)
@@ -696,9 +875,31 @@ static DWORD WINAPI crash_thread(void*)
     return 0;
 }
 
-// tests: crash.test thread (a fault nobody handles, in a thread of its own) | main (in the frame)
+// a recursion without end with 4 KB of locals per call: a stack overflow (BUG-0056)
+static volatile int g_recurse_stop; // never set: the compiler must not see an endless recursion
+static int __attribute__((noinline)) recurse_forever(int depth)
+{
+    volatile char pad[4096];
+    pad[0] = (char)depth;
+    pad[4095] = (char)depth;
+    if (g_recurse_stop)
+        return depth;
+    return recurse_forever(depth + 1) + pad[depth & 4095];
+}
+
+static DWORD WINAPI stack_overflow_thread(void*) { return (DWORD)recurse_forever(0); }
+
+// tests: crash.test thread (a fault nobody handles, in a thread of its own) | main (in the frame) |
+// stackoverflow (a thread recursing without end, BUG-0056) | oom (thread, and every archive of the
+// report fails like an allocation in a full address space, BUG-0127)
 void diag_crash_test(const char* where_)
 {
+    if (where_ && !strcmp(where_, "stackoverflow")) {
+        CreateThread(nullptr, 0, stack_overflow_thread, nullptr, 0, nullptr);
+        return;
+    }
+    if (where_ && !strcmp(where_, "oom"))
+        g_test_oom = 1;
     if (where_ && !strcmp(where_, "main")) {
         volatile int* p = nullptr;
         *p = 1;
@@ -722,6 +923,15 @@ void diag_install()
     if (void* e = k32 ? (void*)GetProcAddress(k32, "TerminateProcess") : nullptr)
         hook_create(&g_kit_mod, e, (void*)h_TerminateProcess, (void**)&o_TerminateProcess);
     logf(&g_kit_mod, SK_INFO, "%s; %s", os_text().c_str(), memory_text().c_str());
+    // BUG-0056: the stack overflow reporter waits from now on; the game's main thread keeps 64 KB
+    // for the exception dispatch and the filter after an overflow (Windows; Wine may ignore it)
+    g_so_go = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_so_done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (g_so_go && g_so_done)
+        CloseHandle(CreateThread(nullptr, 0, so_report_thread, nullptr, 0, nullptr));
+    ULONG guarantee = 64 * 1024;
+    SetThreadStackGuarantee(&guarantee);
+    diag_prune_logs(); // BUG-0137: piles of earlier versions
 }
 
 void diag_after_device()

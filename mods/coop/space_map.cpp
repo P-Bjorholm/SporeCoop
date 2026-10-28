@@ -2,6 +2,8 @@
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
 #include "space_map.h"
 
+#include "net/utf8.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -598,13 +600,7 @@ static uint32_t nearest_star(const net::Vec3& at, float max_d = 3.f)
 }
 
 // UTF-8 code points * 9 px (Arial 18 bold, like coop.cpp's text_width)
-static int text_w(const std::string& s)
-{
-    int n = 0;
-    for (unsigned char c : s)
-        n += (c & 0xC0) != 0x80;
-    return n * 9;
-}
+static int text_w(const std::string& s) { return utf8::overlay_width(s); }
 
 static void text(int x, int y, uint32_t argb, const std::string& s)
 {

@@ -1,19 +1,19 @@
 ---
 id: BUG-0129
 title: chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#108
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 116731e
+tests: make test (tests/text_tests.cpp)
 signature:
-docs:
+docs: docs/08-ui.md
 related: #108
 ---
 
@@ -65,25 +65,24 @@ The same message in the co-op window is one of 4 lines and is gone after 4 more 
 CONFIRMED, low severity: a host-side harness ran on the real `lines_of`, the rest was confirmed by reading. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-- `lines_of`: count and cut on code points (`(c & 0xC0) != 0x80`), as `text_width` in coop_ui.cpp already does.
-- `notify::show(text, kind)`, with the kind passed by `feed` callers. Chat passes `chat`.
-- Keep chat lines in their own list and add a page or scroll to the lobby chat. Fix docs/08-ui.md.
+Fixed on fix/w3-sys (116731e). The panel text is wrapped by letter cells (`notify_text.h`: code
+points, a CJK character takes two cells; 46 cells per line, two lines), never inside a character.
+`notify::show(text, kind)`: chat (`"chat"`), join and leave give their kind; other system texts are
+still guessed from English words, but `": "` no longer makes a system line chat. The co-op window
+wraps the chat history (50 lines) to 70 cells per line and scrolls it with two arrow buttons on the
+right (`chatup` / `chatdown`). `coop.notify` status prints the whole text and the panel's lines.
+docs/08-ui.md corrected. `coop.corefix notify_text 0` = the byte wrap and the old guesses. Left: the
+Russian system notices are still guessed as "info" (each caller would need its kind).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Host-side unit test in tests/ for `lines_of`. Move it to a header or make it testable, then check:
-- (a) every output line is valid UTF-8;
-- (b) a 58-letter Cyrillic message is shown with at least 80 % of its characters;
-- (c) `kind_of` / the new kind for a chat feed line is `chat`.
-
-FAILS on main 563f72d (invalid UTF-8, 46 of 58), PASSES with the fix.
-
-### Related
-None of the existing issues.
+Test: `tests/text_tests.cpp` in `make test`: a 65-letter Russian chat line shows all of it in valid
+UTF-8, a CJK line never ends inside a character, "Offer sent: Bob: 5 spice" is not chat, the chat
+history wrap keeps every character.
+* FAIL with `text_tests --old`: 3 checks (90 % of the Russian line, valid UTF-8, the chat guess).
+* PASS with the fix (`make test`). Lab: `notify` (coop_notify.py) in run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842). The scroll arrows have no
+game test.
 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #108.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (116731e); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

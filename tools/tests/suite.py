@@ -53,6 +53,7 @@ add('ui_menu_leave', P + 'coop_ui_menu_leave.py', minutes=2)  # the galaxy menu'
 add('reload_update', P + 'coop_reload_update.py', minutes=2)  # hot reload while the update check waits: the old thread stays in the old image (BUG-0060)
 add('guest_editor', P + 'coop_guest_editor.py', minutes=4)
 add('notify', P + 'coop_notify.py', minutes=3)
+add('window_layout', P + 'coop_window_layout.py', minutes=3)  # the co-op window re-centred after a smaller resolution, the status block never over the window or the panels (BUG-0113/0155; --old fails)
 add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
@@ -71,7 +72,8 @@ add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, version in the menu, report button, hang / crash reports
-add('kit_freeze', P + 'kit_freeze.py', minutes=4)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn (BUG-0050/0065/0115/0132; --old: every case fails)
+add('kit_freeze', P + 'kit_freeze.py', minutes=4)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn, hooks made while threads run the function (BUG-0050/0065/0115/0132/0202; --old: every case fails)
+add('kit_crash', P + 'kit_crash.py', minutes=4)  # crash reports for a stack overflow and a failed archive (out of memory); old reports pruned (BUG-0056/0127/0137; --old: every case fails)
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back

@@ -1,19 +1,19 @@
 ---
 id: BUG-0056
 title: a stack overflow ends the game without a crash report
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#34
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w3-sys
+commits: 1bebf57
+tests: tools/tests/kit_crash.py stackoverflow (suite kit_crash)
+signature: 0xC00000FD
+docs: docs/02-modkit.md#modkit-crash-hard-cases
 related: #34
 ---
 
@@ -50,20 +50,23 @@ A stack overflow produces the same crash report as an access violation (at least
 PLAUSIBLE. The heavy work on the faulting stack is confirmed by reading the full path; how much stack is left after the overflow (Windows and Wine) and whether the process really dies without a report is not verified at runtime.
 
 ## Fix
-Not fixed yet. Suggested in the review:
-
-* In `veh()`: when `code == EXCEPTION_STACK_OVERFLOW`, store only the code, `eip`, `esp` and the thread id into static variables (no locks, no allocation, no logging) and return `EXCEPTION_CONTINUE_SEARCH`.
-* In `crash_filter`: for a stack overflow, skip `logf` / `snprintf` on the faulting thread and start `crash_report_thread` at once; let that thread (with its own fresh stack) write the short file, the log line and the minidump.
-* Optional: call `SetThreadStackGuarantee` on the main thread at boot to reserve room for the handler.
+Fixed on fix/w3-sys (1bebf57). The exception logger only copies the record and the context of a
+stack overflow into statics (no lock, allocation or log line) and returns. The unhandled filter only
+signals a thread SporeKit made at boot (`so_report_thread`, waiting on an event) and waits for it;
+that thread writes the short report, the log line, the full report, the archive and the minidump on
+its own stack. The main thread gets 64 KB of stack guarantee at boot (`SetThreadStackGuarantee`).
+`crash.test stackoverflow` (a thread recursing with 4 KB locals); `kit.fix stackov 0` = the old path.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/kit_crash_stackoverflow.py`: run `crash.test stackoverflow` (new variant, next to `crash.test thread|main` in diag.cpp) on one instance, wait for the process to end, and assert that a crash report file was written and that it names exception 0xC00000FD. Without the fix there is no report (FAIL); with it the report exists (PASS).
-
-### Related
-`crash.test` today covers only access violations (diag.cpp `diag_crash_test`).
+Test: `tools/tests/kit_crash.py --case stackoverflow` (suite `kit_crash`), one game on lane 3.
+* FAIL with `kit.fix stackov 0` (`kit_crash.py --old`, manual run on lane 3, 2026-10-28 01:45): no
+  crash report, no log line at all (the old handler died on the full stack). Under Wine 10 the
+  overflowing worker thread is killed and the game goes on (the ticket's "the game ends" is the
+  Windows behaviour; not checked on Windows).
+* PASS with the fix: manual run 2026-10-28 01:46 (`crash-...-i5.txt` names 0xC00000FD, the log has
+  "exception 0xC00000FD (stack overflow)") and lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).
 
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #34.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-sys (1bebf57); tests named above, lab run out/lab/20261028-011605 (smoke and diag: out/lab/20261028-012842).

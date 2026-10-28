@@ -631,6 +631,7 @@ keeps the history).
 * BUG-0048 (#26, tooling): lab.py --branch can test another branch's worktree (prefix match)
 * BUG-0052 (#30, tooling): a lab test timeout kills only /bin/sh, the test keeps driving the lane.
 * BUG-0056 (#34, bug): a stack overflow ends the game without a crash report.
+* BUG-0053 (#31, bug): partner's puppet freezes when the sender's millisecond clock wraps (49.7 days uptime)
 * BUG-0057 (#35, tooling): tickets.py new reuses ticket ids of branches whose worktree is gone.
 * BUG-0062 (#40, tooling): tickets.py new --private in a worktree writes to that worktree's out/ and the ticket is lost.
 * BUG-0068 (#46, test): twoinst Monitor reads the wrong game log in worktrees, world loads over 10 s become FROZE.
@@ -650,11 +651,8 @@ keeps the history).
 * BUG-0108 (#87, bug): 0.7.x is called the GOG 2016 release, but the 0.7.2.2-0.7.2.4 fixes are off on GOG 2016.
 * BUG-0112 (#91, bug): with 2+ guests waiting for the world, the host posts one save per guest in the same frame.
 * BUG-0109 (#88, desync): with 3+ players a departed player's last state arrives after PLAYER_LEAVE and leaves a ghost partner.
-* BUG-0113 (#92, bug): after a resolution change the co-op window stays at its old position, partly off-screen.
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
-* BUG-0127 (#106, bug): a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written.
-* BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0133 (#112, desync): after the latency rises, partners and NPCs move in steps for about 50 s.
 * BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
@@ -665,15 +663,15 @@ keeps the history).
 * BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0202 (crash): making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt).
 * BUG-0204 (freeze): joining by host name resolves DNS on the game's main thread; a slow name server freezes the game (numeric addresses never wait).
+* BUG-0138 (#117, bug): a pasted host address with a leading space fails as "cannot resolve", and a wrong port is silently accepted.
+* BUG-0144 (#123, bug): the netcode message table lists PING/PONG, a mod version and fields the protocol does not send.
+* BUG-0148 (#127, test): coop_creature_desync's "killed NPC is dead on the guest" reads the mod's flag, not the game's death.
 * BUG-0151 (#130, bug): while the host is in the menu, an editor or a load, Tribe/Civ guests freeze and guest DNA is lost.
 * BUG-0152 (#131, test): most 3-4 player gameplay paths have no test, and coop_multi runs in no lab suite.
 * BUG-0153 (#132, bug): known-issues.md has a merge-damaged entry, stale "fixed" and outdated entries, and no ticket ids.
-* BUG-0155 (#134, bug): at 1280x720 and 1366x768 the co-op status text is drawn over the co-op window and the notifications.
 * BUG-0156 (#135, test): test profiles redirect only AppData, so tests on lane 1 can write into the owner's own Documents (My Spore Creations)
 * BUG-0158 (#137, bug): the triage-crash skill and tools/crash_triage.py are referenced but do not exist.
-* BUG-0159 (#138, bug): name tags and HUD lines with Cyrillic or other non-Latin text are drawn off-centre.
 * BUG-0162 (#141, test): hot reload and every 3-4 player test are outside the lab suites, so they never run.
-* BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 
 **Cell**

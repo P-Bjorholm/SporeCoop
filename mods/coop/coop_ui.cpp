@@ -11,6 +11,7 @@
 #include "modes.h"
 #include "net/fixes.h"
 #include "net/udp.h"
+#include "notify_text.h"
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
@@ -63,6 +64,8 @@ struct Cache {
     Rect box;
 };
 static std::map<Win, Cache> g_cache;
+static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
+constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
 // width of a text in the dialog font (average glyph width, measured at 1080p)
 static float text_width(const std::string& t)
@@ -120,6 +123,22 @@ static Win g_menu_btn, g_menu_parent;
 // made a virtual call on the freed item. It goes as soon as the mode is not the menu.
 // `coop.corefix menu_drop 0` = the old behaviour (tests).
 bool g_menu_drop_fix = true;
+bool g_recenter_fix = true;
+
+// The window is centred on the screen it opens on (BUG-0113: it is kept for the whole run, and was
+// centred once; after a smaller resolution in the options its bottom row was off the screen).
+static int g_placed_w = -1, g_placed_h = -1;
+static void place_window(Win root)
+{
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    if (sw <= 0 || sh <= 0 || (sw == g_placed_w && sh == g_placed_h))
+        return;
+    g_placed_w = sw;
+    g_placed_h = sh;
+    float x = std::max(0.f, (sw - kW) / 2), y = std::max(0.f, (sh - kH) / 2);
+    sui::set_area(root, Rect{x, y, x + kW, y + kH});
+}
 static bool in_menu() { return A.mode && A.mode() == modes::kMenu; }
 static void* g_menu_drawable;
 static Win g_menu_drawable_for; // the menu window the drawable was made for
@@ -213,6 +232,7 @@ struct Dialog {
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
+    Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, jump_btn = nullptr;
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // Space page: the rows of the space features (space_ext.h)
@@ -422,10 +442,7 @@ static void build_dialog()
             return false;
         });
     }
-    int sw = 0, sh = 0;
-    H->screen_size(&sw, &sh);
-    Rect a{(sw - kW) / 2, (sh - kH) / 2, (sw + kW) / 2, (sh + kH) / 2};
-    sui::set_area(root, a);
+    place_window(root);
 
     std::vector<Win> common;
     D.subtitle = add_label(common, {0, 70, kW, 96}, T("CO-OP", "КООПЕРАТИВ"), kGold, sui::kAlignCenter);
@@ -488,6 +505,9 @@ static void build_dialog()
     D.world = add_label(L, {40, 284, 720, 310}, "", kYellow);
     for (int i = 0; i < 4; i++)
         D.chat_lines[i] = add_label(L, {40, 316.f + i * 23, 720, 338.f + i * 23}, "", kWhite);
+    std::vector<Win> arrows; // shown by refresh_lobby only when there is more to see
+    D.chat_up = add_button(arrows, "chatup", {722, 316, 756, 346}, "^", [] { g_chat_scroll++; g_dirty = true; });
+    D.chat_down = add_button(arrows, "chatdown", {722, 376, 756, 406}, "v", [] { g_chat_scroll--; g_dirty = true; });
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 408, 560, 434}, "", kGold);
     D.creation_prev = add_button(L, "cprev", {570, 404, 640, 434}, "<", [] {
@@ -670,10 +690,17 @@ static void refresh_lobby()
     }
     std::string wl = A.world_line ? A.world_line() : "";
     text(D.world, wl.empty() ? g_status : wl);
-    auto chat = A.chat ? A.chat() : std::vector<std::string>{};
-    size_t first = chat.size() > 4 ? chat.size() - 4 : 0;
+    // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
+    std::vector<std::string> chat;
+    for (auto& l : A.chat ? A.chat() : std::vector<std::string>{})
+        for (auto& w : notify_text::wrap(l, kChatCols))
+            chat.push_back(w);
+    g_chat_scroll = std::max(0, std::min(g_chat_scroll, (int)chat.size() - 4));
+    size_t first = chat.size() > 4 ? chat.size() - 4 - (size_t)g_chat_scroll : 0;
     for (int i = 0; i < 4; i++)
         text(D.chat_lines[i], first + i < chat.size() ? chat[first + i] : "");
+    show(D.chat_up, first > 0);
+    show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;
     std::string cname, cl;
     if (A.creation && A.creation(ck, cname, cown)) {
@@ -771,6 +798,8 @@ static void refresh()
         sui::bring_to_front(main, D.root);
         sui::set_flag(D.root, sui::kFlagAlwaysInFront, true);
     }
+    if (g_want_open && g_recenter_fix)
+        place_window(D.root);
     show(D.root, g_want_open);
     if (!g_want_open) {
         if (A.lan_scan)
@@ -788,6 +817,10 @@ static void refresh()
     for (Win w : D.page_space)
         show(w, lobby && g_space_page);
     show(D.space_btn, space && !g_space_page);
+    if (!lobby || g_space_page) {
+        show(D.chat_up, false);
+        show(D.chat_down, false);
+    }
     text(D.subtitle, lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
                      : lobby ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА") : T("CO-OP", "КООПЕРАТИВ"));
     if (A.version_line)
@@ -912,6 +945,10 @@ std::string debug_state()
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") + "\n";
     char b[256];
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    snprintf(b, sizeof b, "screen %d %d\n", sw, sh);
+    s += b;
     if (g_menu_btn && in_menu()) { // never a call on an item of a menu that is gone (BUG-0163)
         Rect r = sui::screen_rect(g_menu_btn);
         snprintf(b, sizeof b, "menu %.0f %.0f %.0f %.0f %d '%s'\n", r.x1, r.y1, r.x2, r.y2,

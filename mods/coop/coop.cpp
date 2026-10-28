@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -43,8 +44,10 @@
 #include "net/interp.h"
 #include "net/lobby.h"
 #include "net/session.h"
+#include "net/utf8.h"
 #include "creations.h"
 #include "notify.h"
+#include "notify_text.h"
 #include "syncdbg.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -119,14 +122,17 @@ float g_echo_offset = 6.f;
 double g_echo_delay = 0.0;
 std::deque<std::pair<double, net::PlayerState>> g_echo_q;
 
-void feed(const std::string& s)
+// kind: the panel kind ("chat", "join", "leave", ...); null: guessed from a system text (BUG-0129)
+void feed_kind(const std::string& s, const char* kind)
 {
     g_feed.emplace_back(H->time_seconds(), s);
     while (g_feed.size() > 8)
         g_feed.pop_front();
     LOG("%s", s.c_str());
-    notify::show(s); // a notification panel; the full history is in the co-op window
+    notify::show(s, kind); // a notification panel; the full history is in the co-op window
 }
+
+void feed(const std::string& s) { feed_kind(s, nullptr); }
 
 // ---- lobby: chat log, ready flags, round trip times, LAN discovery ----
 std::deque<std::string> g_chat;
@@ -1414,7 +1420,9 @@ void on_frame(void*, int, void*)
     }
 }
 
-int text_width(const std::string& s) { return (int)s.size() * 9; } // Arial 18 bold, approx.
+// Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
+// its width, every arrow label moved by its 3-byte arrow)
+int text_width(const std::string& s) { return utf8::overlay_width(s); }
 
 // world marks: "look here" pings and beacons of the stage modules (a city under attack, a
 // partner's ship ...): a label at the world point, an arrow on the screen edge when it is off screen
@@ -1587,6 +1595,9 @@ void menu_tick(double now)
     H->run_outside_frame(menu_check_task, nullptr);
 }
 
+bool g_status_block_fix = true;   // BUG-0155
+std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
+
 void on_overlay(void*, int, void*)
 {
     if (!g_overlay)
@@ -1641,9 +1652,16 @@ void on_overlay(void*, int, void*)
         head = std::string("CO-OP guest  ") + (g_sess.connected() ? "connected" : "connecting...");
     else if (g_echo)
         head = "CO-OP echo test";
-    if (head.empty())
+    // BUG-0155: the block is not drawn over the co-op window or a menu (the lobby shows the same),
+    // and the notification panels start below it; `coop.corefix status_block 0` = the old way
+    // (g_menu_up is only refreshed in a game: in the main menu the window's own flag counts)
+    bool covered = coop_ui::is_open() || (!labels && g_local);
+    if (head.empty() || (covered && g_status_block_fix)) {
+        g_status_block = {0, 0, 0, 0};
+        notify::set_top_min(0);
         return;
-    int x = sw > 0 ? sw - 480 : 900, y = 70;
+    }
+    int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
     if (g_sess.connected() && g_mode == modes::kCreature) {
@@ -1661,8 +1679,11 @@ void on_overlay(void*, int, void*)
             line += std::string("  [") + modes::mode_name(ls.mode) + (same_place(ls) || ls.mode != g_mode ? "" : ", other world") + "]";
         }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
+        wmax = std::max(wmax, utf8::overlay_width(line));
         y += 20;
     }
+    g_status_block = {x, 70, x + wmax, y};
+    notify::set_top_min(g_status_block_fix ? (float)y + 8 : 0.f);
     // notices are notification panels now (notify.cpp); the history is in the co-op window
 }
 
@@ -1778,7 +1799,7 @@ void setup_callbacks()
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
-        feed(p.name + " joined the pack");
+        feed_kind(p.name + " joined the pack", "join"); // a name like "Lost" is not danger (BUG-0129)
         chat_log("* " + p.name + " joined");
         g_lobby_dirty = true;
         bool own_worlds = g_adapter && g_adapter->own_worlds;
@@ -1990,7 +2011,7 @@ void setup_callbacks()
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
-        feed(it->second.name + " left");
+        feed_kind(it->second.name + " left", "leave");
         chat_log("* " + it->second.name + " left");
         g_ready.erase(id);
         g_lobby_dirty = true;
@@ -2006,7 +2027,7 @@ void setup_callbacks()
         r.buf.push(s, H->time_seconds());
     };
     g_sess.cb.chat = [](uint8_t id, const std::string& t) {
-        feed("<" + g_sess.name_of(id) + "> " + t);
+        feed_kind("<" + g_sess.name_of(id) + "> " + t, "chat"); // never guessed from the words (BUG-0129)
         chat_log(g_sess.name_of(id) + ": " + t);
     };
 }
@@ -2125,7 +2146,7 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
 {
     uint16_t port = argc > 1 ? (uint16_t)atoi(argv[1]) : default_port();
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_host(port, err)) {
         SAY("host failed: %s", err.c_str());
@@ -2142,7 +2163,7 @@ int c_join(void*, int argc, const char* const* argv, SkOut* out)
         return 1;
     }
     if (argc > 2)
-        g_name = argv[2];
+        g_name = utf8::player_name(argv[2]);
     std::string err;
     if (!do_join(argv[1], err)) {
         SAY("join failed: %s", err.c_str());
@@ -2168,6 +2189,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", tribe::status().c_str());
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
+    SAY("status block (%d %d %d %d)\n", g_status_block[0], g_status_block[1], g_status_block[2], g_status_block[3]);
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
@@ -2214,10 +2236,16 @@ int c_status(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// BUG-0164: capped like the co-op window (24 characters); in a session the others keep the name the
+// session started with, so a change is refused there (`coop.ui` / the window: before host / join)
 int c_name(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && g_sess.role() != net::Role::None) {
+        SAY("name: %s (cannot change it in a session; leave first)", g_name.c_str());
+        return 1;
+    }
     if (argc > 1)
-        g_name = argv[1];
+        g_name = utf8::player_name(argv[1]);
     SAY("name: %s", g_name.c_str());
     return 0;
 }
@@ -2872,7 +2900,7 @@ void init_ui()
 {
     coop_ui::Api a;
     a.name = [] { return g_name; };
-    a.set_name = [](const std::string& n) { g_name = n; };
+    a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = do_join;
     a.host = do_host;
     a.leave = do_leave;
@@ -3036,7 +3064,9 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"first_ack", &net::g_fix.first_ack}, {"time_wrap", &net::g_fix.time_wrap},
                 {"lan_prune", &net::g_fix.lan_prune}, {"addr_check", &net::g_fix.addr_check},
                 {"host_away_reset", &g_host_away_fix}, {"ui_status", &coop_ui::g_status_fix},
-                {"lan_pages", &coop_ui::g_lan_pages_fix}};
+                {"lan_pages", &coop_ui::g_lan_pages_fix},
+                {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
+                {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;
@@ -3067,9 +3097,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->log(M, SK_ERROR, "required game symbols missing - coop disabled");
         return nullptr;
     }
-    char nm[64];
+    char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
-    g_name = nm;
+    g_name = utf8::player_name(nm);
+    if (g_name.empty())
+        g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
     world::init(H, M, feed);

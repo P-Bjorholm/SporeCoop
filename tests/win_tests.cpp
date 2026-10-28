@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "../mods/coop/slotfs.h"
+#include "../sporekit/inifile.h"
 #include "../updater/winupdate.h"
 
 static int g_fail;
@@ -254,12 +255,38 @@ static void test_slot_write_fails()
     CHECK(!exists(b + L"\\sporecoop.txt"));
 }
 
+// BUG-0142: a name outside the ANSI codepage survives a write and a read through the profile API;
+// a coop.ini edited by hand in UTF-8 (with or without a BOM) is read as UTF-8
+static void test_ini_unicode()
+{
+    std::wstring f = g_tmp + L"\\coop.ini";
+    const char* name = "\xD0\x92\xD0\xB0\xD1\x81\xD1\x8F \xE5\xA4\xAA\xE9\x83\x8E"; // "Вася 太郎"
+    put(f, "; SporeCoop settings\r\n[coop]\r\nname=Player\r\nshare_world=1\r\n");
+    CHECK(skini::write_str(f, "coop", "name", name));
+    CHECK(skini::read_str(f, "coop", "name", "") == name);
+    CHECK(skini::read_int(f, "coop", "share_world", 0) == 1); // the rest of the file is kept
+    std::wstring g = g_tmp + L"\\hand.ini";
+    put(g, "[coop]\r\nname=J\xC3\xB6rg\r\n"); // UTF-8 without a BOM (Notepad, any Linux editor)
+    CHECK(skini::read_str(g, "coop", "name", "") == "J\xC3\xB6rg");
+    std::wstring h = g_tmp + L"\\bom.ini";
+    put(h, "\xEF\xBB\xBF[coop]\r\nname=\xD0\x92\xD0\xB0\xD1\x81\xD1\x8F\r\n"); // UTF-8 with a BOM
+    CHECK(skini::read_str(h, "coop", "name", "") == "\xD0\x92\xD0\xB0\xD1\x81\xD1\x8F");
+    std::wstring a = g_tmp + L"\\ascii.ini";
+    put(a, "[sporekit]\r\nlog_level=1\r\n");
+    CHECK(skini::read_str(a, "sporekit", "log_level", "") == "1");
+    CHECK(get(a) == "[sporekit]\r\nlog_level=1\r\n"); // ASCII files stay ASCII (tools edit them with sed)
+    std::wstring m = g_tmp + L"\\missing.ini"; // a new file gets a non-ASCII value
+    CHECK(skini::write_str(m, "coop", "name", name));
+    CHECK(skini::read_str(m, "coop", "name", "") == name);
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--old")) {
         upd::g_old_fix = false;
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
+        skini::g_unicode_fix = false;
     }
     wchar_t t[MAX_PATH];
     GetTempPathW(MAX_PATH, t);
@@ -272,6 +299,7 @@ int main(int argc, char** argv)
     test_slot_busy();
     test_slot_match();
     test_slot_write_fails();
+    test_ini_unicode();
     rmtree(g_tmp);
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

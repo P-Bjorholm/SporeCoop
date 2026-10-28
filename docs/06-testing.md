@@ -1065,3 +1065,31 @@ Each runs on the Space fixture in ~1-3 min (warm) and has `--without-fix`, which
   leaves while it is in the main menu (`coop.menu`): no "(host) is back" line in the guest's log
   after `disconnected:`, and the window status starts with "Disconnected". `--without-fix` sets
   the four switches to 0.
+## SporeKit crash reports, text and the co-op window (2026-10-28, fix/w3-sys)
+<a id="testing-sys-w3"></a>
+
+* `kit_crash.py` (suite `kit_crash`, one game): `crash.test stackoverflow` (a thread recursing
+  without end: a report naming 0xC00000FD, BUG-0056), `crash.test oom` (every report archive fails
+  like an allocation in a full address space: the minidump and `last-problem.txt` are still
+  written, the next start tells the player, BUG-0127), `prune` (12 planted old crash reports, dumps,
+  reports and archives: only 5 / 5 / 5 / 3 stay, the file `last-problem.txt` names stays, BUG-0137).
+  `--old` switches `kit.fix stackov / crashsafe / logprune` off: every case fails. Under Wine a
+  stack overflow in a worker thread kills only that thread: the game goes on (the report is
+  written anyway with the fix).
+* `kit_freeze.py hookrace`: `kit.test.hookchurn 200 3 nogate` makes the hook while 3 threads run
+  through the function (BUG-0202); `kit.fix hookpark 0` crashes the game (eip two bytes into the
+  hooked function). The `hookchurn` case switches `hookpark` off itself: it tests MinHook's removal
+  (BUG-0132).
+* `win_unit.py`: `test_ini_unicode` writes "Вася 太郎" through the profile API into an ASCII
+  coop.ini, reads a UTF-8 file edited by hand (BUG-0142); `--old` reads "????" / "JÃ¶rg".
+* `make test` runs `tests/text_tests.cpp` (net strings cut between characters, name caps, overlay
+  widths by letter cells, notification lines; `text_tests --old` fails, BUG-0129/0159/0164).
+* `coop_window_layout.py` (suite `window_layout`, one game in the main menu): the resolution goes
+  to 1280x720 through `SporeCoop::Renderer_SetVideoMode` (`call ... thiscall <renderer> <fs> w h
+  -1`); the window opened again has every widget on the screen (BUG-0113); hosting, the overlay's
+  status block (`coop.status`: `status block (x1 y1 x2 y2)`) is not drawn while the window is open
+  and the first panel starts below it (BUG-0155). `coop.corefix window_recenter 0` /
+  `status_block 0` (`--old`) fail. `coop.uistate` prints `screen W H`.
+* New switches in `coop.corefix`: `text_utf8`, `notify_text` (the byte-based text code),
+  `window_recenter`, `status_block`; in `kit.fix`: `stackov`, `crashsafe`, `logprune`, `iniutf`,
+  `hookpark`.

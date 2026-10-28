@@ -1,5 +1,6 @@
 // SporeKit entry point (called by the loader at the exe entry point) and the SkHost table.
 #include "core.h"
+#include "inifile.h"
 
 #include <cstdio>
 
@@ -14,17 +15,16 @@ const std::wstring& game_dir() { return g_game_dir; }
 const std::wstring& mods_dirw() { return g_mods_dir; }
 int instance_id() { return g_instance; }
 
+// mods\*.ini in Unicode (BUG-0142, sporekit/inifile.h; kit.fix iniutf 0: the old ANSI files)
 int ini_int(const std::wstring& file, const char* section, const char* key, int def)
 {
-    return (int)GetPrivateProfileIntW(widen(section).c_str(), widen(key).c_str(), def, file.c_str());
+    return skini::read_int(file, section, key, def);
 }
 
 std::string ini_str(const std::wstring& file, const char* section, const char* key, const char* def)
 {
-    wchar_t buf[1024];
-    GetPrivateProfileStringW(widen(section).c_str(), widen(key).c_str(), widen(def).c_str(), buf,
-                             1024, file.c_str());
-    return narrow(buf);
+    skini::g_unicode_fix = fixed(g_fix_iniutf);
+    return skini::read_str(file, section, key, def);
 }
 
 // ---------------- SkHost implementation ----------------
@@ -88,14 +88,18 @@ static void h_config_str(SkMod* m, const char* s, const char* k, const char* d, 
 {
     std::string v = ini_str(mod_ini(m), s, k, d ? d : "");
     if (sz > 0) {
-        strncpy(buf, v.c_str(), sz - 1);
-        buf[sz - 1] = 0;
+        size_t n = v.size() < (size_t)sz - 1 ? v.size() : (size_t)sz - 1;
+        if (n < v.size())
+            while (n > 0 && ((unsigned char)v[n] & 0xC0) == 0x80) // never inside a UTF-8 character
+                n--;
+        memcpy(buf, v.data(), n);
+        buf[n] = 0;
     }
 }
 static int h_config_set_str(SkMod* m, const char* s, const char* k, const char* v)
 {
-    return WritePrivateProfileStringW(widen(s).c_str(), widen(k).c_str(), v ? widen(v).c_str() : nullptr,
-                                      mod_ini(m).c_str()) ? 0 : 1;
+    skini::g_unicode_fix = fixed(g_fix_iniutf);
+    return skini::write_str(mod_ini(m), s, k, v) ? 0 : 1;
 }
 static void h_run_outside_frame(SkTaskFn fn, void* u)
 {

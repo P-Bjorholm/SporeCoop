@@ -37,6 +37,28 @@
 - **Creature: social ability keys are ignored while the cheat console is open**, and a digit typed
   in another window no longer plays one when the game comes back to the front (BUG-0149, not yet
   verified in a game test).
+- **Crash reports in hard cases**: a stack overflow now writes a crash report (before, the game
+  vanished without one), and a crash in a game that ran out of memory still writes the minidump and
+  tells you at the next start where the report is (BUG-0056, BUG-0127). Test: `kit_crash.py`.
+- **Old crash reports are removed**: `mods\logs` keeps the newest 5 crash reports with their
+  dumps, 5 other reports and 3 report archives instead of collecting them for ever (BUG-0137).
+- **Player names in any language**: a Cyrillic or Chinese name survives a restart (it was saved as
+  "????"), and a name typed into `coop.ini` with a normal editor (UTF-8) is read correctly
+  (BUG-0142); names set in the console are capped at 24 characters and cannot change during a
+  session, long texts are never cut inside a character, the creations path in the log keeps its
+  non-Latin letters (BUG-0164). Tests: `win_unit.py`, `make test`.
+- **Chat and notifications**: a Russian or Chinese chat message gets the same room as an English
+  one in the notification panel and never ends in a broken character; chat always looks like chat
+  (a message with "lost" in it is no longer a red alert, a player named "Lost" joining neither),
+  and the co-op window's chat wraps long lines and scrolls back through the last 50 lines with the
+  arrows on its right (BUG-0129).
+- **Name tags and banners with non-Latin text are centred** (Cyrillic names, the arrows of off-screen
+  partners, the Russian contract banner) (BUG-0159).
+- **The co-op window after a resolution change** opens centred on the new screen instead of partly
+  off it, and the overlay's co-op status text is no longer drawn over the co-op window or the
+  notification panels at 1280x720 / 1366x768 (BUG-0113, BUG-0155). Test: `coop_window_layout.py`.
+- **Hot reload of the mod no longer risks crashing a game thread** that was running a re-hooked
+  function at that moment (BUG-0202). Test: `kit_freeze.py` (hookrace).
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no
