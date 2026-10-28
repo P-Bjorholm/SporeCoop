@@ -11,6 +11,7 @@
 #include "shared.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/validate.h"
 #include "sporekit_game.hpp"
 
 using skg::thiscall;
@@ -724,7 +725,8 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     int type = (int)r.u32();
     float pos[3] = {r.f32(), r.f32(), r.f32()};
     void* pc = player_civ();
-    if (!r.ok() || !pc || !C.vote)
+    // the game's superweapon types are 0..11 (GetSuperweaponCost, docs/re/civ.md)
+    if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
         return;
     static int s_type;
     static float s_pos[3];
@@ -1185,6 +1187,8 @@ static void host_command(uint8_t from, net::Reader& r)
     }
     if (kind == CMD_GIVE) {
         uint8_t what = r.u8(), to = r.u8(), n = r.u8();
+        if (!r.ok() || !net::is_player(*C.sess, to))
+            return reject();
         int given = 0;
         for (int i = 0; i < n && r.ok(); i++) {
             uint16_t id = r.u16();
@@ -1367,11 +1371,11 @@ static void kill_local(void* v)
     g_applying = false;
 }
 
-static void guest_cities(net::Reader& r)
+static bool guest_cities(net::Reader& r) // false: the list does not fit the message
 {
     uint8_t total = r.u8(), c0 = r.u8(), nc = r.u8();
-    if (!r.ok())
-        return;
+    if (!r.ok() || c0 + nc > total)
+        return false;
     if (g_host_cities.size() != total)
         g_host_cities.resize(total, nullptr);
     for (int i = 0; i < nc && r.ok(); i++) {
@@ -1381,8 +1385,8 @@ static void guest_cities(net::Reader& r)
         uint8_t owner = r.u8();
         float capture = r.f32();
         uint32_t capture_by = r.u32();
-        if (!r.ok() || c0 + i >= total)
-            return;
+        if (!r.ok())
+            return false;
         void* c = local_city_near(p);
         g_host_cities[c0 + i] = c;
         if (!c)
@@ -1406,6 +1410,7 @@ static void guest_cities(net::Reader& r)
             g_applying = false;
         }
     }
+    return true;
 }
 
 static void guest_nodes_and_buildings(net::Reader& r)
@@ -1453,15 +1458,15 @@ static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8();
-    if (!r.ok())
+    if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
         return;
     if (cycle != g_rx_cycle) {
         g_rx_cycle = cycle;
         g_cycle_ids.clear();
         g_cycle_chunks.clear();
     }
-    g_cycle_chunks.insert(chunk);
-    guest_cities(r);
+    if (!guest_cities(r))
+        return;
     guest_nodes_and_buildings(r);
     double now = H->time_seconds();
     uint8_t n = r.u8();
@@ -1518,6 +1523,9 @@ static void guest_state(net::Reader& r)
         g.listed = false;
         g_gv_of[v] = id;
     }
+    if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
+        return;
+    g_cycle_chunks.insert(chunk);
     if (chunk + 1 < chunks)
         return;
     // only a complete cycle tells which vehicles are gone: with a chunk lost (or late) every

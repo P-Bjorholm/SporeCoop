@@ -120,3 +120,14 @@ then the rest of the unreliable queue is dropped (stale by the next frame). Big 
 
 M1–M3: direct IP (UDP port forwarding on the host or a VPN network). Later: a rendezvous server
 for UDP hole punching (a small service you can host yourself).
+
+## Messages from other players (2026-10-27, fix/w1-net)
+<a id="netcode-untrusted"></a>
+
+Every handler treats a message from another player as untrusted: it reads the whole message and
+checks it (`r.ok()` after the last field, counts and indices against what this machine has, sizes
+against the buffer they describe, numbers finite and in range, player ids against the session)
+before it changes anything, and a snapshot chunk that does not parse does not count for its cycle.
+A message is used and passed on only when it fits the player it came from. Shared checks: `mods/coop/net/validate.h` (unit tests
+`tests/validate_tests.cpp`); in game: `coop_net_robust.py`
+([06-testing](06-testing.md#testing-net-robust)).

@@ -8,6 +8,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/validate.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 
@@ -50,6 +51,7 @@ static bool g_repair_fix = true;   // coop.space repairfix 0: the old head start
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
+static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
 static std::unordered_map<uint8_t, uint32_t> g_last_star; // partner -> last known StarID
 static bool g_applying;
 static float g_terra_acc[3];
@@ -768,18 +770,29 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_SPACE || !g_ok)
         return;
-    if (C.sess->role() == net::Role::Host) { // relay to the other guests
+    const uint8_t* body = r.cur();
+    size_t body_n = r.left();
+    uint8_t kind = r.u8(), origin = r.u8();
+    if (!r.ok())
+        return;
+    bool host = C.sess->role() == net::Role::Host;
+    if (!net::space_origin_ok(host, from, origin, kind)) {
+        g_bad_origin++;
+        return;
+    }
+    if (host) { // relay to the other guests
         net::Writer w;
-        w.raw(r.cur(), r.left());
+        w.raw(body, body_n);
         C.sess->broadcast_reliable(net::MSG_SPACE, w, from);
     }
-    uint8_t kind = r.u8(), origin = r.u8();
-    if (!r.ok() || origin == C.sess->my_id())
+    if (origin == C.sess->my_id())
         return;
     double now = H->time_seconds();
     switch (kind) {
     case K_DOWN: {
         uint8_t st = r.u8(), secs = r.u8();
+        if (!r.ok())
+            break;
         if (st == 1) {
             g_partner_down[origin] = now + secs;
             if (C.notice)
@@ -794,6 +807,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     case K_RAID: {
         uint32_t place = r.u32();
         uint8_t st = r.u8();
+        if (!r.ok())
+            break;
         if (st == 3) {
             g_raids_told++;
             if (star_of(place))
@@ -808,6 +823,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     case K_MISSION: {
         r.f32();
         uint8_t n = r.u8();
+        if (!r.ok() || r.left() < (size_t)n * 12)
+            break; // cut: no notice, no tools
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
         void* inv = inventory();
@@ -1080,10 +1097,10 @@ std::string status()
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
              "tools_got=%u terra_sent=%u terra_got=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
-             "partners_here=%u partners_down=%u\n",
+             "partners_here=%u partners_down=%u bad_origin=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
              g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
-             (unsigned)partners_here().size(), (unsigned)g_partner_down.size());
+             (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin);
     return b + spaceext::status_all();
 }
 

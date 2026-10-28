@@ -73,6 +73,8 @@ test:
 	$(B)/host/net_tests
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	$(MAKE) --no-print-directory test-asan
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall -fsanitize=address,undefined -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
+	$(B)/host/validate_tests
 	python3 tools/re_lint.py
 	python3 tools/docs_lint.py
 	python3 tools/tickets.py check

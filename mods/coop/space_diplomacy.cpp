@@ -673,6 +673,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         bool last = r.u8() != 0;
         uint8_t reply_to = r.u8();
         uint16_t n = r.u16();
+        std::vector<Rec> part;
         for (uint16_t i = 0; i < n && r.ok(); i++) {
             Rec h{r.u32(), r.u32() & (3 | kMet | kContacted), {}};
             uint8_t k = r.u8();
@@ -682,9 +683,15 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
                 h.ev.push_back({id, v});
             }
             std::sort(h.ev.begin(), h.ev.end());
-            if (r.ok())
-                g_snap_in.push_back(std::move(h));
+            part.push_back(std::move(h));
         }
+        if (!r.ok()) { // a cut chunk: the table is incomplete, wait for the next one
+            if (!g_snap_ready)
+                g_snap_in.clear();
+            return;
+        }
+        for (auto& h : part)
+            g_snap_in.push_back(std::move(h));
         if (last) {
             g_snap_ready = true;
             g_snap_asked = reply_to == spaceext::my_id();

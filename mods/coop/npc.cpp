@@ -16,6 +16,7 @@
 #include "creations.h"
 #include "driver.h"
 #include "game.h"
+#include "net/validate.h"
 #include "world.h"
 #include "sporekit_game.hpp"
 
@@ -29,6 +30,7 @@ static bool g_enabled = true;
 static constexpr float kRelevance = 110.f;  // m around a guest
 static constexpr float kHysteresis = 20.f;  // keep until kRelevance + this
 static constexpr double kStateInterval = 0.1;
+static constexpr float kMaxHit = 10000.f; // a guest's reported hit (MSG_DAMAGE_REQ) is clamped to 0..this
 static constexpr float kRtsRelevance = 250.f; // tribe stage: m around the player tribe
 
 // NPC creatures are shared in the creature stage and, around the player tribe, in the tribe stage
@@ -708,10 +710,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         uint32_t t = r.u32();
         uint8_t n = r.u8();
+        bool whole = r.ok() && n > 0;
         for (int i = 0; i < n && r.ok(); i++) {
             net::NpcState st;
-            if (!st.read(r))
+            if (!st.read(r)) {
+                whole = false;
                 break;
+            }
             auto it = g_proxies.find(st.net_id);
             if (it == g_proxies.end())
                 continue;
@@ -725,7 +730,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             it->second.buf.push(s, now);
             it->second.last_rx = now;
         }
-        g_last_states_rx = now;
+        if (whole) // the host sends states (an empty or cut batch says nothing about stale proxies)
+            g_last_states_rx = now;
         break;
     }
     case net::MSG_DAMAGE_REQ: { // host: a guest hit one of our NPCs
@@ -737,7 +743,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         void* npc = it->second;
         void* attacker = C.puppet_of(from);
-        float dmg = teamplay::on_player_hit(npc, from, q.damage);
+        float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
         // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
         // A guest's puppet is not it, so a guest's kill paid nothing. The pack shares its progress:

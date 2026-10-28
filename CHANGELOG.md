@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **Hardened the handling of network messages from other players** (BUG-0201). Tests: unit tests
+  `tests/validate_tests.cpp` (`make test`), `coop_net_robust.py` (suite `net_robust`).
 - **SporeKit's diagnostics never freeze the game**: `stack`, `hangdump` and the hang watchdog could
   stop the game for good when the game was allocating memory at that moment; `sk shot`,
   `sk wait.frames`, `sk stack`, `sk hangdump` in the cheat console froze it (they are now refused

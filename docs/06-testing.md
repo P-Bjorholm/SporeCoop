@@ -903,3 +903,23 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   check 8 s, `mod.reload coop` meanwhile. Under Wine the new shadow copy of coop.dll loads at the
   old base (the old one is unmapped), so an old thread does not fault: it runs on in the new
   image's identical code. The test therefore asserts the new image logs only its own result.
+
+## Malformed messages from a joined player (coop_net_robust.py, 2026-10-27, fix/w1-net)
+<a id="testing-net-robust"></a>
+
+* `coop_net_robust.py` (suite `net_robust`, ~4 min cold) joins two scripted guests (the protocol
+  of `tools/fakepeer.py`) to the host of a normal two-game session in the Creature stage. Guest A
+  sends malformed and random messages of every type a guest sends; guest B checks what the host
+  passes on. The host must keep running without a fault and the real guest must stay in the
+  session.
+* fakepeer packs every unacknowledged reliable message into one datagram: with more than a few
+  dozen in flight the datagram is larger than the host reads and is never acknowledged (the first
+  version of the test waited forever). Keep a scripted guest's reliable messages in flight small.
+* Joining fake guests makes the host save and share its world (the modal "game saved" box stops
+  the host's frames): the test presses Enter while the frames stand still, as `wait_guest_in`.
+* The checks themselves (`mods/coop/net/validate.h`) are unit tested in `tests/validate_tests.cpp`
+  (`make test`, built with ASan and UBSan).
+* Seen on the way (lane 7, a 22-test run of 40 min): `coop_space_contracts.py` failed once with the
+  known caught fault at 0x11ECE4F on both games after a cold start, and its retry once in the survey
+  ("both at Kaver: surveyed (0/2)": the guest's page still listed Kaver while the host was at Rebel);
+  two cold runs right after passed (out/lab/20261027-195928). Treat a single survey failure as flaky.

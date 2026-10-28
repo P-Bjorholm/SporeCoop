@@ -27,6 +27,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/validate.h"
 #include "space_ext.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
@@ -56,6 +57,7 @@ constexpr uint32_t kMsgInventoryChanged = 0x057F3749; // posted by AddItem / Tak
 constexpr double kSalePremium = 2.0, kOfferPremium = 1.5;
 constexpr int kSaleStep = 10, kDemand = 30;   // a partner colony buys up to kDemand units ...
 constexpr double kDemandWindow = 600.0;        // ... per 10 minutes
+constexpr size_t kMaxOffers = 16;             // partners' offers waiting for an answer
 constexpr double kOfferLife = 120.0;           // an unanswered offer is declined after 2 minutes
 
 static const SkHost* H;
@@ -604,16 +606,18 @@ static void refund(const Out& o, int n, const std::string& why)
                      (ok ? "" : spaceext::tr(": no room, lost", ": нет места, потеряно")));
 }
 
-static void answer_offer(uint32_t id, bool accept)
+static void answer_offer(uint32_t id, bool accept, int from = -1)
 {
     for (size_t i = 0; i < g_offers.size(); i++) {
-        if (g_offers[i].id != id)
+        if (g_offers[i].id != id || (from >= 0 && g_offers[i].from != from))
             continue;
         Offer of = g_offers[i];
         g_offers.erase(g_offers.begin() + i);
         uint8_t reason = 0; // 0 declined, 1 no money, 2 no cargo room, 3 not in space
         int got = 0;
-        int total = of.n * of.price;
+        int total = 0;
+        if (!net::money_total(of.n, of.price, total))
+            accept = false; // (K_OFFER keeps the sum in range)
         if (accept) {
             if (!spaceext::in_space() || !inventory())
                 reason = 3;
@@ -644,10 +648,10 @@ static void answer_offer(uint32_t id, bool accept)
 }
 
 // ---------------- messages ----------------
-static Out* pending(uint32_t id, uint8_t kind)
+static Out* pending(uint32_t id, uint8_t kind, uint8_t to)
 {
     for (auto& o : g_out)
-        if (o.id == id && o.kind == kind)
+        if (o.id == id && o.kind == kind && o.to == to)
             return &o;
     return nullptr;
 }
@@ -690,7 +694,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     }
     case K_TOOL_ACK: {
         int got = (int)r.u32(), back = (int)r.u32();
-        Out* o = pending(id, K_TOOL);
+        Out* o = pending(id, K_TOOL, origin);
         if (!r.ok() || !o)
             return;
         Out copy = *o;
@@ -721,14 +725,14 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         spaceext::notice(got ? from + spaceext::tr(" sold ", " продал(а) вашей колонии ") + std::to_string(n) + " " + nm +
                                    spaceext::tr(" to your colony: it is in your cargo hold (the galaxy paid $",
                                                 ": они в вашем трюме (галактика заплатила $") +
-                                   std::to_string(n * price) + ")"
+                                   std::to_string((long long)n * price) + ")"
                              : from + spaceext::tr(" wanted to sell you spice: no free cargo slot",
                                                    " хотел(а) продать вам специи: в трюме нет места"));
         break;
     }
     case K_SELL_ACK: {
         int got = (int)r.u32();
-        Out* o = pending(id, K_SELL);
+        Out* o = pending(id, K_SELL, origin);
         if (!r.ok() || !o)
             return;
         Out copy = *o;
@@ -757,18 +761,24 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         Key k = get_key(r);
         int n = (int)r.u32(), price = (int)r.u32();
         std::string nm = r.str8();
-        if (!r.ok() || n <= 0 || n > 999 || price < 0)
+        int sum = 0;
+        if (!r.ok() || n <= 0 || n > 999 || !net::money_total(n, price, sum))
             return;
+        for (auto& of : g_offers)
+            if (of.id == id && of.from == origin)
+                return; // this offer again
+        if (g_offers.size() >= kMaxOffers)
+            return; // the page shows a few; an answer frees a place
         g_offers.push_back({id, origin, k, n, price, planet, nm, H->time_seconds()});
         g_offers_got++;
         spaceext::notice(from + spaceext::tr(" offers ", " предлагает ") + std::to_string(n) + " " + nm + spaceext::tr(" for $", " за $") +
-                         std::to_string(n * price) + spaceext::tr(": accept on the Space page (F9)", ": принять на странице Космос (F9)"));
+                         std::to_string(sum) + spaceext::tr(": accept on the Space page (F9)", ": принять на странице Космос (F9)"));
         break;
     }
     case K_OFFER_ACK: {
         int got = (int)r.u32();
         uint8_t reason = r.u8();
-        Out* o = pending(id, K_OFFER);
+        Out* o = pending(id, K_OFFER, origin);
         if (!r.ok() || !o)
             return;
         Out copy = *o;
@@ -790,7 +800,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         break;
     }
     case K_OFFER_CANCEL:
-        answer_offer(id, false);
+        answer_offer(id, false, origin);
         break;
     default:
         break;
