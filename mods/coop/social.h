@@ -36,6 +36,8 @@ void on_session_end();
 bool goal_dna(float delta);
 std::string status();
 std::string species_dump(); // coop.social species (tests)
+bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, tests: a goal card's reward (K_GOAL)
+extern bool g_goal_owe_fix; // BUG-0205: a K_GOAL without a host creature waits for it (false: dropped)
 bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the
 // stimulus log

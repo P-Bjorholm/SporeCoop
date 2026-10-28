@@ -32,6 +32,8 @@ static void creature_rows(std::vector<Row>& rows)
             Row r;
             r.kind = 'c';
             r.key = game::species_key(o).instance;
+            if (!r.key && o != u->av) // a creature object without a species: not placed in the world
+                return true;
             r.alive = game::is_dead(o) ? 0 : 1;
             r.hp = game::health(o);
             r.ai = game::is_puppet(o) ? 0 : 1;

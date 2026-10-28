@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- **Creature: a goal card's reward a guest earns while the host is in its editor is no longer
+  lost**; it is paid when the host's creature is back. A guest whose host stays in an editor or on a
+  loading screen plays on with its own creatures, as when the host is in the main menu (BUG-0205).
 - **A damaged creations package (My Creations) can no longer crash the game while it is read**:
   a 64-bit index offset could wrap the bounds check (BUG-0208, found by the new decoder fuzzer).
 - **Space: the "Jump to" button of the co-op window jumps to the partner it names** (with 3 or more

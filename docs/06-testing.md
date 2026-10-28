@@ -1158,3 +1158,18 @@ tickets. Each needs ~1.5-3 min on a warm lane.
 * A capture for tests: `coop.civ capture <city index>` (the game's Capture, plays the caption).
 * `glyph_lint.py` (in `make test`): every non-ASCII character in a string literal of mods/coop must
   be in the overlay font (Arial / WGL4 subset, BUG-0161).
+
+## Object census: coop.census and census.py (2026-10-28, fix/w4-census)
+<a id="testing-census"></a>
+
+* `coop.census` prints the shared objects of the current mode as the game has them, one line each:
+  Creature stage: every live creature (`own=avatar|npc|proxy|puppet|local`, the net id of a host NPC
+  or of a guest's proxy, species, dead flag, health, whether its own AI runs, position); Civilization:
+  every vehicle (net id, owner, political id, position). Read-only. Format: mods/coop/census.h.
+* `tools/tests/census.py`: `dump(con)`, `diff(host, guest)` (by net id: only on one side, dead on
+  one side, another owner, more than N m apart) and `moved(a, b)` (objects of one machine that moved
+  between two dumps: a frozen proxy shows as 0 m). `SPORE_LANE=N python3 tools/tests/census.py`
+  prints the diff of a running lane.
+* Not there yet (dev/census had them as a plan): Cell mirrors, tribe citizens, Space ships, the
+  per-machine invariants ("inv" lines) and planted problems for a self-test.
+* `coop_away_editor.py` (BUG-0205, creature fixture, ~5 min): uses `moved` as its oracle.
