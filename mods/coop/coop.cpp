@@ -3272,7 +3272,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             const net::PlayerState& s = r.buf.latest();
             if (s.mode != modes::kSpace)
                 continue;
-            v.push_back({id, r.name, s.world, s.pos, r.puppet});
+            bool playing = r.buf.age(H->time_seconds()) <= 3.0 && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD);
+            v.push_back({id, r.name, s.world, s.pos, r.puppet, playing});
         }
         return v;
     };

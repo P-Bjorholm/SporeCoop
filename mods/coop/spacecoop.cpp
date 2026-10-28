@@ -47,6 +47,7 @@ struct Key {
 // ---- state ----
 static double g_down_until, g_repair_t, g_last_down;
 static bool g_down, g_down_fresh; // fresh: disabled since the last down_tick (BUG-0147)
+static bool g_helper_fix = true;   // coop.space helperfix 0: any partner here rescues, also a disabled or frozen one (BUG-0131)
 static bool g_repair_fix = true;   // coop.space repairfix 0: the old head start of up to 0.5 s (tests)
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
@@ -124,6 +125,17 @@ static std::vector<Partner> partners_here(bool friends = true)
     return r;
 }
 
+// BUG-0131: the partners who can rescue or repair us: playing (a recent state, in the world, not
+// dead) and not disabled themselves. Two disabled ships next to each other repaired each other.
+static std::vector<Partner> helpers_here()
+{
+    std::vector<Partner> r = partners_here();
+    if (g_helper_fix)
+        r.erase(std::remove_if(r.begin(), r.end(), [](const Partner& p) { return !p.playing || g_partner_down.count(p.id); }),
+                r.end());
+    return r;
+}
+
 static void send(uint8_t kind, const net::Writer& body)
 {
     if (!connected())
@@ -157,7 +169,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
     // the next hit kill it next to the partner, play_space.py 2026-10-23)
     if (hp - dmg >= 1.f || F<int>(ufo, kState) == 2 || now - g_last_down < 60)
         return dmg;
-    auto here = partners_here();
+    auto here = helpers_here();
     if (here.empty())
         return dmg; // nobody can help: the native death
     // disabled instead of destroyed: HP stays at 1, no more damage, no shooting
@@ -225,7 +237,7 @@ static void down_tick(double now)
     }
     F<uint8_t>(u, kInvincible) = 1;
     bool close_by = false;
-    for (auto& p : partners_here())
+    for (auto& p : helpers_here())
         if (repair_distance(p.pos, ufo_pos(u)) < g_repair_dist)
             close_by = true;
     static double last = now;
@@ -1334,6 +1346,10 @@ std::string debug(const std::vector<std::string>& a)
             return "no active planet / the ship is not flying";
         thiscall<void>(f, mode);
         return "landing";
+    }
+    if (a[0] == "helperfix" && a.size() > 1) { // BUG-0131: 0 = a disabled or frozen partner rescues too
+        g_helper_fix = a[1] != "0";
+        return std::string("helperfix ") + (g_helper_fix ? "1" : "0");
     }
     if (a[0] == "repairfix" && a.size() > 1) { // BUG-0147: 0 = a new disable starts with the old step
         g_repair_fix = a[1] != "0";

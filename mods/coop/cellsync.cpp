@@ -137,6 +137,7 @@ static bool g_fix_resend = true;   // BUG-0128: food / DNA totals sent again eve
 static bool g_fix_kostale = true;  // BUG-0061: a remote knockout ends when its owner leaves or stops refreshing it
 static bool g_fix_koreset = true;  // BUG-0070: our knockout ends with the session or the stage
 static bool g_fix_bodylevel = true; // BUG-0041: a level-up during the regrowth gives the level's own size
+static bool g_fix_rescue = true;    // BUG-0131: a knocked-out partner rescues, revives nobody
 static bool g_fix_guestbite = true; // BUG-0078: a guest's bite passes DamageCell's gate (ShouldNotAttack(victim, puppet), +0x17C, +0x111)
 static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
@@ -168,27 +169,8 @@ static net::Vec3 g_down_pos;
 static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
 static float g_body_size = 0; // the target size we wrote, to notice the game resizing the avatar
 
-static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr)
-{
-    uint8_t* a = avatar();
-    if (!a || !C.partners)
-        return {};
-    net::Vec3 me = pos_of(a);
-    std::string best;
-    float bd = max_dist;
-    for (auto& [n, p] : C.partners()) {
-        float d = net::dist(me, p);
-        if (d <= bd) {
-            bd = d;
-            best = n;
-            if (where)
-                *where = p;
-        }
-    }
-    if (dist)
-        *dist = best.empty() ? -1.f : bd;
-    return best;
-}
+static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr);
+
 
 // "right next to": the cells (almost) touch
 static float revive_dist(uint8_t* a)
@@ -235,6 +217,38 @@ struct Ko {
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
 };
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
+
+// the nearest partner who can help: rescue (a lethal hit becomes a knockout), revive, the spot to
+// respawn at. A knocked-out partner (held at hp 1, never flagged dead) cannot (BUG-0131: two cells
+// knocked out side by side revived each other). Old (`fix rescue 0`): any partner.
+static std::string nearest_partner(float max_dist, net::Vec3* where, float* dist)
+{
+    uint8_t* a = avatar();
+    if (!a || !C.partners)
+        return {};
+    std::unordered_set<std::string> out;
+    if (g_fix_rescue && C.sess)
+        for (auto& [id, k] : g_ko)
+            if (k.state == KO_OUT)
+                out.insert(C.sess->name_of((uint8_t)id));
+    net::Vec3 me = pos_of(a);
+    std::string best;
+    float bd = max_dist;
+    for (auto& [n, p] : C.partners()) {
+        if (out.count(n))
+            continue;
+        float d = net::dist(me, p);
+        if (d <= bd) {
+            bd = d;
+            best = n;
+            if (where)
+                *where = p;
+        }
+    }
+    if (dist)
+        *dist = best.empty() ? -1.f : bd;
+    return best;
+}
 static double g_ko_sent;
 constexpr float kKoOpacity = 0.35f;
 constexpr uintptr_t kOpacity = 0xA4;
@@ -1752,7 +1766,7 @@ std::string debug(const std::vector<std::string>& a)
         } sw[] = {{"purge", &g_fix_purge},     {"hostof", &g_fix_hostof},   {"foodseq", &g_fix_foodseq},
                   {"resend", &g_fix_resend},   {"kostale", &g_fix_kostale}, {"koreset", &g_fix_koreset},
                   {"bodylevel", &g_fix_bodylevel}, {"cellat", &modes::cell_at_fix},
-                  {"guestbite", &g_fix_guestbite}};
+                  {"guestbite", &g_fix_guestbite}, {"rescue", &g_fix_rescue}};
         if (a.size() >= 3) {
             if (a[2] != "0" && a[2] != "1")
                 return "usage: coop.pool fix [<name>|all 0|1]";
@@ -2092,6 +2106,14 @@ std::string debug(const std::vector<std::string>& a)
             return "no partner";
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
+    }
+    if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)
+        hurt_avatar(atoi(a[1].c_str()), 4);
+        uint8_t* c = avatar();
+        char b[96];
+        snprintf(b, sizeof b, "selfhit hp=%d dying=%d dead=%d downed=%d", c ? F<int>(c, kHp) : -1, c ? F<uint8_t>(c, kDying) : -1,
+                 c ? F<uint8_t>(c, kDead) : -1, (int)g_downed);
+        return b;
     }
     if (a.size() >= 3 && a[0] == "hurt") { // host: send a bite to player <id>
         net::Writer w;
