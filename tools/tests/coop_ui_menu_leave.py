@@ -37,21 +37,21 @@ def main():
     x, y = ((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2) if m else (0, 0)
     slot, name = fixtures.planet_of('creature').split('/')
     print(' ', c.call(f'coop.load {slot} {name}')['out'].strip())
-    left = False
+    # the first answers after the game left the menu: the item must already be gone
+    seen = []
     t0 = time.time()
-    while time.time() - t0 < 30:
-        if 'GalaxyGameEntry' not in c.call('game.mode')['out']:
-            left = True
-            break
-        time.sleep(0.05)
-    ck(left, 'the game left the galaxy menu')
-    for _ in range(5):  # clicks on the item's place while the game leaves the menu
-        if m:
-            c.call(f'click {x} {y}')
-    c.call('wait.frames 2 5000')
-    st = c.call('coop.uistate')['out']
-    print('  after the mode change:', st.splitlines()[0])
-    ck('menu_button=no' in st, 'the item pointer is dropped as soon as the game left the menu')
+    while time.time() - t0 < 30 and len(seen) < 5:
+        st = c.call('coop.uistate')['out'].splitlines()[0]
+        if 'in_menu=0' in st:
+            seen.append(st)
+            if m:
+                c.call(f'click {x} {y}')  # a click on the item's place while the game leaves the menu
+        time.sleep(0.02)
+    for s_ in seen:
+        print('  after the mode change:', s_)
+    ck(seen, 'the game left the galaxy menu')
+    ck(seen and all('menu_button=no' in s_ for s_ in seen),
+       'the item pointer is dropped as soon as the game left the menu')
     for _ in range(120):  # the load goes on without a fault
         if c.call('coop.avatar')['ok']:
             break

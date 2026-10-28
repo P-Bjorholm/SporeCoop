@@ -862,9 +862,9 @@ std::string debug_state()
 {
     std::string s = "open=" + std::to_string(g_want_open) + " page=" +
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
-                    " menu_button=" + (g_menu_btn ? "yes" : "no") + "\n";
+                    " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") + "\n";
     char b[256];
-    if (g_menu_btn) {
+    if (g_menu_btn && in_menu()) { // never a call on an item of a menu that is gone (BUG-0163)
         Rect r = sui::screen_rect(g_menu_btn);
         snprintf(b, sizeof b, "menu %.0f %.0f %.0f %.0f %d '%s'\n", r.x1, r.y1, r.x2, r.y2,
                  (int)sui::visible(g_menu_btn), sui::caption(g_menu_btn).c_str());
