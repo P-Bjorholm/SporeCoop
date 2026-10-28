@@ -55,6 +55,7 @@ static void keep_previous(const std::wstring& path)
 void log_init(const std::wstring& path)
 {
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_LOG);
     if (g_file)
         fclose(g_file);
     keep_previous(path);
@@ -65,6 +66,11 @@ void logv(SkMod* mod, int level, const char* fmt, va_list ap)
 {
     if (level < g_log_level)
         return;
+    // a fault inside the locked part below re-enters here from the exception logger on the same
+    // thread: the mutex is not recursive (an SRWLOCK), taking it again would block for good. The
+    // line is dropped instead (BUG-0115).
+    if (fixed(g_fix_reentry) && (thread_flags() & SK_TF_IN_LOG))
+        return;
     char msg[2048];
     vsnprintf(msg, sizeof msg, fmt, ap);
     static const char* lv[] = {"DBG", "INF", "WRN", "ERR"};
@@ -74,6 +80,7 @@ void logv(SkMod* mod, int level, const char* fmt, va_list ap)
     snprintf(line, sizeof line, "%02d:%02d:%02d.%03d [%s] %s: %s", st.wHour, st.wMinute,
              st.wSecond, st.wMilliseconds, lv[level & 3], mod ? mod->name.c_str() : "?", msg);
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_LOG);
     if (g_file) {
         fputs(line, g_file);
         fputc('\n', g_file);
@@ -95,11 +102,23 @@ void logf(SkMod* mod, int level, const char* fmt, ...)
 std::vector<std::string> log_tail(size_t n)
 {
     std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_LOG);
     std::vector<std::string> out;
     size_t start = g_ring.size() > n ? g_ring.size() - n : 0;
     for (size_t i = start; i < g_ring.size(); i++)
         out.push_back(g_ring[i]);
     return out;
+}
+
+// kit.test logfault: a fault while this thread holds the log's lock (the page fault is repaired by
+// a test handler after the exception logger saw it). Before BUG-0115 the logger took the lock again
+// and the thread stopped for good.
+void log_fault_test()
+{
+    volatile uint8_t* page = (volatile uint8_t*)test_fault_page();
+    std::lock_guard<std::mutex> lk(g_mu);
+    ThreadFlag tf(SK_TF_IN_LOG);
+    page[0] = 1;
 }
 
 // ---- small utils ----

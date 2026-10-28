@@ -1,19 +1,19 @@
 ---
 id: BUG-0115
 title: a fault inside the exception logger or the log freezes the game for good
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#94
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w1-sporekit
+commits: 5d46dbb, 4de4d0a, 5e4dc7f
+tests: tools/tests/kit_freeze.py (suite kit_freeze)
+signature: no crash report, the faulting thread blocked for good in veh / logv
+docs: docs/02-modkit.md (Diagnostics: exception logger), docs/06-testing.md#testing-kit-freeze
 related: #94
 ---
 
@@ -53,16 +53,30 @@ In every case the thread hangs instead of reaching the crash filter, so there is
 A second reviewer verified the mechanism. Severity: low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-sporekit.
+* Per-thread flags in a TLS slot (`thread_flags`, sporekit/fixes.cpp; `TlsGetValue`, no allocation,
+  last error kept): `SK_TF_IN_LOG` while a thread is inside the log's locked part (`logv`,
+  `log_tail`, `log_init`), `SK_TF_IN_EXC` while it runs the exception logger or holds its lock
+  (`exceptions_report`, `exceptions_last`, `exceptions_clear`).
+* `veh` returns `EXCEPTION_CONTINUE_SEARCH` at once when `SK_TF_IN_EXC` is set (a fault inside
+  itself or inside a holder of its lock); `logv` drops a line re-entered on a thread that holds
+  the log's lock (the fault is still recorded in `exc`).
+* `veh` copies the record under its lock only; the symbol / module name (`GetModuleHandleExW`
+  takes the loader lock: the cross-thread case of the ticket) and the logging run after it let go.
+* The crash filter writes the short crash report before its first log line.
 
-- A `thread_local` re-entry flag in `veh` and in `crash_filter`: when it is already set, return `EXCEPTION_CONTINUE_SEARCH` without locking or logging.
-- In `veh`, copy the raw record under the lock only. Do the symbol lookup, the `GetModuleHandleExW` and the logging outside it, or later on the main thread (`exceptions_pump`).
-- In the crash filter, write the short report without `logf` (no locks at all), or try the log lock with a timeout.
+Switch: `kit.fix reentry 0` (the flags are ignored: the old re-entry).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `tools/tests/kit_freeze.py` cases `logfault` and `excfault`: `kit.test.logfault` /
+`kit.test.excfault` (main thread) touch a PAGE_NOACCESS page while holding the log's / the exception
+logger's lock; SporeKit's handler (the first vectored handler) sees the fault, then a test handler
+(the last one) makes the page readable and the instruction runs again.
 
-A diag test (next to `tools/tests/diag_check.py`) with a test-only command that faults while the log mutex is held. It asserts that the game is still drawing frames afterwards (or wrote a crash report) and is not frozen. On main it should freeze (FAIL); with the fix it should PASS.
+FAIL (fixes off, `tools/tests/kit_freeze.py --old` on lane 3; manual run 2026-10-27 19:3x): `logfault: no answer (15.0 s)`, frames 74 -> 74; `excfault: no answer (15.0 s)`,
+frames 81 -> 81. No crash report in either: the frozen game of the report.
+
+PASS (fixes on): lab runs out/lab/20261027-184811 and out/lab/20261027-184904 (lane 3, all six cases PASS both times; `diag` passed in the second run, its one flaky check "a minidump is written next to it" failed in the first attempt and on main before, 2026-10-24/25). With the fix: "the thread goes on" at once, frames go on.
 
 ### Related
 #28 (stack dump can freeze the game for good), #34 (a stack overflow ends the game without a crash report).
@@ -70,3 +84,4 @@ A diag test (next to `tools/tests/diag_check.py`) with a test-only command that 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #94.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.

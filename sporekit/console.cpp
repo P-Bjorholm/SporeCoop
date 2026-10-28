@@ -205,6 +205,13 @@ int command_exec_line(const std::string& line, std::string& out, bool from_main)
         }
         c = it->second;
     }
+    // on the main thread a command that waits for the next frames (or suspends the main thread)
+    // waits for itself: the game stops (BUG-0065, the cheat console `sk shot`)
+    if ((c.flags & SK_CMD_NOT_ON_MAIN) && GetCurrentThreadId() == main_thread_id() && fixed(g_fix_cheatwait)) {
+        out += "'" + args[0] + "' waits for the game's frames and cannot run on the game's own thread "
+               "(the cheat console): use the devkit console (tools/sporectl.py)";
+        return 1;
+    }
     if (from_main || (c.flags & SK_CMD_ANY_THREAD))
         return run_cmd(c, args, out);
 

@@ -78,7 +78,7 @@ bool hooks_init();
 int hook_create(SkMod* mod, void* target, void* detour, void** original);
 int hook_enable(SkMod* mod, void* target, int enable);
 int hook_remove(SkMod* mod, void* target);
-void hooks_remove_all(SkMod* mod);
+int hooks_remove_all(SkMod* mod); // the count removed
 std::vector<std::string> hooks_describe();
 
 // events.cpp
@@ -224,6 +224,57 @@ void vcursor_hold(bool on);     // a held button keeps the virtual cursor active
 void place_test_window();
 void apply_frame_limit();
 void set_frame_limit(int ms);    // console: frame.limit <ms> (33 = the game's own, 0 = none)        // test runs: lift the game's 30 fps cap ([sporekit] test_frame_ms)       // test runs: move the game window to a secondary monitor
+
+// fixes.cpp: fixes with a switch for tests (`kit.fix <name> 0|1`): 1 (default) = fixed, 0 = the old
+// behaviour, so a test can show that it still catches the bug. Plain atomics: readable from an
+// exception handler without locks or allocation.
+struct KitFix {
+    const char* name;
+    const char* what;
+    volatile LONG on;
+};
+extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format
+extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it
+extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not re-entered by a fault
+extern KitFix g_fix_hookkeep;  // BUG-0132: removed hooks keep their trampolines, a grace before FreeLibrary
+inline bool fixed(const KitFix& f) { return f.on != 0; }
+KitFix* kit_fix_find(const char* name);
+std::vector<KitFix*> kit_fixes();
+
+// per-thread flags (a TLS slot: no allocation, safe in an exception handler), BUG-0115
+enum : uintptr_t {
+    SK_TF_IN_LOG = 1, // inside the log's locked part
+    SK_TF_IN_EXC = 2, // inside the exception logger or a holder of its lock
+};
+uintptr_t thread_flags();
+void thread_flags_set(uintptr_t f, bool on);
+struct ThreadFlag {
+    uintptr_t f;
+    bool was;
+    explicit ThreadFlag(uintptr_t f_) : f(f_), was((thread_flags() & f_) != 0) { thread_flags_set(f, true); }
+    ~ThreadFlag() { if (!was) thread_flags_set(f, false); }
+};
+
+// watchdog.cpp: a copy of a thread's registers and stack, taken while it is suspended for as short
+// as possible (nothing that allocates or locks runs while it is suspended), BUG-0050
+struct ThreadSnap {
+    CONTEXT c;
+    uint32_t esp;
+    int n; // dwords copied from esp up
+    uint32_t words[4096];
+};
+// suspends tid, copies, resumes; false (and why) for the calling thread itself or a failure.
+// while_suspended: called before the resume (the old behaviour for kit.fix stackdump 0)
+// (a plain function pointer: nothing may allocate on the way between the caller and the suspend)
+bool thread_snapshot(DWORD tid, ThreadSnap& s, std::string* why, void (*while_suspended)(void*) = nullptr,
+                     void* ctx = nullptr);
+// calls a lambda through thread_snapshot's function pointer
+template <class F> void call_lambda(void* f) { (*(F*)f)(); }
+// test commands (kit.test ...): force the conditions of BUG-0050 / 0115 / 0132
+void log_fault_test();
+void exceptions_fault_test();
+void hooks_churn_test(int rounds, int threads, std::string& out);
+void* test_fault_page(); // a PAGE_NOACCESS page whose first access is repaired by a test handler
 
 } // namespace sk
 

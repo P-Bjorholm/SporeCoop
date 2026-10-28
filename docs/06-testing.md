@@ -115,7 +115,7 @@ python3 tools/tests/load_game.py                 # up to the Creature stage
 make coop && tools/spore.sh deploy && tools/sporectl.py mod.reload coop
 tools/sporectl.py shot                           # look at the screen
 tools/sporectl.py exc                            # caught exceptions (address + symbol)
-tools/sporectl.py hangdump                       # main thread stack to the log (can hang under Wine)
+tools/sporectl.py hangdump                       # main thread stack to the log (hung before BUG-0050)
 tools/sporectl.py stack.here 300 all            # main thread call chain, read ON the main thread
 tools/sporectl.py stack.scan 300                 # exe return addresses on the main stack, no suspend
 tools/spore.sh logs                              # tail of sporekit.log
@@ -829,3 +829,27 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   next MSG_UFO_HIT's attacker. `att_freed` in `coop.status` counts attackers handed to TakeDamage
   that are not in the UFO list (where the game is called).
 * `coop.space starrec <id>`: the record, the sector size and `read_outside` for one lookup.
+## SporeKit freezes: kit_freeze.py (2026-10-28, fix/w1-sporekit)
+<a id="testing-kit-freeze"></a>
+
+* `tools/tests/kit_freeze.py` (suite `kit_freeze`, one game, ~4 min): six cases, each forcing the
+  condition of a SporeKit freeze or crash with a `kit.test.*` command, then checking that the call
+  answers, frames go on and no crash report appears. `--old` switches each case's fix off first
+  (`kit.fix stackdump|cheatwait|reentry|hookkeep 0`): every case must FAIL then (the game is
+  restarted after a frozen case). `--case stack,cheat` runs some.
+* `stack` / `hangdump` (BUG-0050): `kit.test.stackheap` makes the main thread take the CRT heap
+  and the process heap (`HeapLock`) and sleep 3 s, then the console thread dumps its stack. Before
+  the fix the dump allocated while the main thread was suspended: both threads stopped for good.
+  This is likely what "`stack` and `hangdump` hung the console under Wine" (2026-10-22, above) was.
+* `cheat` (BUG-0065): `cheat sk shot` etc. go through the game's cheat manager, the same path as
+  typing them into Ctrl+Shift+C.
+* `logfault` / `excfault` (BUG-0115): a page fault while the thread holds the log's / the exception
+  logger's lock; a test vectored handler (the last one) repairs the page after SporeKit's logger
+  (the first one) saw the fault.
+* `hookchurn` (BUG-0132): a hook on a function of sporekit.dll is made and removed 200 times while
+  3 threads call it through a detour that spins before it calls the original.
+* Runs (2026-10-27, lane 3): with `--old` all six cases FAIL (stack / hangdump / logfault / excfault:
+  no answer and frames stop; cheat: `sk shot` 15 s, `sk wait.frames 2` no answer; hookchurn: a crash
+  in the freed trampoline); with the fixes all PASS, the whole test 38 s. A first hookchurn made
+  the hook while the threads ran and crashed with the fix too: that is BUG-0202, the gate in
+  `hooks_churn_test` keeps it out of this test.

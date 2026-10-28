@@ -625,8 +625,8 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
         DWORD code = ep->ExceptionRecord->ExceptionCode;
         uintptr_t eip = ep->ContextRecord->Eip;
         std::string w = where(eip);
-        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX at 0x%08X %s", code, (unsigned)eip, w.c_str());
-        // a short report at once (no locks but the file system's)
+        // a short report at once (no locks but the file system's), before the log: the crashed
+        // thread may hold the log's lock (BUG-0115; the log drops lines re-entered on one thread)
         static CrashJob job;
         job.base = report_base(true);
         job.ep = ep;
@@ -638,6 +638,7 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep)
                  job.base.c_str(), build_name(), code, code_name(code), (unsigned)eip, w.c_str());
         CreateDirectoryW(logs_dir().c_str(), nullptr);
         write_text(logs_dir() + L"\\" + widen(job.base) + L".txt", b);
+        logf(&g_kit_mod, SK_ERROR, "the game crashed: exception 0x%08lX at 0x%08X %s", code, (unsigned)eip, w.c_str());
         HANDLE t = CreateThread(nullptr, 0, crash_report_thread, &job, 0, nullptr);
         if (t) {
             if (WaitForSingleObject(t, kReportWaitMs) != WAIT_OBJECT_0)

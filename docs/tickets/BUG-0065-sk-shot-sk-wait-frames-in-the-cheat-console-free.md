@@ -1,19 +1,19 @@
 ---
 id: BUG-0065
 title: `sk shot` / `sk wait.frames` in the cheat console freeze the game (and `sk stack` for good)
-status: open
+status: fixed
 kind: freeze
 stage: All
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#43
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
+fixed_in: unreleased
+branch: fix/w1-sporekit
+commits: 5d46dbb, 4de4d0a, 5e4dc7f
+tests: tools/tests/kit_freeze.py (suite kit_freeze)
+signature: cheat console 'sk shot' 15 s freeze, 'sk wait.frames' 30 s, 'sk stack' for good
+docs: docs/02-modkit.md (Bridge to the Spore cheat console), sdk/include/sporekit.h SK_CMD_NOT_ON_MAIN
 related: #43
 ---
 
@@ -52,16 +52,25 @@ Either these commands work from the cheat console (the answer arrives after the 
 CONFIRMED by reading the full path (cheat handler -> `command_exec_line(..., true)` -> the waiting command on the main thread). Not run in the game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w1-sporekit. A new command flag `SK_CMD_NOT_ON_MAIN` (sdk/include/sporekit.h, a new
+enum value, ABI compatible) marks commands that wait for frames or stop the main thread: `shot`,
+`wait.frames`, `stack`, `hangdump`. `command_exec_line` refuses them when it runs on the main
+thread (the cheat console `sk ...`, a mod's `command_exec`), at once, with "'shot' waits for the
+game's frames and cannot run on the game's own thread (the cheat console): use the devkit console".
+Independently `thread_snapshot` and `watchdog_dump_now` refuse the calling thread itself (a thread
+never suspends itself).
 
-* Add a flag for commands that wait for frames or inspect the main thread from outside (`SK_CMD_WAITS` on `shot`, `wait.frames`, `stack`, `hangdump`, `stack.scan` is fine).
-* In `command_exec_line`, when `from_main` is true and the command has that flag, either refuse it, or post it to the console thread / a worker and print the answer to the cheat console later (through `run_on_main` + `console_print`).
-* Independently, `c_stack` and `dump_thread_stack` should refuse `tid == GetCurrentThreadId()` (a thread must never suspend itself).
+Switch: `kit.fix cheatwait 0` (no refusal, no self check: the old behaviour).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Test: `tools/tests/kit_freeze.py` case `cheat`: the devkit command `cheat sk shot` (the game's cheat
+manager, the same path as typing it into Ctrl+Shift+C), then `sk wait.frames 2`, `sk stack`,
+`sk hangdump`; each must come back within 3 s and frames must go on.
 
-`tools/tests/kit_cheat_console.py` on one instance: through the devkit console call `cheat sk shot` (the `cheat` command runs the text through the game's cheat manager, so the same path as typing it), then send `frame` twice 1 s apart and assert the frame counter advanced and the `cheat` call returned within 2 s. Do the same for `cheat sk wait.frames 2` and `cheat sk stack` (assert the game still answers `ping` and `frame` advances). Without the fix the calls take 15 s / 30 s or the game stops (FAIL); with it they return quickly and frames continue (PASS).
+FAIL (fixes off, `tools/tests/kit_freeze.py --old` on lane 3; manual run 2026-10-27 19:3x): `cheat sk shot ... (15.0 s)`, `cheat sk wait.frames 2: no answer (25.0 s)`, frames
+68 -> 68.
+
+PASS (fixes on): lab runs out/lab/20261027-184811 and out/lab/20261027-184904 (lane 3, all six cases PASS both times; `diag` passed in the second run, its one flaky check "a minidump is written next to it" failed in the first attempt and on main before, 2026-10-24/25). With the fix: all four come back in 0.0 s, frames go on.
 
 ### Related
 Issue #28 (stack dump suspends a thread and then allocates).
@@ -69,3 +78,4 @@ Issue #28 (stack dump suspends a thread and then allocates).
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #43.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: verified on today's main (88341cf: same code), fixed on fix/w1-sporekit with switch `kit.fix`; test kit_freeze FAIL with the fix off, PASS twice with it.

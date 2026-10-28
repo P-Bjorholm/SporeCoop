@@ -56,6 +56,7 @@ add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
 add('diag', P + 'diag_check.py --crash', minutes=5)  # kept logs, environment, version in the menu, report button, hang / crash reports
+add('kit_freeze', P + 'kit_freeze.py', minutes=4)  # stack / hangdump under a held heap, cheat-console waits, faults inside the log / fault logger, hook churn (BUG-0050/0065/0115/0132; --old: every case fails)
 # frames from the game loop when Present is lost (issue #4, the Steam overlay on Windows)
 add('frames_loop', P + 'coop_frames_loop.py', ('smoke',), warm=True, minutes=2, fixture='creature')
 add('exit_menu', P + 'coop_exit_menu.py', minutes=3)  # a guest exits to the main menu and comes back
