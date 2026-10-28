@@ -31,6 +31,11 @@ struct Pack {
 // the mods folder and the resource package. No "..", no absolute paths, no drive letters.
 bool allowed_path(const std::string& path);
 
+// a path listed twice (compared without case, as Windows does): "" if none (BUG-0089: a second
+// entry for a file deleted the first entry's backup of the original, and the rollback lost it)
+std::string duplicate_path(const std::vector<PackFile>& files);
+extern bool g_dup_fix; // tests: false = the old behaviour (duplicates accepted)
+
 // parse + check every file's SHA-256 and path; err says what is wrong
 bool parse_pack(const std::vector<uint8_t>& bytes, Pack& out, std::string& err);
 std::vector<uint8_t> write_pack(const Pack& p); // tests (the release pack is made by tools/mkpack.py)

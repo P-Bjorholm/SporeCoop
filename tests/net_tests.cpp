@@ -716,6 +716,24 @@ static void test_refpack_untrusted()
 }
 
 // the updater: packs, paths, versions, the GitHub answer (updater/pack.h)
+// BUG-0089: a pack that lists a file twice (also differing only in case: the same file on
+// Windows) is rejected; apply_pack's second entry used to delete the first one's backup of the
+// original and the rollback lost it. `net_tests --old` runs with the fix off (must fail here).
+static void test_updater_dup()
+{
+    printf("updater: a file listed twice\n");
+    upd::Pack dup, q;
+    std::string err;
+    dup.version = "1";
+    dup.files.push_back({"SporebinEP1/mods/coop.dll", 0, {1}});
+    dup.files.push_back({"SporebinEP1/mods/coop.dll", 0, {2}});
+    CHECK(!upd::parse_pack(upd::write_pack(dup), q, err));
+    dup.files[1].path = "SporebinEP1/mods/COOP.dll";
+    CHECK(!upd::parse_pack(upd::write_pack(dup), q, err));
+    dup.files[1].path = "SporebinEP1/mods/sporekit.dll";
+    CHECK(upd::parse_pack(upd::write_pack(dup), q, err) && q.files.size() == 2);
+}
+
 static void test_updater()
 {
     printf("updater: packs, paths, versions, release answer\n");
@@ -807,6 +825,8 @@ int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
+    if (argc == 2 && std::string(argv[1]) == "--old") // the fixes with a switch off (tests must fail)
+        upd::g_dup_fix = false;
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
@@ -814,6 +834,7 @@ int main(int argc, char** argv)
     test_dbbf();
     test_refpack_untrusted();
     test_updater();
+    test_updater_dup();
     test_reliability();
     test_ackbits();
     test_bulk();
