@@ -50,6 +50,7 @@ add('sync', P + 'coop_sync.py', warm=True, minutes=6)
 add('creations', P + 'coop_creations.py', minutes=4)
 add('net_robust', P + 'coop_net_robust.py', minutes=4)  # malformed messages from a joined player (BUG-0201)
 add('creations_cell', P + 'coop_creations_cell.py', minutes=4)
+add('creations_rejoin', P + 'coop_creations_rejoin.py', minutes=5)  # a newcomer under a reused id is not shown with the previous player's creature (BUG-0076)
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
