@@ -194,7 +194,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0181](BUG-0181-space-no-test-save-after-the-tutorial-missions.md) | open | test | Space | 2026-10-27 |  | Space: no test save after the tutorial missions |
 | [BUG-0182](BUG-0182-space-gog-2024-zooming-in-does-not-land-in-the-f.md) | open | bug | Space | 2026-10-27 |  | Space (GOG 2024): zooming in does not land in the first minute after a load |
 | [BUG-0183](BUG-0183-co-op-window-only-three-games-on-the-network-are.md) | open | bug | Menu | 2026-10-24 |  | Co-op window: only three games on the network are listed |
-| [BUG-0184](BUG-0184-galaxy-menu-a-host-that-stopped-answering-right.md) | open | freeze | Menu | 2026-10-24 |  | Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once) |
+| [BUG-0184](BUG-0184-galaxy-menu-a-host-that-stopped-answering-right.md) | not-reproduced | freeze | Menu | 2026-10-24 |  | Galaxy menu: a host that stopped answering right after "Co-op" during the intro (once) |
 | [BUG-0185](BUG-0185-space-an-unvisited-star-s-planets-can-still-diff.md) | open | desync | Space | 2026-10-23 |  | Space: an unvisited star's planets can still differ between the two games |
 | [BUG-0186](BUG-0186-civilization-single-vehicle-sync-outliers-of-20.md) | open | desync | Civ | 2026-10-27 |  | Civilization: single vehicle sync outliers of 20-27 m |
 | [BUG-0187](BUG-0187-civilization-the-host-s-capture-caption-stops-ev.md) | open | bug | Civ | 2026-10-27 |  | Civilization: the host's capture caption stops everybody's game |

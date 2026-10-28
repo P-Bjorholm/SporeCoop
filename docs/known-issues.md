@@ -288,6 +288,8 @@ anchor so other docs can link to it:
   `UTFWin::Window::SetFlag`, a game that stopped reacting): that one is gone. If it comes back, keep
   `out/lab/<run>/ui.host.game.log` and look for what the main thread did after "Co-op clicked
   during the menu intro".
+* 2026-10-28 (fix/w1-core, lane 2): 3 of 3 more runs passed with the click during the intro: not
+  reproduced.
 * Ticket: BUG-0184.
 
 ## Space: an unvisited star's planets can still differ between the two games
