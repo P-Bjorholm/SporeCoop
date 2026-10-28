@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Fixed
+- **Saves no longer keep the partners' creatures** (BUG-0020): a host save made while a partner
+  played kept the partner's creature and the herd made for it; after a restart it came back as a
+  strange creature of another species (the 0xD48634 crash came from attacking it). They are now left
+  out of every save. Test: `coop_save_hygiene.py` (suite `save_hygiene`).
+- **Cell: a guest's bites follow the game's rules** (BUG-0078): a guest could hurt creatures the
+  host's own bite cannot (species that never attack the player, a creature just bitten or
+  invulnerable), and such species turned on the guest. Test: `coop_cell_guest_bite.py`.
+- **A downed partner no longer rescues you** (BUG-0131): in the Cell stage two knocked-out cells
+  side by side revived each other, and in Space two disabled ships repaired each other (also a
+  partner whose game froze or was loading counted). A lethal hit with nobody able to help is the
+  normal death. Tests: `coop_cell_rescue.py`, `coop_space_helper.py`.
+- **Cell: small display fixes** (BUG-0160): a cell no longer shows squashed for a moment when its
+  rotation is not set yet, a dying creature no longer shows full health on the guest, and the
+  partner arrows never get a broken position. Test: `make test`.
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

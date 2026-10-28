@@ -725,3 +725,47 @@ nest". The guest's game: ACCESS_VIOLATION reading 0x160 at 0xC6AE60, `ecx=eax=0`
   (once per frame, outside every NPC tick) puts the real avatar back and takes the lent +0xE84 off
   the puppet (BUG-0110; `swaps_restored=` in `coop.npc`). Seen without it (a forced leave,
   `coop.npc swapfault`): +0x54 stayed the puppet and `ai_swaps` stopped growing.
+
+## How a save writes the world, and keeping our objects out (2026-10-28, fix/w3-cell)
+<a id="creature-save-strip"></a>
+
+GOG 2024 (dc04aee5), static analysis (private Ghidra project, `tools/ghidra/q.sh --build 2024`) and
+lane 4 at runtime. BUG-0020. CORRECTION (2026-10-28, fix/w3-cell): `CreateHerd` is 0x00B23920 in
+GOG 2024; the 0xB238B0 of section 12 / the 05-re-notes table is the GOG 2016 address.
+
+* ✔ `SaveGame` 0xB29000 is synchronous: the file is complete when it returns (no thread, no job).
+  The 1.7-2 s before the "saved" box is the message that asks for the save, handled a frame or more
+  later (wrapper 0xB29600 `(name or NULL, bool) ret 8`, from 0xB2A240 and 0xE033A0; 0xB29960 calls
+  0xB29000 directly). Order: header and noun counts (0xB21170), `SaveDb_OpenTmp` 0x688F90
+  (`<name>.tmp`, a new SerializerDatabase with its own COMSerializer at db+0x1C), the main stream
+  (key 0x1897C18): the persistence manager's attributes, the simulator system (0xB5BF20: every
+  subsystem's Write, among them the noun manager and cGameBehaviorManager), achievements, the cell
+  game (mode 0x1654C00); then `SerializerDatabase::SaveClassObjects` 0x69DEA0 ->
+  `COMSerializer::SaveClassObjects` 0x69FB90, commit, rename .tmp (0x6891E0), stars.db when the
+  bool is set (0xBB4D40).
+* ✔ What is saved: `cGameNounManager::Write` 0xB201D0 writes every noun of its list +0x78 (no filter,
+  no flag, no virtual asked). Every reference goes through `COMSerializer::Write` 0x6A05F0
+  (thiscall(ser, stream, obj) ret 8): the pointer as the id (0 for null), the noun id, and obj is
+  queued (0x6A0110). SaveClassObjects writes every queued object's record (obj vt+0x10) until no new
+  one is queued: the save is the closure of what the roots refer to. ~ A record whose Write returns
+  false is rewound and dropped, the references to it stay (on load: a default object of that type,
+  `COMSerializer::Read` 0x6A06A0).
+* ✔ On load a null reference reads as null; `cGameNounManager::Read` 0xB1FBD0 skips null entries of
+  the noun list. **cGameBehaviorManager** (vtable 0x0145CB68, name at slot +0x10) keeps the objects
+  it updates in a vector at +0x20/+0x24 (our creatures among them); its Read 0xB0E570 keeps null
+  entries, and its update 0xB0EA40 (slot +0x38, from the simulator update 0xB5D0F0) calls vt+0x1C on
+  each without a check: a null entry faulted at 0xB0EC8C every frame (155 faults in 8 s, lane 4).
+* What SporeCoop does (`mods/coop/savestrip.cpp`): a hook on `COMSerializer::Write` writes a null
+  reference for our objects: herds without an archetype, a nest or the avatar's flag (the herds made
+  for puppets and proxies, section 12) and every creature in them. The set is made once per save
+  (a new serializer, or the first reference after 0.5 s) from the live noun list, with each object's
+  Cast(0x179C807) pointer too (what WriteObjectPointer 0x69D950 passes); main thread only. A hook on
+  the behavior manager's Read drops the null entries after a load. `coop.savestrip [0|1]` (status:
+  `last_ours=`, `nulled=`, `behavior_nulls_dropped=`). Measured: a host save with a guest's puppet
+  held 2 objects of ours (the puppet and its herd), 9 references were nulled; after a restart and a
+  load no creature without tuning and no herd without an archetype, no fault.
+* ? Not stripped (a null member in a game herd's member list +0x40/+0x44, whose load is not
+  checked): a puppet in the avatar's herd (the fallback when the partner's creation is unknown) and
+  a guest's proxies in the game's nest herds (only a guest's own save during a session holds them).
+  ? Which other subsystem fields hold a reference to a creature (AI targets): they load as null; no
+  fault seen in the test.

@@ -599,3 +599,22 @@ for verification and its limits.
 * Old behaviour of each: `coop.pool fix <purge|hostof|foodseq|resend|kostale|koreset|bodylevel|cellat|all> 0|1`.
   Test helpers: `coop.pool zap <n>` (the game removes n mirror cells), `mirrormap`, `small`,
   `foodlocal <n>` (our total only), `invuln 0|1`; `coop.pool` lists `puppet <id> op=`.
+
+## DamageCell's gate and a guest's bite (2026-10-28, fix/w3-cell)
+<a id="cell-damage-gate"></a>
+
+* ✔ (GOG 2024 decompile of 0xE7A7C0) `DamageCell(victim, attacker, ...)` does nothing and returns
+  false when IsDamageable 0xE52940 (ESI = victim: AI type or the avatar, hp != 0, +0x112 != 1, the
+  resource's cell type +0xB4 == 2) fails, when `ShouldNotAttack(victim, attacker)` 0xE57460 is true,
+  or when the victim's +0x17C or +0x111 is set: no hp, no alert, no reaction. ShouldNotAttack(a, b):
+  same resource (+0x108) -> true; either dead (+0x112) -> false; the flags `+0x301`
+  (wontAttackPlayerWhenSmall, scale difference 1) and `+0x300` (wontAttackPlayer) of a's resource
+  data count only when b is the avatar (`G+0x411C`); same friend group (+0x2FC) -> true. So a
+  species with "won't attack the player" cannot be hurt by the player's bites either.
+* The host applies a guest's bite (MSG_CELL_HIT) with the same gate since BUG-0078: the victim's
+  hp / dead flag, +0x17C, +0x111 and `ShouldNotAttack(victim, the guest's puppet)` through the
+  hook that lends the avatar index to the puppet; a mouth's chunk (type 6, EatChunk) skips the gate
+  as the game's does. Before, the arguments were swapped and nothing was checked. `coop.pool fix
+  guestbite 0|1`; test helper `coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>` (host).
+* Knockout helpers (BUG-0131): `nearest_partner` skips partners whose knockout state is KO_OUT
+  (`coop.pool fix rescue 0|1`); `coop.pool selfhit <dmg>` bites our own cell (tests).

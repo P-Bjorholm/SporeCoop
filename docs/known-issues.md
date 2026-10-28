@@ -87,11 +87,12 @@ anchor so other docs can link to it:
   is removed once a second in the creature stage (`strays_removed=` in `coop.npc`), so a puppet a
   save brought back (the 0xD48634 crash: "these guys appeared after I loaded the save and crashed
   my game after I killed them") is gone right after the load, also from saves made before.
-* Still open: our puppets and their herds are written into every save (no "do not save" flag
-  found on a game object; the save is the generic `COMSerializer::SaveClassObjects` 0x69FB90). The
-  empty herds of ours stay in the world and in saves (target 0: they spawn nothing); a herd a save
-  brought back is of another species after a restart, so the first puppet spawn after such a load
-  still makes one new herd. Older saves keep the herds they have.
+* Fixed 2026-10-28 (fix/w3-cell, docs/re/creature.md#creature-save-strip): our herds and the
+  creatures in them are written as null references into saves (`coop.savestrip`), so a new save
+  holds no puppet and no herd of ours. Older saves keep what they have (the removal above handles
+  their creatures). Still saved: a puppet in the host's avatar herd (next point) and, in a guest's
+  own save during a session, the proxies in the game's nest herds (a null member in a game herd was
+  not tried).
 * ? A guest without an own creature has its puppet in the host's avatar herd (host species, with
   tuning): a save probably keeps it as an extra member of the host's family, which the removal
   does not touch (not checked).
@@ -689,11 +690,6 @@ keeps the history).
 * BUG-0164 (#143, bug): a long name from the cheat console is cut inside a character, and a log line with a non-ASCII path is truncated.
 * BUG-0165 (#144, bug): INSTALL check line, README latest version and stability-report lane count are out of date.
 
-**Cell**
-
-* BUG-0078 (#56, bug): the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments)
-* BUG-0160 (#139, bug): small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int)
-
 **Creature**
 
 * BUG-0119 (#98, bug): after a load the guest may keep the host's species, or get SetSpecies on a world still loading (avatar pointer used as world identity)
@@ -727,10 +723,6 @@ keeps the history).
 * BUG-0126 (#105, bug): coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void)
 * BUG-0136 (#115, bug): a won raid on a partner's colony can count as aborted, so the owner's raid is never completed.
 * BUG-0145 (#124, bug): with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship.
-
-**Space, Cell**
-
-* BUG-0131 (#110, bug): a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you.
 
 **Installer**
 
