@@ -2,7 +2,8 @@
 
   name      result logs: out/lab/<run>/<name>.log
   cmd       command line, run from the repository root with SPORE_LANE set
-  suites    smoke (before a merge, ~10 min on 3 lanes), full (every test), nightly (full + long)
+  suites    smoke (before a merge, ~10 min on 3 lanes), full (every test), nightly (full + long),
+            extended (paths outside the other suites: 3-4 players, hot reload; also nightly)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
             loaded into a fresh save slot, the guest rejoins; no restart). Tests that change the
             profile, enter editors or start their own games are cold.
@@ -14,7 +15,7 @@ T = []
 
 
 def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fixture=None):
-    suites = set(suites) | ({'nightly'} if 'nightly' in suites else {'full', 'nightly'})
+    suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
     T.append(dict(name=name, cmd=cmd, suites=suites, warm=warm,
                   exclusive=exclusive, minutes=minutes, fixture=fixture))
 
@@ -71,6 +72,8 @@ add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+En
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
+add('creature_social', P + 'coop_creature_social.py', minutes=6)  # a guest's social games through real input, the ally reward once, the host's species table, name tags under menus (BUG-0021: a refused game is played again)
+add('social_console', P + 'coop_social_console.py', warm=True, minutes=3, fixture='creature')  # digits typed in the open cheat console play no social ability (BUG-0149; --without-fix fails)
 add('creature_kills', P + 'coop_creature_kills.py', minutes=3)  # a guest's kill dies on the guest too (no 0 hp mirror standing), NPCs notice the partner
 add('creature_death', P + 'coop_creature_death.py', minutes=4)  # alone: die, skip the caption and the respawn cutscene
 add('creature_respawn', P + 'coop_creature_respawn.py', minutes=5)  # both players die (also after a pack rescue): the hatchling grows up and walks
@@ -165,13 +168,19 @@ add('play_space', P + 'play_space.py --minutes 12', ('nightly',), minutes=14)
 add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe --minutes 5', ('nightly',),
     minutes=6)
 
+# paths outside the lab's other suites (BUG-0152, BUG-0162): `lab.py run extended`. Three players in
+# one lane (the extra guest is instance 20+N in the lane's bottle, coop_multi.extra_instances)
+add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.reload coop twice, joins again
+add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended',), minutes=7)
+add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
+
 
 def select(spec):
-    """suites (smoke / full / nightly) and test names, comma-separated and mixed: 'smoke,vote'"""
+    """suites (smoke / full / nightly / extended) and test names, comma-separated and mixed: 'smoke,vote'"""
     names = {t['name'] for t in T}
     want = set()
     for w in (x.strip() for x in spec.split(',') if x.strip()):
-        if w in ('smoke', 'full', 'nightly'):
+        if w in ('smoke', 'full', 'nightly', 'extended'):
             want |= {t['name'] for t in T if w in t['suites']}
         else:
             assert w in names, f'unknown test: {w} (known: {sorted(names)})'

@@ -1158,3 +1158,28 @@ tickets. Each needs ~1.5-3 min on a warm lane.
 * A capture for tests: `coop.civ capture <city index>` (the game's Capture, plays the caption).
 * `glyph_lint.py` (in `make test`): every non-ASCII character in a string literal of mods/coop must
   be in the overlay font (Arial / WGL4 subset, BUG-0161).
+
+## Tests on the game's state, flaky fixes, the extended suite (2026-10-28, fix/w4-tests)
+<a id="testing-w4-tests"></a>
+
+* `coop_creature_desync.py`: a kill by the host is checked on the game's death flag of the guest's
+  mirror (`coop.npc creatures`), not on the " DEAD" of the guest's `coop.npc list` (the mod's
+  `px.killed`). `--seed-nodeath` (`coop.npc deathfix off`: no `play_death` on a killed proxy) must
+  FAIL (BUG-0148).
+* `coop_team.py`: the joint hunt bonus is the NPC's health drop in the host's game (a lone hit d,
+  the partner's hit right after 1.25 d) and the mirror's health on the guest; `--seed-nobonus` must
+  FAIL (BUG-0135). `coop.npc list` prints hp with two decimals for it.
+* `coop_social_console.py` (suite `social_console`): the cheat console opens by injected
+  Ctrl+Shift+C only while the cheat manager's flag +0x64 is set, which is 0 on games that loaded
+  their save by command (docs/re/creature.md#creature-cheat-console-flag): the test sets it first.
+  `--without-fix` (`coop.social textfix off`) must FAIL (BUG-0149).
+* `coop_creature_social.py` (suite `creature_social`, was in no suite): a refused social game in
+  the ally phase is played again with the same Kook (BUG-0021).
+* `coop_civ_play.py`: the guest's "I'm ready" is clicked again (up to 3 times, 3 s apart) when the
+  vote did not fire; the number of clicks is printed (BUG-0176).
+* Suite `extended` (`lab.py run extended`, also nightly, not in full): hot reload
+  (`hotreload_check.py`) and three players (`coop_multi.py --players 3`, `coop_npc_multi.py
+  --players 3`). A third (and fourth) player runs in the test's own lane: instances 20+N and 30+N in
+  lane N's bottle (`coop_multi.extra_instances`; console ports 47820..47839, co-op ports
+  47830..47849, used by no lane). `SPORE_LANE_B=B` still takes another lane (its default was the
+  next lane, which in the lab belongs to other work).
