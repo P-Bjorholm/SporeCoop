@@ -106,13 +106,32 @@ public:
     {
         snaps_.clear();
         clock_.clear();
+        have_raw_ = false;
     }
 
     void push(const PlayerState& s, double local_now)
     {
-        double st = s.time_ms / 1000.0;
-        if (!snaps_.empty() && st <= snaps_.back().t)
-            return; // old or duplicate
+        double st;
+        if (g_fix.time_wrap) {
+            // BUG-0053: time_ms is the sender's 32-bit millisecond clock, it wraps after 49.7 days of
+            // uptime; compared as a plain number every snapshot after the wrap was "old" and the
+            // puppet froze. Order by the signed difference to the last one and keep a 64-bit sender
+            // time. A last time of 0 is the "no time" of an NPC spawn (npc.cpp): any time is newer.
+            if (have_raw_ && !snaps_.empty()) {
+                int64_t d = last_raw_ == 0 ? (int64_t)s.time_ms : (int64_t)(int32_t)(s.time_ms - last_raw_);
+                if (d <= 0)
+                    return; // old or duplicate
+                ext_ms_ += d;
+            } else
+                ext_ms_ = s.time_ms;
+            have_raw_ = true;
+            last_raw_ = s.time_ms;
+            st = (double)ext_ms_ / 1000.0;
+        } else {
+            st = s.time_ms / 1000.0;
+            if (!snaps_.empty() && st <= snaps_.back().t)
+                return; // old or duplicate
+        }
         clock_.add(local_now - st, local_now);
         offset_ = clock_.value();
         snaps_.push_back({st, s});
@@ -175,6 +194,9 @@ private:
     std::deque<Snap> snaps_;
     ClockOffset clock_;
     double offset_ = 0;
+    int64_t ext_ms_ = 0;   // the sender time of the newest snapshot, unwrapped (BUG-0053)
+    uint32_t last_raw_ = 0;
+    bool have_raw_ = false;
 };
 
 // BUG-0122: the host's now_ms() after the last entry of a ship / vehicle snapshot chunk (older
