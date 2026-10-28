@@ -3,6 +3,25 @@
 ## [Unreleased]
 
 ### Fixed
+- **Creature: a guest that gets the world right after the host evolved no longer stays a
+  hatchling** (BUG-0019): the world went out while the host's evolution cinematic waited for OK,
+  and the guest's creature never grew up nor migrated with the species. The host now sends it once
+  the cinematic is over. Test: `coop_evolve_world.py` (suite `evolve_world`).
+- **Creature: after a reload the guest plays its own creature again** (BUG-0119): the mod told the
+  worlds apart by the avatar's memory address, which the game can reuse; the guest could keep the
+  host's species, or get its creature applied while the world was still loading. Test:
+  `coop_world_reload.py` (suite `world_reload`).
+- **Creature: a guest that rejoins while the host is paused sees the animals around it**
+  (BUG-0125) instead of an empty area until they walked away and back. Test:
+  `coop_npc_rejoin_paused.py` (suite `npc_rejoin_paused`).
+- **Creature: an animal that pushes against a rock on the host no longer stays a few metres off on
+  every guest** (BUG-0169): its copy is put in place after 3 s. Unit test in `make test`.
+- **A fault inside the game during a co-op adjustment no longer leaves the game in the adjusted
+  state** (BUG-0110): the cell stage's player index, a selection flag, a creature's tuning and the
+  Civilization capture attribution are put back on the next frame. Unit test in `make test`.
+- **Creature: social ability keys are ignored while the cheat console is open**, and a digit typed
+  in another window no longer plays one when the game comes back to the front (BUG-0149, not yet
+  verified in a game test).
 - **Shared money and food**: money or food changed while out of a session (playing alone,
   another save) is no longer added to the next host's pool when joining; two players spending at
   the same moment can no longer push Civilization or Space money below 0, and a guest's money no

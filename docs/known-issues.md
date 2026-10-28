@@ -48,6 +48,9 @@ anchor so other docs can link to it:
   puppet got NPC id 23 during CRG_ClaimNest); a puppet or proxy that waits for the end of the
   cinematic now stays a puppet (no AI, no host NPC id) until it is destroyed. Local NPCs the guest
   removes in that time still run their AI until then. BUG-0066.
+* FIXED (2026-10-28, fix/w3-creature): the host's world after an evolution now waits until its
+  cinematic is over (the caption confirmed, at most 120 s): the guest's creature grows up and its
+  game migrates as the host's (`coop_evolve_world.py`). BUG-0019.
 * Ticket: BUG-0019.
 
 ## Guest: fault in the tribe setup with a null simulator object (seen once)
@@ -112,6 +115,10 @@ anchor so other docs can link to it:
   second candidate was fixed on the way: a reused creature object kept its net id (BUG-0044), but
   that shows the old species or a corpse, not an offset. Next time: `coop.npc list` on the host
   for that id (its vel: `coop.npc` sync entries) and on a guest (err, want).
+* FIXED (2026-10-28, fix/w3-creature): the candidate cause: an NPC proxy that stays more than 2.5 m
+  off for 3 s without getting closer is now teleported whatever speed the host's NPC reports
+  (`drive_plan.h`, unit test in `make test`). Not reproduced in the game; if an offset like this is
+  seen again, `coop.npc list` on a guest shows whether the proxy's teleports grow. BUG-0169.
 * Ticket: BUG-0169.
 
 ## Creature chaos: a guest crashed with a corrupted heap (seen once)

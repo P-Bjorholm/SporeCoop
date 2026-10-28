@@ -10,8 +10,8 @@ role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
 fixed_in: unreleased
 branch: fix/w2-creature
-commits: c068f08
-tests: npc_swap
+commits: c068f08, 949c7f3
+tests: npc_swap, unit (npc_tests: swap ledger)
 signature:
 docs: docs/re/creature.md#creature-pool-ids
 related: #89
@@ -68,8 +68,16 @@ finds a swap still open, writes the real avatar back into `mpAvatar` (if the pup
 there), takes the lent +0xE84 off the puppet, clears the state and logs a warning
 (`swaps_restored=` in `coop.npc`). `coop.npc swapguard off` keeps the old behaviour,
 `coop.npc swapfault` makes the next swapped tick leave without its restore (tests).
-Not changed (other areas, smaller leftovers): `h_NoAttack` (cellsync.cpp, the cell avatar index),
-`h_SelectUI` / `h_StageMsg` (coop.cpp), `b_damage` (civ.cpp).
+
+The other detours (fix/w3-creature, 949c7f3): wave 2's guard did not cover them (it only knew the
+NPC tick's swap). A ledger (`mods/coop/swap_ledger.h`, `game::swap_open` / `swap_close`): each detour
+opens its change with an undo before the call into the game and closes it after the call;
+`swap_guard_tick` undoes, once per frame, whatever is still open (`ledger_restored=` in
+`coop.npc`, a warning in the log), and a detour that returns undoes what an inner call left open.
+Covered: `h_NoAttack` (cell avatar index G+0x411C), `h_SelectUI` (+0xB58 bit 0x1), `h_StageMsg`
+(the blank +0xE84, only where it is still the blank) and civ `b_damage` (`g_hit_by`).
+`coop.npc swapguard off` also turns the ledger's per-frame undo off; `coop.npc swapfault ledger`
+skips the next close (tests).
 
 ## Verification
 Test `tools/tests/coop_npc_swap.py` (suite `npc_swap`), a test command that forces the condition
@@ -82,6 +90,10 @@ between frames.
 * PASS with the fix: direct run (lane 5): the slot is the host's avatar, ai_swaps 1512 -> 3288;
   lab run out/lab/20261027-232407 (`npc_swap`).
 * Not shown: a real fault inside NPCTickAI and which frame catches it.
+* The other detours (fix/w3-creature): unit test `tests/npc_tests.cpp` `test_ledger` (make test): with
+  the guard off a change left open by a skipped close stays (the old behaviour), with it the frame's
+  tick puts it back; an outer close undoes an inner call's leftover. Not run in the game with a
+  forced fault (`coop.npc swapfault ledger` exists for that).
 
 ### Related
 #69 (freed puppet after a world teardown), #44 (puppet or proxy gets its AI back during a cinematic).
@@ -90,3 +102,4 @@ between frames.
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #89.
 - 2026-10-27: ticket opened from the issue.
 - 2026-10-28: fixed on fix/w2-creature for h_NPCTickAI (per-frame swap guard); test npc_swap. The other detours of the report stay open in their areas.
+- 2026-10-28: fix/w3-creature: the other detours (h_NoAttack, h_SelectUI, h_StageMsg, b_damage) were not covered by the per-frame guard; a swap ledger covers them now. Unit test in make test (npc_tests: the guard off leaves the partner as the value, on puts it back; nested calls); no game test forcing a fault inside those detours.
