@@ -35,6 +35,9 @@ add('cell_coop', P + 'coop_cell.py', ('smoke',), warm=True, minutes=4, fixture='
 add('cell_meat', P + 'coop_cell_meat.py', warm=True, minutes=4, fixture='cell')  # kills, their meat, eating once
 add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell')  # creatures face as on the host on the guest; guest bites kill
 add('cell_leave', P + 'coop_cell_leave.py', minutes=4)  # Cell -> Creature with mirrors on the guest, then the session ends
+add('cell_sync', P + 'coop_cell_sync.py', minutes=8, fixture='cell')  # mirror map, missed totals, regrowth over a level line, knockout and leave (BUG-0088, 0128, 0041, 0070, 0061)
+add('cell_net', 'SPORE_NET="delay=250,loss=0.05" ' + P + 'coop_cell_net.py', minutes=8, fixture='cell')  # lost state chunks, food race over a level line (BUG-0032, 0051)
+add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
 add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
 add('stage_switch', P + 'coop_stage_switch.py', minutes=13)  # every stage pair that matters, in game

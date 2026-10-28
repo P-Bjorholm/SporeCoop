@@ -6,6 +6,7 @@
 #include <cstring>
 #include <unordered_map>
 
+#include "cell_logic.h"
 #include "game.h"
 #include "sporekit.h"
 #include "sporekit_game.hpp"
@@ -236,6 +237,8 @@ uint8_t* cell_game()
 // particle arrays of the cell soft bodies: positions at +4, velocities at +0x4654 = 4 + 1500*12
 constexpr uint32_t kCellParticles = 1500;
 
+bool cell_at_fix = true;
+
 uint8_t* cell_at(uint32_t idx)
 {
     uint8_t* g = cell_game();
@@ -244,7 +247,9 @@ uint8_t* cell_at(uint32_t idx)
         return nullptr;
     uint8_t* data = *(uint8_t**)(g + 0x1C);
     uint32_t size = *(uint32_t*)(g + 0x1C + 0x14);
-    if (!data || size != 0x398 || slot > *(uint32_t*)(g + 0x1C + 0x10))
+    // live slots are [0, highWater) inside [0, capacity) (docs/re/cell.md 0, BUG-0083)
+    if (!data || size != 0x398 ||
+        !cell_logic::slot_in_pool(slot, *(uint32_t*)(g + 0x1C + 0x10), *(uint32_t*)(g + 0x1C + 0x18), cell_at_fix))
         return nullptr;
     uint8_t* c = data + (size_t)slot * size;
     return *(uint32_t*)c == idx ? c : nullptr;

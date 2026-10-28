@@ -1,19 +1,19 @@
 ---
 id: BUG-0032
 title: one lost state packet makes the guest delete and recreate up to 14 of the host's cells
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#10
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_net.py (suite cell_net), tests/cell_tests.cpp rounds()
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #10
 ---
 
@@ -61,12 +61,26 @@ With 40 cells in range (3 chunks at 10 Hz, 30 packets/s), a 1 % loss rate means 
 CONFIRMED by reading the full path (host send, `guest_state`, `destroy_local`, the next round's `cell_create`). Not run in the game: the visual effect of the recreation (re-hatch effect or not) is inferred.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004). `cell_logic::Rounds` (mods/coop/cell_logic.h) keeps the chunks seen
+of the current round; the guest runs the removal pass only when every chunk of the round arrived. A
+chunk of an older round (16-bit compare, within 64 rounds) is dropped instead of starting that round
+again. A mirror not listed for 1 s is removed in any case, so a cell the host really lost still goes
+on a lossy link. `coop.status` (guest) shows `rounds_partial=` and `late_chunks=`. Old behaviour:
+`coop.pool fix purge 0` (or `fix all 0`).
+
+The review suggested:
 
 Count the chunks received per cycle and run the removal pass only when all of them arrived. Or, more robust, remove a mirror only when it has not been seen for a time (`m.seen` older than about 0.5 s, 5 rounds). Ignore messages from an older cycle (compare with wrap-around) instead of resetting the seen set. Keep the old behaviour behind `coop.fix cellpurge off` so the lab can show that the test catches it.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Two-game test `coop_cell_net.py` over `SPORE_NET="delay=250,loss=0.05"` (netem proxy): for 20 s the
+guest's host index -> local pool index map (`coop.pool mirrormap`) is sampled every second.
+FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-231147): 1669 of 5273 samples got a new local cell (created
+392 -> 3469). PASS with the fix (out/lab/20261027-231523, out/lab/20261027-232430, and out/lab/20261027-230647): 0 of ~5800 samples
+recreated, 157 rounds with a lost chunk skipped the removal. Unit test `rounds()` in
+tests/cell_tests.cpp (make test) checks lost, reordered, wrapped and duplicate chunks, fix on and off.
+
+The planned test was:
 
 `tools/tests/coop_cell_loss.py` on `twoinst.start`: host and guest in the same pool, 30+ cells in range. Turn on loss of host-to-guest unreliable packets (a debug switch in the session that drops every Nth unreliable message, for example 1 in 10). For 20 s, sample the guest's mirrors with `coop.sync` once a second and record the guest's local pool index of each host key. Assert that no host cell that still exists on the host (checked on the host with `coop.sync`) changes its local index on the guest. Without the fix the indices change within seconds; with it they stay the same. Also assert no crash report on either game.
 
@@ -77,3 +91,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #10.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

@@ -943,3 +943,11 @@ host's NPC proxies, `exc` 0 faults on both. Remove `background_mode=1` afterward
   appears from the old world and is hidden during the reload, so the test waits 20 s and for
   `together` again before it reads the species. `--without-fix` (`creations_leave 0`,
   `id_reuse 0` on the host): the puppet is the old player's creature.
+* Cell sync (fix/w2-cell): `coop_cell_sync.py` (suite `cell_sync`, ~1.5 min cold, two rejoins) and
+  `coop_cell_net.py` (suite `cell_net`, runs over `SPORE_NET="delay=250,loss=0.05"`). Both take
+  `SPORE_CELL_FIX=0`, which sets `coop.pool fix all 0` on both games (the old behaviour: the run
+  that must fail). Pitfalls seen: after `coop.leave` the guest keeps its avatar, so a rejoin looks
+  "in" (`wait_guest_in`) before the guest even started loading the host's world again: wait for
+  `coop.avatar` to fail first. The avatar's `+0x358` is -1 (no level there): the level line is
+  every 50 food points. Over the lossy link the guest's mirror map kept every local index for 20 s
+  with the fix (157 rounds with a lost chunk).

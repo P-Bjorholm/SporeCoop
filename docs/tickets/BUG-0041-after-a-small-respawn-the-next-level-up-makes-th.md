@@ -1,19 +1,19 @@
 ---
 id: BUG-0041
 title: after a small respawn, the next level-up makes the player's cell up to twice too big
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#19
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_sync.py (suite cell_sync), tests/cell_tests.cpp body()
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #19
 ---
 
@@ -65,12 +65,22 @@ Thresholds and the regrowth both use 50 points, so unless the respawn happens ex
 CONFIRMED by reading the full path, based on the ✔ finding in docs/re/cell.md section 6 that AddFoodPoints calls SetCellSize for the avatar on a level change. Not run in the game. `coop_cell.py` checks only the `body` counter after `coop.pool food 20`, which does not cross a level line, so it does not see this.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004). `h_AddFood` reads the avatar's target size `+0xB4` before the
+original AddFoodPoints; when the call changed it (a level line crossed: the game sized the avatar
+for the new level), the body factor becomes 1 and nothing is rescaled (`cell_logic::regrow`).
+Old behaviour: `coop.pool fix bodylevel 0`.
+
+The review suggested:
 
 In `h_AddFood`, read `+0xB4` before calling `o_AddFood`. If it changed afterwards, the game resized the avatar for a new level: either set `g_body = 1` and skip `set_body` (same as the resize check does), or keep the regrowth and compute `full` from the new value instead of dividing it by `g_body`. Keep the old behaviour behind `coop.fix bodylevel off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_cell_sync.py`: the guest at 10 points over a line, `coop.pool small` (what the small respawn
+does), then 41 points over the next line; the guest's target size must grow by the host's ratio.
+FAIL with `SPORE_CELL_FIX=0` (out/lab/20261027-231147): host 0.55 -> 0.82, guest 0.55 -> 1.5 (body 0.91). PASS
+(out/lab/20261027-231004, out/lab/20261027-231523): guest 0.82, body 1.0. Unit test `body()` (make test).
+
+The planned test was:
 
 Extend `tools/tests/coop_cell.py` (or a new `coop_cell_regrow.py`): after the small respawn, raise the food total across a level line with the game's AddFoodPoints, then up to the point where `body` is 1.0. Assert on the game's own fields: the guest's target size `+0xB4` (and `+0x58` once it has settled) is within 5 % of the host's cell at the same level. Read both through `coop.pool`, and also check the guest's size on the host's puppet, which shows what the partner sees. It fails today (about 2x) and passes with the fix.
 
@@ -81,3 +91,4 @@ Extend `tools/tests/coop_cell.py` (or a new `coop_cell_regrow.py`): after the sm
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #19.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.

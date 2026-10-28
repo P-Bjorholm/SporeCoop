@@ -662,7 +662,6 @@ keeps the history).
 * BUG-0116 (#95, test): the required fix switch `coop.fix NAME off` does not exist, and several 0.7.2.x fixes have no switch.
 * BUG-0124 (#103, test): a fixture that lacks its facts never fails the test (check_fixture result ignored)
 * BUG-0127 (#106, bug): a crash from running out of memory can end the game before the minidump and the "last game crashed" notice are written.
-* BUG-0128 (#107, desync): the shared DNA and Cell food totals reach a guest only when they change, and are lost while it loads.
 * BUG-0129 (#108, bug): chat in notifications is cut short for non-Latin text, styled wrongly, and cannot be read in full anywhere.
 * BUG-0130 (#109, bug): a guest in another world gets the host's DNA, NPCs, tribe and cells applied to its own game, which is then saved.
 * BUG-0134 (#113, tooling): new_stage_game.py --npc-cities uses GOG 2016-only symbols, and 0xAE3A80 has two contradicting signatures.
@@ -690,14 +689,7 @@ keeps the history).
 
 **Cell**
 
-* BUG-0032 (#10, desync): one lost state packet makes the guest delete and recreate up to 14 of the host's cells.
-* BUG-0041 (#19, bug): after a small respawn, the next level-up makes the player's cell up to twice too big.
-* BUG-0051 (#29, desync): the guest's food total can briefly drop below a level line, so it levels down and up again.
-* BUG-0061 (#39, desync): a partner can stay shown as knocked out for good (translucent, frozen "KO" label)
-* BUG-0070 (#48, bug): the knockout state is not reset on disconnect or stage leave (cell stays invulnerable or translucent)
 * BUG-0078 (#56, bug): the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments)
-* BUG-0083 (#61, bug): modes::cell_at accepts one slot past the pool's used range (off by one)
-* BUG-0088 (#66, bug): the guest's local-to-host index map keeps an entry for every mirror it recreates.
 * BUG-0160 (#139, bug): small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int)
 
 **Creature**

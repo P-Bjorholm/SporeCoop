@@ -1,19 +1,19 @@
 ---
 id: BUG-0061
 title: a partner can stay shown as knocked out for good (translucent, frozen "KO" label)
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#39
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w2-cell
+commits: e7ab004, 595e12f, b6039e6, 55b3c2a
+tests: tools/tests/coop_cell_sync.py (suite cell_sync), tests/cell_tests.cpp ko()
 signature:
-docs:
+docs: docs/re/cell.md#cell-sync-robustness
 related: #39
 ---
 
@@ -64,7 +64,13 @@ Case B, receiver outside the Cell stage:
 CONFIRMED by reading the full path (leave callback, id allocation, `symbiosis_tick`, `draw_overlay`, the early return in `on_message`). Not run in the game.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w2-cell (e7ab004). `cb.player_leave` calls `cellsync::on_player_leave(id)`: its
+knockout state (the puppet made opaque again), puppet record and food bookkeeping are erased.
+`MSG_CELL_KO` is stored and relayed in any stage (effects only in the Cell stage). A remote `KO_OUT`
+not refreshed for 2 s (the owner sends it every 0.25 s) ends by itself (`ko_expire`), which also
+covers an "up again" lost for another reason. Old behaviour: `coop.pool fix kostale 0`.
+
+The review suggested:
 
 - Give cellsync an `on_player_leave(id)` that erases `g_ko[id]` (and `g_puppet_seen[id]`), and call it from `cb.player_leave`.
 - Clear `g_ko` when the local player leaves the Cell stage (the block in `tick` that calls `forget_mirrors`).
@@ -74,7 +80,13 @@ Not fixed yet. Suggested in the review:
 Keep the old behaviour behind `coop.fix kostale off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+`coop_cell_sync.py`, case A of the report: the guest is knocked out, leaves 1 s later and joins
+again (id 1 again); the host's `coop.pool` prints the guest's puppet opacity `+0xA4`. FAIL with
+`SPORE_CELL_FIX=0` (out/lab/20261027-231147): `puppet 1 op=0.35` (and `ko[1]=1`) after the rejoin. PASS (out/lab/20261027-231004,
+out/lab/20261027-231523): op=1.00, no knockout entry. Case B (the host in its editor) is covered by the 2 s expiry
+and the handling outside the stage, not run in the game.
+
+The planned test was:
 
 `tools/tests/coop_cell_ko_leave.py` on `twoinst.start` (and a restart of the guest instance): knock the guest out, kill or disconnect the guest within 10 s, start it again, rejoin, swim next to the host. Assert on the host's game state: the opacity `+0xA4` of the guest's puppet cell is 1.0, read through `coop.pool` `op=`. Also assert that no "KO" overlay is drawn: check the overlay text through a debug hook, or that `ko[1]` is absent. A second case enters the host's cell editor during the knockout. Both fail today and pass with the fix.
 
@@ -86,3 +98,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #39.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w2-cell (bug wave 2); test FAIL without the fix, PASS with it.
