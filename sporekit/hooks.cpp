@@ -119,9 +119,20 @@ __attribute__((noinline)) static int churn_detour(int x)
         __asm__ volatile("" ::: "memory");
     return o_churn(x);
 }
+// the threads stop at a gate while the hook is made: making a hook while a thread runs the first bytes
+// of the function is another race (BUG-0202); this test is about the removal (BUG-0132)
+static std::atomic<bool> g_churn_go{false};
+static std::atomic<int> g_churn_parked{0};
 static DWORD WINAPI churn_thread(void*)
 {
     while (g_churn_run.load()) {
+        if (!g_churn_go.load()) {
+            g_churn_parked++;
+            while (!g_churn_go.load() && g_churn_run.load())
+                Sleep(0);
+            g_churn_parked--;
+            continue;
+        }
         g_churn_ptr(1);
         g_churn_calls++;
     }
@@ -133,6 +144,8 @@ void hooks_churn_test(int rounds, int threads, std::string& out)
     g_churn_mod.name = "kit.test";
     g_churn_ptr = churn_target;
     g_churn_calls = 0;
+    g_churn_go = false;
+    g_churn_parked = 0;
     g_churn_run = true;
     std::vector<HANDLE> ts;
     for (int i = 0; i < threads && i < 8; i++)
@@ -140,12 +153,16 @@ void hooks_churn_test(int rounds, int threads, std::string& out)
             ts.push_back(t);
     int made = 0;
     for (int r = 0; r < rounds; r++) {
+        g_churn_go = false;
+        for (int w = 0; w < 2000 && g_churn_parked.load() < (int)ts.size(); w++)
+            Sleep(1);
         void* orig = nullptr;
         if (hook_create(&g_churn_mod, (void*)churn_target, (void*)churn_detour, &orig) == 0)
             made++;
         o_churn = (churn_fn)orig;
+        g_churn_go = true;
         Sleep(2);
-        hooks_remove_all(&g_churn_mod);
+        hooks_remove_all(&g_churn_mod); // the threads run through the detour meanwhile
         Sleep(1);
     }
     g_churn_run = false;

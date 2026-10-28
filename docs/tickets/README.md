@@ -211,3 +211,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0198](BUG-0198-space-the-galactic-core-finale-open-ends-space-f.md) | open | feature | Space | 2026-10-27 |  | Space: the galactic core finale, open ends (space_finale.cpp) |
 | [BUG-0199](BUG-0199-not-covered-by-tests-yet.md) | open | test | All | 2026-10-23 |  | Not covered by tests yet |
 | [BUG-0200](BUG-0200-creature-the-host-s-own-creations-on-the-guest-w.md) | open | bug | Creature | 2026-10-25 |  | Creature: the host's own creations on the guest, what is still open (2026-10-25) |
+| [BUG-0202](BUG-0202-making-a-hook-while-another-thread-runs-the-firs.md) | open | crash | All | 2026-10-27 |  | making a hook while another thread runs the first bytes of the hooked function can crash that thread (hot reload re-hooks RandomInt) |
