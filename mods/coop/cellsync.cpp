@@ -138,6 +138,9 @@ static bool g_fix_resend = true;   // BUG-0128: food / DNA totals sent again eve
 static bool g_fix_kostale = true;  // BUG-0061: a remote knockout ends when its owner leaves or stops refreshing it
 static bool g_fix_koreset = true;  // BUG-0070: our knockout ends with the session or the stage
 static bool g_fix_bodylevel = true; // BUG-0041: a level-up during the regrowth gives the level's own size
+static bool g_fix_rescue = true;    // BUG-0131: a knocked-out partner rescues, revives nobody
+static bool g_fix_guestbite = true; // BUG-0078: a guest's bite passes DamageCell's gate (ShouldNotAttack(victim, puppet), +0x17C, +0x111)
+static uint32_t g_hits_spared;
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
 static cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
@@ -167,27 +170,8 @@ static net::Vec3 g_down_pos;
 static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
 static float g_body_size = 0; // the target size we wrote, to notice the game resizing the avatar
 
-static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr)
-{
-    uint8_t* a = avatar();
-    if (!a || !C.partners)
-        return {};
-    net::Vec3 me = pos_of(a);
-    std::string best;
-    float bd = max_dist;
-    for (auto& [n, p] : C.partners()) {
-        float d = net::dist(me, p);
-        if (d <= bd) {
-            bd = d;
-            best = n;
-            if (where)
-                *where = p;
-        }
-    }
-    if (dist)
-        *dist = best.empty() ? -1.f : bd;
-    return best;
-}
+static std::string nearest_partner(float max_dist, net::Vec3* where = nullptr, float* dist = nullptr, bool helper = false);
+
 
 // "right next to": the cells (almost) touch
 static float revive_dist(uint8_t* a)
@@ -234,6 +218,38 @@ struct Ko {
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
 };
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
+
+// the nearest partner; `helper`: one who can help: rescue (a lethal hit becomes a knockout), revive,
+// the spot to respawn at. A knocked-out partner (held at hp 1, never flagged dead) cannot (BUG-0131: two cells
+// knocked out side by side revived each other). Old (`fix rescue 0`): any partner.
+static std::string nearest_partner(float max_dist, net::Vec3* where, float* dist, bool helper)
+{
+    uint8_t* a = avatar();
+    if (!a || !C.partners)
+        return {};
+    std::unordered_set<std::string> out;
+    if (helper && g_fix_rescue && C.sess)
+        for (auto& [id, k] : g_ko)
+            if (k.state == KO_OUT)
+                out.insert(C.sess->name_of((uint8_t)id));
+    net::Vec3 me = pos_of(a);
+    std::string best;
+    float bd = max_dist;
+    for (auto& [n, p] : C.partners()) {
+        if (out.count(n))
+            continue;
+        float d = net::dist(me, p);
+        if (d <= bd) {
+            bd = d;
+            best = n;
+            if (where)
+                *where = p;
+        }
+    }
+    if (dist)
+        *dist = best.empty() ? -1.f : bd;
+    return best;
+}
 static double g_ko_sent;
 constexpr float kKoOpacity = 0.35f;
 constexpr uintptr_t kOpacity = 0xA4;
@@ -316,7 +332,7 @@ static bool go_down(uint8_t* c)
     if (!c || c != avatar() || !C.sess || !C.sess->connected())
         return false;
     if (!g_downed) {
-        if (nearest_partner(1e9f).empty())
+        if (nearest_partner(1e9f, nullptr, nullptr, true).empty())
             return false; // alone in the pool: the vanilla death
         g_downed = true;
         g_down_since = H->time_seconds();
@@ -347,7 +363,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     F<float>(a, kOpacity) = kKoOpacity;
     stop_at(a, g_down_pos);
     float d = 0;
-    std::string helper = nearest_partner(revive_dist(a), nullptr, &d);
+    std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
     g_hold = helper.empty() ? 0 : g_hold + dt;
     if (now - g_ko_sent > 0.25)
         send_ko(KO_OUT, (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold));
@@ -368,7 +384,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     // nobody came: respawn next to the partner, small again
     g_downed = false;
     net::Vec3 at = g_down_pos;
-    std::string partner = nearest_partner(1e9f, &at);
+    std::string partner = nearest_partner(1e9f, &at, nullptr, true);
     stop_at(a, partner.empty() ? at : net::Vec3{at.x + 2.f, at.y + 1.f, 0.f});
     F<uint8_t>(a, 0x04) = 1; // idle
     F<int>(a, kHp) = 6;
@@ -1050,7 +1066,7 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(v[0]); w.f32(v[1]);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
-            w.u8((uint8_t)F<int>(c, kHp));
+            w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0)));
         }
         for (auto& pl : C.sess->players())
@@ -1379,10 +1395,23 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || !c || F<uint8_t>(c, kDying) || c == avatar() || modes::cell_is_puppet(c))
             return;
         g_hits_in++;
+        uint8_t* pc = puppet_cell(from);
+        // BUG-0078: judged as DamageCell judges the host's own bite (0xE7A7C0): nothing happens when
+        // the victim is not damageable (dead, hp 0), ShouldNotAttack(victim, attacker) is true (same
+        // species, friend group, the species' "won't attack the player" flags: through the hook, so
+        // the guest's puppet counts as the player) or the victim has +0x17C / +0x111 set. A mouth's
+        // chunk (type 6) is EatChunk's, which asks none of these. Old (`fix guestbite 0`): the
+        // arguments swapped, no gate.
+        if (g_fix_guestbite && t != 6 &&
+            (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
+             (pc && o_NoAttack && h_NoAttack(c, pc)))) {
+            g_hits_spared++;
+            return;
+        }
         // the NPC and its kind turn on the guest who bit it, as DamageCell does for the host's bites
         // (species alert 0xE71CE0, then the victim's own reaction: only AI type 0x1006 reacts,
         // through 0xE57710 -> 0xE57610), so biting is as risky for the guest as for the host
-        if (uint8_t* pc = puppet_cell(from); pc && a_Alert && o_NoAttack && !o_NoAttack(pc, c)) {
+        if (pc && a_Alert && o_NoAttack && (g_fix_guestbite ? !h_NoAttack(c, pc) : !o_NoAttack(pc, c))) {
             uint32_t pidx = F<uint32_t>(pc, 0);
             skg::cdecl_call<void>(a_Alert, c, pidx);
             if (a_React && ai_type(c) == 0x1006)
@@ -1541,8 +1570,10 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
     if (!H->world_to_screen(w, sc)) // behind: never happens in the flat cell world, keep a fallback
         sc[0] = cx, sc[1] = sh + 100.f;
     float dx = sc[0] - cx, dy = sc[1] - cy;
-    float k = std::min(std::fabs(dx) > 1 ? (cx - 70) / std::fabs(dx) : 1e9f, std::fabs(dy) > 1 ? (cy - 50) / std::fabs(dy) : 1e9f);
-    int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+    float fx, fy;
+    if (!cell_logic::edge_point(cx, cy, dx, dy, 70, 50, 1, 1, fx, fy)) // a NaN position (BUG-0160)
+        return;
+    int x = (int)fx, y = (int)fy;
     const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
     std::string s = std::string(arrow) + " " + name + " " + t;
     H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
@@ -1737,7 +1768,8 @@ std::string debug(const std::vector<std::string>& a)
             bool* on;
         } sw[] = {{"purge", &g_fix_purge},     {"hostof", &g_fix_hostof},   {"foodseq", &g_fix_foodseq},
                   {"resend", &g_fix_resend},   {"kostale", &g_fix_kostale}, {"koreset", &g_fix_koreset},
-                  {"bodylevel", &g_fix_bodylevel}, {"cellat", &modes::cell_at_fix}};
+                  {"bodylevel", &g_fix_bodylevel}, {"cellat", &modes::cell_at_fix},
+                  {"guestbite", &g_fix_guestbite}, {"rescue", &g_fix_rescue}};
         if (a.size() >= 3) {
             if (a[2] != "0" && a[2] != "1")
                 return "usage: coop.pool fix [<name>|all 0|1]";
@@ -2028,6 +2060,32 @@ std::string debug(const std::vector<std::string>& a)
                  mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f, (int)sc[0], (int)sc[1]);
         return b;
     }
+    if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1, hp <n> (BUG-0078)
+        // spare: the NPC's species "won't attack the player" (resource data +0x300, all of its kind);
+        // invuln: the NPC's own +0x111. Both make DamageCell skip a bite of the player on it.
+        uint8_t* c = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
+        if (!c || !is_host() || modes::cell_is_puppet(c) || c == av)
+            return "no such NPC (host only)";
+        uint8_t v = a[3] == "1";
+        if (a[2] == "hp") { // hp <n>: room for a few bites
+            F<int>(c, kHp) = atoi(a[3].c_str());
+            v = 1;
+        } else if (a[2] == "invuln") {
+            F<uint8_t>(c, kInvuln) = v;
+        } else if (a[2] == "spare" && a_GetData && F<void*>(c, kRes)) {
+            void* holder = nullptr;
+            uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
+            if (holder)
+                --F<int>(holder, 0xC);
+            if (!res)
+                return "no resource data";
+            F<uint8_t>(res, 0x300) = v;
+        } else
+            return "usage: coop.pool npcflag c<key> spare|invuln 0|1 | hp <n>";
+        char b[96];
+        snprintf(b, sizeof b, "npcflag %s %s=%d hp=%d", a[1].c_str(), a[2].c_str(), v, F<int>(c, kHp));
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";
@@ -2051,6 +2109,14 @@ std::string debug(const std::vector<std::string>& a)
             return "no partner";
         stop_at(av, {at.x + (float)atof(a[1].c_str()), at.y + (float)atof(a[2].c_str()), 0.f});
         return "moved";
+    }
+    if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)
+        hurt_avatar(atoi(a[1].c_str()), 4);
+        uint8_t* c = avatar();
+        char b[96];
+        snprintf(b, sizeof b, "selfhit hp=%d dying=%d dead=%d downed=%d", c ? F<int>(c, kHp) : -1, c ? F<uint8_t>(c, kDying) : -1,
+                 c ? F<uint8_t>(c, kDead) : -1, (int)g_downed);
+        return b;
     }
     if (a.size() >= 3 && a[0] == "hurt") { // host: send a bite to player <id>
         net::Writer w;
@@ -2115,8 +2181,8 @@ std::string status()
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_bitten_in,
+        snprintf(b, sizeof b, "cell(host): food=%d own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u hits_spared=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
+                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u\n", food, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_hits_spared, g_bitten_in,
                  g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped, g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late);
     else
         snprintf(b, sizeof b,

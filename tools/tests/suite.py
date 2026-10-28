@@ -38,6 +38,8 @@ add('cell_spin', P + 'coop_cell_spin.py', warm=True, minutes=4, fixture='cell') 
 add('cell_leave', P + 'coop_cell_leave.py', minutes=4)  # Cell -> Creature with mirrors on the guest, then the session ends
 add('cell_sync', P + 'coop_cell_sync.py', minutes=8, fixture='cell')  # mirror map, missed totals, regrowth over a level line, knockout and leave (BUG-0088, 0128, 0041, 0070, 0061)
 add('cell_net', 'SPORE_NET="delay=250,loss=0.05" ' + P + 'coop_cell_net.py', minutes=8, fixture='cell')  # lost state chunks, food race over a level line (BUG-0032, 0051)
+add('cell_guest_bite', P + 'coop_cell_guest_bite.py', warm=True, minutes=4, fixture='cell')  # a guest's bite passes DamageCell's gate (BUG-0078; SPORE_CELL_FIX=0 fails)
+add('cell_rescue', P + 'coop_cell_rescue.py', warm=True, minutes=3, fixture='cell')  # a knocked-out partner rescues nobody (BUG-0131; SPORE_CELL_FIX=0 fails)
 add('dna_resend', P + 'coop_dna_resend.py', warm=True, minutes=3, fixture='creature')  # the DNA total reaches a guest that missed it (BUG-0128)
 add('leave_cleanup', P + 'coop_leave_cleanup.py', minutes=4, fixture='space')  # every session end cleans every stage module (BUG-0033): Space mirrors after Leave, host while connected
 add('space_coop', P + 'coop_space.py', ('smoke',), warm=True, minutes=2, fixture='space')
@@ -64,6 +66,7 @@ add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and 
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
 add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed
+add('save_hygiene', P + 'coop_save_hygiene.py', minutes=5)  # a save made with the partner's puppet holds no puppet, no herd of ours after a restart (BUG-0020; SPORE_SAVE_FIX=0 fails)
 add('alt_enter', P + 'coop_alt_enter.py', minutes=4)  # Alt+Enter / Alt+Shift+Enter in co-op: no fault at 0x7777BE (device recreation), on the ground
 add('nest_species', P + 'coop_nest_species.py', minutes=4)  # the guest owns another creation under the key of the host's: the host's species at its nests, its table
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
@@ -106,6 +109,7 @@ add('space_death', P + 'coop_space_death.py', minutes=5)
 add('space_guest_ui', P + 'coop_space_guest_ui.py', minutes=4)  # a guest joining during the menu intro: no movie left over, real clicks work
 add('space_puppet', P + 'coop_space_puppet.py', minutes=5)  # the game frees partner puppets
 add('space_rescue', P + 'coop_space_rescue.py', minutes=6)  # disabled by real (relayed) NPC hits
+add('space_helper', P + 'coop_space_helper.py', warm=True, minutes=3, fixture='space')  # a disabled partner rescues nobody (BUG-0131; SPORE_SPACE_FIX=0 fails)
 add('space_stale', P + 'coop_space_stale.py', warm=True, minutes=5, fixture='space')  # hits about freed mirrors / puppets, star ids past the table, the second repair's first step (BUG-0054, BUG-0092, BUG-0147)
 add('space_fleet', P + 'coop_space_fleet.py', warm=True, minutes=3, fixture='space')  # a lost ship-state chunk changes no mirror, the guest keeps its posse (BUG-0037, BUG-0084)
 add('space_map_input', P + 'coop_space_map_input.py', minutes=7, fixture='space')  # x87 stack after contacts, jump notice, galaxy teleport guards, tag clicks from the window (BUG-0126, BUG-0072, BUG-0063, BUG-0090, BUG-0145; --without-fix fails)

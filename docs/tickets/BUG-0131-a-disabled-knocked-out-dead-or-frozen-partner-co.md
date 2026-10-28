@@ -1,17 +1,17 @@
 ---
 id: BUG-0131
 title: a disabled, knocked-out, dead or frozen partner counts as the partner who rescues you
-status: open
+status: fixed
 kind: bug
 stage: Space, Cell
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#110
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-cell
+commits: 8f749d0, 70cca8c, 153ec67
+tests: cell_rescue, space_helper
 signature:
 docs:
 related: #110
@@ -67,25 +67,30 @@ A knocked-out partner also makes `go_down` knock you out instead of the normal d
 - CONFIRMED by reading. Verified by a second reviewer, who also found the missing age / `PF_IN_WORLD` / `PF_DEAD` checks in `spc.partners`.
 - Severity: medium in Space (frozen or loading partners too), low in Cell.
 
-## Fix
-Not fixed yet. Suggested in the review:
+**Checked on 2026-10-28 (fix/w3-cell)**: still in today's code (cellsync.cpp nearest_partner reads
+`partners()` only; spacecoop.cpp partners_here takes every partner in the place, `spc.partners` in
+coop.cpp has no age / PF_IN_WORLD / PF_DEAD check, `g_partner_down` only drives the beacon). Seen
+with two players: a knocked-out guest made the host's lethal hit a knockout too (and the guest's
+revive hold grew from the knocked-out host); a disabled guest made the host's ship disabled too,
+the repair timer of both running.
 
-- Give `spc.partners` the same filters as `partners()`: age under 3 s, `PF_IN_WORLD`, not `PF_DEAD`.
-- Skip `g_partner_down` entries in `partners_here` when it looks for helpers (`filter_own_damage`, `down_tick`).
-- In Cell, skip partners whose `g_ko[id].state == KO_OUT` in `nearest_partner` for `go_down`, `downed_tick` and the respawn spot. Alternatively, send `PF_DEAD` (or a new "down" flag) while knocked out.
-- Keep the old behaviour behind `coop.fix rescue_needs_helper off`.
+## Fix
+- Cell: `nearest_partner(.., helper = true)` (go_down, downed_tick's revive and respawn spot) skips partners
+  whose knockout state is KO_OUT. Old: `coop.pool fix rescue 0`.
+- Space: `Partner` carries `playing` (a state under 3 s old, PF_IN_WORLD, not PF_DEAD), filled in
+  coop.cpp; `helpers_here()` (partners_here without partners that do not play or are disabled,
+  `g_partner_down`) decides in filter_own_damage and down_tick. Old: `coop.space helperfix 0`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-Space: a 3-player test (`twoinst.start` plus `coop_multi.start_extra`, the `space` fixture).
-- Disable B, then hit C lethally next to B.
-- Assert the game's own state: C's ship is destroyed (its UFO state 2, death cinematic), and neither ship's HP goes back up while nobody else is near.
-- Second case: freeze B's process, and C's lethal hit destroys C.
-
-Cell: the same idea with the `cell` fixture. Knock out B and C side by side, and assert both stay translucent at HP 1 until a third cell arrives (or they respawn).
-
-Both must FAIL on main (mutual repair or revive) and PASS with the fix.
+Two-player tests (3 players need a second lane, not available to this agent's lane):
+- `tools/tests/coop_cell_rescue.py` (suite `cell_rescue`): FAIL with `SPORE_CELL_FIX=0`:
+  out/lab/20261028-010740 (host `selfhit hp=1 dying=0 downed=1`, the guest shows `ko[0]`); PASS:
+  out/lab/20261028-010835, out/lab/20261028-010921 (`hp=0 dying=1 downed=0`).
+- `tools/tests/coop_space_helper.py` (suite `space_helper`): FAIL with `SPORE_SPACE_FIX=0`:
+  out/lab/20261028-011038 (host ship `down=1 state=0`, repair 1.5 s running); PASS:
+  out/lab/20261028-011126, out/lab/20261028-011209 (`state=2`, death cinematic).
+- Not tested: the frozen or loading partner (state over 3 s old) and the 3-player mutual revive;
+  both go through the same filters.
 
 ### Related
 #39 and #48 (knockout state not reset or stuck), #41 and #76 (other "ship disabled" problems). Not duplicates.
@@ -93,3 +98,4 @@ Both must FAIL on main (mutual repair or revive) and PASS with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #110.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-cell (bug wave 3); tests FAIL without the fix, PASS with it.

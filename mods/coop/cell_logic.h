@@ -116,4 +116,67 @@ inline Body regrow(float before, float after, float body, int amount, bool fix)
 constexpr double kKoStale = 2.0;
 inline bool ko_stale(double now, double refreshed, bool fix) { return fix && now - refreshed > kKoStale; }
 
+// BUG-0160: a rotation matrix (row-major 3x3, a cell's +0x5C) as a quaternion. A zero or degenerate
+// matrix (a cell whose rotation is not written yet) gave (0, 0, 0.5, 0): the other side's
+// quat_to_mat drew the cell squashed to half its size. Fixed: the result is normalized, identity
+// when there is nothing to normalize.
+struct Quat {
+    float x, y, z, w;
+};
+inline Quat mat_to_quat(const float* m, bool fix = true)
+{
+    if (fix) {
+        float f = 0;
+        for (int i = 0; i < 9; i++)
+            f += m[i] * m[i];
+        if (!std::isfinite(f) || f < 1e-6f)
+            return {0, 0, 0, 1};
+    }
+    Quat q;
+    float tr = m[0] + m[4] + m[8];
+    if (tr > 0) {
+        float s = std::sqrt(tr + 1.f) * 2;
+        q = {(m[7] - m[5]) / s, (m[2] - m[6]) / s, (m[3] - m[1]) / s, 0.25f * s};
+    } else if (m[0] > m[4] && m[0] > m[8]) {
+        float s = std::sqrt(1.f + m[0] - m[4] - m[8]) * 2;
+        q = {0.25f * s, (m[1] + m[3]) / s, (m[2] + m[6]) / s, (m[7] - m[5]) / s};
+    } else if (m[4] > m[8]) {
+        float s = std::sqrt(1.f + m[4] - m[0] - m[8]) * 2;
+        q = {(m[1] + m[3]) / s, 0.25f * s, (m[5] + m[7]) / s, (m[2] - m[6]) / s};
+    } else {
+        float s = std::sqrt(1.f + m[8] - m[0] - m[4]) * 2;
+        q = {(m[2] + m[6]) / s, (m[5] + m[7]) / s, 0.25f * s, (m[3] - m[1]) / s};
+    }
+    if (!fix)
+        return q;
+    float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (!std::isfinite(n) || n < 1e-6f)
+        return {0, 0, 0, 1};
+    return {q.x / n, q.y / n, q.z / n, q.w / n};
+}
+
+// BUG-0160: a cell's hp in the state's byte. A negative hp (an overkill bite) went out as 255 and
+// the guest's mirror looked fully healthy until the dead flag came.
+inline uint8_t hp_byte(int hp, bool fix = true) { return fix ? (uint8_t)std::clamp(hp, 0, 255) : (uint8_t)hp; }
+
+// BUG-0160: where an off-screen marker's arrow goes on the screen edge. (dx, dy) is the target's
+// screen position from the centre (cx, cy); (mx, my) the margins; (tx, ty) the smallest |dx| / |dy|
+// that counts. A NaN position (world_to_screen of a NaN, a camera not set up) gave k = 1e9 and an
+// out-of-range float-to-int conversion. Fixed: false for a non-finite position, the point is
+// clamped to the screen.
+inline bool edge_point(float cx, float cy, float dx, float dy, float mx, float my, float tx, float ty, float& x, float& y,
+                       bool fix = true)
+{
+    if (fix && (!std::isfinite(dx) || !std::isfinite(dy)))
+        return false;
+    float k = std::min(std::fabs(dx) > tx ? (cx - mx) / std::fabs(dx) : 1e9f, std::fabs(dy) > ty ? (cy - my) / std::fabs(dy) : 1e9f);
+    x = cx + dx * k;
+    y = cy + dy * k;
+    if (fix) {
+        x = std::clamp(x, 0.f, 2 * cx);
+        y = std::clamp(y, 0.f, 2 * cy);
+    }
+    return true;
+}
+
 } // namespace cell_logic

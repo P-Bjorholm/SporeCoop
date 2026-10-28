@@ -38,6 +38,8 @@
 #include "spacecoop.h"
 #include "squadron.h"
 #include "npc.h"
+#include "savestrip.h"
+#include "cell_logic.h"
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
@@ -1330,6 +1332,7 @@ void on_frame(void*, int, void*)
         world::tick(g_sess);
     else
         world::guest_tick(); // a received world waiting for the player to leave its editor
+    savestrip::tick();
     npc::tick(now);
     social::tick(now);
     shared::tick(g_sess, game::mode_id(), now);
@@ -1480,11 +1483,10 @@ void draw_marks()
         // off screen: an arrow on the edge towards it (behind the camera: at the bottom)
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
-        float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
-                           std::fabs(dy) > 0.5f ? (cy - 60) / std::fabs(dy) : 1e9f);
-        if (!front)
-            k = cy - 60;
-        int x = (int)(cx + dx * k), y = (int)(cy + dy * k);
+        float fx, fy;
+        if (!cell_logic::edge_point(cx, cy, dx, dy, 90, 60, 1, 0.5f, fx, fy)) // a NaN position (BUG-0160)
+            continue;
+        int x = (int)fx, y = (int)fy;
         const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
         std::string t = std::string(arrow) + " " + m.text;
         H->overlay_text(x - text_width(t) / 2, y - 10, col, t.c_str());
@@ -3149,6 +3151,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     ctx.stage_center = [](net::Vec3& p) { return tribe::center(p); };
     npc::init(H, M, ctx);
+    savestrip::init(H, M); // BUG-0020: our objects never go into a save
     npc::set_enabled(H->config_int(M, "coop", "share_npcs", 1) != 0);
     npc::set_partner_targets(H->config_int(M, "coop", "npcs_target_partners", 1) != 0);
     social::Ctx sc;
@@ -3420,7 +3423,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             const net::PlayerState& s = r.buf.latest();
             if (s.mode != modes::kSpace)
                 continue;
-            v.push_back({id, r.name, s.world, s.pos, r.puppet});
+            bool playing = r.buf.age(H->time_seconds()) <= 3.0 && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD);
+            v.push_back({id, r.name, s.world, s.pos, r.puppet, playing});
         }
         return v;
     };

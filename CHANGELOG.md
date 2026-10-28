@@ -18,6 +18,20 @@
 - **Space: unvisited stars get the same planets on both games** even when another thread names
   things during the generation (BUG-0123); `coop.space empire contact` no longer breaks the game's
   float maths after 8 calls (BUG-0126).
+- **Saves no longer keep the partners' creatures** (BUG-0020): a host save made while a partner
+  played kept the partner's creature and the herd made for it; after a restart it came back as a
+  strange creature of another species (the 0xD48634 crash came from attacking it). They are now left
+  out of every save. Test: `coop_save_hygiene.py` (suite `save_hygiene`).
+- **Cell: a guest's bites follow the game's rules** (BUG-0078): a guest could hurt creatures the
+  host's own bite cannot (species that never attack the player, a creature just bitten or
+  invulnerable), and such species turned on the guest. Test: `coop_cell_guest_bite.py`.
+- **A downed partner no longer rescues you** (BUG-0131): in the Cell stage two knocked-out cells
+  side by side revived each other, and in Space two disabled ships repaired each other (also a
+  partner whose game froze or was loading counted). A lethal hit with nobody able to help is the
+  normal death. Tests: `coop_cell_rescue.py`, `coop_space_helper.py`.
+- **Cell: small display fixes** (BUG-0160): a cell no longer shows squashed for a moment when its
+  rotation is not set yet, a dying creature no longer shows full health on the guest, and the
+  partner arrows never get a broken position. Test: `make test`.
 - **Joining over a lossy link no longer fails when the host's first answer is lost** (BUG-0030):
   the lost welcome counted as delivered and the join ended with "no answer from host (timeout)"
   after 10 s (about one join in ten at 10 % loss). Test: `make test`.

@@ -1069,6 +1069,28 @@ Each test takes `--without-fix` (switches the fixes off, must FAIL) and runs on 
   missions on it (BUG-0046, `contracts wavefix`).
 * Unit tests (`make test`, tests/space_tests.cpp): the jump target with 3 players (BUG-0072) and
   the aborted-raid set (BUG-0136, `coop.space allies abortedfix`).
+## Wave 3 Cell, rescue and save tests (2026-10-28, fix/w3-cell)
+<a id="testing-w3-cell"></a>
+
+Each has an environment switch that turns its fix off; that run must FAIL:
+
+* `coop_cell_guest_bite.py` (suite `cell_guest_bite`, Cell fixture, ~1 min warm,
+  `SPORE_CELL_FIX=0`: `coop.pool fix guestbite 0`): the guest bites one NPC (`coop.pool kill c<key>
+  hit`) after the host gives it hp 60 and then the species' "won't attack the player" flag or its own
+  +0x111 (`coop.pool npcflag c<key> hp|spare|invuln`); the host's hp of it must not drop, as for the
+  host's own bite. NPCs flee after a bite: both players `swimto <key> tp` before each one. BUG-0078.
+* `coop_cell_rescue.py` (suite `cell_rescue`, ~1 min, `SPORE_CELL_FIX=0`: `fix rescue 0`): the guest
+  knocked out (`coop.pool hurt 1 50` on the host), then `coop.pool selfhit 250` on the host: the
+  game's death (`dying=1`), not a knockout. BUG-0131.
+* `coop_space_helper.py` (suite `space_helper`, Space fixture, ~1 min, `SPORE_SPACE_FIX=0`:
+  `coop.space helperfix 0`): the guest's ship disabled by `coop.space hit`, then a lethal hit on the
+  host's ship: destroyed (state 2), not disabled. The frozen-partner part (a state over 3 s old)
+  is not tested. BUG-0131.
+* `coop_save_hygiene.py` (suite `save_hygiene`, cold, ~1.5 min, `SPORE_SAVE_FIX=0`:
+  `coop.savestrip 0`): the host saves with the guest's puppet, both games restart, the host loads
+  alone with `coop.npc strays off`: no creature without tuning, no herd without an archetype, no
+  fault in 8 s (a null left in the behavior manager's list faulted at 0xB0EC8C every frame). BUG-0020.
+* BUG-0160 is a unit test (`tests/cell_tests.cpp`, `numerics`): both the fixed and the old results.
 ## Netcode and the co-op window, wave 3 (2026-10-28, fix/w3-net)
 <a id="testing-net-w3"></a>
 

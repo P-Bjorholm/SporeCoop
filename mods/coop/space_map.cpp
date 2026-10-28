@@ -20,6 +20,7 @@
 #include "space_ext.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
+#include "cell_logic.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -727,11 +728,10 @@ static void draw_map()
         }
         float cx = sw / 2.f, cy = sh / 2.f;
         float dx = front ? sc[0] - cx : 0.f, dy = front ? sc[1] - cy : 1.f;
-        float k = std::min(std::fabs(dx) > 1 ? (cx - 90) / std::fabs(dx) : 1e9f,
-                           std::fabs(dy) > 0.5f ? (cy - 60) / std::fabs(dy) : 1e9f);
-        if (!front)
-            k = cy - 60;
-        int ex = (int)(cx + dx * k), ey = (int)(cy + dy * k);
+        float fx, fy;
+        if (!cell_logic::edge_point(cx, cy, dx, dy, 90, 60, 1, 0.5f, fx, fy)) // a NaN position (BUG-0160)
+            continue;
+        int ex = (int)fx, ey = (int)fy;
         const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "►" : "◄") : (dy > 0 ? "▼" : "▲");
         std::string s = std::string(arrow) + " " + t;
         int tw = text_w(s);

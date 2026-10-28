@@ -113,6 +113,37 @@ static void ko()
     CHECK(!ko_stale(100.0, 7.5, false)); // old: never
 }
 
+// BUG-0160: a unit quaternion from any matrix, hp 0..255 on the wire, no arrow at a NaN position
+static float qnorm(const Quat& q) { return std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w); }
+static void numerics()
+{
+    float zero[9] = {0};
+    CHECK(std::fabs(qnorm(mat_to_quat(zero, true)) - 1.f) < 1e-5f);
+    CHECK(mat_to_quat(zero, true).w == 1.f);                    // identity
+    CHECK(std::fabs(qnorm(mat_to_quat(zero, false)) - 0.5f) < 1e-5f); // old: (0, 0, 0.5, 0)
+    float half[9] = {0.5f, 0, 0, 0, 0.5f, 0, 0, 0, 0.5f};          // a scaled rotation
+    CHECK(std::fabs(qnorm(mat_to_quat(half, true)) - 1.f) < 1e-5f);
+    for (int i = 0; i < 64; i++) { // rotations about z and x: unchanged by the fix (already unit)
+        float a = i * 0.1f, c = std::cos(a), s = std::sin(a);
+        float rz[9] = {c, -s, 0, s, c, 0, 0, 0, 1}, rx[9] = {1, 0, 0, 0, c, -s, 0, s, c};
+        for (float* m : {rz, rx}) {
+            Quat f = mat_to_quat(m, true), o = mat_to_quat(m, false);
+            CHECK(std::fabs(qnorm(f) - 1.f) < 1e-4f);
+            CHECK(std::fabs(f.x - o.x) + std::fabs(f.y - o.y) + std::fabs(f.z - o.z) + std::fabs(f.w - o.w) < 1e-3f);
+        }
+    }
+    CHECK(hp_byte(-1, true) == 0);
+    CHECK(hp_byte(300, true) == 255);
+    CHECK(hp_byte(42, true) == 42);
+    CHECK(hp_byte(-1, false) == 255); // old: a dead cell's -1 arrived as full health
+    float x = 0, y = 0;
+    float nan = std::nanf("");
+    CHECK(!edge_point(960, 540, nan, nan, 70, 50, 1, 1, x, y, true));
+    CHECK(edge_point(960, 540, nan, nan, 70, 50, 1, 1, x, y, false) && !(std::fabs(x) < 1e7f)); // old: x = cx + NaN * 1e9
+    CHECK(edge_point(960, 540, 5000, 10, 70, 50, 1, 1, x, y, true) && x >= 0 && x <= 1920 && y >= 0 && y <= 1080);
+    CHECK(std::fabs(x - 1850) < 1); // the right edge less the margin
+}
+
 int main()
 {
     slots();
@@ -120,6 +151,7 @@ int main()
     meals();
     body();
     ko();
+    numerics();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

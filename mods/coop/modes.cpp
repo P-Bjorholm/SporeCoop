@@ -345,34 +345,10 @@ static void* cell_local()
     return g ? cell_at(*(uint32_t*)(g + 0x411C)) : nullptr;
 }
 
-void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3
+void mat_to_quat(const float* m, net::Quat& q) // row-major 3x3; unit length, identity for a zero matrix (BUG-0160)
 {
-    float tr = m[0] + m[4] + m[8];
-    if (tr > 0) {
-        float s = std::sqrt(tr + 1.f) * 2;
-        q.w = 0.25f * s;
-        q.x = (m[7] - m[5]) / s;
-        q.y = (m[2] - m[6]) / s;
-        q.z = (m[3] - m[1]) / s;
-    } else if (m[0] > m[4] && m[0] > m[8]) {
-        float s = std::sqrt(1.f + m[0] - m[4] - m[8]) * 2;
-        q.w = (m[7] - m[5]) / s;
-        q.x = 0.25f * s;
-        q.y = (m[1] + m[3]) / s;
-        q.z = (m[2] + m[6]) / s;
-    } else if (m[4] > m[8]) {
-        float s = std::sqrt(1.f + m[4] - m[0] - m[8]) * 2;
-        q.w = (m[2] - m[6]) / s;
-        q.x = (m[1] + m[3]) / s;
-        q.y = 0.25f * s;
-        q.z = (m[5] + m[7]) / s;
-    } else {
-        float s = std::sqrt(1.f + m[8] - m[0] - m[4]) * 2;
-        q.w = (m[3] - m[1]) / s;
-        q.x = (m[2] + m[6]) / s;
-        q.y = (m[5] + m[7]) / s;
-        q.z = 0.25f * s;
-    }
+    cell_logic::Quat r = cell_logic::mat_to_quat(m);
+    q.x = r.x, q.y = r.y, q.z = r.z, q.w = r.w;
 }
 
 void quat_to_mat(const net::Quat& q, float* m)

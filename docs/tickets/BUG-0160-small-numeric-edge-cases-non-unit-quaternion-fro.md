@@ -1,17 +1,17 @@
 ---
 id: BUG-0160
 title: small numeric edge cases (non-unit quaternion from a zero matrix, negative cell hp sent as 255, NaN cast to int)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#139
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-cell
+commits: 2bc60b9
+tests: unit (tests/cell_tests.cpp numerics)
 signature:
 docs:
 related: #139
@@ -58,18 +58,22 @@ Three small numeric edge cases found in the same review. None of them has been s
 ### Confidence
 Confirmed by reading the code. A second reviewer verified it. Severity low (cosmetic or short-lived, no crash seen).
 
-## Fix
-Not fixed yet. Suggested in the review:
+**Checked on 2026-10-28 (fix/w3-cell)**: all three still in today's code (modes.cpp mat_to_quat,
+cellsync.cpp state hp byte, the arrows in cellsync.cpp draw_ko, coop.cpp beacons, space_map.cpp).
 
-1. At the end of `mat_to_quat`, normalize q, and return identity when the norm is below 1e-6. Or normalize in `quat_to_mat` callers on the receiving side.
-2. Host: `w.u8((uint8_t)std::clamp(F<int>(c, kHp), 0, 255))`.
-3. `if (!std::isfinite(sc[0]) || !std::isfinite(sc[1])) continue;` before the arrow math, and clamp x and y to the screen before the cast.
+## Fix
+Portable helpers in `mods/coop/cell_logic.h`, each with the old result behind `fix = false`:
+`mat_to_quat` returns identity for a zero / non-finite matrix and normalizes otherwise
+(modes::mat_to_quat delegates to it); `hp_byte` clamps the cell hp to 0..255 (host cell state);
+`edge_point` returns false for a non-finite screen position and clamps the arrow to the screen
+(used by the Cell knockout arrow, the beacons in coop.cpp and the Space map tags).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-- `tests/net_tests.cpp`: move `mat_to_quat` / `quat_to_mat` to a portable header, then `CHECK(|q| == 1)` for the zero matrix and for random rotation matrices. It FAILS on main for the zero matrix (norm 0.5) and PASSES with the normalization.
-- The hp clamp is covered by a cell test that kills a cell with an overkill bite and asserts the guest's mirror hp is 0 or the mirror is dead, never 255.
+Unit test `numerics` in tests/cell_tests.cpp (`make test`): with the fix a unit quaternion for
+the zero and a scaled matrix, identity for the zero one, rotations unchanged; hp -1 -> 0, 300 -> 255;
+no arrow for a NaN position. The same checks with `fix = false` show the old results (norm 0.5,
+-1 -> 255, a non-finite arrow position), so the test is known to catch them. No game test: none of
+the three was seen in a game (the ticket's own assessment).
 
 ### Related
 #10 (cell state packets), #19 (cell size after a respawn), tracking issue #82.
@@ -77,3 +81,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #139.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-cell (bug wave 3); unit test with the old and the fixed results.

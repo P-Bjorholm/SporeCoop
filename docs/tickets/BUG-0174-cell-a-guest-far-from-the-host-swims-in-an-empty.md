@@ -41,3 +41,8 @@ Not fixed yet.
 ## History
 - 2026-10-23: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
+- 2026-10-28: fix/w3-cell (wave 3) checked it: still as described (cellsync.cpp host_tick sends cells
+  within 120 m of the host's avatar; the guest's game populates nothing). Left open: a fix is a
+  redesign of the host's pool (PopulateTiles 0xE7D370 and the active tiles follow `G+0x4128`, the
+  host's view; the host would have to populate and keep tiles around every partner and send each
+  guest its own area), not a bug fix of this wave.

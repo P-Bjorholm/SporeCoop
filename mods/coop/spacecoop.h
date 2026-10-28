@@ -27,6 +27,7 @@ struct Partner {
     uint32_t place;   // modes place: StarID | 0x80000000, PlanetID | 0x40000000, 0 = galaxy
     net::Vec3 pos;    // in the place's coordinates
     void* puppet;     // its ship here (same place), may be null
+    bool playing = true; // a state under 3 s old, in the world, not dead: it can rescue (BUG-0131)
 };
 
 struct Ctx {
