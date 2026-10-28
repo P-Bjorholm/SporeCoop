@@ -39,6 +39,7 @@
 #include "social.h"
 #include "world.h"
 #include "net/discovery.h"
+#include "net/fixes.h"
 #include "net/interp.h"
 #include "net/session.h"
 #include "creations.h"
@@ -1614,6 +1615,7 @@ void on_remote_anim(const net::AnimEvent& ev)
 // tribe and civ tables and the creations of the others stayed, and a new session inherited the old
 // remotes. `coop.sessionfix 0` restores the old per-path lists (tests).
 bool g_session_end_fix = true;
+bool g_id_reuse_fix = true; // coop.corefix id_reuse 0: a joining player inherits an old entry of its id
 void end_session_modules(bool cell)
 {
     npc::on_session_end();
@@ -1649,6 +1651,14 @@ void setup_callbacks()
         shared::on_session_change();
         creations::on_player_join(p.id);
         g_dna_sent = -1; // resend the DNA total to the newcomer
+        auto old = g_remotes.find(p.id);
+        if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
+            // BUG-0109 / BUG-0076: an entry of an earlier player under this id (a ghost made by a
+            // late state): its puppet and its buffer are not the newcomer's (states of the new
+            // player's clock older than the ghost's newest were all dropped as old)
+            despawn(old->second);
+            g_remotes.erase(old);
+        }
         auto& r = g_remotes[p.id];
         r.id = p.id;
         r.name = p.name;
@@ -1845,6 +1855,7 @@ void setup_callbacks()
             world::on_message(type, r, g_sess.name_of(0));
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t) {
+        creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         auto it = g_remotes.find(id);
         if (it == g_remotes.end())
             return;
@@ -2813,7 +2824,10 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
         bool* on;
     } sw[] = {{"vote_scope", &g_vote_scope_fix}, {"keepalive_ptr", &g_keepalive_ptr_fix},
                 {"share_reset", &world::g_share_reset_fix}, {"menu_drop", &coop_ui::g_menu_drop_fix},
-                {"update_pin", &autoupdate::g_pin_fix}};
+                {"update_pin", &autoupdate::g_pin_fix}, {"big_reliable", &net::g_fix.big_reliable},
+                {"state_roster", &net::g_fix.state_roster}, {"offset_window", &net::g_fix.offset_window},
+                {"sender_time", &net::g_fix.sender_time}, {"id_reuse", &g_id_reuse_fix},
+                {"creations_leave", &creations::g_leave_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

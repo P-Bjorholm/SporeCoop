@@ -9,6 +9,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
 #include "space_rivalry.h"
@@ -200,9 +201,9 @@ static void host_tick(double now)
     }
     for (void* u : ships)
         if (!g_hid.count(u)) {
-            uint16_t id = g_next_id++;
-            if (!g_next_id)
-                g_next_id = 1;
+            uint16_t id = net::alloc_id(g_next_id, g_hid_rev); // BUG-0154: never a live id, never 0
+            if (!id)
+                continue;
             g_hid[u] = id;
             g_hid_rev[id] = u;
         }
@@ -229,6 +230,7 @@ static void host_tick(double now)
             w.f32(F<float>(u, kHp));
             w.f32(F<float>(u, kMaxHp));
         }
+        w.u32(net::now_ms()); // BUG-0122: the host's time of the snapshot (velocity on the guest)
         for (auto& pl : C.sess->players())
             if (pl.id != 0)
                 C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
@@ -304,6 +306,7 @@ static void guest_state(net::Reader& r)
         g_cycle_ids.clear();
     }
     double now = H->time_seconds();
+    double sent = net::snapshot_time(r, (size_t)n * 55); // 55 bytes per ship
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
         int type = r.u8();
@@ -320,7 +323,7 @@ static void guest_state(net::Reader& r)
         g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
         m.pos = p; m.rot = q; m.hp = hp; m.seen = now;
-        m.est.update(p, now);
+        m.est.update(p, now, sent);
         if (id == g_hold_mirror)
             continue; // tests: keep the freed pointer until the next MSG_UFO_DAMAGE
         if (m.u && (!live(m.u) || F<int>(m.u, kState) == 2)) {

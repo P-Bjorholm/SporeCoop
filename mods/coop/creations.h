@@ -40,6 +40,10 @@ void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_player_join(uint8_t id); // host: everybody's creations to the newcomer
 void on_session_end();
+// BUG-0076: a player left: forget its creations (ids are reused: the next player of the id was shown
+// with them, and the host handed them to later joiners). coop.corefix creations_leave 0 = keep them
+void on_player_leave(uint8_t id);
+extern bool g_leave_fix;
 
 // the creation of a player, usable on this machine ({} = none / not received yet)
 Key player_key(uint8_t player, Kind k);

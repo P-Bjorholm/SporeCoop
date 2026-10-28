@@ -977,6 +977,24 @@ void on_player_join(uint8_t id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
 }
 
+bool g_leave_fix = true;
+
+void on_player_leave(uint8_t id)
+{
+    if (!g_leave_fix || id == 0)
+        return; // (the host's leave ends the session: on_session_end)
+    auto owned = [id](auto& m) {
+        for (auto it = m.begin(); it != m.end();)
+            it = it->first.first == id ? m.erase(it) : std::next(it);
+    };
+    owned(g_store);
+    owned(g_rx);
+    // its packages stay registered (cheap, as on_session_end): its puppet is gone with it, and a
+    // package of the same content is found again by path if that player comes back
+    owned(g_applied);
+    g_own_sent.erase(id);
+}
+
 void on_session_end()
 {
     g_asked.clear(); // (registered species packages stay: the same world may come back)
