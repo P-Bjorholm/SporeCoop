@@ -1728,10 +1728,7 @@ static std::string prey_report(float r, bool rows)
 
 std::string debug(const std::vector<std::string>& a)
 {
-    uint8_t* av = in_cell() ? avatar() : nullptr; // G() outlives the stage, its pool does not
-    if (!av)
-        return "not in the cell stage";
-    if (!a.empty() && a[0] == "fix") { // fix [<name>|all 0|1]: the wave 2 fixes, off = the old behaviour
+    if (!a.empty() && a[0] == "fix") { // any stage (resend also covers the DNA total) // fix [<name>|all 0|1]: the wave 2 fixes, off = the old behaviour
         struct Sw {
             const char* name;
             bool* on;
@@ -1753,6 +1750,9 @@ std::string debug(const std::vector<std::string>& a)
             o += std::string(" ") + x.name + "=" + (*x.on ? "1" : "0");
         return o;
     }
+    uint8_t* av = in_cell() ? avatar() : nullptr; // G() outlives the stage, its pool does not
+    if (!av)
+        return "not in the cell stage";
     if (a.size() >= 2 && a[0] == "zap") { // guest: the game removes <n> mirrors' cells (not our removal path)
         int n = atoi(a[1].c_str()), done = 0;
         for (auto& [h, m] : g_mirrors)
