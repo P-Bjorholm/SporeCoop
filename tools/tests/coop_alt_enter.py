@@ -14,9 +14,11 @@ turns that key into the fullscreen toggle.
 2. The host and then the guest press Alt+Shift+Enter: before the fix the game faulted at 0x7777BE
    in a loop (on Windows: the crash report); now fullscreen toggles, no fault, both still play.
 
-  SPORE_LANE=2 python3 tools/tests/coop_alt_enter.py
+  SPORE_LANE=2 python3 tools/tests/coop_alt_enter.py [--without-fix]
+  (--without-fix: `coop.fix game.adapter_key off` on both games, the test must FAIL; BUG-0012)
 """
 import re
+import sys
 import time
 
 import lane
@@ -88,6 +90,9 @@ def walk(ck, con, label):
 def main():
     host, guest = start()
     ck = Checks()
+    if '--without-fix' in sys.argv:
+        for con in (host, guest):
+            print('  ' + con.call('coop.fix game.adapter_key off')['out'].strip())
     a0 = above(host)
     ck(a0 is not None and abs(a0) < 2, f'the host\'s avatar stands on the ground ({a0} m over it)')
 
