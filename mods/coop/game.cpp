@@ -531,7 +531,6 @@ void set_destroy_defer(bool on) { g_destroy_defer = on; }
 static bool g_defer_keeps_puppet = true; // tests: off = unregistered at once (coop.npc deferpuppet off, BUG-0066)
 void set_defer_keeps_puppet(bool on) { g_defer_keeps_puppet = on; }
 
-
 bool destroy_pending(void* c)
 {
     for (auto& d : g_destroy_later)
