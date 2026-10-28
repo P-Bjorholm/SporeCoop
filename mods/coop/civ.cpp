@@ -1,6 +1,7 @@
 #include "civ.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -137,6 +138,10 @@ static uint32_t g_cmds_done, g_cmds_rejected, g_builds_sent, g_unselected, g_buy
 static int g_build_from = -1; // guest whose build is being executed (not echoed back to it)
 static int g_pending_owner = -1; // owner of the vehicle the host is about to spawn for a guest
 static std::vector<uint8_t> g_split_for;
+// BUG-0031: vehicles of a player who left get a present owner; a capture never names an absent
+// player. `coop.civ fix orphans 0`: the old behaviour (tests).
+static bool g_fix_orphans = true;
+static uint32_t g_orphans_given;
 
 // ---------------- guest ----------------
 struct GV {
@@ -525,8 +530,8 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
             uint8_t owner = 0;
             float bd = 1e18f;
             for (auto& [v, hv] : g_hv) {
-                if (hv.owner == 0xFE)
-                    continue;
+                if (hv.owner == 0xFE || (g_fix_orphans && !net::is_player(*C.sess, hv.owner)))
+                    continue; // BUG-0031: never a player who is not here
                 float d = net::dist(veh_pos(v), city_pos(city));
                 if (d < bd) {
                     bd = d;
@@ -726,6 +731,11 @@ static void boost_tick(double now)
 using FireSW_t = bool(SK_THISCALL*)(void*, int, const float*);
 static FireSW_t o_FireSW;
 static bool g_sw_bypass;
+// BUG-0117: the vote's weapon and target are its own (captured), not statics a second request
+// overwrote. `coop.civ fix sw_vote 0`: the old statics (tests).
+static bool g_fix_sw_vote = true;
+static uint32_t g_sw_refused;
+static int g_sw_last_req = -1, g_sw_fired = -1; // host: last guest request, weapon type the last guest vote fired
 static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
 {
     if (g_sw_bypass || !active() || C.sess->players().size() < 2)
@@ -737,6 +747,24 @@ static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
         w.u32((uint32_t)type);
         w.f32(pos[0]); w.f32(pos[1]); w.f32(pos[2]);
         send_cmd(w);
+        return false;
+    }
+    if (g_fix_sw_vote) {
+        // BUG-0117: the vote fires what was asked in it; a request during another vote changes nothing
+        std::array<float, 3> p{pos[0], pos[1], pos[2]};
+        bool has_target = target != nullptr;
+        if (C.vote && C.vote(C.sess->name_of(C.sess->my_id()) + " wants to fire a superweapon", "the superweapon fires",
+                             [civ, type, p, has_target] {
+                                 g_sw_bypass = true;
+                                 o_FireSW(civ, type, has_target ? p.data() : nullptr);
+                                 g_sw_bypass = false;
+                             }))
+            g_votes++;
+        else {
+            g_sw_refused++;
+            if (C.feed)
+                C.feed("superweapon: another vote is running, ask again when it is over");
+        }
         return false;
     }
     static void* s_civ;
@@ -763,6 +791,24 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     // the game's superweapon types are 0..11 (GetSuperweaponCost, docs/re/civ.md)
     if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
         return;
+    g_sw_last_req = type;
+    if (g_fix_sw_vote) {
+        std::array<float, 3> p{pos[0], pos[1], pos[2]};
+        if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [pc, type, p] {
+                g_sw_bypass = true;
+                g_sw_fired = type;
+                o_FireSW(pc, type, p.data());
+                g_sw_bypass = false;
+            }))
+            g_votes++;
+        else { // tell the sender its request was not taken
+            g_sw_refused++;
+            net::Writer nw;
+            nw.str8("superweapon: another vote is running, ask again when it is over");
+            C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+        }
+        return;
+    }
     static int s_type;
     static float s_pos[3];
     static void* s_civ;
@@ -770,6 +816,7 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     memcpy(s_pos, pos, sizeof s_pos);
     if (C.vote(C.sess->name_of(from) + " wants to fire a superweapon", "the superweapon fires", [] {
             g_sw_bypass = true;
+            g_sw_fired = s_type;
             o_FireSW(s_civ, s_type, s_pos);
             g_sw_bypass = false;
         }))
@@ -1009,7 +1056,22 @@ static void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
+    bool roster_changed = players != g_split_for;
     host_assign_cities(players);
+    // BUG-0031: the vehicles of a player who left go to the owner of the nearest player city (the
+    // cities were split anew just now); before, nobody could order them, they took slots of the
+    // vehicle cap and the next joiner under the reused id inherited them
+    if (roster_changed && g_fix_orphans)
+        for (auto& [v, hv] : g_hv) {
+            if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
+                continue;
+            uint8_t owner = 0;
+            nearest_player_city(veh_pos(v), &owner);
+            if (owner == 0xFF || owner == kShared || !std::binary_search(players.begin(), players.end(), owner))
+                owner = 0;
+            hv.owner = owner;
+            g_orphans_given++;
+        }
     void* pc = player_civ();
     uint32_t ppol = pc ? pol_of(pc) : 0;
     g_host_cities = all_cities();
@@ -1911,8 +1973,12 @@ std::string debug(const std::vector<std::string>& a)
             g_fix_cities = on;
         else if (a[1] == "aispawn")
             g_fix_aispawn = on;
+        else if (a[1] == "sw_vote")
+            g_fix_sw_vote = on;
+        else if (a[1] == "orphans")
+            g_fix_orphans = on;
         else
-            return "usage: coop.civ fix boost|world|cities|aispawn 0|1";
+            return "usage: coop.civ fix boost|world|cities|aispawn|sw_vote|orphans 0|1";
         return "fix " + a[1] + " " + (on ? "on" : "off");
     }
     if (!a.empty() && a[0] == "spawns") { // spawns: the game's own vehicle spawns on this guest by caller
@@ -1962,6 +2028,12 @@ std::string debug(const std::vector<std::string>& a)
         g_alarm_at.erase(city);
         h_OnAttacked(city, 0, 0x0BADF00D);
         return "alarm raised";
+    }
+    if (!a.empty() && a[0] == "sw") { // the superweapon votes (host, BUG-0117)
+        char b[128];
+        snprintf(b, sizeof b, "sw last_request=%d fired=%d refused=%u fix=%d orphans_given=%u", g_sw_last_req, g_sw_fired,
+                 g_sw_refused, (int)g_fix_sw_vote, g_orphans_given);
+        return b;
     }
     if (a.size() >= 2 && a[0] == "super") { // super <type>: fire a superweapon (through the vote)
         void* pc = player_civ();
