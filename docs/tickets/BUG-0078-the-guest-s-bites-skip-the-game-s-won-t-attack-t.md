@@ -1,19 +1,19 @@
 ---
 id: BUG-0078
 title: the guest's bites skip the game's "won't attack the player" rule (ShouldNotAttack called with swapped arguments)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#56
 role: guest
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w3-cell
 commits:
-tests:
+tests: cell_guest_bite
 signature:
-docs:
+docs: docs/re/cell.md#cell-damage-gate
 related: #56
 ---
 
@@ -50,15 +50,27 @@ A guest's bite on the host's NPC is judged exactly as the host's own bite: same 
 ### Confidence
 PLAUSIBLE. The argument order is CONFIRMED by reading (DamageCell's call in the .sym entry, the mod's call). Not verified: what exactly DamageCell does when ShouldNotAttack returns true (skips the damage, the alert, or both), and which species of the fixtures carry the flag.
 
-## Fix
-Not fixed yet. Suggested in the review:
+**Checked on 2026-10-28 (fix/w3-cell)**: confirmed in today's code (cellsync.cpp MSG_CELL_HIT host
+handler: `o_NoAttack(pc, c)`, then hp lowered without a check). The GOG 2024 decompile of DamageCell
+0xE7A7C0 settles the open point: when ShouldNotAttack(victim, attacker) is true, or the victim has
++0x17C or +0x111 set, or IsDamageable fails, DamageCell returns false with no hp taken, no alert and
+no reaction (docs/re/cell.md#cell-damage-gate). In the test the host's own bite on such an NPC took
+0 hp, the guest's took 3.
 
-Call `h_NoAttack(c, pc)` (victim first, through the hook so the puppet is treated as the avatar). When it returns true, skip the alert and the reaction, and skip the hp as DamageCell would (to be confirmed in DamageCell's disassembly first). Also check `+0x111` and `+0x17C` before lowering hp. Better still: apply the guest's bite through the original DamageCell with the puppet as the attacker, with a flag that lets it past the puppet guard. Keep the old behaviour behind `coop.fix guestbite off`.
+## Fix
+The host's MSG_CELL_HIT handler now applies DamageCell's gate to a guest's bite (not to a mouth's
+chunk, type 6, which the game's EatChunk does not gate either): the victim dead or at hp 0, +0x17C,
++0x111, or `h_NoAttack(victim, puppet)` (victim first, through the hook that lends the avatar index
+to the puppet) drops the bite (`hits_spared=` in `coop.pool`). The alert and reaction ask the same
+corrected question. Old behaviour: `coop.pool fix guestbite 0`. Test helper (host): `coop.pool
+npcflag c<key> spare|invuln 0|1 | hp <n>`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
-
-`tools/tests/coop_cell_guest_bite.py` on `twoinst.start`: on the host, pick an NPC whose species has `wontAttackPlayer` (or set the flag on one through a debug command for the test). The guest bites it once with `coop.pool kill c<key> hit`. Assert on the host's game state for that NPC: its chase target `+0x22C` is not the guest's puppet, and its hp equals what the host's own bite leaves on a twin NPC. Read both with `coop.pool cell c<key>` and `coop.pool prey`. It fails today and passes with the fix.
+Two-game test `tools/tests/coop_cell_guest_bite.py` (suite `cell_guest_bite`), the host's game hp of
+the bitten NPC:
+- FAIL with `SPORE_CELL_FIX=0`: out/lab/20261028-004547 ("spare: the guest's bite took nothing
+  (54 -> 51)", "invuln: ... (51 -> 48)"; the host's own bites took 0 in both cases).
+- PASS with the fix: out/lab/20261028-004704, out/lab/20261028-004804 (hits_spared=2).
 
 ### Related
 - docs/re/cell.md section 9 (how the co-op path replays DamageCell's side effects): [docs/re/cell.md#L358-L371](https://github.com/WoodyWizard/SporeCoop/blob/563f72d98cce2acf2c44b859f1dfe32f9588d401/docs/re/cell.md#L358-L371)
@@ -66,3 +78,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #56.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-cell (bug wave 3); test FAIL without the fix, PASS with it.
