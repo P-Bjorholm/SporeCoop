@@ -49,19 +49,22 @@ Built-in commands:
 | `key <vk> [tap|down|up]`, `text "..."`, `click x y`, `move x y` | input into the game window |
 | `mods`, `mod.reload <name>`, `mod.unload`, `mod.load` | mod management |
 | `game.mode` | active game mode (menu, creature, editor…) |
-| `stack` | main thread stack (for hangs) |
+| `stack` | main thread stack (for hangs; the stack is copied while the thread is suspended, named after the resume) |
 | `hangdump` | main thread stack with DLL names to the log (works even under the loader lock) |
 | `exc [clear]` | exceptions caught by the logger (address, nearest symbol, registers) |
 | `bg on\|off` | background mode: the game renders without window focus |
 | `wait.frames <n>` | wait for n frames |
 | `quit` | close the game |
+| `kit.fix [name [0\|1]]` | fix switches of SporeKit (`stackdump`, `cheatwait`, `reentry`, `hookkeep`); 0 = the old behaviour, for tests |
+| `kit.test.stackheap`, `kit.test.logfault`, `kit.test.excfault`, `kit.test.hookchurn` | force the conditions of BUG-0050 / 0115 / 0132 (tools/tests/kit_freeze.py) |
 
 Mods add their own commands (`coop.*`).
 
 ### Bridge to the Spore cheat console
 
 SporeKit registers a `sk <devkit command>` cheat in the game itself (the `Ctrl+Shift+C` console)
-(e.g. `sk info`), and mods register their own keywords via `host->cheat_register`:
+(e.g. `sk info`; commands flagged `SK_CMD_NOT_ON_MAIN`, which wait for frames or stop the main
+thread: `shot`, `wait.frames`, `stack`, `hangdump`, are refused there, BUG-0065), and mods register their own keywords via `host->cheat_register`:
 `coop host` becomes the devkit command `coop.host`, and the output is printed to the game console.
 The cheat is implemented as a fake `ArgScript::ICommand` with a hand-built MSVC vtable.
 
@@ -69,9 +72,17 @@ The cheat is implemented as a fake `ArgScript::ICommand` with a hand-built MSVC 
 
 * **Exception logger** (VEH): access violations and the like are logged once per address with
   the nearest symbol from the database. Wine often swallows exceptions in window callbacks,
-  and without this the game just "freezes".
+  and without this the game just "freezes". It is not re-entered by a fault inside its own lock or
+  the log's lock (per-thread flags: the fault is recorded, its log lines are dropped; BUG-0115), and
+  it names the module (loader lock) and logs only after it let go of its lock.
 * **Watchdog thread**: if the main thread makes no progress for 15–30 s or the loader lock
-  is held for >10 s, the culprit's stack is written to the log.
+  is held for >10 s, the culprit's stack is written to the log. While the thread is suspended only
+  its registers and stack are copied (no allocation, no lock: a thread suspended inside `malloc`
+  holds the heap); names and text come after the resume (BUG-0050).
+* **Hook removal** (unload, hot reload): the trampolines of removed hooks are kept (a game worker
+  thread may still be inside a detour and call the original; RandomInt runs on worker threads), and
+  a mod with hooks gets 50 ms before `FreeLibrary` (BUG-0132). Not a guarantee for a detour that
+  blocks for longer.
 * **Main-thread fallback channel**: console tasks run not only in `Present` but also
   via a window message (`WM_APP+0x5C0`), so commands work on loading screens and
   when no frames are being drawn.

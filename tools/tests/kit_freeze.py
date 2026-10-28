@@ -23,8 +23,8 @@ import sys
 import time
 
 import lane
-from sporectl import Console
 from twoinst import Checks, wait_up
+from sporectl import Console  # noqa: E402 (twoinst puts tools/ on the path)
 
 GAME = os.path.expanduser(f'~/Games/Modding/SPORE-lab/lane{lane.LANE}')
 LOGDIR = os.path.join(GAME, 'SporebinEP1', 'mods', 'logs')
@@ -38,7 +38,7 @@ def start_host(ck):
     time.sleep(2)
     lane.sh('deploy')
     lane.run_host()
-    ck(wait_up(lane.HOST, 180) == 0, 'the game starts')
+    ck(wait_up(lane.HOST, 180), 'the game starts')
     c = Console(lane.HOST)
     for _ in range(120):
         if 'GalaxyGameEntry' in c.call('game.mode')['out']:
