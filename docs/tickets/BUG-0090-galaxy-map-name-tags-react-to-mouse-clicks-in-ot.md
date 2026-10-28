@@ -1,19 +1,19 @@
 ---
 id: BUG-0090
 title: galaxy map name tags react to mouse clicks in other windows
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#68
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_map_input
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #68
 ---
 
@@ -48,12 +48,16 @@ Only a click that goes to the game window triggers a tag.
 CONFIRMED by reading (no focus or hit-window check in `click_tick`). That the game keeps drawing the overlay while unfocused depends on the setup and is not verified on every platform.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): the tag click comes from the game window's own WM_LBUTTONDOWN, seen by a thread message hook (WH_GETMESSAGE on the main thread, mods/coop/mouse.cpp, removed in on_unload) with the message's client coordinates. A click in another window never sends that message to the game. A GetForegroundWindow check would not do: SporeKit's background mode (tests) hooks it to return the game window. `coop.space map clickfix 0`: the old polling (tests).
+
+Suggested in the review:
 
 At the top of the click handling: `if (GetForegroundWindow() != w) { g_lmb = down; return; }`. Also check `WindowFromPoint(screen point)` is the game window (or its child) before `ScreenToClient`. The tests use SporeKit's virtual cursor and the game window is the foreground window there; if a lane runs headless without focus, SporeKit's hook can report the game window as foreground for tests.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6): `coop_space_map_input.py`: the physical left button pressed over the guest's tag without a message to the game window (`move`, `key 0x01 down/up`: the button state the old code polled). `--without-fix` FAILS (clicks 0 -> 1, the host flew to the guest, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS (clicks 0 -> 0), and the message alone (`coop.space map postclick`) still takes the host there.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 In `tools/tests/coop_space_map.py`, add a case:
 1. The host is in the galaxy view with a partner's tag drawn (`coop.space map tags`).
@@ -69,3 +73,4 @@ In `tools/tests/coop_space_map.py`, add a case:
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #68.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): clicks from the window's messages; space_map_input FAIL without / PASS with.

@@ -1,19 +1,19 @@
 ---
 id: BUG-0072
 title: with 3 or more players the "Jump to" button fails, and the jump message names the wrong player
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#50
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_map_input, unit (tests/space_tests.cpp)
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #50
 ---
 
@@ -61,14 +61,18 @@ The button jumps to the partner it names. The notice names that partner.
 CONFIRMED by reading the full path (label from `can_jump`, action `jump(0xFF)`, the two different loop conditions). Not run with 3 instances.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): one pick for the button label (`can_jump`) and `jump(0xFF)`: `spacelogic::pick_jump_target` (mods/coop/space_logic.h), the first partner with a known star that is not mine; the notice names the partner the jump went to. `coop.space jumpfix 0`: the old pick and notice (tests).
+
+Suggested in the review:
 
 - One helper `pick_jump_target(uint8_t& id, uint32_t& star)` used by both `can_jump` and `jump(0xFF)`: first partner with a known star that is not mine. `jump(0xFF)` then uses that id.
 - Use the chosen partner's id in the notice: `name(chosen_id)`.
 - Or better, let the button pass the partner id that `can_jump` showed (the UI keeps it).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6). 3 players need a second lane (not this agent's), so the pick is a unit test: tests/space_tests.cpp `test_jump_target` (make test) checks the 3-player case (button and jump both pick partner 2; the old pick gives partner 0, in my own system). The notice: `coop_space_map_input.py`, the host jumps with `coop.space jump` (any partner). `--without-fix` FAILS: "jumped to Alice's star system" (the host's own name, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS: "jumped to Bob's star system" (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_pass1.log). Not run: a real 3-instance click on the co-op window's button.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 `tools/tests/coop_space_jump3.py`, three players on two lanes (the way `tools/tests/coop_npc_multi.py` runs three or four players), fixture `space`:
 1. Host and guest A in the home system, guest B jumps to another star (`coop.space jumpto <StarID>`).
@@ -84,3 +88,4 @@ Not done yet. Planned test (must FAIL without the fix and PASS with it):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #50.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): shared target pick, notice names the target; unit test + space_map_input FAIL without / PASS with.

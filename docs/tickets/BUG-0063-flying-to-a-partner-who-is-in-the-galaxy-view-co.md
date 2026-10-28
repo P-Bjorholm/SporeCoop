@@ -1,19 +1,19 @@
 ---
 id: BUG-0063
 title: flying to a partner who is in the galaxy view costs energy, can damage the ship and works while disabled
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 1 of main 563f72d, GitHub WoodyWizard/SporeCoop#41
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_map_input
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #41
 ---
 
@@ -57,7 +57,9 @@ The trip to a partner is free, like the co-op jump (same energy and HP before an
 CONFIRMED by reading the full path. The energy cost and the damage at 0 energy come from docs/re/space.md 7.3 (runtime-checked, and the reason `travel_to` has the refund). Not run at runtime for this path.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): `go_to_partner` calls the new `spacecoop::teleport_in_galaxy(star)` in the galaxy view: refused while the ship is disabled or a cinematic plays, energy raised to the maximum around SpaceTeleportTo and put back, as `travel_to` does. `coop.space map teleportfix 0`: the old direct call (tests). Test commands: `coop.space energy [v]`, `coop.space disable 0|1`.
+
+Suggested in the review:
 
 Move the galaxy-view teleport into spacecoop, e.g. `spacecoop::teleport_in_galaxy(uint32_t star)`, which:
 - checks `in_space()`, `g_down` and the cinematic guard,
@@ -67,7 +69,9 @@ Move the galaxy-view teleport into spacecoop, e.g. `spacecoop::teleport_in_galax
 `go_to_partner` then calls it. Keep the old direct call behind `coop.fix mapteleport off`.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_map_input.py`, both in the galaxy view, the guest's ship between stars. Disabled: `--without-fix` FAILS ("going", the host teleported next to the guest: distance 1.19 -> 0.04, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log); with the fix PASS ("the ship is disabled"). Energy: NOT reproduced: with energy 0 the old direct call cost neither energy nor HP (energy 0 -> 0, hp 1500 -> 1500 in the nofix run), so the energy and damage part of the report did not happen on this path (a short teleport to the star next to the partner); the refund is kept as a guard.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 Extend `tools/tests/coop_space_map.py` (or a new `coop_space_map_energy.py`):
 1. Both in the galaxy view, the guest flying.
@@ -83,3 +87,4 @@ Extend `tools/tests/coop_space_map.py` (or a new `coop_space_map_energy.py`):
 ## History
 - 2026-10-27: found in code review round 1 of main 563f72d, filed as GitHub #41.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): disabled check (FAIL without / PASS with); the energy cost was not reproduced at runtime.

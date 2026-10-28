@@ -1,19 +1,19 @@
 ---
 id: BUG-0145
 title: with swapped mouse buttons, a click on a partner tag does nothing and a camera drag flies the ship
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#124
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_map_input
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #124
 ---
 
@@ -53,12 +53,16 @@ On a PC with swapped buttons:
 CONFIRMED by reading, low severity. The physical-button behaviour is documented for Windows; not checked under Wine. A second reviewer verified it.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30) with BUG-0090: the galaxy map tags and the Co-op item during the menu intro (coop_ui.cpp) take the primary click from the game window's WM_LBUTTONDOWN (mouse.cpp), the logical button: with swapped buttons Windows sends it for the physical right button. `coop.space map clickfix 0` switches both back (tests).
+
+Suggested in the review:
 
 Poll `GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON`. Better: take the click from the game window's `WM_LBUTTONDOWN` (the window is already subclassed in sporekit/focus.cpp; messages are logical) and expose it to mods as an event. That also fixes #68 (clicks in other windows).
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6): `coop_space_map_input.py`. A swapped mouse cannot be set in the lane; its two halves are forced: the physical left button alone (a swapped mouse's secondary button, camera drags) must do nothing: `--without-fix` FAILS (the host flew, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log), the fix PASSES; the primary message alone (`coop.space map postclick`, WM_LBUTTONDOWN without the left button state, as the physical right button of a swapped mouse gives) takes the host to the guest with the fix (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_pass1.log). The menu intro path was not run with a swapped mouse.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 A unit test is not possible for the API itself. Make the button choice a small helper `primary_button_vk(bool swapped)` and unit-test it. Alternatively, in a lab test:
 - set `SPI_SETMOUSEBUTTONSWAP` on the lane's bottle;
@@ -73,3 +77,4 @@ FAILS on main, PASSES with the fix.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #124.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): primary click from WM_LBUTTONDOWN; space_map_input FAIL without / PASS with.

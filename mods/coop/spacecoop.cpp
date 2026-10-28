@@ -1441,6 +1441,18 @@ std::string debug(const std::vector<std::string>& a)
         thiscall<void>(f, mode);
         return "landing";
     }
+    if (a[0] == "takeoff") { // tests: planet -> system view (the jump's first step, as a zoom out does)
+        void* mode = a_ModeSpace ? *(void**)a_ModeSpace : nullptr;
+        if (!mode || !a_LeavePlanet || cdecl_call<int>(a_Context) != 0)
+            return "not on a planet";
+        if ((u && F<uint32_t>(u, kCinematic)) || cinematic_playing())
+            return "a cinematic is playing";
+        void* planet = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
+        if (planet && a_PlanetCleanup && a_PlanetCleanupMgr && *(void**)a_PlanetCleanupMgr)
+            thiscall<void>(a_PlanetCleanup, *(void**)a_PlanetCleanupMgr, planet);
+        thiscall<void>(a_LeavePlanet, mode, 0);
+        return "left the planet";
+    }
     if (a[0] == "repairfix" && a.size() > 1) { // BUG-0147: 0 = a new disable starts with the old step
         g_repair_fix = a[1] != "0";
         return std::string("repairfix ") + (g_repair_fix ? "1" : "0");

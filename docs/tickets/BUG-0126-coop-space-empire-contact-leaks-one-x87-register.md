@@ -1,19 +1,19 @@
 ---
 id: BUG-0126
 title: coop.space empire contact leaks one x87 register per call (ApplyRelationship called as void)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#105
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30, 4c74ae4
+tests: space_map_input
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #105
 ---
 
@@ -54,12 +54,16 @@ The x86 ABI returns floats in ST0, and the caller must pop it. With a `void` ret
 CONFIRMED by reading both sides (the call site and the `.sym` signature), and a second reviewer verified it. Low severity: only a devkit / test command uses it. A lane that runs the diplomacy test repeatedly without a restart accumulates leaked values.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): `empire contact` calls ApplyRelationship as `thiscall<float>` and drops the result, as space_diplomacy.cpp does. `coop.space fpufix 0` restores the old void call (tests). New read-out `coop.space fpu` (fnstenv between frames: TOP, tag word).
+
+Suggested in the review:
 
 Change the call to `thiscall<float>(rel_apply, ...)` and discard the result, as `space_diplomacy.cpp` does. A grep (or a re_lint rule) for game calls declared `void` whose `.sym` comment says "ST0" would catch the next one.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28, lane 6, GOG 2024): `coop_space_map_input.py` (suite `space_map_input`), three `empire contact` calls then `coop.space fpu`. `--without-fix` FAILS: `fpu top=0 -> top=5` after 3 calls (/tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_nofix.log). Runtime finding: the tag word still read FFFF ("empty") while TOP had moved by 3, so the check looks at TOP too. With the fix PASS (top=0, /tmp/claude-1000/-home-pam3es-Games-Modding-SPORE/13201e2f-19c5-4da6-b393-aae16fe6d338/scratchpad/waves/fix_w3-space/map_input_pass1.log).
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 In `coop_space_diplomacy.py` (or a small new test), run `empire contact` 9 times, then assert a game float the other machine can see, for example the ship's position from `coop.status` being finite on both machines.
 - FAILS on main: NaN after the 8th call.
@@ -71,3 +75,4 @@ None of #7-#82.
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #105.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): float return popped; test space_map_input FAIL without / PASS with.

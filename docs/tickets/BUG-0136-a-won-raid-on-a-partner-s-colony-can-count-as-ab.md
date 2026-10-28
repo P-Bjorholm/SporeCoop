@@ -1,19 +1,19 @@
 ---
 id: BUG-0136
 title: a won raid on a partner's colony can count as aborted, so the owner's raid is never completed
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-10-27
 source: code review round 2 of main 563f72d, GitHub WoodyWizard/SporeCoop#115
 role: both
 versions: 0.7.2.4 (main 563f72d) and earlier
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w3-space
+commits: 66d7a30
+tests: unit (tests/space_tests.cpp)
 signature:
-docs:
+docs: docs/re/space.md#space-w3-trips-clicks-defenders
 related: #115
 ---
 
@@ -55,14 +55,18 @@ Only raids that are aborted, and still exist, count as aborted, and the set is e
 - A second reviewer verified it and rated it low.
 
 ## Fix
-Not fixed yet. Suggested in the review:
+Fixed on fix/w3-space (66d7a30): after each `watch_raids` only aborted raids that are watched stay in `g_aborted` (`spacelogic::prune_aborted`, mods/coop/space_logic.h), and `end_all` clears it. `coop.space allies abortedfix 0` keeps the old set (it also prints the set's size).
+
+Suggested in the review:
 
 - In `watch_raids`, drop every `g_aborted` entry that is no longer in `missions()` (or no longer a raid in state 2 or 3).
 - Clear `g_aborted` in `end_all`.
 - Alternatively, store the aborted raid's PlanetID plus the abort time instead of the pointer.
 
 ## Verification
-Not done yet. Planned test (must FAIL without the fix and PASS with it):
+Done (2026-10-28) as a unit test (the outcome needs the allocator to reuse a mission address, which a two-game test cannot force): tests/space_tests.cpp `test_aborted`: an accepted raid aborted before it was watched, then a raid at the same address watched and won. Without the prune (the old code) the win counts as aborted (that branch is checked in the same test); with the prune it counts as won; an aborted raid that is watched stays until its end is handled. `make test` passes. Not run in the game.
+
+Planned in the review: Planned test (must FAIL without the fix and PASS with it):
 
 Two-instance allies test as in the steps, with a status counter for `g_aborted` size. After the aborted helper raid has disappeared from the mission list, assert the size is 0.
 
@@ -77,3 +81,4 @@ For the effect: force the next watched raid to reuse the pointer (debug: insert 
 ## History
 - 2026-10-27: found in code review round 2 of main 563f72d, filed as GitHub #115.
 - 2026-10-27: ticket opened from the issue.
+- 2026-10-28: fixed on fix/w3-space (66d7a30): aborted set pruned to watched raids and cleared at the session end; unit test.

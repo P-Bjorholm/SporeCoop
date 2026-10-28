@@ -55,11 +55,12 @@ def main():
     print('  raids on the colony:', r0)
 
     # the host leaves the planet for the system view and lands again
-    for _ in range(10):
+    for _ in range(10):  # (the wheel did nothing during the wave: the raid's captions / the HUD)
         if not sp(host, 'star').startswith('place 4'):
             break
-        host.call('wheel 720 540 -10')
-        time.sleep(1)
+        captions(host, uh)
+        print('  takeoff:', sp(host, 'takeoff'))
+        time.sleep(2)
     ck(not sp(host, 'star').startswith('place 4'), f'the host left the planet ({sp(host, "star")})')
     time.sleep(6)
     print('  raids while away:', raids(host))
