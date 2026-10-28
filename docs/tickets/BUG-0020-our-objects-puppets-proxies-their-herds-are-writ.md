@@ -66,3 +66,4 @@ its game: creatures without tuning, herds without an archetype, faults.
 - 2026-10-28: fix/w3-cell (wave 3): reverse engineered the save (synchronous; the closure of references
   from the noun list), fixed with a null-reference hook on COMSerializer::Write and a cleanup of the
   behavior manager's list after a load; test FAIL without the fix, PASS with it.
+- 2026-10-28 (merge of wave 3, main): the first version stripped every creature of a herd without an archetype. `creature_desync` recruits a console-spawned NPC into the host's pack; it was stripped, the pack kept a null member and the loaded game faulted thousands of times (lab 20261028-021701, 20261028-023605: 0/2). Now only puppets and proxies (never pack members) are stripped, and their herd only when every creature in it is stripped (`coop.savestrip owner 0` restores the first version). creature_desync, save_hygiene, creature_e84, creature: OK (lab 20261028-024059).

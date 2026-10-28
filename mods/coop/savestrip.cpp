@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "game.h"
+#include "npc.h"
 #include "sporekit_game.hpp"
 
 namespace savestrip {
@@ -37,25 +38,45 @@ static bool own_kind_herd(void* h)
            *(uint32_t*)((uint8_t*)h + 0x88) == 0 && !game::herd_nest(h) && !*(uint8_t*)((uint8_t*)h + 0x84);
 }
 
-// the creature stage: a herd made for puppets or proxies, and every creature in it (the host's
-// partners' puppets; proxies of a guest that are not in a nest herd). A herd and its members go
-// together, so no herd of the game keeps a null member. Not stripped (not checked what a null member
-// does on load): a puppet in the avatar's herd (the fallback for a partner whose creation is
-// unknown), a guest's proxies in the nest herds of the game.
+// the creature stage: a puppet or a proxy of ours (never a member of the player's pack) whose herd
+// is a herd made for it, and that herd when every creature in it is stripped. A creature of the
+// game in such a herd (a console-spawned companion recruited into the pack, a test's NPC) keeps
+// itself and its herd: a null member of the pack faults every frame after the load. Not stripped
+// (not checked what a null member does on load): a puppet in the avatar's herd (the fallback for a
+// partner whose creation is unknown), a guest's proxies in the nest herds of the game.
+static bool g_owner_fix = true; // tests: `coop.savestrip owner 0` strips by herd kind alone (the first version)
+static std::unordered_set<void*> g_strip_herds, g_keep_herds;
+
 static bool creature_filter(void* o, uint32_t noun)
 {
-    if (noun == game::kHerdNoun)
-        return own_kind_herd(o);
+    if (noun == game::kHerdNoun) {
+        if (!own_kind_herd(o))
+            return false;
+        return !g_owner_fix || (g_strip_herds.count(o) && !g_keep_herds.count(o));
+    }
     if (noun != kCreatureNoun || o == game::avatar() || IsBadReadPtr(o, 0x1680))
         return false;
-    return own_kind_herd(game::herd_of(o));
+    void* h = game::herd_of(o);
+    if (!own_kind_herd(h))
+        return false;
+    if (!g_owner_fix)
+        return true;
+    bool ours = !game::pack_member(o) && (game::is_puppet(o) || npc::is_proxy(o));
+    (ours ? g_strip_herds : g_keep_herds).insert(h);
+    return ours;
 }
 
 static void rebuild()
 {
     g_ours.clear();
-    game::for_each_object(
-        [](void* o, uint32_t noun, void*) {
+    g_strip_herds.clear();
+    g_keep_herds.clear();
+    // creatures first (they decide their herds), then the herds
+    for (int pass = 0; pass < 2; pass++)
+        game::for_each_object(
+        [](void* o, uint32_t noun, void* ctx) {
+            if ((noun == game::kHerdNoun) != (*(int*)ctx == 1))
+                return true;
             for (Filter f : g_filters)
                 if (f(o, noun)) {
                     g_ours.insert(o);
@@ -65,7 +86,7 @@ static void rebuild()
                 }
             return true;
         },
-        nullptr);
+        &pass);
 }
 
 // COMSerializer::Write 0x6A05F0: thiscall(COMSerializer*, ISerializerStream*, ISPSerializable* obj)
@@ -142,6 +163,8 @@ static int c_savestrip(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc >= 2 && (!strcmp(argv[1], "0") || !strcmp(argv[1], "1")))
         g_on = argv[1][0] == '1';
+    if (argc >= 3 && !strcmp(argv[1], "owner"))
+        g_owner_fix = argv[2][0] == '1';
     H->out_printf(out, "%s", status().c_str());
     return 0;
 }
