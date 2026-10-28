@@ -54,6 +54,10 @@ static double g_frozen_since = 0;                       // host: no creature upd
 static std::unordered_set<void*> g_seen_now;            // creatures alive this frame
 static bool g_reuse_fix = true; // coop.npc reusefix off: a reused creature object keeps its id (BUG-0044)
 static bool g_id_fix = true;    // coop.npc idfix off: ids wrap over ids in use (BUG-0023)
+// BUG-0169: a proxy that stays more than 2.5 m off for 3 s is put in place whatever the host's
+// NPC reports as its speed (coop.npc stallfix off: the old driving)
+static bool g_stall_fix = true;
+void set_stall_fix(bool on) { g_stall_fix = on; }
 static uint32_t g_reused = 0;   // host: creature objects that became another NPC (new id)
 void set_reuse_fix(bool on) { g_reuse_fix = on; }
 void set_id_fix(bool on) { g_id_fix = on; }
@@ -502,7 +506,7 @@ static void guest_tick(double now)
             game::teleport(px.c, s.pos, s.rot);
         }
         if (!px.killed)
-            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true);
+            drive::step(px.c, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix);
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
             *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};

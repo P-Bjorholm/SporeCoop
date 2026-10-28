@@ -2376,6 +2376,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("swap guard %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "stallfix")) { // tests: off = the old proxy driving (BUG-0169)
+        npc::set_stall_fix(strcmp(argv[2], "off") != 0);
+        SAY("stallfix %s", argv[2]);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "knownfix")) { // tests: off = a leaving guest's known NPCs stay (BUG-0125)
         npc::set_known_fix(strcmp(argv[2], "off") != 0);
         SAY("knownfix %s", argv[2]);

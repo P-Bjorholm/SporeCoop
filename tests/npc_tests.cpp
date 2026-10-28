@@ -4,6 +4,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "drive_plan.h"
 #include "hunt_hits.h"
 #include "npc_ids.h"
 #include "swap_ledger.h"
@@ -142,8 +143,53 @@ static void test_ledger()
     }
 }
 
+// BUG-0169: the host's NPC pushes against a rock: it reports 2 m/s and stands 4 m from where the
+// guest's proxy can get (the proxy walks into the same rock). Returns the teleports in 40 s.
+static int pushing(bool fix, float reachable_after_teleport)
+{
+    drive::Track t;
+    float err = 4.f;
+    int tps = 0;
+    for (int f = 0; f < 40 * 30; f++) { // 30 frames a second
+        double now = 1 + f / 30.0;
+        drive::Plan p = drive::plan(t, err, 2.f, now, 8.f, fix);
+        if (p.snap || p.stuck || p.stall) {
+            tps++;
+            err = reachable_after_teleport; // where the collision leaves it
+        }
+    }
+    return tps;
+}
+
+static void test_drive()
+{
+    printf("proxy driving\n");
+    CHECK(pushing(false, 0.f) == 0); // the code before BUG-0169: 4 m off for as long as it pushes
+    CHECK(pushing(true, 0.f) == 1);  // put in place after ~3 s
+    int n = pushing(true, 4.f);      // a spot it cannot stand on: pushed out again each time
+    CHECK(n >= 2 && n <= 4);         // not every frame: once per 3 s + 10 s quiet
+    // a walking puppet that catches up (the error shrinks) is not teleported
+    drive::Track t;
+    int tps = 0;
+    for (int f = 0; f < 30 * 30; f++) {
+        float err = 7.f - f * 0.02f;
+        if (err < 0.5f)
+            err = 0.5f;
+        drive::Plan p = drive::plan(t, err, 3.f, 1 + f / 30.0, 8.f, true);
+        tps += p.snap || p.stuck || p.stall;
+    }
+    CHECK(tps == 0);
+    // a remote standing still: the stuck teleport after 1.5 s as before
+    drive::Track s;
+    bool stuck = false;
+    for (int f = 0; f < 60 && !stuck; f++)
+        stuck = drive::plan(s, 2.f, 0.f, 1 + f / 30.0, 8.f, true).stuck;
+    CHECK(stuck);
+}
+
 int main()
 {
+    test_drive();
     test_ids();
     test_hits();
     test_ledger();
