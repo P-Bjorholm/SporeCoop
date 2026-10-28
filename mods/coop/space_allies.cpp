@@ -29,6 +29,7 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "space_logic.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
 
@@ -100,6 +101,7 @@ static std::set<uint32_t> g_my_raids_seen;
 static std::string g_last;
 static std::string hex(uint32_t v);
 static std::set<void*> g_aborted; // my raids I aborted (pointers only compared)
+static bool g_aborted_fix = true;  // coop.space allies abortedfix 0: the set is never pruned (BUG-0136, tests)
 static bool g_end_pending;        // the session ended while I was on a mirror planet
 static void end_all();
 static std::map<uint32_t, double> g_raid_quiet; // PlanetID -> no new raid of mine there before
@@ -832,6 +834,8 @@ static void watch_raids()
         spaceext::notice(m->name + spaceext::tr("'s colony is safe: you beat the raid",
                                                 ": колония спасена, вы отбили налёт"));
     }
+    if (g_aborted_fix) // BUG-0136: an aborted raid never watched (accepted, state 2) leaves the set
+        spacelogic::prune_aborted(g_aborted, g_watch);
 }
 
 // ---------------- sync with the rosters ----------------
@@ -980,6 +984,8 @@ static void end_all()
         forget(m);
     g_m.clear();
     g_watch.clear();
+    if (g_aborted_fix)
+        g_aborted.clear();
     g_raid_quiet.clear();
 }
 
@@ -1180,6 +1186,10 @@ static std::string debug(const std::vector<std::string>& a)
                " color=" + hex(F<uint32_t>(e, 0x10)) + " allies=" + std::to_string(ptr_vec((uint8_t*)e + 0x70).size()) +
                " enemies=" + std::to_string(ptr_vec((uint8_t*)e + 0x5C).size()) + " at=" + hex((uint32_t)(uintptr_t)e) +
                "\n";
+    }
+    if (a[0] == "abortedfix" && a.size() > 1) { // BUG-0136: 0 = aborted raids stay in the set for good
+        g_aborted_fix = a[1] != "0";
+        return std::string("abortedfix ") + (g_aborted_fix ? "1" : "0") + " aborted=" + std::to_string(g_aborted.size()) + "\n";
     }
     if (a[0] == "reloadfix" && a.size() > 1) { // BUG-0038: 0 = reuse the old galaxy's cEmpire after a reload
         g_reload_fix = a[1] != "0";

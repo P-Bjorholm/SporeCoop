@@ -56,6 +56,9 @@ std::string travel(uint32_t star); // "" = ok, else why not
 // jump into the system of a StarID (the jump's native sequence; from a planet, a system or the
 // galaxy view); "" = ok, else why not. For space features (space_finale.cpp)
 std::string travel_to_star(uint32_t star);
+// in the galaxy view: teleport next to a star (SpaceTeleportTo) for free, refused while the ship is
+// disabled (space_map: a partner flying in the galaxy view, BUG-0063); "" = ok, else why not
+std::string teleport_in_galaxy(uint32_t star);
 // the cStarRecord of a StarID (starRecord+0x70), nullptr when it is not a star of this galaxy
 // (the game's own GetStarRecord faults then)
 void* star_record(uint32_t id);

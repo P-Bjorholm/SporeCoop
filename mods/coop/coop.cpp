@@ -25,6 +25,7 @@
 #include "driver.h"
 #include "game.h"
 #include "modes.h"
+#include "mouse.h"
 #include "shared.h"
 #include "sui.h"
 #include "teamplay.h"
@@ -2888,6 +2889,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 void on_unload()
 {
     gamefixes::shutdown();
+    mouse::shutdown(); // its message hook lives in this DLL
     keepalive_stop();
     if (int n = autoupdate::shutdown()) // their image stays mapped until they end (BUG-0060)
         LOG("%d update thread(s) still running: the old image stays loaded until they end", n);

@@ -4,12 +4,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <unordered_map>
 
 #include "game.h"
 #include "modes.h"
 #include "net/validate.h"
 #include "space_ext.h"
+#include "space_logic.h"
 #include "sporekit_game.hpp"
 
 using skg::cdecl_call;
@@ -268,21 +270,34 @@ static void respawn_tick(double now)
 // ---------------- jump ----------------
 static std::string travel_to(uint32_t star, bool force = false);
 
+// BUG-0072: the button of the co-op window shows the partner can_jump picks and presses jump(0xFF):
+// both take the first partner with a known star that is not mine (the old jump(0xFF) took the first
+// one with any known star, so a partner in my system made every press fail with 3 players), and
+// the notice names that partner (it named player 0). `coop.space jumpfix 0`: the old pick (tests).
+static bool g_jump_fix = true;
+static bool pick_jump_target(uint8_t to, uint8_t& id, uint32_t& star, bool skip_mine)
+{
+    std::vector<spacelogic::JumpPartner> v;
+    if (C.partners)
+        for (auto& p : C.partners()) {
+            uint32_t s = star_of(p.place);
+            if (!s && g_last_star.count(p.id))
+                s = g_last_star[p.id];
+            v.push_back({p.id, s});
+        }
+    return spacelogic::pick_jump_target(v, star_of(C.my_place ? C.my_place() : 0), to, skip_mine, id, star);
+}
+
 bool can_jump(std::string& to)
 {
     if (!in_space() || !connected() || !C.partners)
         return false;
-    uint32_t here = star_of(C.my_place ? C.my_place() : 0);
-    for (auto& p : C.partners()) {
-        uint32_t s = star_of(p.place);
-        if (!s && g_last_star.count(p.id))
-            s = g_last_star[p.id];
-        if (s && s != here) {
-            to = p.name;
-            return true;
-        }
-    }
-    return false;
+    uint8_t id = 0;
+    uint32_t star = 0;
+    if (!pick_jump_target(0xFF, id, star, true))
+        return false;
+    to = name(id);
+    return true;
 }
 
 std::string jump(uint8_t to)
@@ -291,23 +306,18 @@ std::string jump(uint8_t to)
         return "not in space";
     if (g_down)
         return "the ship is disabled";
+    uint8_t id = to;
     uint32_t star = 0;
-    if (C.partners)
-        for (auto& p : C.partners())
-            if (p.id == to || to == 0xFF) {
-                star = star_of(p.place);
-                if (!star && g_last_star.count(p.id))
-                    star = g_last_star[p.id];
-                if (star)
-                    break;
-            }
+    // a chosen partner in my system is still found (and refused below); "any partner" skips them
+    if (!pick_jump_target(to, id, star, to == 0xFF && g_jump_fix) && to == 0xFF && g_jump_fix)
+        pick_jump_target(to, id, star, false);
     if (!star)
         return "the partner's star is not known (in the galaxy view?)";
     if (star == star_of(C.my_place ? C.my_place() : 0))
         return "already in the partner's system";
     std::string e = travel_to(star);
     if (e.empty() && C.notice)
-        C.notice("jumped to " + name(to == 0xFF ? 0 : to) + "'s star system");
+        C.notice("jumped to " + name(g_jump_fix ? id : (to == 0xFF ? 0 : to)) + "'s star system");
     return e;
 }
 
@@ -322,6 +332,34 @@ std::string travel(uint32_t star)
     return travel_to(star);
 }
 std::string travel_to_star(uint32_t star) { return in_space() ? travel_to(star) : "not in space"; }
+
+// BUG-0063: a click on a partner flying in the galaxy view teleports the ship next to it
+// (SpaceTeleportTo); it went past the disabled check and spent energy (TravelToStar; with none
+// left it damages the ship). The same guards and energy refund as travel_to.
+std::string teleport_in_galaxy(uint32_t star)
+{
+    static uintptr_t teleport = H->sym("Simulator::SpaceTeleportTo");
+    if (!in_space())
+        return "not in space";
+    if (g_down)
+        return "the ship is disabled";
+    if (!teleport || !a_Context)
+        return "symbols missing";
+    void* u = my_ufo();
+    if ((u && F<uint32_t>(u, kCinematic)) || cinematic_playing())
+        return "a cinematic is playing";
+    if (!u || cdecl_call<int>(a_Context) != 2)
+        return "not in the galaxy view";
+    void* rec = star_record(star);
+    if (!rec)
+        return "no star record";
+    float energy = F<float>(u, 0x7F4);
+    F<float>(u, 0x7F4) = std::max(energy, F<float>(u, 0x7F8));
+    cdecl_call<void>(teleport, rec);
+    F<float>(u, 0x7F4) = energy;
+    g_jumps++;
+    return "";
+}
 
 // cStarManager::GetStarRecord faults on an id that is not a star of this galaxy (seen with id 1,
 // 2026-10-23: GetStarRecord+0x32): look the record up in its table (+0xC8, 20-byte sectors whose
@@ -496,55 +534,96 @@ static RandomInt_t o_RandomInt;
 static RandomFloat_t o_RandomFloat;
 static RequirePlanets_t o_RequirePlanets;
 static uintptr_t a_Rng;
-static uint32_t g_planet_rng, g_planets_seeded;
-static bool g_generating;
+static uint32_t g_planets_seeded;
 
-static DWORD g_gen_thread;
-static int g_in_names;
+// BUG-0123: the generation state is per thread. It was process-wide: a GenerateRandomName or a
+// RequirePlanetsForStar on another thread (or two threads changing the name counter at once, which
+// could leave it non-zero for good) switched the seeding of the generating thread off, and its
+// planets differed from the other game's. `coop.space seedfix 0`: the old shared state (tests).
+struct GenState {
+    uint32_t rng;
+    bool generating;
+    int in_names;
+};
+static thread_local GenState t_gen;
+static GenState g_gen_shared; // the old state (seedfix 0)
+static DWORD g_gen_thread_shared;
+static bool g_seed_fix = true;
+static DWORD g_main_tid;                     // set by tick (the main thread)
+static uint32_t g_gen_off_main, g_names_off_main; // hooks seen on other threads (logged once)
+static GenState& gen() { return g_seed_fix ? t_gen : g_gen_shared; }
 
 // every draw of the generating thread while it generates, except the names'
 static bool generator_draw(void* rng)
 {
-    return g_generating && !g_in_names && rng == (void*)a_Rng && GetCurrentThreadId() == g_gen_thread;
+    GenState& g = gen();
+    return g.generating && !g.in_names && rng == (void*)a_Rng &&
+           (g_seed_fix || GetCurrentThreadId() == g_gen_thread_shared);
 }
 
 static uint32_t SK_THISCALL h_RandomInt(void* rng, uint32_t n)
 {
-    return o_RandomInt(generator_draw(rng) ? &g_planet_rng : rng, n);
+    return o_RandomInt(generator_draw(rng) ? &gen().rng : rng, n);
 }
 
 static float SK_THISCALL h_RandomFloat(void* rng)
 {
-    return o_RandomFloat(generator_draw(rng) ? &g_planet_rng : rng);
+    return o_RandomFloat(generator_draw(rng) ? &gen().rng : rng);
 }
+
+static void off_main(uint32_t& n, const char* what)
+{
+    if (!g_main_tid || GetCurrentThreadId() == g_main_tid)
+        return;
+    if (!n++)
+        H->log(M, SK_WARN, "space: %s runs on thread %lu, not on the main thread (BUG-0123)", what,
+               (unsigned long)GetCurrentThreadId());
+}
+
+static void names_enter() { gen().in_names++; }
+static void names_leave() { gen().in_names--; }
 
 using RandomName_t = void*(SK_THISCALL*)(void*, void*, uint32_t);
 static RandomName_t o_RandomName;
 static void* SK_THISCALL h_RandomName(void* names, void* out, uint32_t kind)
 {
-    g_in_names++;
+    off_main(g_names_off_main, "GenerateRandomName");
+    names_enter();
     void* r = o_RandomName(names, out, kind);
-    g_in_names--;
+    names_leave();
     return r;
 }
 
 static void SK_THISCALL h_RequirePlanets(void* sm, void* star, void* p3)
 {
-    if (!star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC) || g_generating) {
+    off_main(g_gen_off_main, "RequirePlanetsForStar");
+    GenState& g = gen();
+    if (!star || IsBadReadPtr(star, 0xB0) || F<uint8_t>(star, 0xAC) || g.generating) {
         o_RequirePlanets(sm, star, p3);
         return;
     }
     uint32_t x, z;
     memcpy(&x, (uint8_t*)star + 0x3C, 4);
     memcpy(&z, (uint8_t*)star + 0x44, 4);
-    g_planet_rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
-    g_gen_thread = GetCurrentThreadId();
-    g_generating = true;
+    g.rng = (F<uint32_t>(star, 0x70) * 0x9E3779B1u ^ x ^ (z << 16 | z >> 16)) | 1u;
+    g_gen_thread_shared = GetCurrentThreadId();
+    g.generating = true;
     o_RequirePlanets(sm, star, p3);
-    g_generating = false;
+    g.generating = false;
     g_planets_seeded++;
     H->log(M, SK_DEBUG, "space: planets of star %08X generated (seeded): %d", F<uint32_t>(star, 0x70),
            (int)F<uint8_t>(star, 0xAC));
+}
+
+// tests (BUG-0123): another thread "inside GenerateRandomName" for `ms` (the hook's bookkeeping,
+// no game call), while this game generates a star
+static void names_held(int ms)
+{
+    std::thread([ms] {
+        names_enter();
+        Sleep(ms);
+        names_leave();
+    }).detach();
 }
 
 using SetState_t = void(SK_THISCALL*)(void*, int);
@@ -889,6 +968,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 // ---------------- frame ----------------
 void tick(double now)
 {
+    g_main_tid = GetCurrentThreadId();
     spaceext::tick_all(now); // features check the stage and the session themselves
     if (!in_space() || !connected())
         return;
@@ -1109,6 +1189,26 @@ std::string status()
 //   coop.space empire                          money, drive, colonies (PlanetID, stored spice), contacts
 //   coop.space empire colony <PlanetID> [spice] the record-level colony of docs/re/space.md 5.3
 //   coop.space empire contact <StarID>          the first contact with the empire of that star
+static bool g_fpu_fix = true; // coop.space fpufix 0: ApplyRelationship called as void (BUG-0126, tests)
+
+// The x87 register stack: TOP (0 = empty, each value left on it lowers TOP by one) and the tag word
+// (0xFFFF = all registers empty). Read from a command handler, between frames: any value there
+// was leaked by someone (BUG-0126).
+static std::string fpu_state()
+{
+    uint8_t env[28] = {};
+    __asm__ volatile("fnstenv %0\n\tfldenv %0" : "+m"(env));
+    uint16_t sw, tw;
+    memcpy(&sw, env + 4, 2);
+    memcpy(&tw, env + 8, 2);
+    int used = 0;
+    for (int i = 0; i < 8; i++)
+        used += ((tw >> (2 * i)) & 3) != 3;
+    char b[80];
+    snprintf(b, sizeof b, "fpu top=%d tag=%04X used=%d", (sw >> 11) & 7, tw, used);
+    return b;
+}
+
 static std::string empire_cmd(const std::vector<std::string>& a)
 {
     static uintptr_t spd_ptr = H->sym("Simulator::SpacePlayerData::ptr"),
@@ -1180,7 +1280,13 @@ static std::string empire_cmd(const std::vector<std::string>& a)
             return "no empire";
         thiscall<void>(contacted, other);
         // the relationship event of the game's own first contact (message 0x3AC86B5 handler 0xFE3233)
-        thiscall<void>(rel_apply, cdecl_call<void*>(rel_get), F<uint32_t>(other, 0x84), pol, 0x05B6CF09u, 1.0f);
+        // BUG-0126: it returns a float in ST0; a `void` call never pops it and leaks one x87 register
+        // per call (8 calls: every fld in the process gives NaN). `coop.space fpufix 0`: the old call.
+        if (g_fpu_fix)
+            (void)thiscall<float>(rel_apply, cdecl_call<void*>(rel_get), F<uint32_t>(other, 0x84), pol, 0x05B6CF09u,
+                                  1.0f);
+        else
+            thiscall<void>(rel_apply, cdecl_call<void*>(rel_get), F<uint32_t>(other, 0x84), pol, 0x05B6CF09u, 1.0f);
         snprintf(b, sizeof b, "contact with %08X", F<uint32_t>(other, 0x84));
         return b;
     }
@@ -1339,6 +1445,41 @@ std::string debug(const std::vector<std::string>& a)
         g_repair_fix = a[1] != "0";
         return std::string("repairfix ") + (g_repair_fix ? "1" : "0");
     }
+    if (a[0] == "energy" && u) { // tests (BUG-0063): the ship's energy (+0x7F4, max +0x7F8); "energy <v>" sets it
+        if (a.size() > 1)
+            F<float>(u, 0x7F4) = (float)atof(a[1].c_str());
+        snprintf(b, sizeof b, "energy %.2f max %.2f hp %.1f max %.1f", F<float>(u, 0x7F4), F<float>(u, 0x7F8),
+                 F<float>(u, kHp), F<float>(u, kMaxHp));
+        return b;
+    }
+    if (a[0] == "disable" && a.size() > 1) { // tests (BUG-0063): the disabled flag alone, no rescue messages
+        g_down = a[1] != "0";
+        if (g_down)
+            g_down_until = H->time_seconds() + kDownTime;
+        else
+            clear_down_invincible();
+        return std::string("down=") + (g_down ? "1" : "0");
+    }
+    if (a[0] == "seedfix" && a.size() > 1) { // BUG-0123: 0 = one generation state for all threads (tests)
+        g_seed_fix = a[1] != "0";
+        return std::string("seedfix ") + (g_seed_fix ? "1" : "0");
+    }
+    if (a[0] == "namesheld" && a.size() > 1) { // tests (BUG-0123): another thread inside the name hook
+        names_held(atoi(a[1].c_str()));
+        snprintf(b, sizeof b, "names held %d ms on another thread; off-main: generations %u names %u", atoi(a[1].c_str()),
+                 g_gen_off_main, g_names_off_main);
+        return b;
+    }
+    if (a[0] == "jumpfix" && a.size() > 1) { // BUG-0072: 0 = jump(0xFF) takes a partner in my system (tests)
+        g_jump_fix = a[1] != "0";
+        return std::string("jumpfix ") + (g_jump_fix ? "1" : "0");
+    }
+    if (a[0] == "fpufix" && a.size() > 1) { // BUG-0126: 0 = empire contact leaks one x87 register (tests)
+        g_fpu_fix = a[1] != "0";
+        return std::string("fpufix ") + (g_fpu_fix ? "1" : "0");
+    }
+    if (a[0] == "fpu") // tests (BUG-0126): the x87 register stack between frames
+        return fpu_state();
     if (a[0] == "starfix" && a.size() > 1) { // BUG-0092: 0 = the old unchecked index (tests)
         g_star_fix = a[1] != "0";
         return std::string("starfix ") + (g_star_fix ? "1" : "0");

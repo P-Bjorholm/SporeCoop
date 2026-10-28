@@ -9,6 +9,7 @@
 #include <map>
 
 #include "modes.h"
+#include "mouse.h"
 #include "space_ext.h"
 #include "sui.h"
 #include "world.h"
@@ -31,6 +32,7 @@ static std::string g_status;
 static uint32_t g_status_color = 0xFFFFD866;
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
+static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
 static double g_skip_since; // the Co-op item was clicked during the menu intro: open once it is over
 static double g_intro_over; // when that intro was over
 static bool g_raise = true; // move the window above all UI layers when it opens
@@ -807,15 +809,24 @@ void tick()
     // from App::Canvas::Tick 10 s later, or a game that stopped answering.)
     if (g_menu_drop_fix && g_menu_btn && !in_menu())
         g_menu_btn = g_menu_parent = nullptr;
-    bool lb = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    // BUG-0145: the primary click from the window's messages (mouse.h), not the physical left button
     HWND gw = (HWND)H->game_window();
+    mouse::install(gw);
+    uint32_t nclicks = mouse::clicks();
+    bool lb = mouse::g_fix ? nclicks != g_lb_seen : (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    g_lb_seen = nclicks;
+    if (mouse::g_fix)
+        g_lb_down = false;
     // menu_intro_playing() (mode-checked) before any call on the item
     if (lb && !g_lb_down && gw && g_menu_btn && !g_want_open && !g_skip_since &&
         (!g_menu_drop_fix || world::menu_intro_playing()) && sui::visible(g_menu_btn) &&
         world::menu_intro_playing()) {
         POINT c{};
+        int cx = 0, cy = 0;
         Rect r = sui::screen_rect(g_menu_btn);
-        if (GetCursorPos(&c) && ScreenToClient(gw, &c) && c.x >= r.x1 && c.x < r.x2 && c.y >= r.y1 && c.y < r.y2) {
+        mouse::last_click(cx, cy);
+        bool at = mouse::g_fix ? (c = POINT{cx, cy}, true) : GetCursorPos(&c) && ScreenToClient(gw, &c);
+        if (at && c.x >= r.x1 && c.x < r.x2 && c.y >= r.y1 && c.y < r.y2) {
             H->log(M, SK_INFO, "ui: Co-op clicked during the menu intro: Escape skips it, then the window opens");
             LPARAM lp = 1 | (MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC) << 16);
             PostMessageW(gw, WM_KEYDOWN, VK_ESCAPE, lp);
